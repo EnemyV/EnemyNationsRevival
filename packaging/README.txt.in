@@ -1,6 +1,6 @@
 Enemy Nations @EN_VERSION@ - @EN_PLATFORM@
 
-Unzip anywhere and run @EN_RUN@. Everything needed is included; the game reads
+Unzip anywhere and run @EN_RUN@. @EN_INCLUDED@; the game reads
 its data from the files next to the executable, so keep them together.
 
 REQUIREMENTS
@@ -9,7 +9,7 @@ REQUIREMENTS
 RUN
   @EN_RUN@   (run from this folder so it finds ./data and ./ENations.dat)
 
-CONTENTS (self-contained)
+@EN_CONTENTS_HEADING@
 @EN_CONTENTS@
 
 MULTIPLAYER

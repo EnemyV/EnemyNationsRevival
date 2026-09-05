@@ -1919,7 +1919,16 @@ void CGame::StartNewWorld( unsigned uRand, int iSide, int iSideSize )
         CPlayer* pPlr = m_lstAll.GetNext( pos );
         ASSERT_VALID( pPlr );
         if ( !pPlr->IsLocal( ) )
+        {
+            // Duplicate-CNetStart trace (seat-3 death, board 2026-08-23): every
+            // start send is now attributable - a client seeing TWO of these
+            // learns from THIS log whether the host really sent twice or one
+            // send was delivered twice (routing/dup at the transport).
+            { extern void EnMpDiagLog( const char*, ... );
+              EnMpDiagLog( "CNetStart SEND -> netnum=%d (rand=%u count=%d)",
+                           pPlr->GetNetNum( ), uRand, theGame.GetAll( ).GetCount( ) ); }
             theNet.Send( pPlr->GetNetNum( ), &msg, sizeof( msg ) );
+        }
     }
 }
 

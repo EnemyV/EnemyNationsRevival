@@ -8,7 +8,7 @@ Auto-loaded into every Claude conversation. Keep it short, keep it current.
 now building and running natively on **Windows (MSVC x64), Linux (gcc x64), and macOS (clang ARM64)**
 from one tree. MFC is fully stripped (`./mfc-status.ps1` must report `mfc_linked: false`).
 
-- **Release lane: `release3_00_013`** on `EnemyV/EnemyNationsRevival`. Older `release3_00_*` lanes are dead.
+- **Release lane: `release3_00_014`** on `EnemyV/EnemyNationsRevival`. Older `release3_00_*` lanes are dead.
 - Multiple agents (one per platform) share the lane. Coordinate on **[AGENT_SYNC.md](AGENT_SYNC.md)**
   (live board in the discussion repo `EnemyV/EnemyNationsDiscussion`, branch matches the release):
   pull at loop start, post when you change shared code, get blocked, or finish.

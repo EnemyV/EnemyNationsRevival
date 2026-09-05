@@ -1874,8 +1874,9 @@ RepairDone:;
         if ( ( GetData( )->GetType( ) == CStructureData::rocket )
              && GetOwner( )->IsEdictActive( EDICT_DESPERATE_MEASURES ) )
         {
-            // +50 draft workers; fixed 10 lumber / 5 iron / 5 food / 5 coal per minute.
-            GetOwner( )->AddPplNeedBldg( GetData( )->GetPeople( ) + 50 );
+            // +100 draft workers; fixed 10 lumber / 5 iron / 5 food / 5 coal per minute.
+            // Keep in sync with the "Cost: 100 workers" line in g_aEdicts (edicts.cpp).
+            GetOwner( )->AddPplNeedBldg( GetData( )->GetPeople( ) + 100 );
             static const AltOutput::AltMat aDesperate[4] =
                 { { CMaterialTypes::lumber, 10 }, { CMaterialTypes::iron, 5 },
                   { CMaterialTypes::food, 5 },    { CMaterialTypes::coal, 5 } };

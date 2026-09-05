@@ -85,6 +85,13 @@ static		void OnNetFlowOff ();
 
 		VPSESSIONHANDLE		_GetSessionHandle () const { return m_vpSession; }
 
+		// Host relay (docs/plans/host-relay-spec.md 8): is our link to that
+		// player relayed through the host? Read-only. ProbePeerLink kicks the
+		// one-shot direct dial that makes the answer meaningful in the lobby.
+		// Both are engine-side no-ops while the relay gate is off.
+		BOOL		PeerIsRelayed (VPPLAYERID id) const { return (vpPeerIsRelayed (m_vpSession, id)); }
+		void		ProbePeerLink (VPPLAYERID id) { vpProbePeerLink (m_vpSession, id); }
+
 private:
 		VPHANDLE					m_vpHdl;
 		VPSESSIONHANDLE		m_vpSession;

@@ -65,15 +65,25 @@ static int JoinAddrLogOn() {
     return on;
 }
 
-// NAT hole-punch gate (EN_NAT_PUNCH=1). Gates the P1 rendezvous/probe machinery
-// on game hosts and clients (iserve's stateless forward is always on — it only
-// acts when a punch-enabled client asks). Default OFF while the feature soaks;
-// flip to an ini default once live-verified (see the feasibility doc §6 P1).
+// NAT hole-punch gate. Gates the P1 rendezvous/probe machinery on game hosts
+// and clients (iserve's stateless forward is always on — it only acts when a
+// punch-enabled client asks). Default ON; kill switches: EN_NAT_PUNCH=0 env
+// (wins when set) or [TCP] NatPunch=0 in vdmplay.ini.
+// The ini switch is only honored when the profile layer proves it can return
+// a default for an absent key: on macOS vpFetchInt returns 0 regardless of
+// file content or defVal (mac 3-run evidence, board 2026-08-22), which made
+// the old read report "explicitly disabled" on a healthy config. A broken
+// reader falls back to default ON with env as the only kill switch.
 static int NatPunchOn() {
     static int on = -1;
     if ( on < 0 ) {
         const char* e = getenv( "EN_NAT_PUNCH" );
-        on = ( e && *e && *e != '0' ) ? 1 : 0;
+        if ( e && *e )
+            on = ( *e != '0' ) ? 1 : 0;
+        else if ( vpFetchInt( "TCP", "EnIniProbeSentinel", 5 ) != 5 )
+            on = 1;   // profile layer can't honor defaults - ini switch unusable
+        else
+            on = vpFetchInt( "TCP", "NatPunch", 1 ) ? 1 : 0;
     }
     return on;
 }
@@ -90,12 +100,47 @@ static int NatCandOn() {
     return on;
 }
 
+// Host-relay gate (docs/plans/host-relay-spec.md). DEFAULT ON (operator call
+// after field verification: relay green cross-platform with byte-conservation
+// proof, and required for some network configurations). Kill switches:
+// EN_HOST_RELAY=0 env wins when set; otherwise [TCP] HostRelay=0 in vdmplay.ini,
+// but the ini read counts only when the profile layer proves it can return a
+// default for an absent key — on macOS vpFetchInt returns 0 regardless of file
+// content or defVal (the EnIniProbeSentinel lesson, see NatPunchOn above), and
+// a broken reader must fall back to the default (ON), not read as "explicitly off".
+static int HostRelayOn() {
+    static int on = -1;
+    if ( on < 0 ) {
+        const char* e = getenv( "EN_HOST_RELAY" );
+        if ( e && *e )
+            on = ( *e != '0' ) ? 1 : 0;
+        else if ( vpFetchInt( "TCP", "EnIniProbeSentinel", 5 ) != 5 )
+            on = 1;   // profile layer can't honor defaults - fall back to the default (ON)
+        else
+            on = vpFetchInt( "TCP", "HostRelay", 1 ) ? 1 : 0;
+    }
+    return on;
+}
+
 // [punch] log: always on while the punch machinery is active (the machinery is
 // itself opt-in via EN_NAT_PUNCH), plus iserve's EN_ISERVE_LOG side.
 static void PunchLog( const char* fmt, ... ) {
     va_list ap;
     va_start( ap, fmt );
     fprintf( stderr, "[punch] " );
+    vfprintf( stderr, fmt, ap );
+    fprintf( stderr, "\n" );
+    va_end( ap );
+}
+
+// [relay] log: unconditional like PunchLog, because every line is downstream of
+// HostRelayOn() — the machinery is itself opt-in. The engine sits on the other
+// side of the vdmplay boundary from the game's EnMpDiagLog, so it cannot call
+// it; this is the same fprintf(stderr) shape the other engine diags use.
+static void RelayLog( const char* fmt, ... ) {
+    va_list ap;
+    va_start( ap, fmt );
+    fprintf( stderr, "[relay] " );
     vfprintf( stderr, fmt, ap );
     fprintf( stderr, "\n" );
     va_end( ap );
@@ -383,9 +428,28 @@ BOOL CVpSession::PunchHandlePing( natPunchMsg* msg, CNetAddress* from, PunchPeer
             PunchLog( "CONFIRMED by peer PING from %s (tries=%d)", ab, p.m_tries );
         }
         p.m_lastAlive = GetCurrentTime();
+        p.m_lastSend  = p.m_lastAlive;   // our PONG is traffic to this peer: suppresses a redundant keepalive
         return TRUE;
     }
     return FALSE;
+}
+
+// Liveness from REAL traffic. Previously m_lastAlive was refreshed ONLY by
+// PING/PONG (PunchHandlePing/Pong), so a punched pair actively carrying data
+// could still be declared dead — client at 60s, host at 120s (DrivePunch). That
+// matters because StartNatPunch is reachable only from ConnectToServer, so a
+// lost pair is never re-established for the rest of the session (board
+// 2026-08-23). Any datagram from the confirmed peer proves the path is open.
+// Compares the transport prefix (ip + stream/dg ports) only: the NAT-candidate
+// tail is not part of peer identity, and both sides come from GetNormalForm.
+void CVpSession::PunchNoteTraffic( PunchPeer& p, CNetAddress* from ) {
+    if ( p.m_state != PunchPeer::CONFIRMED || !from )
+        return;
+    VPNETADDRESS src;
+    memset( &src, 0, sizeof( src ) );
+    from->GetNormalForm( &src );
+    if ( memcmp( &src, &p.m_confirmed, 8 ) == 0 )
+        p.m_lastAlive = GetCurrentTime();
 }
 
 BOOL CVpSession::PunchHandlePong( natPunchMsg* msg, CNetAddress* from, PunchPeer& p ) {
@@ -622,6 +686,22 @@ CPlayer* CVpSession::FindPlayer( VPPLAYERID pId, CWS* ws ) const {
 }
 
 
+// Host relay (spec 8). Read-only: no dial, no state change, no wire traffic.
+// Always FALSE on the host and while the gate is off (nothing sets m_relayMode
+// there), so the lobby marker cannot appear on a build that isn't relaying.
+BOOL CVpSession::PeerIsRelayed( VPPLAYERID pId ) const {
+    if ( !HostRelayOn() )
+        return FALSE;
+
+    CPlayer* p = FindPlayer( pId );
+
+    if ( !p || !p->IsRemote() || !p->m_ws || !p->m_ws->IsRemote() )
+        return FALSE;
+
+    return ( (CRemoteWS*)p->m_ws )->m_relayMode;
+}
+
+
 CRemotePlayer* CVpSession::RemoveRemotePlayer( VPPLAYERID pId, CRemoteWS* ws ) {
 
     VPTRACE( ( "CVpSession::RemoveRemotePlayer id=%d\n", pId ) );
@@ -721,7 +801,12 @@ CRemotePlayer* CVpSession::AddRemotePlayer( plrInfoMsg* pInfoMsg, CRemoteWS* ws,
     m_players->AddPlayer( player );
     ws->AddPlayer();
 
-    if ( ws->PlayerCount() == 1 ) {
+    // Second-host-workstation defect (board 2026-09-02): never re-key the joiner's
+    // server workstation. It is keyed by the DIALED address (the host's observed
+    // PUBLIC candidate); rewriting it to the host's ADVERTISED address makes the
+    // FindByAddress in OnUnsafeData miss the host's datagrams and drop them as an
+    // unknown workstation. Every other workstation keeps the completion behaviour.
+    if ( ws->PlayerCount() == 1 && !IsServerWS( ws ) ) {
         // there is a chance that the station address is incomplete
         // fix this situation with the data from the player info
         CNetAddress* addr = m_net->MakeAddress( &pInfoMsg->data.playerAddress );
@@ -1198,6 +1283,9 @@ void CLocalSession::OnUnsafeData( CNetLink* link ) {
         return;
     }
 
+    for ( int pi = 0; pi < MAX_PUNCH_PEERS; pi++ )
+        PunchNoteTraffic( m_punch[pi], addr );
+
     switch ( msg->hdr.msgKind ) {
     case  SenumREQ:
         ws = MakeRemoteWS( addr, NULL, link );
@@ -1351,8 +1439,17 @@ void CLocalSession::DrivePunch() {
             break;
 
         case PunchPeer::CONFIRMED:
-            // The client owns keepalives (its PINGs; our PONGs refresh our own
-            // outbound mapping). Expire a pairing that has gone quiet.
+            // Host-side keepalive with piggyback suppression: PING only when
+            // nothing else has gone to this peer in the interval (our PONGs set
+            // m_lastSend, so an active pair sends nothing extra). Previously the
+            // host sent nothing at all and relied entirely on the client, so a
+            // stalled client aged out the host's own mapping too.
+            if ( t - p.m_lastSend > 15000 ) {
+                natPunchMsg ping( NatPunchPING );
+                ping.data.nonce = p.m_nonce;
+                SendDgTo( &p.m_confirmed, ping.Data(), ping.Size() );
+                p.m_lastSend = t;
+            }
             if ( t - p.m_lastAlive > 120000 ) {
                 PunchLog( "host: punched pair expired (no keepalive for 120s)" );
                 p.Reset();
@@ -1484,6 +1581,33 @@ BOOL CLocalSession::OnJoinREQ( plrInfoMsg* msg, CRemoteWS* ws ) {
     ForAllWorkstationsExcept( ws, SendToWs, &info );
 
     return TRUE;
+}
+
+// Host relay (docs/plans/host-relay-spec.md 4a): a unicast whose destination
+// player lives on ANOTHER workstation is forwarded there instead of being
+// delivered locally — the unicast mirror of the broadcast fan in OnUBDataREQ
+// below. One hop, host only (clients never forward), so loops are structurally
+// impossible. The wire is unchanged: msgFrom still names the original sender,
+// so the receiver cannot tell a forwarded message from a direct one.
+BOOL CLocalSession::OnUDataREQ( genericMsg* msg, CRemoteWS* ws ) {
+    if ( HostRelayOn() && msg->hdr.msgTo != VP_ALLPLAYERS &&
+         msg->hdr.msgFrom != msg->hdr.msgTo ) {         // sentinel: never a self-send
+        CPlayer* dst = FindPlayer( msg->hdr.msgTo );
+
+        if ( dst && dst->IsRemote() && dst->m_ws &&
+             dst->m_ws != (CWS*)ws ) {                  // sentinel: never back at the sender
+            sendDataInfo info( msg->Data(), msg->Size(),
+                               msg->hdr.msgFlags & VP_MUSTDELIVER, NULL, this );
+
+            dst->m_ws->SendData( info );                // rides the join link
+            RelayLog( "host: FWD from=%d to=%d kind=%c size=%lu",
+                      (int)msg->hdr.msgFrom, (int)msg->hdr.msgTo,
+                      (char)msg->hdr.msgKind, (unsigned long)msg->Size() );
+            return TRUE;                                // forwarded, not ours
+        }
+    }
+
+    return CVpSession::OnUDataREQ( msg, ws );           // local delivery, as today
 }
 
 BOOL CLocalSession::OnUBDataREQ( genericMsg* msg, CRemoteWS* ws ) {
@@ -1641,8 +1765,10 @@ CRemoteSession::CRemoteSession( CTDLogger* log,
     CVpSession( log, net, players, wsMap ), m_serverWS( NULL ), m_pendingJoin( NULL ),
     m_initialJoin( TRUE ), m_serverEnumData( NULL ), m_maxServerAge( maxAge ), m_connected( FALSE ),
     m_tcpEnumTried( FALSE ), m_hasAltServer( FALSE ), m_altServerUserData( NULL ),
-    m_redialPending( FALSE ) {
+    m_redialPending( FALSE ), m_dialStart( 0 ),
+    m_punchWanted( FALSE ), m_punchLastArm( 0 ) {
     memset( &m_altServerAddr, 0, sizeof( m_altServerAddr ) );
+    memset( &m_punchSessionId, 0, sizeof( m_punchSessionId ) );
     m_punch.Reset();
 }
 
@@ -1795,6 +1921,12 @@ BOOL CRemoteSession::SendData( VPPLAYERID toId,
     pHdr->msgKind = UBDataREQ;
     pHdr->msgId = NextMessageId();
     pHdr->msgSize = (WORD)dataSize;
+    // Stamp the send flags on the wire, as CVpSession::SendData does. Without
+    // this a joiner's broadcast reached the host with msgFlags=0, and the host's
+    // refan (CLocalSession::OnUBDataREQ) / relay forward (OnUDataREQ) build their
+    // sendDataInfo from the RECEIVED msgFlags — so a VP_MUSTDELIVER broadcast was
+    // forwarded unreliably over UDP. Survives loopback, drops between machines.
+    pHdr->msgFlags = (BYTE)flags;
 #if VP_TIMESTAMP
     pHdr->msgTime = vpMsgTime();
 #endif
@@ -1874,6 +2006,24 @@ BOOL CRemoteSession::OnJoinREP( plrInfoMsg* msg, CRemoteWS* ws ) {
 
 CRemoteWS* CRemoteSession::RegisterPlayerWS( plrInfoMsg* msg ) {
 
+    // Second-host-workstation defect (board 2026-09-02): a joiner that dialed the
+    // host's observed PUBLIC candidate keys m_serverWS by that DIALED address, while
+    // the host advertises its own address in the player info. FindByAddress below then
+    // misses, a SECOND workstation is registered for the same host, and the first
+    // unicast to the host's player lazily dials the advertised address; the host answers
+    // that new link with a SenumREP and the joiner dies on
+    // VPASSERT( m_serverWS->m_safeLink == link ) in ProcessSafeData. An advertised
+    // player address equal to the session id IS the host, so bind its player to the
+    // workstation we already talk on. Transport prefix only (8 bytes: ip + stream port
+    // + dg port) - the NAT-candidate tail (vpnatcand.h) is not station identity.
+    if ( m_serverWS && m_info &&
+         memcmp( msg->data.playerAddress.machineAddress,
+                 m_info->data.sessionId.machineAddress, 8 ) == 0 ) {
+        if ( JoinAddrLogOn() )
+            fprintf( stderr, "[join-addr] RegisterPlayerWS: advertised player address is the session's own address -> binding the host's player to the server workstation (no second workstation)\n" );
+        return m_serverWS;
+    }
+
     CNetAddress* addr = m_net->MakeAddress( &msg->data.playerAddress );
 
     CWS* ws = m_wsMap->FindByAddress( addr );
@@ -1889,6 +2039,47 @@ CRemoteWS* CRemoteSession::RegisterPlayerWS( plrInfoMsg* msg ) {
 
     addr->Unref();
     return (CRemoteWS*)ws;
+}
+
+
+// Host relay (spec 8): client↔client links are made lazily on FIRST SEND, so in
+// the lobby a client does not yet know whether a peer is direct-reachable and
+// the (r) marker would never appear there. This kicks that same lazy dial once,
+// early — no payload, no new message kind, nothing on the wire the first real
+// unicast would not already have sent. Success pre-warms a real p2p link;
+// failure lands in OnDisconnect above and arms relay mode, which is what makes
+// the marker show. One dial per peer per session, gate-off = no-op.
+BOOL CRemoteSession::ProbePeerLink( VPPLAYERID pId ) {
+    if ( !HostRelayOn() )
+        return FALSE;
+
+    CPlayer* p = FindPlayer( pId );
+
+    if ( !p || !p->IsRemote() || !p->m_ws || !p->m_ws->IsRemote() )
+        return FALSE;
+
+    CRemoteWS* ws = (CRemoteWS*)p->m_ws;
+
+    // The host is reached over the join link by construction — never probed,
+    // never relayed. An already-linked or already-probed peer is done.
+    if ( ws == m_serverWS || ws->m_relayProbed || ws->m_safeLink || ws->m_relayMode )
+        return FALSE;
+
+    ws->m_relayProbed = TRUE;
+    ws->m_safeLink = MakeSafeLink( ws->m_address );   // async connect; owns the ref
+
+    if ( !ws->m_safeLink ) {
+        ws->m_relayMode = TRUE;
+        RelayLog( "client: probe dial to peer %d could not start -> RELAY MODE (sticky)", (int)pId );
+        return FALSE;
+    }
+
+    ws->m_dialStart = GetCurrentTime();   // arm the OnTimer peer-dial deadline
+    if ( !ws->m_dialStart )
+        ws->m_dialStart = 1;
+
+    RelayLog( "client: probing direct link to peer %d", (int)pId );
+    return TRUE;
 }
 
 
@@ -2094,6 +2285,37 @@ BOOL CRemoteSession::OnSenumREP( sesInfoMsg* msg, CRemoteWS* ws ) {
 
     if ( knownWs )   // we've already seen this workstation and notifyed the client app about it
     {
+        // Enum race (board 2026-09-01): a Search sends both a directed SenumREQ to the
+        // registration server and a LAN broadcast. A host on the same LAN answers the
+        // broadcast in sub-ms with an UNSTAMPED sessionId and wins this address slot, so
+        // the iserve reply carrying the NAT-candidate tail (vpnatcand.h) was dropped here
+        // and ConnectToServer never saw a candidate to dial. Only iserve can observe the
+        // host's public mapping, so the stamped reply is authoritative: let it upgrade the
+        // kept info once and re-notify the app so its browser entry refreshes.
+        CRemoteWS* keptWs = ( knownWs && knownWs->IsRemote() ) ? (CRemoteWS*)knownWs : NULL;
+
+        if ( msg && keptWs && keptWs->Info() && keptWs->Info() != msg &&
+             EnNatCandPresent( &msg->data.sessionId ) &&
+             !EnNatCandPresent( &keptWs->Info()->data.sessionId ) ) {
+
+            if ( JoinAddrLogOn() )
+                fprintf( stderr, "[natcand] OnSenumREP: upgrading kept session info to the STAMPED reply (earlier unstamped LAN/direct reply had won the race)\n" );
+
+            CSenumNotification* upg = new CSenumNotification( msg, m_serverEnumData );
+
+            if ( !upg ) {
+                Log( "OnSenumRep: no moemory for notification object" );
+                SetError( VP_ERR_NOMEM );
+                VPLEAVEBOOL( CRemoteSession::OnSenumREP, FALSE );
+                return FALSE;
+            }
+
+            keptWs->Info()->Unref();
+            keptWs->KeepInfo( msg );
+
+            PostNotification( upg );
+        }
+
         ws->Touch();
         VPLEAVEBOOL( CRemoteSession::OnSenumREP, FALSE );
         return FALSE;
@@ -2141,7 +2363,15 @@ void CRemoteSession::OnConnect( CNetLink* link ) {
 
     if ( err ) {
         Log( "CRemoteSession::OnConnect got connection error" );
-        if ( m_pendingJoin ) {
+        // Fail the pending join only for the CURRENT server dial and only when no
+        // fallback candidate is left. With an alternate stashed, OnDisconnect (just
+        // below) defers a re-dial that re-sends this very JoinREQ from OnTimer, so
+        // cancelling the join here would hand the fallback link a joinless socket -
+        // exactly the dead end the fallback exists to avoid. A stale link's late
+        // error (the primary's OS SYN budget expiring long after the app deadline
+        // moved the join onto the alternate) must not cancel it either.
+        if ( m_pendingJoin && m_serverWS && m_serverWS->m_safeLink == link &&
+             !m_hasAltServer ) {
 
             m_pendingJoin->SetError( VP_ERR_NET_ERROR );
             PostNotification( m_pendingJoin );
@@ -2156,6 +2386,17 @@ void CRemoteSession::OnConnect( CNetLink* link ) {
     if ( m_serverWS && m_serverWS->m_safeLink == link ) {
         m_connected = TRUE;
         m_hasAltServer = FALSE;   // primary candidate connected — no fallback needed/wanted
+        m_dialStart = 0;          // dial completed — disarm the OnTimer connect deadline
+    } else {
+        // Same disarm for a PEER dial, whose deadline lives on the WS (several
+        // peer dials can be pending at once, so it cannot live on the session).
+        // Without this a direct-capable peer would be expired 3.5s after a dial
+        // that already succeeded — the one way this change could touch the
+        // direct path — so it is the mandatory other half of the arm.
+        CWS* peer = m_wsMap->FindBySafeLink( link );
+
+        if ( peer && peer->IsRemote() )
+            ( (CRemoteWS*)peer )->m_dialStart = 0;
     }
 
     VPEXIT();
@@ -2221,6 +2462,23 @@ void CRemoteSession::OnDisconnect( CNetLink* link ) {
         return;
     }
 
+    // Pre-join teardown with no candidate left (the branch above returned when a
+    // re-dial was still to come): no JoinREP/JoinNAK can ever arrive for this
+    // request, so a pending join left here is stale forever - and AddLocalPlayer
+    // opens with `if ( m_pendingJoin ) SetError( VP_ERR_BUSY )`, so every later
+    // join attempt on this session was refused until the process restarted.
+    // Complete it the way OnJoinNAK/OnConnect do - error it and POST it, never
+    // just drop it: the app has an outstanding join waiting on this notification,
+    // so a silently nulled request only moves the hang somewhere else.
+    // PostNotification takes ownership (no delete here).
+    if ( !m_connected && m_pendingJoin && m_serverWS && m_serverWS->m_safeLink == link ) {
+        if ( JoinAddrLogOn() )
+            fprintf( stderr, "[natcand] pre-join server link torn down with no candidate left -> failing pending join -> notify app (VP_ERR_NET_ERROR)\n" );
+        m_pendingJoin->SetError( VP_ERR_NET_ERROR );
+        PostNotification( m_pendingJoin );
+        m_pendingJoin = NULL;
+    }
+
     if ( m_connected && ( m_serverWS->m_safeLink == link ) ) {
         VPTRACE( ( "CRemoteSession::OnDisconnect - link to server broken" ) );
         m_connected = FALSE;
@@ -2257,6 +2515,16 @@ void CRemoteSession::OnDisconnect( CNetLink* link ) {
 
     CWS* ws = m_wsMap->FindBySafeLink( link );
     if ( ws ) {
+        // Host relay (spec 4b): this is a PEER link (the server link is handled
+        // above), so its loss - a failed dial or a dropped p2p link - is the
+        // direct-path failure that arms relay mode. Sticky: no retry, no
+        // flapping. A peer that never fails never enters relay mode, which is
+        // what makes the change a provable no-op on direct-capable pairs.
+        if ( HostRelayOn() && ws != (CWS*)m_serverWS &&
+             !( (CRemoteWS*)ws )->m_relayMode ) {
+            ( (CRemoteWS*)ws )->m_relayMode = TRUE;
+            RelayLog( "client: direct peer link lost -> RELAY MODE (sticky)" );
+        }
         ( (CRemoteWS*)ws )->StopUsingSafeLink();
     }
 
@@ -2373,6 +2641,8 @@ void CRemoteSession::OnUnsafeData( CNetLink* link ) {
         msg->Unref();
         return;
     }
+
+    PunchNoteTraffic( m_punch, addr );
 
     // iserve receive diagnostic (EN_ISERVE_LOG): the reg server uses this handler. Shows
     // whether the host's registration datagram ARRIVES here and with what msgKind — the reg
@@ -2567,6 +2837,9 @@ BOOL CRemoteSession::ConnectToServer( LPCVPNETADDRESS addr, LPVOID userData ) {
     m_serverWS = MakeRemoteWS( nA, link, NULL );
 
     if ( m_serverWS ) {
+        m_dialStart = GetCurrentTime();   // arm the OnTimer connect deadline
+        if ( !m_dialStart )
+            m_dialStart = 1;
         m_wsMap->Register( m_serverWS );
 
         link->Unref();
@@ -2581,6 +2854,12 @@ BOOL CRemoteSession::ConnectToServer( LPCVPNETADDRESS addr, LPVOID userData ) {
 // observes for us is the one the host must punch. Runs in parallel with the
 // TCP dial; retried from DrivePunch until REP arrives.
 void CRemoteSession::StartNatPunch( LPCVPNETADDRESS sessionId ) {
+    // Remember what we are punching for OUTSIDE m_punch: Reset() memsets it, so
+    // DrivePunch could not otherwise re-arm a dead pair (board ruling 2026-08-23).
+    m_punchSessionId = *sessionId;
+    m_punchWanted    = TRUE;
+    m_punchLastArm   = GetCurrentTime();
+
     m_punch.Reset();
     m_punch.m_sessionId = *sessionId;
     m_punch.m_nonce = ( GetCurrentTime() * 2654435761u ) ^ (DWORD)(size_t)this;
@@ -2639,10 +2918,24 @@ void CRemoteSession::OnNatPunchREP( natPunchMsg* msg, CNetAddress* from ) {
 // Client-side punch pacing: REQ resends, probe retries, then keepalives that
 // hold both NATs' mappings open (host answers each PING with a PONG).
 void CRemoteSession::DrivePunch() {
-    if ( !NatPunchOn() || m_punch.m_state == PunchPeer::IDLE )
+    if ( !NatPunchOn() )
         return;
 
     DWORD t = GetCurrentTime();
+
+    if ( m_punch.m_state == PunchPeer::IDLE ) {
+        // Re-punch ladder. Once a pair has ever been wanted, keep trying for the
+        // life of the session: one REQ every 30s, no backoff machinery. Bounded
+        // chatter and nothing to lose - without this a pair lost to a transient
+        // outage stayed lost, since StartNatPunch is otherwise only reachable
+        // from ConnectToServer (board ruling 2026-08-23).
+        if ( m_punchWanted && t - m_punchLastArm > 30000 ) {
+            VPSESSIONID sid = m_punchSessionId;   // copy: StartNatPunch resets state
+            PunchLog( "client: re-arming punch (30s ladder)" );
+            StartNatPunch( &sid );
+        }
+        return;
+    }
 
     switch ( m_punch.m_state ) {
     case PunchPeer::WAIT_REP:
@@ -2686,16 +2979,99 @@ void CRemoteSession::DrivePunch() {
             SendDgTo( &m_punch.m_confirmed, ping.Data(), ping.Size() );
             m_punch.m_lastSend = t;
         }
-        if ( t - m_punch.m_lastAlive > 60000 ) {
-            PunchLog( "client: punched pair lost (no PONG for 60s)" );
-            m_punch.Reset();
+        // Three keepalive intervals of silence => the pair is dead. Re-arm with a
+        // FRESH nonce rather than Reset()ing terminally; the 5x1s WAIT_REP ladder
+        // and then the 30s IDLE ladder above take it from here.
+        if ( t - m_punch.m_lastAlive > 45000 ) {
+            VPSESSIONID sid = m_punchSessionId;   // copy: StartNatPunch resets state
+            PunchLog( "client: punched pair silent 45s -> re-arming with a fresh nonce" );
+            StartNatPunch( &sid );
         }
         break;
     }
 }
 
 
+// Host relay (spec 4b): collection params for the PEER half of the bounded-dial
+// watchdog. Same collect-then-act shape as AgeParams/CheckForAge — CSimpleWSMap::Enum
+// holds the map mutex and the action tears a link down, so nothing may act inline.
+struct DialDeadlineParams {
+    DWORD      curTime;
+    DWORD      deadline;
+    CRemoteWS* server;      // never swept: the server dial has its own deadline
+    WSXList    list;
+};
+
+
+BOOL CRemoteSession::CheckDialDeadline( CWS* ws, LPVOID data ) {
+    DialDeadlineParams* p = (DialDeadlineParams*)data;
+
+    if ( ws->IsRemote() && ws != (CWS*)p->server ) {
+        CRemoteWS* rws = (CRemoteWS*)ws;
+
+        if ( rws->m_dialStart && rws->m_safeLink &&
+             p->curTime - rws->m_dialStart > p->deadline )
+            p->list.Append( new WSLink( ws ) );
+    }
+    return TRUE;
+}
+
+
 void CRemoteSession::OnTimer() {
+    // Bounded pre-join dial: a candidate behind a DROP firewall/NAT hangs in
+    // SYN retries for the OS budget (21s Windows / up to 127s Linux) and never
+    // errors the socket inside the UI's 8s join guard, so the OnDisconnect
+    // dial-both fallback below was dead code for dropped ports (UbuntuOpus
+    // root cause, board 2026-08-22). Expire the pending dial here and route it
+    // through OnDisconnect on this clean pump pass: with an alternate stashed
+    // it re-dials, without one it tears down honestly instead of hanging.
+    enum { EN_DIAL_DEADLINE_MS = 3500 };
+    if ( !m_connected && m_dialStart && m_serverWS && m_serverWS->m_safeLink &&
+         GetCurrentTime() - m_dialStart > EN_DIAL_DEADLINE_MS ) {
+        m_dialStart = 0;
+        if ( JoinAddrLogOn() )
+            fprintf( stderr, "[natcand] pending connect exceeded %ums app deadline -> forcing failure (OS SYN budget would outlive the join window)\n",
+                     (unsigned)EN_DIAL_DEADLINE_MS );
+        OnDisconnect( m_serverWS->m_safeLink );
+    }
+
+    // Host relay (spec 4b): the SAME bounded dial for PEER links. The block above
+    // watches only m_serverWS, but a client-to-client dial — ProbePeerLink's (r)
+    // probe, or the lazy MakeSafeLink in CRemoteWS::SendData — blackholes exactly
+    // the same way, and because a dropped SYN never errors the socket, OnDisconnect
+    // never ran, so m_relayMode never armed and the host-relay fallback was
+    // unreachable in the one topology it exists for (measured: no socket to the
+    // peer and no RELAY MODE line in 10 minutes). Expire it here, on the same pump
+    // pass and against the same deadline, and route it through OnDisconnect so the
+    // existing "direct peer link lost -> RELAY MODE (sticky)" arm does the work —
+    // no second relay-mode code path. Gate off = not even a sweep.
+    if ( HostRelayOn() ) {
+        DialDeadlineParams dp;
+
+        dp.curTime  = GetCurrentTime();
+        dp.deadline = EN_DIAL_DEADLINE_MS;
+        dp.server   = m_serverWS;
+
+        m_wsMap->Enum( CheckDialDeadline, &dp );
+
+        WSLink* dl;
+
+        while ( NULL != ( dl = dp.list.RemoveFirst() ) ) {
+            CRemoteWS* stalled = (CRemoteWS*)( dl->m_data );
+            CNetLink*  dead    = stalled->m_safeLink;
+
+            delete dl;
+
+            if ( !dead )
+                continue;
+
+            RelayLog( "client: peer dial exceeded deadline -> RELAY MODE (sticky)" );
+            // Unrefs (and so closes) the pending socket, exactly as a real drop
+            // would; `dead` must not be touched after this.
+            OnDisconnect( dead );
+        }
+    }
+
     // Deferred dial-both fallback: a pre-join primary-candidate drop stashed an
     // alternate in OnDisconnect; dial it here, on a clean pump pass (never inline
     // from the disconnect callback). Single-shot — m_redialPending is one-way false.
@@ -2704,8 +3080,43 @@ void CRemoteSession::OnTimer() {
         VPNETADDRESS alt = m_altServerAddr;
         LPVOID       ud  = m_altServerUserData;
         BOOL ok = ConnectToServer( &alt, ud );
-        if ( !ok && JoinAddrLogOn() )
-            fprintf( stderr, "[natcand] deferred re-dial of ALTERNATE candidate FAILED synchronously (no reachable candidate left) -> join will dead-end\n" );
+
+        // Carry the join across the re-dial. ConnectToServer only rebuilds the
+        // transport; the JoinREQ AddLocalPlayer queued died with the primary link,
+        // so without this the alternate reaches ESTABLISHED with nothing bound to
+        // it (the host sees a connection and no JoinREQ, and the client's join
+        // guard expires into a network error). Re-send the SAME request the
+        // pending join still holds - same msgId, so OnJoinREP/OnJoinNAK still match
+        // it - on the new server WS. Mirrors AddLocalPlayer's post-connect block:
+        // the send queues on the pending connect and flushes on FD_CONNECT.
+        if ( ok && m_pendingJoin && m_serverWS ) {
+            plrInfoMsg* pInfoMsg = m_pendingJoin->Player()->m_info;
+
+            if ( JoinAddrLogOn() )
+                fprintf( stderr, "[natcand] alternate candidate connected -> re-sending JoinREQ (msgId=%u)\n",
+                         (unsigned)m_pendingJoin->MsgId() );
+
+            sendDataInfo info( pInfoMsg->Data(), pInfoMsg->Size(), VP_MUSTDELIVER, NULL, NULL );
+            m_serverWS->SendData( info );
+        }
+
+        if ( !ok ) {
+            if ( JoinAddrLogOn() )
+                fprintf( stderr, "[natcand] deferred re-dial of ALTERNATE candidate FAILED synchronously (no reachable candidate left) -> join will dead-end\n" );
+
+            // No link was made, so no OnDisconnect will ever run for this attempt:
+            // fail the pending join here or AddLocalPlayer refuses every later
+            // attempt with VP_ERR_BUSY - and the app's outstanding join never gets
+            // its completion. Same OnJoinNAK/OnConnect pattern as in OnDisconnect;
+            // PostNotification takes ownership (no delete here).
+            if ( m_pendingJoin ) {
+                if ( JoinAddrLogOn() )
+                    fprintf( stderr, "[natcand] no link for the deferred re-dial -> failing pending join -> notify app (VP_ERR_NET_ERROR)\n" );
+                m_pendingJoin->SetError( VP_ERR_NET_ERROR );
+                PostNotification( m_pendingJoin );
+                m_pendingJoin = NULL;
+            }
+        }
     }
     DrivePunch();
 }
@@ -3049,16 +3460,51 @@ BOOL CRemotePlayer::SendData( sendDataInfo& sdi ) {
 
 
 
+// Host relay (spec 4b), client side. The fallback is hooked HERE rather than in
+// CVpSession::SendData's unicast branch for two reasons: this is the single
+// point EVERY unicast user funnels through (game messages and vpxfer file
+// transfer alike), and the message header is already fully formed, so the relay
+// needs no re-addressing. It cannot change host behavior or gate-off behavior:
+// m_relayMode is only ever set on a CLIENT's peer WS (never on the server WS),
+// and both the flag and the gate are checked before anything diverges — so the
+// recursion below is one level deep at most and unreachable on a host.
 BOOL CRemoteWS::SendData( sendDataInfo& sdi ) {
+    CVpSession* relaySes = ( m_relayMode && HostRelayOn() ) ? (CVpSession*)sdi.m_ctxData : NULL;
+
+    if ( relaySes && relaySes->IsRemote() ) {
+        CRemoteWS* srv = ( (CRemoteSession*)relaySes )->m_serverWS;
+
+        if ( srv && srv != this )
+            return srv->SendData( sdi );
+    }
 
     if ( sdi.m_sendFlags & VP_MUSTDELIVER ) {
         if ( !m_safeLink ) {
             CVpSession* ses = (CVpSession*)sdi.m_ctxData;
 
             m_safeLink = ses->MakeSafeLink( m_address );
-            if ( !m_safeLink )
-                return FALSE;
+            if ( !m_safeLink ) {
+                // No direct link to this peer can even be set up. Flip to relay
+                // mode (sticky for the session, no retries - spec 4b) and put
+                // THIS message through the host rather than dropping it.
+                if ( HostRelayOn() && ses && ses->IsRemote() && !m_relayMode ) {
+                    CRemoteWS* srv = ( (CRemoteSession*)ses )->m_serverWS;
 
+                    if ( srv && srv != this ) {
+                        m_relayMode = TRUE;
+                        RelayLog( "client: MakeSafeLink to peer WS failed -> RELAY MODE (sticky)" );
+                        return srv->SendData( sdi );
+                    }
+                }
+                return FALSE;
+            }
+
+            // Same arm as ProbePeerLink: this dial is async, so a blackholed
+            // peer would otherwise sit here CONNECTING forever with THIS message
+            // (and every later one) queued on a socket that never completes.
+            m_dialStart = GetCurrentTime();   // arm the OnTimer peer-dial deadline
+            if ( !m_dialStart )
+                m_dialStart = 1;
         }
         return m_safeLink->Send( sdi.m_data, sdi.m_dataSize, sdi.m_sendFlags );
     }

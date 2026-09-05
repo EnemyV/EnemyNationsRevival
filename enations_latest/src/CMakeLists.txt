@@ -650,10 +650,17 @@ if (NOT EN_VERSION)
     message(FATAL_ERROR "packaging: could not parse VER_STRING from version.h")
 endif ()
 
+# Default wording; Windows overrides below because its exe is built /MD and
+# needs the VC++ runtime, so the zip is not fully self-contained.
+set(EN_INCLUDED "Everything needed is included")
+set(EN_CONTENTS_HEADING "CONTENTS (self-contained)")
+
 if (WIN32)
     set(EN_PLATFORM "Windows x64")
     set(EN_RUN "enations.exe")
-    set(EN_REQS "  - 64-bit Windows")
+    set(EN_REQS "  - 64-bit Windows\n  - Microsoft Visual C++ 2015-2022 Redistributable (x64)\n      https://aka.ms/vs/17/release/vc_redist.x64.exe")
+    set(EN_INCLUDED "All game files are included")
+    set(EN_CONTENTS_HEADING "CONTENTS")
     set(EN_CONTENTS "  enations.exe   - the game binary (MSVC x64 Release)\n  SDL2*.dll      - SDL2 runtime libraries\n  vdmplay.dll    - video playback\n  ENations.dat   - bundled game data (~516 MB), no separate download needed\n  data/          - baked terrain set\n  res/           - cursor art\n  assets/        - intro/logo videos")
 elseif (APPLE)
     set(EN_PLATFORM "macOS ARM64")
@@ -664,6 +671,9 @@ else ()
     set(EN_PLATFORM "Linux x64")
     set(EN_RUN "./enations")
     set(EN_REQS "  - 64-bit Linux (x86-64), glibc\n  - System libs: SDL2, SDL2_ttf, SDL2_mixer\n      Debian/Ubuntu:  sudo apt install libsdl2-2.0-0 libsdl2-ttf-2.0-0 libsdl2-mixer-2.0-0")
+    # Linux needs system SDL2 libs (EN_REQS above), so the zip is not fully self-contained.
+    set(EN_INCLUDED "All game files are included")
+    set(EN_CONTENTS_HEADING "CONTENTS")
     set(EN_CONTENTS "  enations       - the game binary (gcc x64 Release)\n  ENations.dat   - bundled game data (~516 MB), no separate download needed\n  data/          - baked terrain set\n  res/           - cursor art\n  assets/        - intro/logo videos")
 endif ()
 
@@ -675,6 +685,20 @@ add_custom_command(TARGET enations POST_BUILD
         "${CMAKE_CURRENT_BINARY_DIR}/README.txt"
         "$<TARGET_FILE_DIR:enations>/README.txt"
     COMMENT "Staging generated README.txt (${EN_VERSION}, ${EN_PLATFORM}) next to the binary"
+)
+
+# Default vdmplay.ini next to the binary, so a SOURCE build matches the shipped
+# release artifact. Without it RegistrationDefaultAddr() (SDL2Dialogs.cpp:1016)
+# reads "" and the Join Network Game dialog opens with an EMPTY server address
+# (2 witnesses: WinSrv2025, mac). Staged only when ABSENT - the game rewrites
+# this file at runtime, so copy_if_different would reset a player's saved server
+# on every rebuild.
+add_custom_command(TARGET enations POST_BUILD
+    COMMAND ${CMAKE_COMMAND}
+        -DSRC=${CMAKE_CURRENT_SOURCE_DIR}/../../packaging/vdmplay.ini
+        -DDST=$<TARGET_FILE_DIR:enations>/vdmplay.ini
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/../../packaging/stage_if_absent.cmake
+    COMMENT "Staging default vdmplay.ini next to the binary (only if absent)"
 )
 
 # MSVC is lax about C++ standard (defaults to C++14+ even when 11 is requested),

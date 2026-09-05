@@ -195,6 +195,27 @@ public:
     DWORD m_safeTrafficTime; // when we had the last traffic over
     // the safe link
 
+    // Host relay (docs/plans/host-relay-spec.md 4b): this peer is unreachable
+    // directly, so its traffic rides the join link and the host forwards it.
+    // Set on a CLIENT only, and never on the session's server WS; sticky for
+    // the session (no retries in v1). Meaningless while the relay is disabled
+    // (EN_HOST_RELAY=0): nothing sets it and every reader checks the gate first.
+    BOOL m_relayMode;
+
+    // One-shot lobby probe marker (spec 8): the async direct dial has already
+    // been kicked for this peer, don't kick it again.
+    BOOL m_relayProbed;
+
+    // When THIS peer's direct dial started (0 = no dial pending), for the same
+    // bounded-dial watchdog CRemoteSession::OnTimer runs over the server dial.
+    // The session's m_dialStart covers only m_serverWS; a client-to-client dial
+    // into a NAT that DROPS the SYN never completes and never errors inside the
+    // app's horizon, so OnDisconnect never ran and m_relayMode never armed - the
+    // host-relay fallback was unreachable in exactly the blackhole topology it
+    // exists for. Armed by the peer dial sites, disarmed on connect and on any
+    // teardown of the safe link (a stale stamp must not outlive its dial).
+    DWORD m_dialStart;
+
 
     sesInfoMsg *Info() const { return m_info; }
 
@@ -211,7 +232,8 @@ public:
     CRemoteWS(CNetAddress *address,
               CNetLink *safeLink, CNetLink *unsafeLink) :
             m_address(address), m_safeLink(safeLink), m_unsafeLink(unsafeLink),
-            m_safeTrafficTime(0), m_info(NULL) {
+            m_safeTrafficTime(0), m_info(NULL),
+            m_relayMode(FALSE), m_relayProbed(FALSE), m_dialStart(0) {
         if (m_safeLink)
             m_safeLink->Ref();
         if (m_unsafeLink)
@@ -226,6 +248,9 @@ public:
         if (m_safeLink)
             m_safeLink->Unref();
         m_safeLink = 0;
+        m_dialStart = 0;   // no link, no pending dial - never leave a stale stamp
+                           // behind for a later SetSafeLink (inbound accept) to
+                           // be expired against.
     }
 
     void SetSafeLink(CNetLink *link) {
@@ -372,9 +397,19 @@ struct genericMsg : CRef {
 
 #endif
 
-    genericMsg() {}
+    // Zero the whole header before filling it in. The old ctors assigned only
+    // msgKind/msgSize, leaving msgFlags/msgFrom/msgTo/msgId as whatever the
+    // stack held — and those bytes go out on the wire. Measured against the
+    // live AWS iserve: its empty-registry DummyREQ carried msgFrom=0x1810
+    // msgTo=0x261b msgId=0x7fff, identical across probes (deterministic stack
+    // residue), i.e. the process was leaking stack to unauthenticated clients.
+    // Dispatch switches on msgKind alone and the engine reads msgTo in exactly
+    // one place (CDataNotification, below) where it is surfaced as toId, so no
+    // routing changes; senders that set these fields still overwrite the zeros.
+    genericMsg() { memset( &hdr, 0, sizeof( hdr ) ); }
 
     genericMsg(MessageCodes code, size_t dataSize) {
+        memset( &hdr, 0, sizeof( hdr ) );
         hdr.msgKind = code;
         hdr.msgSize = sizeof(hdr) + dataSize;
     }
@@ -388,11 +423,20 @@ struct plrInfoMsg : genericMsg {
 
     VPPLAYERINFO data;
 
-    plrInfoMsg() {}
+    // Zero the payload. The ctors used to initialise only the header, leaving
+    // seq/data/playerData as allocator residue — and operator new is
+    // `new char[s + moreData]`, which does not zero. Those bytes go on the wire
+    // (measured on sesInfoMsg: a UTF-16 registry path reached the registration
+    // server). Sized from the members, NOT from hdr.msgSize: this ctor's size
+    // expression adds sizeof(playerName) where sesInfoMsg subtracts it, so
+    // msgSize is 2 bytes LARGER than the allocation and memsetting by it would
+    // turn a read overrun into a write overrun. See board 2026-08-23.
+    plrInfoMsg() { memset( &seq, 0, sizeof( seq ) + sizeof( data ) ); }
 
     plrInfoMsg(size_t dataSize) :
             genericMsg(PenumREP,
                        sizeof(seq) + dataSize + sizeof(data) + sizeof(data.playerName)) {
+        memset( &seq, 0, sizeof( seq ) + sizeof( data ) + dataSize );
     }
 };
 
@@ -400,10 +444,16 @@ struct plrInfoMsg : genericMsg {
 struct sesInfoMsg : genericMsg {
     VPSESSIONINFO data;
 
-    sesInfoMsg() {}
+    // Zero the payload — see plrInfoMsg above. This is the struct the leak was
+    // measured on: playerCount/sessionFlags arrived as garbage and the
+    // sessionData tail carried a UTF-16 registry path from a freed audio
+    // allocation. sizeof(data) + dataSize is exactly the space operator new
+    // reserved past the header, so this stays in bounds.
+    sesInfoMsg() { memset( &data, 0, sizeof( data ) ); }
 
     sesInfoMsg(size_t dataSize) :
             genericMsg(SenumREP, dataSize + sizeof(data) - sizeof(data.sessionName)) {
+        memset( &data, 0, sizeof( data ) + dataSize );
     }
 
     ~sesInfoMsg() override {}
@@ -413,8 +463,10 @@ struct sesInfoMsg : genericMsg {
 struct ftMsg : genericMsg {
     VPFTINFO data;
 
+    // Zero the payload — see plrInfoMsg above. Fixed-size body, no tail.
     ftMsg(MessageCodes code) :
             genericMsg(code, sizeof(data)) {
+        memset( &data, 0, sizeof( data ) );
     }
 };
 
@@ -731,6 +783,16 @@ public:
 
     virtual CPlayer *FindPlayer(VPPLAYERID pId, CWS *ws = NULL) const;
 
+    // Host relay (spec 8): is our link to this player's workstation relayed
+    // through the host rather than direct? Read-only; FALSE on the host and
+    // whenever the gate is off.
+    BOOL PeerIsRelayed(VPPLAYERID pId) const;
+
+    // Second-host-workstation defect (board 2026-09-02): AddRemotePlayer must not
+    // re-key the joiner's server workstation from the dialed address to the
+    // advertised one. Only CRemoteSession knows which workstation that is.
+    virtual BOOL IsServerWS(CWS *ws) const { return FALSE; }
+
     virtual CRemotePlayer *AddRemotePlayer(plrInfoMsg *infoMsg, CRemoteWS *ws, BOOL doNotify);
 
     virtual CRemotePlayer *RemoveRemotePlayer(VPPLAYERID id, CRemoteWS *ws);
@@ -765,6 +827,8 @@ public:
     // PONG receive: nonce match => record the observed source as the working
     // pair. Returns TRUE when this PONG confirmed (or refreshed) the peer.
     BOOL PunchHandlePong(natPunchMsg *msg, CNetAddress *from, PunchPeer &p);
+    // Refresh a CONFIRMED pair's liveness from ANY datagram off that peer.
+    void PunchNoteTraffic(PunchPeer &p, CNetAddress *from);
 
 
     virtual BOOL SendData(VPPLAYERID fromId, VPPLAYERID toId,
@@ -1121,9 +1185,9 @@ public:
 
     virtual BOOL OnLeaveREQ(plrInfoMsg *msg, CRemoteWS *ws);
 
-    virtual BOOL OnUDataREQ(genericMsg *msg, CRemoteWS *ws) {
-        return CVpSession::OnUDataREQ(msg, ws);
-    }
+    // Host relay (spec 4a): forwards a unicast whose destination lives on
+    // another workstation; delegates to the base (local delivery) otherwise.
+    virtual BOOL OnUDataREQ(genericMsg *msg, CRemoteWS *ws);
 
     virtual BOOL OnUBDataREQ(genericMsg *msg, CRemoteWS *ws);
 
@@ -1241,6 +1305,15 @@ public:
 
     virtual CRemoteWS *RegisterPlayerWS(plrInfoMsg *msg);
 
+    // Second-host-workstation defect (board 2026-09-02): see CVpSession::IsServerWS.
+    virtual BOOL IsServerWS(CWS *ws) const { return ws != NULL && ws == (CWS *) m_serverWS; }
+
+    // Host relay (spec 8): kick the lazy direct dial to a peer ONCE, so the
+    // lobby learns direct-vs-relayed before the first real send. No payload is
+    // sent - this is exactly the MakeSafeLink the first unicast would do, just
+    // earlier. No-op unless the gate is on. Returns TRUE if a dial was started.
+    BOOL ProbePeerLink(VPPLAYERID pId);
+
     CRemoteSession(CTDLogger *log,
                    CNetInterface *net,
                    CPlayerMap *players,
@@ -1275,6 +1348,15 @@ protected:
 
     PunchPeer m_punch;
 
+    // Re-punch state. PunchPeer::Reset() memsets the whole struct, so the
+    // session id a re-arm needs cannot live inside it. Kept here so DrivePunch
+    // can re-arm a dead pair for the life of the session (board ruling
+    // 2026-08-23): a pair lost to a transient outage was previously permanent,
+    // because StartNatPunch was reachable only from ConnectToServer.
+    VPSESSIONID m_punchSessionId;
+    BOOL        m_punchWanted;    // a pair has been asked for at least once
+    DWORD       m_punchLastArm;   // last StartNatPunch, for the 30s re-arm ladder
+
     virtual void OnUnsafeData(CNetLink *link);
 
     virtual void OnConnect(CNetLink *link);
@@ -1286,6 +1368,10 @@ protected:
     virtual void ProcessSafeData(CNetLink *link, genericMsg *msg);
 
     static BOOL CheckForAge(CWS *ws, LPVOID userData);
+
+    // OnTimer bounded-dial watchdog, PEER side: collects every remote WS whose
+    // direct dial has been pending past the deadline (see CRemoteWS::m_dialStart).
+    static BOOL CheckDialDeadline(CWS *ws, LPVOID userData);
 
     virtual void AgeServerList();
 
@@ -1315,6 +1401,12 @@ public:
     // OnDisconnect (the pump may still hold the dropped link — re-entrant
     // ConnectToServer there risks UAF / iterator invalidation; newwin review).
     BOOL         m_redialPending;
+    // When the pending pre-join server dial started (0 = none). A candidate
+    // behind a DROP firewall/NAT never errors the socket inside the app's join
+    // window (OS SYN budget 21-127s vs the UI's 8s guard), so without an
+    // app-level deadline the OnDisconnect dial-both fallback is unreachable.
+    // OnTimer expires the dial and routes it through OnDisconnect.
+    DWORD        m_dialStart;
 
     BOOL m_initialJoin;
     LPVOID m_serverEnumData;

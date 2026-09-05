@@ -2969,7 +2969,17 @@ void CVehicle::SetFromMsg(CMsgVehLoc *pMsg, BOOL bWorld) {
     m_iYadd = pMsg->m_iYadd;
     m_iDadd = pMsg->m_iDadd;
     m_iTadd = pMsg->m_iTadd;
+    // Mirror _SetRouteMode's moving-transition side-effect. SetFromMsg is the
+    // REMOTE-only apply path (both callers sit behind IsLocal early-returns) and
+    // _SetRouteMode - the sole caller of Wheels() - is unreachable from here, so
+    // writing m_cMode straight through left remote units' ANIM_BACK layers
+    // (wheels / legs) paused from construction, forever. 1996-original bug.
+    // bSfx=FALSE belt-and-braces: this isn't our unit, and Wheels' sound branch
+    // is IsMe() && IsSelected() gated anyway.
+    BOOL bWasMoving = ( m_cMode == moving );
     m_cMode = (CVehicle::VEH_MODE) pMsg->m_iMode;
+    if ( bWasMoving != ( m_cMode == moving ) )
+        Wheels( m_cMode == moving, FALSE );
     m_cOwn = pMsg->m_iOwn;
 #if EN_AI_PROBES_ECON && defined(_WIN32)
     // message-borne moving-without-ownership (bypasses _SetRouteMode tripwire)

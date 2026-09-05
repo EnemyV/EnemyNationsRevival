@@ -52,7 +52,11 @@ def alive():
 def launch_game():
     # Launch the harness build from run-mac, wait for the socket, return the pid.
     run = os.path.join(os.path.dirname(HERE), "run-mac")
-    env = dict(os.environ, EN_HARNESS="1", SDL_RENDER_DRIVER="opengl")
+    # No SDL_RENDER_DRIVER pin: on this VM legacy GL has no hardware driver, so
+    # pinning "opengl" silently lands in Apple's software rasterizer (48.8 -> 7.2 fps
+    # on researched_mac2). SDL's own macOS default picks metal; area-map read-back
+    # was verified working under it, which is the only reason the pin existed.
+    env = dict(os.environ, EN_HARNESS="1")
     log = open("/tmp/mac_regress_game.log", "w")
     p = subprocess.Popen(["./enations"], cwd=run, env=env, stdout=log, stderr=subprocess.STDOUT)
     for _ in range(120):  # up to ~30s

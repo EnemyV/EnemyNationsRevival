@@ -396,6 +396,31 @@ void SDL2Compositor::InvalidateAll() {
 }
 
 bool SDL2Compositor::RouteEvent(SDL_Event& event) {
+    // Track the cursor in MAIN-window client coordinates. This is the one place
+    // every SDL event passes through, so it is the only cursor source that is
+    // correct on all three platforms: ::GetCursorPos is a real screen-coordinate
+    // API on Windows, but its POSIX shim returns an AREA-MAP-local position, so
+    // pollers (e.g. the toolbar hover) read a wrong — and, over the toolbar,
+    // frozen — coordinate space. On Windows the main window sits at 0,0 so these
+    // values are numerically identical to the old ::GetCursorPos reads.
+    if (event.type == SDL_MOUSEMOTION) {
+        Uint32 mainID = (m_window && m_window->GetWindow())
+                      ? SDL_GetWindowID(m_window->GetWindow()) : 0;
+        if (mainID && event.motion.windowID == mainID) {
+            m_mouseX = event.motion.x;
+            m_mouseY = event.motion.y;
+        } else {
+            // Motion belongs to a detached panel's own window — the cursor is
+            // no longer over the main window's toolbar/background.
+            m_mouseX = m_mouseY = -1;
+        }
+    } else if (event.type == SDL_WINDOWEVENT &&
+               event.window.event == SDL_WINDOWEVENT_LEAVE) {
+        if (m_window && m_window->GetWindow() &&
+            event.window.windowID == SDL_GetWindowID(m_window->GetWindow()))
+            m_mouseX = m_mouseY = -1;
+    }
+
     // Guard: defer RemovePanel while we're iterating m_panels.
     m_routingDepth++;
 

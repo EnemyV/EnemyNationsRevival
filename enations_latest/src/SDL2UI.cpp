@@ -886,6 +886,59 @@ void SDL2Listbox::AddItem(const std::string& text, void* data) {
     m_items.push_back({text, data});
 }
 
+// Chat panes: wrap a long line into continuation rows instead of letting the
+// row renderer font-shrink it into illegibility (QA report 2026-08-23). Uses
+// the SAME 13pt shared font and the SAME text slot width the row renderer uses
+// (m_rect.w - 12), so a row that measures as fitting here renders unshrunk.
+// Falls back to a plain AddItem when no shared font is available.
+void SDL2Listbox::AddItemWrapped(const std::string& text) {
+    TTF_Font* font = GetUiFont(13);
+    int avail = m_rect.w - 12;
+    if (!font || avail <= 0 || text.empty()) { AddItem(text); return; }
+
+    int tw = 0, th = 0;
+    TTF_SizeUTF8(font, text.c_str(), &tw, &th);
+    if (tw <= avail) { AddItem(text); return; }
+
+    const std::string indent = "  ";   // marks continuation rows
+    int indentW = 0;
+    TTF_SizeUTF8(font, indent.c_str(), &indentW, &th);
+
+    std::string rest = text;
+    bool first = true;
+    while (!rest.empty()) {
+        int lineAvail = first ? avail : avail - indentW;
+        if (lineAvail < 1) lineAvail = 1;
+
+        // Longest prefix that fits: binary search on the measured width.
+        size_t lo = 1, hi = rest.size(), fit = 1;
+        while (lo <= hi) {
+            size_t mid = lo + (hi - lo) / 2;
+            TTF_SizeUTF8(font, rest.substr(0, mid).c_str(), &tw, &th);
+            if (tw <= lineAvail) { fit = mid; lo = mid + 1; }
+            else { if (mid <= 1) break; hi = mid - 1; }
+        }
+
+        size_t cut = fit;
+        if (cut < rest.size()) {
+            // Prefer a word boundary; hard-break only when a single word
+            // exceeds the row (then back off a mid-UTF-8 cut).
+            size_t sp = rest.rfind(' ', cut);
+            if (sp != std::string::npos && sp > 0)
+                cut = sp;
+            else
+                while (cut > 1 && ((unsigned char)rest[cut] & 0xC0) == 0x80)
+                    cut--;
+        }
+
+        AddItem(first ? rest.substr(0, cut) : indent + rest.substr(0, cut));
+        rest.erase(0, cut);
+        while (!rest.empty() && rest[0] == ' ')
+            rest.erase(0, 1);
+        first = false;
+    }
+}
+
 void SDL2Listbox::Clear() {
     m_items.clear();
     m_selected = -1;

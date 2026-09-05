@@ -2229,7 +2229,20 @@ void CWndArea::OnMouseMove( UINT nFlags, CPoint point )
         }
 
         default:
-            theApp.m_wndBar.SetStatusText( 0, m_sHelpBuild.c_str( ) );
+            // While placing the START ROCKET the generic "click a hex to build"
+            // help overwrote SetupStart's landing prompt (which is written
+            // during world build, before the status bar is live) - an MP joiner
+            // then never learned the opening move and starved (3 witnesses,
+            // board 2026-08-22). The hover writer itself carries the prompt so
+            // every refresh re-asserts it; any other building keeps the old
+            // text unchanged.
+            if ( m_iBuild == CStructureData::rocket )
+            {
+                std::string sRock = EnLoadStdString( IDS_MSG_ROCKET_START );
+                theApp.m_wndBar.SetStatusText( 0, sRock.c_str( ) );
+            }
+            else
+                theApp.m_wndBar.SetStatusText( 0, m_sHelpBuild.c_str( ) );
             break;
         }
 
@@ -7707,8 +7720,14 @@ static CPoint HarnessHexToWindow( CAnimAtr& aa, const CHexCoord& hex )
 // click the crane (or any unit) deterministically instead of blind-sweeping.
 // Declared in en_harness.h. Called on the game/render thread (reads live state).
 // One line per unit:
-//   vehicle:  "<id> <screenX> <screenY> <kind> <me|other>\n"
-//   building: "<id> <screenX> <screenY> building <me|other> <constructing|operational>\n"
+//   vehicle:  "<id> <screenX> <screenY> <kind> <me|other> <hexX> <hexY>\n"
+//   building: "<id> <screenX> <screenY> building <me|other> <constructing|operational> <hexX> <hexY>\n"
+// The hex pair is appended LAST on both line kinds - backward-compatible, the same
+// convention as the build-state field (older parsers read fields 1-5 / 1-6). Read it
+// as "the last two fields", which holds for both kinds. It exists because <screenX>/
+// <screenY> are projected through the LIVE VIEW TRANSFORM and so are only meaningful
+// on the client that produced them - two nodes comparing unit lists must compare
+// HEXES, not pixels (board 2026-08-23).
 // The building build-state is an appended 6th field (backward-compatible — older
 // parsers read fields 1-5); poll it for "operational" to know the info window
 // will open (a foundation/constructing building's info window stays closed).
@@ -7774,9 +7793,13 @@ void HarnessDumpUnits( std::string& out )
             else if ( pData->IsPeople( ) )    kind = "infantry";
         }
 
-        snprintf( line, sizeof( line ), "%lu %d %d %s %s\n",
+        // Hex appended as the LAST two fields (see header comment): the screen px
+        // above are view-relative, so two clients' dumps are not comparable - the
+        // hex IS. Costs nothing: GetHexHead() is already in hand for the projection.
+        CHexCoord hexV = pVeh->GetHexHead( );
+        snprintf( line, sizeof( line ), "%lu %d %d %s %s %d %d\n",
                   (unsigned long) dwID, (int) pt.x, (int) pt.y, kind,
-                  bMine ? "me" : "other" );
+                  bMine ? "me" : "other", hexV.X( ), hexV.Y( ) );
         body += line;
     }
 
@@ -7801,8 +7824,10 @@ void HarnessDumpUnits( std::string& out )
         // info window won't open until the crane finishes it. "operational" = the
         // info window will open; "constructing" = still a foundation/being built.
         const char* bstate = pBldg->IsConstructing( ) ? "constructing" : "operational";
-        snprintf( line, sizeof( line ), "%lu %d %d building %s %s\n",
-                  (unsigned long) dwID, (int) pt.x, (int) pt.y, bMine ? "me" : "other", bstate );
+        CHexCoord hexB = pBldg->GetHex( );
+        snprintf( line, sizeof( line ), "%lu %d %d building %s %s %d %d\n",
+                  (unsigned long) dwID, (int) pt.x, (int) pt.y, bMine ? "me" : "other", bstate,
+                  hexB.X( ), hexB.Y( ) );
         body += line;
     }
 

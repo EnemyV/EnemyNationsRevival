@@ -1236,6 +1236,20 @@ static const char* RaceNameForPlayer(CPlayer* pPlr) {
     return "";   // not yet chosen (InitData still zeroed)
 }
 
+// Host relay (docs/plans/host-relay-spec.md 8): " (r)" marks a player we can
+// reach only through the host. Viewer-relative, so it never appears on our own
+// row, the host's row, or an AI row — those are direct by construction. The
+// probe kick is what makes the answer meaningful in the LOBBY: peer links are
+// created lazily on first send, so without it every peer would read "direct"
+// until the first in-game message. Both calls are engine-side no-ops while the
+// relay gate is off, so the marker cannot appear on a non-relaying build.
+static bool LobbyPeerRelayed(CPlayer* pPlr) {
+    if (!pPlr || pPlr->IsMe() || pPlr->IsAI() || pPlr->GetNetNum() == 0) return false;
+    if (!theGame.AmServer() && pPlr == theGame.GetServer()) return false;
+    theNet.ProbePeerLink(pPlr->GetNetNum());
+    return theNet.PeerIsRelayed(pPlr->GetNetNum()) != FALSE;
+}
+
 // ============================================================================
 // SDL2LobbyDialog
 // ============================================================================
@@ -1292,6 +1306,23 @@ void SDL2LobbyDialog::OnInit() {
 }
 
 void SDL2LobbyDialog::OnFrame() {
+    // Drain queued game net-commands while the HOST lobby is open — the client
+    // lobby (SDL2ClientLobbyDialog::OnFrame) has done this all along, the host
+    // never did, so every joiner's cmd_ready (their RACE) sat queued until
+    // Start: the "remote players always show Human" bug, five games running.
+    // Transition safety: CmdReady's auto-start branch defers through the
+    // EnLobbyDrain guard below instead of building the world inside this frame.
+    { extern void EnLobbyDrainBegin(); extern void EnLobbyDrainEnd();
+      BOOL wasProc = theGame.ShouldProcessMessages();
+      theGame.SetShouldProcessMessages(TRUE);
+      EnLobbyDrainBegin();
+      theApp.ProcessAllMessages();
+      EnLobbyDrainEnd();
+      theGame.SetShouldProcessMessages(wasProc); }
+
+    { extern BOOL EnLobbyDrainTakeAutoStart();
+      if (EnLobbyDrainTakeAutoStart()) { OnStart(); return; } }
+
     UpdatePlayerList();
     RefreshChat();
 }
@@ -1303,10 +1334,12 @@ void SDL2LobbyDialog::RefreshChat() {
     m_chatCount = n;
     m_lstChat->Clear();
     for (int i = 0; i < n; i++)
-        m_lstChat->AddItem(SDL2Chat_Line(i));
+        m_lstChat->AddItemWrapped(SDL2Chat_Line(i));
     // Auto-scroll to newest: SetSelected only moves the highlight, EnsureVisible
     // scrolls the view so a full chat box doesn't stay pinned at the top.
-    if (n > 0) { m_lstChat->SetSelected(n - 1); m_lstChat->EnsureVisible(n - 1); }
+    // Wrapped lines mean row count >= chat count, so scroll by the ROW count.
+    int rows = m_lstChat->GetCount();
+    if (rows > 0) { m_lstChat->SetSelected(rows - 1); m_lstChat->EnsureVisible(rows - 1); }
 }
 
 void SDL2LobbyDialog::SendChat() {
@@ -1357,7 +1390,8 @@ void SDL2LobbyDialog::UpdatePlayerList() {
         CPlayer* pPlr = theGame.GetAll().GetNext(pos);
         if (!pPlr) continue;
         const char* race = RaceNameForPlayer(pPlr);
-        sig += pPlr->GetName(); sig += '|'; sig += race; sig += '\n';
+        sig += pPlr->GetName(); sig += '|'; sig += race;
+        sig += LobbyPeerRelayed(pPlr) ? "|r\n" : "\n";   // a relay flip must redraw the row
         if (!pPlr->IsAI() && pPlr->GetNetNum() != 0) human++;
     }
     if (sig == m_lastSig) return;
@@ -1374,6 +1408,7 @@ void SDL2LobbyDialog::UpdatePlayerList() {
         else if (pPlr->GetNetNum()) line += " (joined)";
         const char* race = RaceNameForPlayer(pPlr);
         if (race && race[0]) { line += " - "; line += race; }
+        if (LobbyPeerRelayed(pPlr)) line += " (r)";
         m_lstPlayers->AddItem(line);
     }
 
@@ -1442,9 +1477,11 @@ void SDL2ClientLobbyDialog::RefreshChat() {
     m_chatCount = n;
     m_lstChat->Clear();
     for (int i = 0; i < n; i++)
-        m_lstChat->AddItem(SDL2Chat_Line(i));
+        m_lstChat->AddItemWrapped(SDL2Chat_Line(i));
     // Auto-scroll to newest (SetSelected alone doesn't move the scroll view).
-    if (n > 0) { m_lstChat->SetSelected(n - 1); m_lstChat->EnsureVisible(n - 1); }
+    // Wrapped lines mean row count >= chat count, so scroll by the ROW count.
+    int rows = m_lstChat->GetCount();
+    if (rows > 0) { m_lstChat->SetSelected(rows - 1); m_lstChat->EnsureVisible(rows - 1); }
 }
 
 void SDL2ClientLobbyDialog::SendChat() {
@@ -1516,7 +1553,9 @@ void SDL2ClientLobbyDialog::UpdatePlayerList() {
         CPlayer* pPlr = theGame.GetAll().GetNext(pos);
         if (!pPlr) continue;
         const char* race = RaceNameForPlayer(pPlr);
-        sig += pPlr->GetName(); sig += '|'; sig += race; sig += '\n';
+        sig += pPlr->GetName(); sig += '|'; sig += race;
+        if (pPlr == theGame.GetServer()) sig += "|h";    // host identity resolving must redraw too
+        sig += LobbyPeerRelayed(pPlr) ? "|r\n" : "\n";   // a relay flip must redraw the row
     }
     if (sig == m_lastSig) return;
     m_lastSig = sig;
@@ -1529,9 +1568,11 @@ void SDL2ClientLobbyDialog::UpdatePlayerList() {
         std::string line = pPlr->GetName();
         if (pPlr->IsMe())           line += " (you)";
         else if (pPlr->IsAI())      line += " (AI)";
-        else if (pPlr->GetNetNum()) line += " (host/player)";
+        else if (pPlr == theGame.GetServer()) line += " (host)";
+        else if (pPlr->GetNetNum()) line += " (player)";
         const char* race = RaceNameForPlayer(pPlr);
         if (race && race[0]) { line += " - "; line += race; }
+        if (LobbyPeerRelayed(pPlr)) line += " (r)";
         m_lstPlayers->AddItem(line);
     }
 }
@@ -1956,6 +1997,16 @@ bool SDL2_RunJoinNetworkFlow(GameWindow* gameWindow) {
 #ifndef _WIN32
             vpPumpNet(0);          // POSIX: service the transport while we block here
             EnPumpNetMessages();   // deliver WM_VPNOTIFY -> OnNetMsg (win32_compat.h:1219)
+#else
+            // Windows: this guard is a blocking wait that replaces the main
+            // PeekMessage loop, and that loop is the ONLY thing dispatching
+            // the hidden VdmPlay window's WM_WINSOCK/WM_VPNOTIFY. Without a
+            // pump here the JoinREP sits undelivered for the full window and
+            // every Windows joiner times out at netnum 0 (3/3 deterministic,
+            // OpusHelperWin root cause, board 2026-08-22). SDL_PumpEvents
+            // drains and dispatches the whole thread queue, hidden window
+            // included - same semantics as the main loop it stands in for.
+            SDL_PumpEvents();
 #endif
             theApp.ProcessAllMessages();
             SDL_Delay(50);

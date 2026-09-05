@@ -1296,6 +1296,22 @@ LRESULT CNetApi::OnNetMsg( WPARAM wParam, LPARAM lParam )
 /////////////////////////////////////////////////////////////////////////////
 // from here down its handling messages from READDATA
 
+// Host-lobby drain guard (the "remote players always show Human" root fix).
+// While the HOST lobby's OnFrame drains the game queue, CmdReady's auto-start
+// branch must not build the world from inside the dialog's own frame loop -
+// it defers here and the lobby routes it through its normal Start path
+// (same guard class as the client-side g_clientStartBuf/lobbyWaiting buffer).
+static BOOL g_bLobbyDrain       = FALSE;
+static BOOL g_bPendingAutoStart = FALSE;
+void EnLobbyDrainBegin( ) { g_bLobbyDrain = TRUE; }
+void EnLobbyDrainEnd( )   { g_bLobbyDrain = FALSE; }
+BOOL EnLobbyDrainTakeAutoStart( )
+{
+    BOOL b = g_bPendingAutoStart;
+    g_bPendingAutoStart = FALSE;
+    return b;
+}
+
 static void CmdReady( CNetReady* pMsg )
 {
 
@@ -1319,11 +1335,72 @@ static void CmdReady( CNetReady* pMsg )
     EnMpDiagLog( "CmdReady: applied race to plyr=%d name='%s' netnum=%d (race[0]=%.3f)",
                  pPlr->GetPlyrNum( ), pPlr->GetName( ), pMsg->m_iPlyrNum,
                  pMsg->m_InitData.GetRace( 0 ) );
+
+    // The race used to be applied SERVER-SIDE ONLY - no message ever carried it
+    // to the other clients, so every remote lobby kept the joiner's default
+    // (Human) row forever: the long-standing "remote players always show Human"
+    // bug (QA + LinuxOpus 013 wire trace + UbuntuOpus lane repro). Re-fan this
+    // player's roster entry: CNetPlayer already carries m_InitData and clients
+    // (old builds included) apply CmdPlayer as a routine roster update - no new
+    // message type, no wire change. Skip AIs (no socket), ourselves (we just
+    // applied it), and the sender (it knows its own race; a m_bLocal=FALSE
+    // roster echo would mislabel its own player).
+    {
+        CNetPlayer* pFan = CNetCmd::AllocPlayer( pPlr );
+        if ( pPlr == theGame.GetServer( ) )
+            pFan->m_bServer = TRUE;
+        POSITION pos = theGame.GetAll( ).GetHeadPosition( );
+        while ( pos != NULL )
+        {
+            CPlayer* pDst = theGame.GetAll( ).GetNext( pos );
+            if ( pDst == NULL || pDst->IsAI( ) || pDst == theGame.GetMe( ) ||
+                 pDst == pPlr || pDst->GetNetNum( ) == 0 )
+                continue;
+            EnMpDiagLog( "CmdReady FAN: cmd_player for plyr=%d race[0]=%.3f -> netnum=%d",
+                         pPlr->GetPlyrNum( ), pPlr->m_InitData.GetRace( 0 ), pDst->GetNetNum( ) );
+            theNet.Send( pDst->GetNetNum( ), pFan, pFan->GetLen( ) );
+        }
+        delete pFan;
+    }
+
+    // The MIRROR of the fan above (game-B join-order evidence, 2 witnesses):
+    // game-level roster data only ever flows through THIS handler, so a joiner
+    // was never told about players already present - the HOST (who never sends
+    // a ready) and earlier joiners stayed Human on its screen forever. Send the
+    // current roster TO the readying player; the fan above keeps everyone else
+    // current as later readies arrive. Unreadied joiners are sent as they stand
+    // (still default) and correct themselves through the fan on their own ready.
+    {
+        POSITION pos = theGame.GetAll( ).GetHeadPosition( );
+        while ( pos != NULL )
+        {
+            CPlayer* pOther = theGame.GetAll( ).GetNext( pos );
+            if ( pOther == NULL || pOther->IsAI( ) || pOther == pPlr )
+                continue;
+            if ( pOther != theGame.GetMe( ) && pOther->GetNetNum( ) == 0 )
+                continue;
+            CNetPlayer* pRos = CNetCmd::AllocPlayer( pOther );
+            if ( pOther == theGame.GetServer( ) )
+                pRos->m_bServer = TRUE;
+            EnMpDiagLog( "CmdReady ROSTER->ready: plyr=%d race[0]=%.3f -> netnum=%d",
+                         pOther->GetPlyrNum( ), pOther->m_InitData.GetRace( 0 ), pPlr->GetNetNum( ) );
+            theNet.Send( pPlr->GetNetNum( ), pRos, pRos->GetLen( ) );
+            delete pRos;
+        }
+    }
     if ( theApp.m_pCreateGame != NULL )
         theApp.m_pCreateGame->UpdateBtns( );
 
     if ( ( theGame.IsAllReady( ) ) && ( theGame.GetNetJoin( ) != CGame::approve ) )
     {
+        if ( g_bLobbyDrain )
+        {
+            // Reached from the host lobby's per-frame drain: starting the world
+            // HERE would tear down the dialog whose frame loop we are inside.
+            // Defer to the lobby's Start path (EndDialog first, world after).
+            g_bPendingAutoStart = TRUE;
+            return;
+        }
         try
         {
             theGame.IncTry( );
@@ -1601,6 +1678,8 @@ static void CmdPlayer( CNetPlayer* pNp )
     pPlr->SetLocal( pNp->m_bLocal );
     pPlr->m_InitData = pNp->m_InitData;
     pPlr->SetName( pNp->m_sName );
+    EnMpDiagLog( "CmdPlayer APPLY: plyr=%d netnum=%d name='%s' race[0]=%.3f",
+                 pNp->m_iPlyrNum, pNp->m_iNetNum, pNp->m_sName, pNp->m_InitData.GetRace( 0 ) );
     theGame._SetMaxPlyrNum( __max( theGame.GetMaxPlyrNum( ), pPlr->GetPlyrNum( ) + 1 ) );
 
     theGame.GetAll( ).AddTail( pPlr );
@@ -3902,7 +3981,17 @@ CNetPublish* CNetPublish::Alloc( CCreateBase* pCm )
 
     int iLen = sizeof( CNetPublish ) + 2 + (int)pCm->m_sName.length( ) + (int)pCm->m_sPw.length( ) +
                (int)pCm->m_sGameName.length( ) + (int)pCm->m_sGameDesc.length( );
-    CNetPublish* pMsg     = (CNetPublish*)new char[__max( 516, iLen )];
+    // Zero the WHOLE allocation. Only iLen bytes are ever written, but the buffer
+    // is padded to >=516 and the padding is published verbatim: vdmplay copies a
+    // fixed 256 bytes out of it (CVpSession::MakeLocalPlayer / the session-publish
+    // path), so the uninitialised tail reaches the wire. That is the source of the
+    // VPSESSIONINFO body garbage measured on the registration server - garbage
+    // playerCount/sessionFlags and a UTF-16 registry path from a freed allocation
+    // (board 2026-08-23). Zeroing here fixes it at the producer; the ctor memsets
+    // in @b1f7183 could not, because this copy happens after them.
+    const int iAlloc      = __max( 516, iLen );
+    CNetPublish* pMsg     = (CNetPublish*)new char[iAlloc];
+    memset( pMsg, 0, iAlloc );
     pMsg->m_iLen          = iLen;
     pMsg->m_iNumOpponents = pCm->m_iNumAi;
     pMsg->m_iAIlevel      = pCm->m_iAi;
@@ -3943,7 +4032,10 @@ CNetPublish* CNetPublish::Alloc( CGame* pGame )
 
     int iLen = sizeof( CNetPublish ) + 2 + (int)sName.size( ) + (int)pGame->m_sPwJoin.length( ) +
                (int)pGame->m_sGameName.length( ) + (int)pGame->m_sGameDesc.length( );
-    CNetPublish* pMsg     = (CNetPublish*)new char[__max( 516, iLen )];
+    // Zero the whole allocation - see the CCreateBase overload above.
+    const int iAlloc      = __max( 516, iLen );
+    CNetPublish* pMsg     = (CNetPublish*)new char[iAlloc];
+    memset( pMsg, 0, iAlloc );
     pMsg->m_iLen          = iLen;
     pMsg->m_iNumOpponents = pGame->GetAi( ).GetCount( );
     pMsg->m_iAIlevel      = pGame->m_iAi;
@@ -3981,7 +4073,11 @@ CNetJoin* CNetJoin::Alloc( CPlayer const* pPlyr, BOOL bSrvr )
     ASSERT_VALID( pPlyr );
 
     int       iLen   = sizeof( CNetJoin ) + 2 + strlen( pPlyr->GetName( ) );
-    CNetJoin* pMsg   = (CNetJoin*)new char[__max( 516, iLen )];
+    // Zero the whole allocation - see CNetPublish::Alloc. This is the buffer
+    // MakeLocalPlayer copies 256 bytes from into every plrInfoMsg.
+    const int iAlloc = __max( 516, iLen );
+    CNetJoin* pMsg   = (CNetJoin*)new char[iAlloc];
+    memset( pMsg, 0, iAlloc );
     pMsg->m_iLen     = iLen;
     pMsg->m_iPlyrNum = pPlyr->GetPlyrNum( );
     pMsg->m_bServer  = bSrvr;
