@@ -900,6 +900,33 @@ void CRsrchArray::Open( )
         }
     }
 
+    // In-code research topic: Slash and Burn (1 tier, not in the DAT file). A lumber MILL, once
+    // this is researched and its per-building alt-output toggle is ON, harvests at 250%
+    // (AltOutput::SLASH_BURN_MULT, applied in CFarmBuilding::BuildFarm) -- and permanently
+    // destroys the forest around it as it cuts, until there is nothing left to harvest. The def
+    // is eModifier: it produces no secondary material, it only carries the toggle.
+    // Chained off farm_1 but a DEDICATED topic, deliberately NOT gated on farm_1 itself: a mill
+    // carrying a stale alt_oil bit from the old sawmill-hosted Charcoal would otherwise start
+    // clear-cutting the instant an old save loaded. Appended LAST in the enum so save indices
+    // don't shift. The AI's frozen research path doesn't pursue it.
+    {
+        CRsrchItem* pRi = &ElementAt( slash_and_burn );
+
+        // TUNING VALUE: the same cost basis charcoal_1 uses (2 x the gas_turbine tech). Retune
+        // here -- nothing else reads it.
+        pRi->m_iPtsRequired      = ElementAt( gas_turbine ).m_iPtsRequired * 2;
+        pRi->m_iScenarioReq      = ElementAt( farm_1 ).m_iScenarioReq;
+        pRi->m_iNumBldgsRequired = 0;
+
+        pRi->m_iNumRsrchRequired  = 1;
+        pRi->m_piRsrchRequired    = new int[1];
+        pRi->m_piRsrchRequired[0] = (int)farm_1;
+
+        pRi->m_sName   = "Slash and Burn";
+        pRi->m_sDesc   = "Fire the undergrowth and take the whole stand at once instead of thinning it: a toggled sawmill cuts at 250% of its normal rate. The forest it clears does not grow back, and when the last of it is down the mill is worth nothing.";
+        pRi->m_sResult = "Slash and burn permitted. A sawmill can be switched to cut at 250% -- but it PERMANENTLY destroys the forest around it, and that cannot be undone (toggle per mill).";
+    }
+
 #ifdef _DEBUG
     theDataFile.DisableNegativeSeekChecking( );
     theDataFile.EnableNegativeSeekChecking( );

@@ -3131,10 +3131,17 @@ void CFarmBuilding::BuildFarm( )
     GetOwner( )->AddPplNeedBldg(
         (int)( GetData( )->GetPeople( ) * GetOwner( )->GetEdictFarmWorkerMult( ) + 0.5f ) );
 
+    CBuildFarm* pBf = GetData( )->GetBldFarm( );
+
     // BUGBUG - pull this from the adjoining hexes!!!
     float fMul = GetOwner( )->GetFarmProd( ) * m_iTerMult;
 
-    CBuildFarm* pBf = GetData( )->GetBldFarm( );
+    // Slash and Burn: this mill cuts at 250% while its toggle is on. Per-BUILDING, no CPlayer
+    // state and no edict multiplier chain. Food farms are untouched BY CONSTRUCTION --
+    // SlashBurnActive( ) requires a lumber mill -- so the multiplier can never leak onto food.
+    if ( SlashBurnActive( ) )
+        fMul *= AltOutput::SLASH_BURN_MULT;
+
     // get the productivity of this farm and add it to our total
     if ( pBf->GetTypeFarm( ) == CMaterialTypes::food )
         GetOwner( )->AddFoodProd(
@@ -3173,6 +3180,9 @@ void CFarmBuilding::BuildFarm( )
         AddToStore( pBf->GetTypeFarm( ), dtRate.quot );
         GetOwner( )->IncMaterialMade( pBf->GetTypeFarm( ), dtRate.quot );
         GetOwner( )->IncMaterialHave( pBf->GetTypeFarm( ), dtRate.quot );
+
+        // Phase 6: deforestation accrual goes here. Nothing today -- Slash and Burn is currently
+        // the 250% harvest bonus ALONE, with none of the cost its tooltip promises.
     }
 
     // update the %

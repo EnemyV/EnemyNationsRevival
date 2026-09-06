@@ -245,7 +245,10 @@ static int primaryRatePerMin(CBuilding* b) {
         CBuildFarm* pf = b->GetData()->GetBldFarm();
         if ( !pf || pf->GetTimeToFarm() <= 0 ) return -1;
         if ( productionHalted( b ) ) return 0;
-        float fRate = b->GetOwner()->GetFarmProd() * (float)( (CFarmBuilding*)b )->GetTerMult()
+        // Slash and Burn multiplies the harvest in CFarmBuilding::BuildFarm -- same multiplier,
+        // same predicate, or this readout under-reports a slashing mill by 2.5x.
+        float fSlash = ( (CFarmBuilding*)b )->SlashBurnActive() ? AltOutput::SLASH_BURN_MULT : 1.0f;
+        float fRate = b->GetOwner()->GetFarmProd() * (float)( (CFarmBuilding*)b )->GetTerMult() * fSlash
                       * float( 24 * 60 * pf->GetQuantity() ) / float( pf->GetTimeToFarm() );
         return (int)b->GetFrameProd( fRate );
     }
@@ -305,6 +308,8 @@ static std::string AltProductionStatus(CBuilding* b, const AltOutput::AltOutputD
     // The old UTfarm branch (Charcoal on a lumber mill, rate derived from GetCharcoalPct) is gone
     // with the def: no UTfarm host runs a conversion any more. A power-plant host does NOT come
     // through here -- it is handled by the alt-power block in RefreshDynamic.
+    // eModifier (Slash and Burn) never reaches here: Refresh excludes it from bAlt precisely so a
+    // slashing mill takes the NORMAL production-status path, whose rate already carries the 2.5x.
     std::string label = pDef->m_szLabel;   // "Bio Oil" (UI label, not the raw mat)
     int rate = -1;
     int ut   = b->GetData()->GetUnionType();
@@ -2194,7 +2199,12 @@ void SDL2BuildingWindow::Refresh() {
         // C6: a coal-liq-active power plant is now rendered HERE as a producer (coal -> oil), so it
         // gets a real Production status + bar instead of the old repurposed Power section.
         bool bAltPower = secAltPowerActive( m_pBldg );
-        bool bAlt = ( pAlt != nullptr ) && m_pBldg->IsFlag( CUnit::alt_oil ) && !bAltPower;
+        // eModifier (Slash and Burn) is excluded: it produces NOTHING, it only multiplies the
+        // host's own harvest. Sending it down the alt path would print a bare "Producing Slash
+        // and Burn" label with no rate. Excluded here, it falls through to the building's normal
+        // ShowStatusText (which already applies the 2.5x) and the normal GetProductionPer() bar.
+        bool bAlt = ( pAlt != nullptr ) && m_pBldg->IsFlag( CUnit::alt_oil ) && !bAltPower
+                    && ( pAlt->m_eMode != AltOutput::eModifier );
         // Desperate Measures (rocket edict): not an AltOutput def, so show its fixed scrounge rate here.
         bool bScroungeRocket = ( m_pBldg->GetData()->GetType() == CStructureData::rocket )
                                && m_pBldg->GetOwner() && m_pBldg->GetOwner()->IsEdictActive( EDICT_DESPERATE_MEASURES );
@@ -2273,7 +2283,10 @@ void SDL2BuildingWindow::Refresh() {
     // alt input/output is a single material each, so we swap slot 0; other slots (multi-input smelter,
     // which isn't alt-capable) are untouched. Coal-liq is excluded (shows in the Power section).
     const AltOutput::AltOutputDef* pIO = AltOutput::Available( m_pBldg );
-    bool bAltIO = ( pIO != nullptr ) && m_pBldg->IsFlag( CUnit::alt_oil ) && !secAltPowerActive( m_pBldg );
+    // eModifier excluded: a modifier changes no materials, so nothing may be swapped in the
+    // Inputs/Outputs slots (a slashing mill still takes nothing in and still puts lumber out).
+    bool bAltIO = ( pIO != nullptr ) && m_pBldg->IsFlag( CUnit::alt_oil ) && !secAltPowerActive( m_pBldg )
+                  && ( pIO->m_eMode != AltOutput::eModifier );
     int altInMat  = ( bAltIO && ( pIO->m_eMode == AltOutput::eRatioConsume ||
                                   pIO->m_eMode == AltOutput::eGlobalConsume ) ) ? pIO->m_iInputMat : -1;
     int altOutMat = bAltIO ? pIO->m_iOutputMat : -1;

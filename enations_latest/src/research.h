@@ -213,21 +213,21 @@ public:
 					biofuel_4,
 					biofuel_5,
 					biofuel_6,
-					// Coal Liquefaction (in-code) -- 1 tier. A coal POWER PLANT, when its
-					// alt-output toggle is ON, also converts 2 coal -> 1 oil (the AltOutput
-					// system, eRatioConsume mode). Gated on this single tech; cost ~ a few x
-					// the gas_turbine tech, chained off gas_turbine. Appended LAST so all
-					// earlier indices (incl. bridge_2 / RDPATH_SAVE_COUNT==53) stay put.
+					// Coal Liquefaction (in-code) -- 1 tier. An OIL POWER PLANT, when its
+					// alt-output toggle is ON, STOPS generating power and cracks DELIVERED coal
+					// into oil at 3:1 (the AltOutput system, eRatioConsume + eTimeDriven; the
+					// per-tier ratio is CPlayer::GetCoalLiqRatio). Gated on this single tech;
+					// cost ~ a few x the gas_turbine tech, chained off manf_3. Appended LAST so
+					// all earlier indices (incl. bridge_2 / RDPATH_SAVE_COUNT==53) stay put.
 					coal_liquefaction,
-					// Charcoal (in-code) -- 4 tiers. A lumber MILL (UTfarm whose GetTypeFarm()
-					// == lumber, i.e. the sawmill), once charcoal_1 is researched and its
-					// alt-output toggle is ON, runs a kiln: harvested lumber is converted into
-					// coal ("Charcoal" label only) at a fixed 2 lumber -> 1 coal (AltOutput
-					// eRatioConsume), MODE-SWITCH (lumber output stops while the kiln runs). The
-					// THROUGHPUT is tier-scaled: T1 enables it at a VERY LOW rate; T2-4 raise it
-					// (CPlayer::GetCharcoalPct). T1 chained off gas_turbine; T2-4 chain the prior
-					// tier. No energy cost. Appended LAST so all earlier indices (incl. bridge_2 /
-					// RDPATH_SAVE_COUNT==53) stay put.
+					// Charcoal (in-code) -- 4 tiers here + charcoal_5 at the enum end. A COAL
+					// POWER PLANT, once charcoal_1 is researched and its alt-output toggle is ON,
+					// STOPS generating power and runs as a KILN: DELIVERED lumber is charred into
+					// coal (AltOutput eRatioConsume + eTimeDriven). The tier ladder scales the
+					// RECIPE, not throughput -- CPlayer::GetCharcoalRatio, 4/3/3/2/2 lumber per
+					// coal (only T2 and T4 actually move it). Draws +2 workers. T1 chained off
+					// gas_turbine; T2-4 chain the prior tier. Appended LAST so all earlier
+					// indices (incl. bridge_2 / RDPATH_SAVE_COUNT==53) stay put.
 					charcoal_1,
 					charcoal_2,
 					charcoal_3,
@@ -275,14 +275,24 @@ public:
 					// (15 oil/min; CPlayer::GetFrackOilPerMin). Chains off fracking_5 + a Fuel
 					// Efficiency level. Appended LAST (save-parity, as above).
 					fracking_6,
-					// Coal Liquefaction tier 2 (in-code): improves the coal power plant's
+					// Coal Liquefaction tier 2 (in-code): improves the OIL power plant's
 					// coal->oil conversion from 3:1 to 2:1 (CPlayer::GetCoalLiqRatio, wired into
 					// AltOutput via the def's m_pfnRatioIn). Chains off coal_liquefaction.
 					// Appended LAST (save-parity, as above).
 					coal_liquefaction_2,
-					// Charcoal tier 5 (in-code): one more sawmill kiln throughput level
-					// (CPlayer::GetCharcoalPct). Chains off charcoal_4. Appended LAST (save-parity).
+					// Charcoal tier 5 (in-code): the last rung of the coal-plant kiln ladder.
+					// It does NOT improve the recipe -- CPlayer::GetCharcoalRatio holds at 2
+					// lumber per coal from tier 4. Chains off charcoal_4. Appended LAST (save-parity).
 					charcoal_5,
+					// Slash and Burn (in-code) -- 1 tier. A lumber MILL, once this is researched
+					// and its alt-output toggle is ON, harvests at 250% (AltOutput::SLASH_BURN_MULT,
+					// applied in CFarmBuilding::BuildFarm) -- and permanently destroys the forest
+					// around it as it cuts. eModifier: the def produces no secondary material, it
+					// only carries the per-building toggle. Chained off farm_1 but a DEDICATED
+					// topic: gating on farm_1 itself would make every old save with a stale
+					// alt_oil bit on a mill start clear-cutting the moment it loads. Appended LAST
+					// (save-parity: bridge_2 / RDPATH_SAVE_COUNT==53 stays put).
+					slash_and_burn,
 					num_types	};
 
 	CRsrchArray () {}

@@ -649,8 +649,13 @@ class CPlayer : public CObject
     }
 
     // Charcoal kiln researched? Gates whether the per-building Charcoal alt-output toggle
-    // shows on a lumber mill (the sawmill) and whether its kiln runs. See Charcoal (#44).
+    // shows on a COAL POWER PLANT and whether its kiln runs. See Charcoal (#44).
     BOOL CanCharcoal( ) { return ( m_aRsrch.GetSize( ) > CRsrchArray::charcoal_1 && GetRsrch( CRsrchArray::charcoal_1 ).m_bDiscovered ); }
+
+    // Slash and Burn researched? Gates whether the per-building Slash and Burn alt-output toggle
+    // shows on a lumber mill (the sawmill) and whether its 250% harvest applies. Mirrors
+    // CanCharcoal exactly, size guard included (old/short save research arrays).
+    BOOL CanSlashBurn( ) { return ( m_aRsrch.GetSize( ) > CRsrchArray::slash_and_burn && GetRsrch( CRsrchArray::slash_and_burn ).m_bDiscovered ); }
 
     // Moho Mining: gates the per-building toggle on an EXHAUSTED iron mine (Fracking-style
     // iron trickle). Tech-gated on the existing mine_2 topic. Flat ~10 iron/min (no tiers).

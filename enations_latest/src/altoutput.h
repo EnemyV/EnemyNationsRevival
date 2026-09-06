@@ -71,6 +71,12 @@ namespace AltOutput
     // eFuelDriven is FIRST so a def that omits the trailing initializer stays fuel-driven.
     enum EDrive { eFuelDriven, eTimeDriven };
 
+    // Slash and Burn (eModifier): the lumber mill's harvest multiplier while the toggle is ON.
+    // THE single tuning dial for the harvest half -- read by CFarmBuilding::BuildFarm and by the
+    // two UI rate readouts, all gated on CFarmBuilding::SlashBurnActive( ). The deforestation
+    // half gets its own constant beside this one when it lands.
+    const float SLASH_BURN_MULT = 2.5f;
+
     // eMultiTrickle: one flat per-minute output line (a material id + units/min).
     struct AltMat { int m_iMat; int m_iPerMin; };
     const int kMaxMulti = 4;

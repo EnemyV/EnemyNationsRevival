@@ -1269,6 +1269,12 @@ public:
 		static int		LandMult (CHexCoord _hex, int iTyp, int iDir);
 		virtual int		GetProductionPer () const;
 		void					BuildFarm ();
+
+		// Slash and Burn: is THIS mill cutting at 250% right now? Lumber mill + alt_oil set +
+		// an Available() eModifier def. The ONE source of truth -- BuildFarm and both UI rate
+		// readouts call it rather than re-deriving the test. FALSE for every food farm by
+		// construction (the lumber check comes first).
+		BOOL					SlashBurnActive () const;
 		void					UpdateFarm ();
 
 		// Soil fertility of the hexes this farm covers (0..10). The status bar and

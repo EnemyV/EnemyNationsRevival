@@ -55,11 +55,8 @@ namespace
         return ( pBp && ( pBp->GetInput( ) == CMaterialTypes::oil ) );
     }
 
-    // A lumber mill (the sawmill): a farm building whose harvest output is lumber.
-    // NOTE: no def names this predicate right now -- Charcoal moved off the mill to the coal
-    // power plant. Kept deliberately: the mill is the intended host for the next def, and
-    // deleting then re-adding a shipped predicate is churn. MSVC is silent about it at this
-    // warning level; gcc/clang will report it as an unused static function until a def uses it.
+    // A lumber mill (the sawmill): a farm building whose harvest output is lumber. Slash and
+    // Burn's host (Charcoal moved off the mill to the coal power plant).
     bool IsLumberMill( CBuilding* b )
     {
         if ( b->GetData( )->GetUnionType( ) != CStructureData::UTfarm )
@@ -102,6 +99,7 @@ namespace
     bool TechCharcoal( CPlayer* p ) { return ( p->CanCharcoal( ) != FALSE ); }
     bool TechFrack( CPlayer* p ) { return ( p->CanFrack( ) != FALSE ); }
     bool TechMoho( CPlayer* p ) { return ( p->CanMoho( ) != FALSE ); }
+    bool TechSlashBurn( CPlayer* p ) { return ( p->CanSlashBurn( ) != FALSE ); }
     bool TechAlways( CPlayer* ) { return ( true ); }   // Desperate Measures / Scrounging: default-enabled
 
     int FlatMohoIron( CPlayer* p ) { return ( p->GetMohoIronPerMin( ) ); }
@@ -273,6 +271,39 @@ namespace
             1,                           // m_iPowerMultAdd (double the warehouse's power while ON)
             { { CMaterialTypes::lumber, 5 }, { CMaterialTypes::iron, 2 }, { CMaterialTypes::food, 2 }, { CMaterialTypes::coal, 2 } },
             4
+        },
+
+        // 7) Slash and Burn -- the LUMBER MILL cuts at 250% while the toggle is ON, and
+        //    permanently destroys the forest around it as it does. eModifier: this def produces
+        //    NO secondary material at all -- it exists only to carry the per-building toggle,
+        //    and Convert( ) early-returns for it. The 250% itself lives in
+        //    CFarmBuilding::BuildFarm (AltOutput::SLASH_BURN_MULT), gated by
+        //    CFarmBuilding::SlashBurnActive( ); the two UI rate readouts apply the same
+        //    multiplier through the same predicate so the displayed rate matches the sim.
+        //    NOT YET IMPLEMENTED: the deforestation half. Until it lands, the toggle is a pure
+        //    250% harvest bonus and the tooltip below promises a cost the sim does not charge.
+        {
+            "Slash and Burn",
+            "Cuts at 250% of the normal rate -- but PERMANENTLY destroys the forest around this mill, until there is nothing left to cut. Cannot be undone.",
+            &IsLumberMill,
+            &TechSlashBurn,
+            CMaterialTypes::lumber,      // unused: eModifier consumes nothing
+            CMaterialTypes::lumber,      // unused: eModifier produces nothing
+            AltOutput::eModifier,
+            nullptr,                     // m_pfnPct
+            nullptr,                     // m_pfnFlat
+            0,                           // m_iRatioIn (nothing is consumed)
+            1.0f,
+            0,                           // m_iWorkforceAdd: NONE. Operator 2026-09-06, "no upkeep
+                                         // change from regular operation for slash and burn" --
+                                         // the deforestation IS the cost. Do NOT add a labour or
+                                         // power penalty later without asking.
+            0,                           // m_iPowerMultAdd (no extra power, same decision)
+            {},                          // m_aMulti (unused)
+            0,                           // m_nMulti
+            nullptr,                     // m_pfnRatioIn (no per-tier ratio)
+            AltOutput::eFuelDriven       // m_eDrive: meaningless for eModifier (nothing converts);
+                                         // spelled out rather than omitted so the tail is explicit
         },
     };
 

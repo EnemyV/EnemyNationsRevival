@@ -262,13 +262,17 @@ void CFarmBuilding::ShowStatusText( std::string& str )
 
     CBuildFarm* pBf = GetData( )->GetBldFarm( );
 
-    // (No alt-output branch here any more: Charcoal moved off the lumber mill to the coal power
-    // plant, so a mill's status is always its plain harvest rate.)
+    // (No conversion branch here any more: Charcoal moved off the lumber mill to the coal power
+    // plant. Slash and Burn is an eModifier def -- it produces nothing, it just multiplies the
+    // harvest, so the plain harvest line below is still the right thing to show.)
 
     // Operator: actual rate, not theoretical — 0 while the sim has the farm halted.
+    // Slash and Burn multiplies the harvest in CFarmBuilding::BuildFarm, so apply the SAME
+    // multiplier through the SAME predicate here or the readout under-reports by 2.5x.
+    float fSlash = SlashBurnActive( ) ? AltOutput::SLASH_BURN_MULT : 1.0f;
     int iFarmRate = ( m_unitFlags & ( stopped | abandoned | event | dying ) )
                         ? 0
-                        : (int)GetFrameProd( GetOwner( )->GetFarmProd( ) * m_iTerMult *
+                        : (int)GetFrameProd( GetOwner( )->GetFarmProd( ) * m_iTerMult * fSlash *
                                              float( 24 * 60 * pBf->GetQuantity( ) ) /
                                              float( pBf->GetTimeToFarm( ) ) );
     std::string sNum = IntToStr( iFarmRate, 10, true );
@@ -3984,6 +3988,23 @@ void CFarmBuilding::UpdateFarm( )
 {
 
     m_iTerMult = LandMult( m_hex, GetData( )->GetType( ), GetDir( ) );
+}
+
+BOOL CFarmBuilding::SlashBurnActive( ) const
+{
+    // Lumber mills only -- a food farm can never match, so the old "does this multiplier leak
+    // onto farms?" hazard cannot arise.
+    if ( GetData( )->GetBldFarm( )->GetTypeFarm( ) != CMaterialTypes::lumber )
+        return ( FALSE );
+
+    // AltOutput::Available( ) and IsFlag( ) take a non-const CBuilding* -- the same const_cast
+    // precedent as CMaterialBuilding::GetNextMinuteMat and CPowerBuilding::TimeDrivenDef.
+    CFarmBuilding* pThis = const_cast<CFarmBuilding*>( this );
+    if ( !pThis->IsFlag( CUnit::alt_oil ) )
+        return ( FALSE );
+
+    const AltOutput::AltOutputDef* pDef = AltOutput::Available( pThis );
+    return ( pDef && ( pDef->m_eMode == AltOutput::eModifier ) ) ? TRUE : FALSE;
 }
 
 // Record one hex of the ring as a crop plot, if it is farmable and unoccupied.
