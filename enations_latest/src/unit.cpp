@@ -1124,6 +1124,21 @@ void CUnit::IncrementSpotting( CHexCoord const& hex )
                             }
                         }
 
+                        // Slash and Burn fog reveal (E22). A hex clear-cut while we could not see
+                        // it kept its remembered FOREST ground (SlashHex restores the visible
+                        // type when the hex is unlit), so without this it would read as forest
+                        // forever after we sight it. Runs AFTER the road and bridge clauses above
+                        // on purpose: a fogged road-over-forest belongs to ChangeToRoad, and the
+                        // bridge clause has already re-synced its own hex.
+                        // Deliberately NARROW, not a blanket "visible != type -> sync": visible
+                        // forest over non-forest soil can only come from a slash, whereas crop
+                        // fields intentionally carry visible `fields` over a different soil type
+                        // and a blanket sync would wipe them. SetVisibleType calls g_enEditHex
+                        // itself, so no explicit re-mesh is needed here.
+                        if ( ( pHex->GetVisibleType( ) == CHex::forest )
+                             && ( pHex->GetType( ) != CHex::forest ) )
+                            pHex->SetVisibleType( pHex->GetType( ) );
+
                         if ( pHex->GetUnits( ) & CHex::bldg )
                         {
                             CBuilding* pBldg = theBuildingHex._GetBuilding( _hex );

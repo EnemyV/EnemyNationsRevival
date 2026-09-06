@@ -1275,6 +1275,14 @@ public:
 		// readouts call it rather than re-deriving the test. FALSE for every food farm by
 		// construction (the lumber check comes first).
 		BOOL					SlashBurnActive () const;
+
+		// Slash and Burn deforestation. SlashTick() accrues destroyed hexes on TIME and is called
+		// from BuildFarm on every tick the mill actually produces. ApplySlash() is the ONE place a
+		// hex is cleared: it retypes the hex and refreshes m_iTerMult on every lumber mill whose
+		// box covers it. Both the local path and the netapi hex_retype RX path call ApplySlash, so
+		// no client can keep a stale multiplier. Static because the RX side has no mill to hand.
+		void					SlashTick ();
+		static BOOL		ApplySlash (CHexCoord hex);
 		void					UpdateFarm ();
 
 		// Soil fertility of the hexes this farm covers (0..10). The status bar and
@@ -1299,6 +1307,13 @@ protected:
 		void					ctor ();
 
 		LONG					m_iTerMult;											// multiplier for terrain
+
+		// Slash and Burn: fractional hexes-to-destroy carried between ticks. TRANSIENT -- it is
+		// deliberately NOT serialized. CFarmBuilding::Serialize writes exactly ONE field
+		// (m_iTerMult), so appending anything here would change the on-disk layout of every farm
+		// and lumber mill in every existing save. Losing it on load costs at most one hex of
+		// progress, the same trade CBuilding::m_fAltAccum already makes.
+		float					m_fSlashAccum;
 
 		CList <CLandUse *, CLandUse *>	m_landUse;		// surrounding tiles we are using
 		LONG					m_iTimeToNext;									// time to next change

@@ -993,6 +993,14 @@ CNetEdictToggle::CNetEdictToggle( CPlayer const* pPlyr, int iEdict, bool bOn ): 
     m_bOn      = bOn ? 1 : 0;
 }
 
+CNetHexRetype::CNetHexRetype( CHexCoord hex, int iType ): CNetCmd( hex_retype )
+{
+    m_iX    = hex.X( );
+    m_iY    = hex.Y( );
+    m_iType = iType;
+    ASSERT_CMD( this );
+}
+
 CNetNeedSaveInfo::CNetNeedSaveInfo( CPlayer const* pPlyr ): CNetCmd( need_save_info )
 {
 
@@ -1262,6 +1270,18 @@ void CMsgVehDest::AssertValid( ) const
     ASSERT_HEX_COORD( &m_hexDest );
 }
 
+void CNetHexRetype::AssertValid( ) const
+{
+
+    ASSERT( m_bMsg == hex_retype );
+    // Only ever a clear-cut today; the RX side whitelists the same value.
+    ASSERT( m_iType == CHex::plain );
+    // netcmd.cpp already includes terrain.inl, so the live map dimensions are reachable here.
+    // m_eX / m_eY are EXCLUSIVE (CGameMap::_GetHex asserts x < m_eX), so use <, not <=.
+    ASSERT( ( 0 <= m_iX ) && ( m_iX < theMap.GetSize( ).cx ) );
+    ASSERT( ( 0 <= m_iY ) && ( m_iY < theMap.GetSize( ).cy ) );
+}
+
 void CMsgRoadNew::AssertValid( ) const
 {
 
@@ -1502,6 +1522,10 @@ void CNetCmd::AssertMsgValid( ) const
     case research_disc:
         break;
 
+    case hex_retype:
+        ( (CNetHexRetype*)this )->AssertValid( );
+        break;
+
     default:
         
        // ASSERT( FALSE );
@@ -1565,6 +1589,10 @@ BOOL CNetCmd::FitsBuffer( int cbAvail ) const
     case err_build_road:       cbNeed = sizeof( CMsgBuildRoad ); break;
     case road_new:             cbNeed = sizeof( CMsgRoadNew ); break;
     case road_done:            cbNeed = sizeof( CMsgRoadDone ); break;
+    // MUST be listed: an unlisted type falls through to `default: cbNeed = sizeof( CNetCmd )`,
+    // so a truncated 12-byte datagram would pass validation and the RX cast would read
+    // m_iX/m_iY/m_iType off the end of the buffer.
+    case hex_retype:           cbNeed = sizeof( CNetHexRetype ); break;
     case unit_damage:          cbNeed = sizeof( CMsgUnitDamage ); break;
     case unit_set_damage:      cbNeed = sizeof( CMsgUnitSetDamage ); break;
     case destroy_unit:

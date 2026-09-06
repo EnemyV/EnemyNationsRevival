@@ -3962,6 +3962,28 @@ void CGame::ProcessMessage(CNetCmd* pCmd )
         break;
     }
 
+    // Slash and Burn: one hex was clear-cut on the owner's client. Terrain is SHARED world
+    // state and CFarmBuilding::BuildFarm runs only on the owner's client, so without this the
+    // map forks. Applied UNCONDITIONALLY -- no IsLocal() skip, unlike edict_toggle, which
+    // carries per-player state. ApplySlash is idempotent (it returns early unless the hex is
+    // still forest), so if Broadcast( ..., bLocal = TRUE ) loops the message back to the sender
+    // the second application is a no-op. ApplySlash, not the bare hex retype, because the
+    // receiving clients must also refresh m_iTerMult on every overlapping lumber mill.
+    case CNetCmd::hex_retype: {
+        CNetHexRetype* pMsg = (CNetHexRetype*)pCmd;
+        // Range- and whitelist-check BEFORE any _GetHex: the buffer is pooled and a malformed
+        // or hostile datagram would otherwise index the hex array out of bounds. Same shape as
+        // the research_disc out-of-range drop above. m_eX/m_eY are EXCLUSIVE dimensions
+        // (CGameMap::_GetHex asserts x < m_eX), so the bound is <, not <=.
+        if ( pMsg->m_iType != CHex::plain )
+            break;
+        if ( ( pMsg->m_iX < 0 ) || ( pMsg->m_iX >= theMap.GetSize( ).cx )
+             || ( pMsg->m_iY < 0 ) || ( pMsg->m_iY >= theMap.GetSize( ).cy ) )
+            break;
+        CFarmBuilding::ApplySlash( CHexCoord( pMsg->m_iX, pMsg->m_iY ) );
+        break;
+    }
+
 #ifdef _DEBUG
 
     // we couldn't handle the message!!

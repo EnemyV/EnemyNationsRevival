@@ -3153,6 +3153,16 @@ void CFarmBuilding::BuildFarm( )
     if ( iInc <= 0 )
         return;
 
+    // Slash and Burn: destroy forest on TIME, on every tick this mill actually PRODUCES -- not
+    // only on harvest ticks. Deliberately placed after the iInc <= 0 return, which is what makes
+    // the deforestation self-terminating and honest:
+    //   - a stopped / abandoned / event-wedged mill never reaches BuildFarm at all (Operate),
+    //   - an unpowered or crippled mill makes no progress, so iInc is 0 and it returns above,
+    //   - a mill that has cut its box down to fertility 0 has fMul == 0 -> iInc == 0 -> returns,
+    //     so it stops slashing exactly when it stops yielding.
+    if ( SlashBurnActive( ) )
+        SlashTick( );
+
     m_iBuildDone += iInc;
 
     if ( m_iBuildDone < FARM_HARVEST_SLOW * pBf->GetTimeToFarm( ) )
@@ -3180,9 +3190,6 @@ void CFarmBuilding::BuildFarm( )
         AddToStore( pBf->GetTypeFarm( ), dtRate.quot );
         GetOwner( )->IncMaterialMade( pBf->GetTypeFarm( ), dtRate.quot );
         GetOwner( )->IncMaterialHave( pBf->GetTypeFarm( ), dtRate.quot );
-
-        // Phase 6: deforestation accrual goes here. Nothing today -- Slash and Burn is currently
-        // the 250% harvest bonus ALONE, with none of the cost its tooltip promises.
     }
 
     // update the %

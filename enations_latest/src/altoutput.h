@@ -77,6 +77,15 @@ namespace AltOutput
     // half gets its own constant beside this one when it lands.
     const float SLASH_BURN_MULT = 2.5f;
 
+    // Slash and Burn: forest hexes destroyed per GAME minute while the toggle is on. THE single
+    // dial for the deforestation half. Derivation: a fertility-10 mill has all 72 hexes of its
+    // LandMult box forested and stops yielding once fewer than 8 remain (10*N/72 < 1), so it must
+    // lose 65 hexes in ~2.5 game minutes (~5 real minutes at default speed) => 65 / 2.5 = 26.
+    // Accrued on TIME, not on harvest: a harvest-proportional rate is exponential decay (the
+    // yield is itself proportional to the fertility being destroyed), which would strip most of
+    // the box in the first game minute and then crawl.
+    const float SLASH_HEXES_PER_MINUTE = 26.0f;
+
     // eMultiTrickle: one flat per-minute output line (a material id + units/min).
     struct AltMat { int m_iMat; int m_iPerMin; };
     const int kMaxMulti = 4;
