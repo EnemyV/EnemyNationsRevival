@@ -1073,6 +1073,16 @@ void SDL2UnitInfoPanel::Show(CUnit* pUnit, int screenX, int screenY) {
     }
     SDL_SetWindowPosition(m_window, screenX, screenY);
     SDL_ShowWindow(m_window);
+#ifdef __APPLE__
+    // The detached Area/World map panels are ALSO SDL_WINDOW_ALWAYS_ON_TOP on mac
+    // (SDL2Panel.cpp), so this tooltip shares their window-server band and the map
+    // covered it entirely: the panel opens under the cursor, and the cursor is inside
+    // the area map whenever a unit is being clicked. Measured on the shipped 3.00.014
+    // build: correctly positioned, reported "shown", and not visible anywhere on
+    // screen. Lift it one level so it is above the panels without taking focus.
+    extern void EnMacLiftWindowAbovePanels(SDL_Window*);
+    EnMacLiftWindowAbovePanels(m_window);
+#endif
     Render();
 }
 

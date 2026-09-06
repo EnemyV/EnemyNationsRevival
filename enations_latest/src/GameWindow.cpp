@@ -364,6 +364,30 @@ static void DisableMacWindowShadow(SDL_Window* win) {
     sendB(nswin, sel_registerName("setHasShadow:"), false);
 }
 
+// Lift ONE of our borderless child windows one step ABOVE the band the detached
+// panels occupy. SDL_WINDOW_ALWAYS_ON_TOP maps to NSFloatingWindowLevel (3) on
+// Cocoa, and the detached Area/World map panels set that same flag
+// (SDL2Panel.cpp), so the tooltip and the area map share one band and the map,
+// being ordered front, covers the tooltip completely. SDL2Dialog works around the
+// same collision with a throttled SDL_RaiseWindow (SDL2UI.cpp:1934), but that path
+// calls makeKeyAndOrderFront and would take keyboard focus from the game; a
+// transient read-only tooltip must not. Setting the level instead is non-activating
+// and needs no per-frame work. +1 keeps it below status/menu levels and does not
+// change the window's relationship to OTHER applications, which ALWAYS_ON_TOP
+// already established.
+void EnMacLiftWindowAbovePanels(SDL_Window* win) {
+    if (!win) return;
+    SDL_SysWMinfo wm; SDL_VERSION(&wm.version);
+    if (!SDL_GetWindowWMInfo(win, &wm)) return;
+    void* nswin = wm.info.cocoa.window;
+    if (!nswin) return;
+    // Exact-prototype cast, same discipline as DisableMacWindowShadow above:
+    // objc_msgSend must NOT be called through a variadic signature on arm64.
+    enum { kNSFloatingWindowLevel = 3 };
+    auto sendL = (void (*)(void*, void*, long))objc_msgSend;
+    sendL(nswin, sel_registerName("setLevel:"), (long)(kNSFloatingWindowLevel + 1));
+}
+
 static void SetMacDockIcon() {
     // Resolve like PlayVideo: CWD first, then the exe's directory.
     std::string path = "assets/appicon.png";
