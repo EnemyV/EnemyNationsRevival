@@ -3147,21 +3147,33 @@ void CFarmBuilding::BuildFarm( )
         GetOwner( )->AddFoodProd(
             GetFrameProdNoPeople( fMul * float( 24 * 60 * pBf->GetQuantity( ) ) / float( pBf->GetTimeToFarm( ) ) ) );
 
+    // Slash and Burn: destroy forest on TIME, on every tick this mill actually produces -- not
+    // only on harvest ticks. The gate is the per-FRAME production rate, which is the exact
+    // expression of "does this mill produce at all": GetFrameProdNoPeople is
+    // m_fDamPerfMult * fMul * powerFactor with NO accumulator and NO truncation, so it is > 0
+    // exactly when all three factors are. The three real self-terminating gates are therefore
+    // preserved exactly:
+    //   - a stopped / abandoned / event-wedged mill never reaches BuildFarm at all (Operate),
+    //   - a mill wrecked to zero damage-performance has m_fDamPerfMult == 0,
+    //   - a mill that has cut its own box down to fertility 0 has fMul == 0,
+    //     so it stops slashing exactly when it stops yielding.
+    // Do NOT gate on GetProdNoPeople( fMul ) instead. That returns the TRUNCATED per-tick
+    // increment, which is 0 on many ticks for a weak mill (it carries the remainder in
+    // m_fOperMod), so those ticks would contribute no accrual and SLASH_HEXES_PER_MINUTE would
+    // silently run at roughly half rate at fertility 1 -- the dial would not mean what it says.
+    // (Note this does NOT exclude an unpowered mill: the lumber mill has a non-zero
+    // CStructureData::GetNoPower, so it keeps producing at a reduced rate without power and
+    // keeps slashing. That is existing behaviour, not a choice made here.)
+    if ( SlashBurnActive( ) && ( GetFrameProdNoPeople( fMul ) > 0.0f ) )
+        SlashTick( );
+
     // get change based on everything
     // farms are special - no people degradation
+    // (Must still run exactly once per tick, and after the slash gate above: it advances
+    // m_fOperMod.)
     int iInc = GetProdNoPeople( fMul );
     if ( iInc <= 0 )
         return;
-
-    // Slash and Burn: destroy forest on TIME, on every tick this mill actually PRODUCES -- not
-    // only on harvest ticks. Deliberately placed after the iInc <= 0 return, which is what makes
-    // the deforestation self-terminating and honest:
-    //   - a stopped / abandoned / event-wedged mill never reaches BuildFarm at all (Operate),
-    //   - an unpowered or crippled mill makes no progress, so iInc is 0 and it returns above,
-    //   - a mill that has cut its box down to fertility 0 has fMul == 0 -> iInc == 0 -> returns,
-    //     so it stops slashing exactly when it stops yielding.
-    if ( SlashBurnActive( ) )
-        SlashTick( );
 
     m_iBuildDone += iInc;
 
