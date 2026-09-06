@@ -620,11 +620,12 @@ void CPlayer::StartLoop( )
     if ( m_fEdictEnergyUpkeepPct    > 0.0f ) m_iPwrNeed     += (int)( m_iPwrNeed     * m_fEdictEnergyUpkeepPct );
     if ( m_fEdictWorkforceUpkeepPct > 0.0f ) m_iPplNeedBldg += (int)( m_iPplNeedBldg * m_fEdictWorkforceUpkeepPct );
 
-    if ( m_iPplBldg < m_iPplNeedBldg )
+    // #82/#87: never divide by a zero (or negative) need; a negative have against zero need produced -inf, then NaN in GetFrameProd, then an INT_MIN fire rate whose product with AVG_SPEED_MUL overflowed to 0 at the Shoot divide.
+    if ( m_iPplNeedBldg > 0 && m_iPplBldg < m_iPplNeedBldg )
         m_fPplMult = float( m_iPplBldg ) / float( m_iPplNeedBldg );
     else
         m_fPplMult = 1.0;
-    if ( m_iPwrHave < m_iPwrNeed )
+    if ( m_iPwrNeed > 0 && m_iPwrHave < m_iPwrNeed )
         m_fPwrMult = float( m_iPwrHave ) / float( m_iPwrNeed );
     else
         m_fPwrMult = 1.0;
