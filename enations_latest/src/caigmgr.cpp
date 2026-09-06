@@ -9837,10 +9837,12 @@ DWORD CAIGoalMgr::GetOpForUnitScan( int const* aiHow, int const* aiKindOf, int n
                 DWORD dwBldgID   = 0;
                 int   iBldgOwner = 0;
 
-                // first non-own, non-cargo vehicle in the hex (vanilla subhex order)
+                // Spatial maps retain dying occupants until removal. They must
+                // not become targets: the ID lookup in SeekOpfor rejects them.
                 if ( !( bUnits & CHex::bldg ) && ( bUnits & ( CHex::ul | CHex::ur | CHex::ll | CHex::lr ) ) )
                 {
                     BOOL bIsCargo = FALSE;
+                    BOOL bIsDying = FALSE;
                     CVehicle* pVehicle = NULL;
                     for ( int iy = 0; iy < 2 && pVehicle == NULL; ++iy )
                     {
@@ -9855,6 +9857,7 @@ DWORD CAIGoalMgr::GetOpForUnitScan( int const* aiHow, int const* aiKindOf, int n
                                 iVehOwner = pVehicle->GetOwner( )->GetPlyrNum( );
                                 dwVehID   = pVehicle->GetID( );
                                 bIsCargo  = ( pVehicle->GetTransport( ) != NULL );
+                                bIsDying  = pVehicle->IsFlag( CUnit::dying );
                             }
                             LeaveCriticalSection( &cs );
 
@@ -9867,7 +9870,7 @@ DWORD CAIGoalMgr::GetOpForUnitScan( int const* aiHow, int const* aiKindOf, int n
                             break;
                         }
                     }
-                    if ( dwVehID && ( iVehOwner == m_iPlayer || bIsCargo ) )
+                    if ( dwVehID && ( iVehOwner == m_iPlayer || bIsCargo || bIsDying ) )
                         dwVehID = 0;
                 }
 
@@ -9875,6 +9878,7 @@ DWORD CAIGoalMgr::GetOpForUnitScan( int const* aiHow, int const* aiKindOf, int n
                 {
                     int  iType       = -1;
                     BOOL bIsAbandoned = FALSE;
+                    BOOL bIsDying     = FALSE;
                     EnterCriticalSection( &cs );
                     CBuilding* pBuilding = theBuildingHex.GetBuilding( hcAt );
                     if ( pBuilding != NULL )
@@ -9883,10 +9887,11 @@ DWORD CAIGoalMgr::GetOpForUnitScan( int const* aiHow, int const* aiKindOf, int n
                         iType        = pBuilding->GetData( )->GetType( );
                         dwBldgID     = pBuilding->GetID( );
                         bIsAbandoned = pBuilding->IsFlag( CUnit::abandoned );
+                        bIsDying     = pBuilding->IsFlag( CUnit::dying );
                     }
                     LeaveCriticalSection( &cs );
 
-                    if ( dwBldgID && ( iBldgOwner == m_iPlayer || bIsAbandoned || iType == CStructureData::city ) )
+                    if ( dwBldgID && ( iBldgOwner == m_iPlayer || bIsAbandoned || bIsDying || iType == CStructureData::city ) )
                         dwBldgID = 0;
                 }
 
