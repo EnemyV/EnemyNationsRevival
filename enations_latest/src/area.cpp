@@ -8309,7 +8309,9 @@ bool HarnessShowInfoWindow( unsigned long id )
 // HarnessSetAltOil — set/clear a building's alt_oil (AltOutput) flag directly by unit id,
 // bypassing the info-window checkbox. QA-only: lets a driver verify AltOutput effects
 // (BioFuel/Coal-Liq/Charcoal/Fracking + the #2 kiln workforce cost) via pstats without
-// fighting checkbox click-coords. Mirrors the BuildAltOutput onChange (SetFlag/ClrFlag).
+// fighting checkbox click-coords. Routes through AltOutput::SetToggle -- the exact shared
+// mode-change op the BuildAltOutput checkbox takes (flag + router notify), so the harness and a
+// real click cannot diverge.
 // Render/game thread only. Backs `setalt`.
 //---------------------------------------------------------------------------
 bool HarnessSetAltOil( unsigned long id, bool on )
@@ -8317,8 +8319,7 @@ bool HarnessSetAltOil( unsigned long id, bool on )
     if ( theAreaList.GetTop( ) == NULL ) return false;   // not in-game
     CBuilding* pBldg = theBuildingMap.GetBldg( (DWORD) id );
     if ( pBldg == NULL ) return false;
-    if ( on ) pBldg->SetFlag( CUnit::alt_oil );
-    else      pBldg->ClrFlag( CUnit::alt_oil );
+    AltOutput::SetToggle( pBldg, on );
     return true;
 }
 

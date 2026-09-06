@@ -1004,10 +1004,11 @@ int SDL2BuildingWindow::BuildAltOutput(int x, int y, int w) {
     m_chkAltOut = AddWidget<SDL2Checkbox>(
         cbX, yh, cbW, ROW_H, pDef->m_szLabel, checked,
         [this, pBldg, bRelayout]( bool on ) {
-            // Flip the runtime-only alt_oil flag; the production hooks (BioFuel/Coal-Liq/
-            // Charcoal/Fracking, all in mainloop.cpp) read it via IsFlag(alt_oil).
-            if ( on ) pBldg->SetFlag( CUnit::alt_oil );
-            else      pBldg->ClrFlag( CUnit::alt_oil );
+            // Shared mode-change op: flips alt_oil (the production hooks read it via
+            // IsFlag(alt_oil)) AND, for an input-CONSUMING def, tells the router the building's
+            // role changed -- otherwise a stocked plant switched into a mode whose input store
+            // is 0 never asks for its first load. Same call as the QA harness path.
+            AltOutput::SetToggle( pBldg, on );
             if ( bRelayout ) m_bNeedRelayout = true;
         } );
 

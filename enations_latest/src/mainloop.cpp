@@ -2810,13 +2810,18 @@ void CPowerBuilding::BuildPower( )
 
     float fPower = GetFrameProd( 1 );
 
-    // Coal Liquefaction mode (bug #43): when this coal plant's alt-output toggle is ON and
-    // the tech is researched, it STOPS feeding the colony power grid and instead converts
-    // its coal into oil (the conversion runs below via AltOutput::Convert). So while the
-    // toggle is active we suppress the AddPwrHave() calls -- the plant produces oil, not
-    // power. (No-op for non-coal plants / toggle OFF / un-researched: bCoalLiq stays false
-    // and power generation is byte-identical to before.)
-    const bool bCoalLiq = IsFlag( CUnit::alt_oil ) && ( AltOutput::Available( this ) != nullptr );
+    // AltOutput mode-switch, split into its TWO independent halves. Conflating them is what
+    // the single old bCoalLiq flag did, and it is why moving a def would have changed shipped
+    // behaviour two phases early:
+    //   bAltStopsPower -- POWER half. DERIVED (a store-consuming conversion def on a UTpower
+    //                     host), so it is TRUE for today's Coal Liquefaction exactly as
+    //                     bCoalLiq was: the plant feeds no power to the grid and instead DRAWS
+    //                     2 power to run the conversion.
+    //   bAltTimeDriven -- PRODUCTION half. The def's own explicit m_eDrive. FALSE for every def
+    //                     shipped today, so the fuel-burn path below is byte-identical.
+    const AltOutput::AltOutputDef* pAlt = IsFlag( CUnit::alt_oil ) ? AltOutput::Available( this ) : nullptr;
+    const bool bAltStopsPower = pAlt && AltOutput::StopsPower( this, pAlt );
+    const bool bAltTimeDriven = pAlt && ( pAlt->m_eDrive == AltOutput::eTimeDriven );
 
     if ( pBp->GetInput( ) < 0 )
     {
@@ -2825,6 +2830,105 @@ void CPowerBuilding::BuildPower( )
         GetOwner( )->AddPwrHave( (int)( (float)pBp->GetPower( ) * fPower ) );
         return;
     }
+
+    if ( bAltTimeDriven )
+    {
+        // ---- TIME-DRIVEN conversion (a kiln / liquefaction plant) --------------------------
+        // No fuel is burned at all. The conversion runs off the plant's own production
+        // accumulator and consumes the DEF's input material; GetRate( ) is reused as the
+        // CONVERSION period, so the existing per-type tuning knob still applies. Unreachable
+        // until a def sets m_eDrive = eTimeDriven.
+        const int iIn    = pAlt->m_iInputMat;
+        const int iRatio = AltOutput::InputRatio( this, pAlt );
+        if ( ( iRatio <= 0 ) || ( pBp->GetRate( ) <= 0 ) )
+        {
+            AnimateOperating( FALSE );
+            return;
+        }
+
+        // Can't fund ONE whole batch -> not operating. Same rule as IsOperating( ) and
+        // EffInputBatch( ). Note what is deliberately NOT here: the fuel path's low-fuel
+        // discard branch below. On a fuel plant "burned the last of it" is correct; applied to
+        // a kiln's lumber it would DELETE trucked input without converting it. Sub-batch input
+        // is simply left in the store.
+        if ( GetStore( iIn ) < iRatio )
+        {
+            AnimateOperating( FALSE );
+            return;
+        }
+
+        AnimateOperating( TRUE );
+
+        // The POWER half stays on the DERIVED flag -- unchanged from shipped Coal-Liq behaviour.
+        if ( !bAltStopsPower )
+            GetOwner( )->AddPwrHave( (int)( (float)pBp->GetPower( ) * fPower ) );
+        else
+            GetOwner( )->AddPwrNeed( 2 );
+
+        int iInc = GetProd( 1 );
+        if ( iInc <= 0 )
+            return;
+        m_iBuildDone += iInc;
+
+        if ( m_iBuildDone < pBp->GetRate( ) )
+            return;
+
+        int iNum = m_iBuildDone / pBp->GetRate( );      // conversion batches elapsed this tick
+
+        // Batch TIME is spent whether or not the store could fund it. That is the deliberate
+        // half of the accumulator decision: unfunded time is DISCARDED, so a starved plant
+        // banks no debt and there is no burst the moment a truck arrives, and m_iBuildDone
+        // stays bounded below Rate exactly as it does on the fuel path.
+        //
+        // The other half is caller-side too, and it is why AltOutput::Convert( ) is NOT
+        // modified (it is shared with the fuel-driven Coal-Liq and Charcoal callers, which must
+        // stay byte-identical): Convert's eRatioConsume branch credits fAccum BEFORE it clamps
+        // to what the store can afford, so a starved caller banks unfunded OUTPUT forever and
+        // dumps it in one burst later. This caller can never trigger that, because it only ever
+        // passes iDo * iRatio -- an exact whole-batch input quantity the store already holds --
+        // so fWant is an integer, fAccum returns to exactly 0 after every call, and nothing is
+        // ever banked.
+        m_iBuildDone -= iNum * pBp->GetRate( );
+
+        int iAfford = GetStore( iIn ) / iRatio;         // whole batches the store can fund
+        int iDo     = __min( iNum, iAfford );
+
+        // The ONE consumer of the TRUE consumption rate. Everything router-facing keeps the
+        // router's own units instead (see CPowerBuilding::GetNextMinuteMat).
+        int i1Min   = EffInputPerMin( );
+        int iBefore = GetStore( iIn );
+
+        // Convert( ) takes the INPUT quantity, not the batch count.
+        if ( iDo > 0 )
+            AltOutput::Convert( this, iDo * iRatio, m_fAltAccum );
+
+        int iAfter = GetStore( iIn );
+        if ( iAfter < iRatio )
+        {
+            // Ran dry this tick. Ask the router HERE, once: from the next tick the top gate
+            // returns before any notification path, so this is the last chance to ask.
+            AnimateOperating( FALSE );
+            theGame.Event( EVENT_MANUF_HALTED, EVENT_WARN, this );
+            if ( GetOwner( )->IsMe( ) )
+                theGame.m_pHpRtr->MsgOutMat( this );
+            else
+                MaterialMessage( );
+        }
+        else if ( ( iBefore >= i1Min ) && ( iAfter < i1Min ) )
+        {
+            // Crossed the 1-minute mark this tick -- ask for more. Sampled AFTER Convert( ) for
+            // the same reason the fuel path does: Convert drains the store with no router
+            // notification of its own.
+            if ( GetOwner( )->IsMe( ) )
+                theGame.m_pHpRtr->MsgOutMat( this );
+        }
+
+        // update the %
+        MaterialChange( );
+        return;
+    }
+
+    // ---- FUEL-DRIVEN (every def shipped today; unchanged apart from bCoalLiq's rename) -----
 
     // if we have nothing to burn there is nothing to do -- and it isn't operating, so stop the
     // animation (operator: a coal-liq plant with no coal shouldn't animate).
@@ -2839,7 +2943,7 @@ void CPowerBuilding::BuildPower( )
     // add in our power if we have any input materials left -- UNLESS we're in coal-liq mode,
     // where the burned coal becomes oil instead of power AND the plant DRAWS 2 power to run the
     // conversion (operator).
-    if ( !bCoalLiq )
+    if ( !bAltStopsPower )
         GetOwner( )->AddPwrHave( (int)( (float)pBp->GetPower( ) * fPower ) );
     else
         GetOwner( )->AddPwrNeed( 2 );

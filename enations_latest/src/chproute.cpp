@@ -3497,6 +3497,9 @@ CAIUnit* CHPRouter::GetNearestSource( CAIUnit* pTruck, int iMaterial, CAIUnit* p
     CHexCoord hexMat;
     BOOL      bIsConstructing = FALSE, bIsDepleted = FALSE;
     int       iProduces = CStructureData::num_union_types;
+    // Per-BUILDING material role, read live under cs below (bEffLive says it was resolved).
+    int       iEffIn = -1, iEffOut = -1;
+    BOOL      bEffLive = FALSE;
 
     POSITION pos = m_plUnits->GetHeadPosition( );
     while ( pos != NULL )
@@ -3520,6 +3523,9 @@ CAIUnit* CHPRouter::GetNearestSource( CAIUnit* pTruck, int iMaterial, CAIUnit* p
 
             bIsConstructing = FALSE;
             bIsDepleted     = FALSE;
+            iEffIn          = -1;
+            iEffOut         = -1;
+            bEffLive        = FALSE;
             // need pBuilding->IsConstructing(); [CAI_ISCONSTRUCTING]
             EnterCriticalSection( &cs );
             CBuilding* pBldg = theBuildingMap.GetBldg( pUnit->GetID( ) );
@@ -3533,6 +3539,14 @@ CAIUnit* CHPRouter::GetNearestSource( CAIUnit* pTruck, int iMaterial, CAIUnit* p
                 m_iStore[iMaterial] = pBldg->GetStore( iMaterial );
 
                 bIsDepleted = pBldg->IsFlag( CUnit::abandoned );
+
+                // Per-BUILDING material role. Read HERE, under the SAME cs hold, because a
+                // per-building mode is instance state and AltOutput::Available( ) reads the
+                // owner's research -- neither is safe to touch outside the lock, and the static
+                // per-TYPE data used below by construction cannot see either.
+                iEffIn   = pBldg->EffInputMat( );
+                iEffOut  = pBldg->EffOutputMat( );
+                bEffLive = TRUE;
             }
             LeaveCriticalSection( &cs );
 
@@ -3799,18 +3813,33 @@ CAIUnit* CHPRouter::GetNearestSource( CAIUnit* pTruck, int iMaterial, CAIUnit* p
                 if ( pUnit->GetTypeUnit( ) >= CStructureData::num_types )
                     continue;
 
-                // get pointer to the CStructureData type for this unit
-                CStructureData const* pBldgData = theStructures.GetData( pUnit->GetTypeUnit( ) );
-                if ( pBldgData != NULL )
+                // Skip this plant as a SOURCE of iMaterial iff it CONSUMES iMaterial and does
+                // not also produce it. The live per-building answer is authoritative whenever we
+                // resolved the building above (a mode toggle changes what it consumes/produces).
+                // For a normal fuel plant iEffIn IS GetInput( ) and iEffOut is -1, which no
+                // material index can equal, so the rule reduces to exactly the shipped
+                // "skip iff fuel == iMaterial".
+                if ( bEffLive )
                 {
-                    // now get pointer to the CBuild* instance of building
-                    CBuildPower* pPowerBldg = pBldgData->GetBldPower( );
-                    if ( pPowerBldg == NULL )
+                    if ( ( iEffIn == iMaterial ) && ( iEffOut != iMaterial ) )
                         continue;
+                }
+                else
+                {
+                    // Building not resolvable -- fall back to the static per-TYPE data, verbatim.
+                    // get pointer to the CStructureData type for this unit
+                    CStructureData const* pBldgData = theStructures.GetData( pUnit->GetTypeUnit( ) );
+                    if ( pBldgData != NULL )
+                    {
+                        // now get pointer to the CBuild* instance of building
+                        CBuildPower* pPowerBldg = pBldgData->GetBldPower( );
+                        if ( pPowerBldg == NULL )
+                            continue;
 
-                    // it uses this material for fuel for power
-                    if ( pPowerBldg->GetInput( ) == iMaterial )
-                        continue;
+                        // it uses this material for fuel for power
+                        if ( pPowerBldg->GetInput( ) == iMaterial )
+                            continue;
+                    }
                 }
 
                 // does this building have the material needed?

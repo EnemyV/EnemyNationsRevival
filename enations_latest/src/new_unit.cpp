@@ -296,13 +296,15 @@ void CPowerBuilding::ShowStatusText( std::string& str )
         return;
     }
 
-    CBuildPower* pBp = GetData( )->GetBldPower( );
-    int iFuel = pBp ? pBp->GetInput( ) : -1;
+    // The material this plant actually needs on hand right now: its fuel normally, a time-driven
+    // conversion def's input in alt mode (CPowerBuilding::EffInputMat). In fuel mode this IS
+    // GetBldPower( )->GetInput( ) and EffInputBatch( ) is 1, so the idle test is unchanged.
+    int iFuel = EffInputMat( );
     // CRASH-HARDEN (newwin, sibling of the #51 C5 crash mac2 found): GetInput() returns the raw
     // m_iInput, which for a fuel-less plant can be a sentinel/garbage index >= num_types (not just
     // -1). GetStore() only ASSERT_STRICTs the range (ignored in this build) -> OOB read. Bound it.
     if ( iFuel >= 0 && iFuel < CMaterialTypes::GetNumTypes( ) )
-        if ( GetStore( iFuel ) <= 0 )
+        if ( GetStore( iFuel ) < EffInputBatch( ) )
         {
             str = EnLoadStdString( IDS_STAT_IDLE );
             return;

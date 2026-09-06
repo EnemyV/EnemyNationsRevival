@@ -52,8 +52,24 @@ namespace AltOutput
         eRatioConsume,   // consume m_iRatioIn input from store -> 1 output (Coal Liquefaction)
         eFlatTrickle,    // credit m_pfnFlat(owner) units/min, scaled by opers elapsed (Fracking)
         eGlobalConsume,  // consume m_iRatioIn GLOBAL player food from owner -> 1 output (BioFuel)
-        eMultiTrickle    // credit SEVERAL flat units/min (m_aMulti), no input (Desperate/Scrounging)
+        eMultiTrickle,   // credit SEVERAL flat units/min (m_aMulti), no input (Desperate/Scrounging)
+        eModifier        // a def that produces NOTHING and only carries a per-building toggle plus
+                         // modifier fields (m_iWorkforceAdd / m_iPowerMultAdd, and whatever the
+                         // feature's own production hook reads). Convert() early-returns for it.
     };
+
+    // What DRIVES a conversion def's production. This governs PRODUCTION ONLY -- skip the fuel
+    // burn, run off elapsed time, gate on a whole batch of the def's own input. It says NOTHING
+    // about whether the host still feeds the power grid; that is the derived StopsPower() below.
+    //   eFuelDriven -- today's shape: the host burns its own fuel and the amount burned this
+    //                  batch is what gets fed to Convert().
+    //   eTimeDriven -- no fuel is burned; the conversion runs off the production accumulator and
+    //                  consumes the def's input material a whole batch at a time.
+    // MUST be an enum, never a bool: AltOutputDef is initialised POSITIONALLY throughout s_aDefs
+    // (trailing fields simply omitted), so a bool appended next to another bool would silently
+    // mis-bind if the tail were ever reordered, while a distinct type fails to compile instead.
+    // eFuelDriven is FIRST so a def that omits the trailing initializer stays fuel-driven.
+    enum EDrive { eFuelDriven, eTimeDriven };
 
     // eMultiTrickle: one flat per-minute output line (a material id + units/min).
     struct AltMat { int m_iMat; int m_iPerMin; };
@@ -85,6 +101,9 @@ namespace AltOutput
         int         (*m_pfnRatioIn)(CPlayer*);   // eRatioConsume: optional PER-TIER input ratio override
                                                  // (units of input per 1 output). nullptr = use m_iRatioIn.
                                                  // Coal Liquefaction uses this to drop 3:1 -> 2:1 at tier 2.
+        EDrive      m_eDrive;                    // PRODUCTION driver (see EDrive). Every entry in
+                                                 // s_aDefs omits it, so every def is eFuelDriven and
+                                                 // the shipped fuel-burn path is byte-identical.
     };
 
     // The matching def for this building's type, or nullptr. Type-only -- does NOT check the
@@ -94,6 +113,30 @@ namespace AltOutput
     // The matching def when one applies AND the owner is valid AND has researched its tech,
     // else nullptr. Gates both the generic toggle button and Convert().
     const AltOutputDef* Available( CBuilding* pBldg );
+
+    // TRUE iff this building's alt-output mode suppresses its power generation. DERIVED from the
+    // def + the host type, so it needs no per-def field and cannot collide with one: a store-
+    // consuming conversion def (eRatioConsume) hosted on a UTpower plant. That reproduces exactly
+    // the bCoalLiq test CPowerBuilding::BuildPower used to spell out inline -- the only UTpower
+    // def today is Coal Liquefaction. Governs the power suppression and the 2-power conversion
+    // draw ONLY; it says nothing about how production is driven (that is m_eDrive).
+    bool StopsPower( CBuilding* pBldg, const AltOutputDef* pDef );
+
+    // The def's effective input units per 1 output unit for this building's owner: the per-tier
+    // override (m_pfnRatioIn) when the def supplies one, else the fixed m_iRatioIn. 0 when there
+    // is no def, no owner, or the def consumes no input.
+    int InputRatio( CBuilding* pBldg, const AltOutputDef* pDef );
+
+    // The shared mode-change operation behind BOTH toggle sites (the info-window checkbox and the
+    // QA harness). Flips CUnit::alt_oil and then, for a def that changes what must be DELIVERED
+    // (eRatioConsume / eGlobalConsume), tells the human router this building's role changed.
+    // Without that, a stocked plant switched into a mode whose input store is 0 returns at
+    // BuildPower's first gate before any notification path, so it never asks for its first load
+    // and the toggle appears to do nothing. Fires on BOTH ON and OFF (OFF has the mirror problem:
+    // the plant wants its fuel again). No-op when the flag already matches. The trickle modes
+    // (eFlatTrickle / eMultiTrickle) and eModifier consume no input, so they are deliberately NOT
+    // notified -- there is no first delivery to schedule, and four shipped features must not change.
+    void SetToggle( CBuilding* pBldg, bool bOn );
 
     // Shared production helper. Call from a building's production loop with the amount of
     // primary production this call represents (food harvested for a farm, input burned for

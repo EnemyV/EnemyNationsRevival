@@ -44,6 +44,10 @@ class CBuildRepair;
 class CBuildShipyard;
 class CRepairBuilding;
 
+// Forward declaration ONLY. building.h deliberately does not #include "altoutput.h" (see the
+// note on m_afAltAccum below); CPowerBuilding needs nothing more than the incomplete type here.
+namespace AltOutput { struct AltOutputDef; }
+
 
 /////////////////////////////////////////////////////////////////////////////
 // CStructure - data on buildings
@@ -793,6 +797,16 @@ public:
 		virtual int		GetBldgResReq (int iInd, BOOL) const { return GetBldgMatReq (iInd, TRUE); }
 		virtual int		GetNextMinuteMat (int iInd) const { return GetBldgResReq (iInd, FALSE); }
 
+		// Per-building MATERIAL ROLE -- the single source of truth for "what does THIS building
+		// want delivered / hand out / need on hand right now". Virtual because a per-BUILDING mode
+		// (an AltOutput toggle) can answer differently from the static per-TYPE structure data, which
+		// by construction cannot see it. Base = "no material role"; only CPowerBuilding overrides
+		// these today (a later pass could adopt them for CMaterialBuilding).
+		virtual int		EffInputMat () const { return -1; }		// material it wants delivered NOW (-1 = none)
+		virtual int		EffOutputMat () const { return -1; }	// material it hands out NOW      (-1 = none)
+		virtual int		EffInputPerMin () const { return 0; }	// TRUE units/min of EffInputMat consumed (0 = none)
+		virtual int		EffInputBatch () const { return 1; }	// units of EffInputMat on hand to run ONE batch (1 = any)
+
 		void					AddConstDone (int iDone);
 		CStructureSprite *GetSprite() const
 								{
@@ -1114,7 +1128,19 @@ public:
 		virtual void GetInputs (int * pVals) const;
 		virtual void GetAccepts (int * pVals) const { GetInputs (pVals); }
 
+		// Material role (see CBuilding::EffInputMat). A plant normally burns its fuel and hands out
+		// nothing; with a TIME-DRIVEN AltOutput conversion on it consumes the def's input instead.
+		virtual int		EffInputMat () const;
+		virtual int		EffOutputMat () const;
+		virtual int		EffInputPerMin () const;
+		virtual int		EffInputBatch () const;
+
 protected:
+
+		// The def driving this plant's TIME-DRIVEN alt mode, or NULL: toggle on, def Available()
+		// for the owner, and m_eDrive == eTimeDriven. One source of truth for all four Eff*
+		// answers and for BuildPower's gates. NULL for every def shipped today (all fuel-driven).
+		AltOutput::AltOutputDef const *	TimeDrivenDef () const;
 
 #ifdef _DEBUG
 public:

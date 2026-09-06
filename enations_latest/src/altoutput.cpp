@@ -7,6 +7,7 @@
 #include "research.h"   // CRsrchArray enum (via player.h)
 #include "unit.inl"     // CUnit inline accessors (GetData/GetStore/...)
 #include "building.inl" // CStructureData::GetUnionType / GetBldPower inlines
+#include "chproute.hpp" // CHPRouter::MsgOutMat (SetToggle's router notification)
 
 // ---------------------------------------------------------------------------------------
 // Reusable alternate-output toggle system. See altoutput.h for the design rationale.
@@ -267,6 +268,60 @@ namespace AltOutput
         return ( pDef );
     }
 
+    bool StopsPower( CBuilding* pBldg, const AltOutputDef* pDef )
+    {
+        // DERIVED, not stored (see altoutput.h): a store-consuming conversion def hosted on a
+        // power plant. Reproduces the old inline bCoalLiq exactly -- today's only UTpower def is
+        // Coal Liquefaction (eRatioConsume), which already suppressed power before this existed.
+        if ( !pBldg || !pDef )
+            return ( false );
+        if ( pBldg->GetData( )->GetUnionType( ) != CStructureData::UTpower )
+            return ( false );
+        return ( pDef->m_eMode == eRatioConsume );
+    }
+
+    int InputRatio( CBuilding* pBldg, const AltOutputDef* pDef )
+    {
+        // Same expression Convert()'s eRatioConsume branch computes inline; Convert keeps its own
+        // copy deliberately (it must stay byte-identical for the shipped callers).
+        if ( !pBldg || !pDef )
+            return ( 0 );
+        CPlayer* pOwner = pBldg->GetOwner( );
+        if ( !pOwner )
+            return ( 0 );
+        return ( pDef->m_pfnRatioIn ? pDef->m_pfnRatioIn( pOwner ) : pDef->m_iRatioIn );
+    }
+
+    void SetToggle( CBuilding* pBldg, bool bOn )
+    {
+        if ( !pBldg )
+            return;
+        if ( ( pBldg->IsFlag( CUnit::alt_oil ) != FALSE ) == bOn )
+            return;                     // already in the requested state -- nothing changed
+
+        if ( bOn )
+            pBldg->SetFlag( CUnit::alt_oil );
+        else
+            pBldg->ClrFlag( CUnit::alt_oil );
+
+        // A mode change alters what this building wants DELIVERED, and nothing else tells the
+        // router: CHPRouter::NeedsCommodities( NULL ) only revisits buildings already in its need
+        // list, so a stocked plant that needed nothing can never be discovered. Fire the existing
+        // per-building entry point on both ON and OFF. Scoped to the INPUT-CONSUMING modes so the
+        // four shipped trickle/modifier features are untouched. (The AI writes the flag directly
+        // for its trickle defs and so bypasses this -- harmless, they consume no input.)
+        const AltOutputDef* pDef = Available( pBldg );
+        if ( !pDef )
+            return;
+        if ( ( pDef->m_eMode != eRatioConsume ) && ( pDef->m_eMode != eGlobalConsume ) )
+            return;
+        CPlayer* pOwner = pBldg->GetOwner( );
+        if ( !pOwner || !pOwner->IsMe( ) )
+            return;
+        if ( theGame.m_pHpRtr )
+            theGame.m_pHpRtr->MsgOutMat( pBldg );
+    }
+
     void Convert( CBuilding* pBldg, int iAmount, float& fAccum )
     {
         if ( iAmount <= 0 )
@@ -277,6 +332,14 @@ namespace AltOutput
             return;
         const AltOutputDef* pDef = Available( pBldg );
         if ( !pDef )
+            return;
+
+        // eModifier defs produce NO secondary material at all -- they exist only to carry the
+        // per-building toggle plus modifier fields, and their effect lives in the feature's own
+        // production hook. This return MUST be explicit: the if/else chain below ends in an
+        // unguarded `else` that IS eGlobalConsume, so an eModifier def would otherwise fall into
+        // the global-food accounting. (No def uses eModifier yet, so this is inert today.)
+        if ( pDef->m_eMode == eModifier )
             return;
 
         CPlayer* pOwner = pBldg->GetOwner( );
