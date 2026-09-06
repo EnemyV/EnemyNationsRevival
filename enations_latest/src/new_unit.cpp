@@ -262,20 +262,8 @@ void CFarmBuilding::ShowStatusText( std::string& str )
 
     CBuildFarm* pBf = GetData( )->GetBldFarm( );
 
-    // Charcoal (#44): a lumber mill with the kiln ON credits NO player lumber — the harvest
-    // feeds the kiln and only the coal trickle comes out (BuildFarm's lumber branch). The
-    // harvest-rate line below would claim full lumber output; say what it actually does.
-    // Same gate expression as the sim's kiln branch.
-    if ( pBf->GetTypeFarm( ) == CMaterialTypes::lumber && IsFlag( CUnit::alt_oil ) )
-    {
-        const AltOutput::AltOutputDef* pDef = AltOutput::Available( this );
-        if ( pDef )
-        {
-            str = "Converting " + CMaterialTypes::GetDesc( pDef->m_iInputMat ) +
-                  " to " + CMaterialTypes::GetDesc( pDef->m_iOutputMat );
-            return;
-        }
-    }
+    // (No alt-output branch here any more: Charcoal moved off the lumber mill to the coal power
+    // plant, so a mill's status is always its plain harvest rate.)
 
     // Operator: actual rate, not theoretical — 0 while the sim has the farm halted.
     int iFarmRate = ( m_unitFlags & ( stopped | abandoned | event | dying ) )
@@ -310,14 +298,19 @@ void CPowerBuilding::ShowStatusText( std::string& str )
             return;
         }
 
-    // Coal Liquefaction mode (#43): when the alt-output toggle is ON (and the tech is
-    // researched), this coal plant converts coal -> oil instead of generating power
-    // (BuildPower suppresses AddPwrHave in this mode). Reflect that in the status text
-    // rather than the misleading "Generating N units power" line.
-    if ( IsFlag( CUnit::alt_oil ) && ( AltOutput::Available( this ) != nullptr ) )
+    // Alt-output conversion mode: when the toggle is ON (and the tech is researched), this
+    // plant converts instead of generating power (BuildPower suppresses AddPwrHave). Name the
+    // def's OWN materials -- the host is the oil plant for Coal Liquefaction and the coal plant
+    // for the Charcoal kiln, so a hard-coded "coal to oil" is wrong for half of them.
+    if ( IsFlag( CUnit::alt_oil ) )
     {
-        str = "Converting coal to oil";
-        return;
+        const AltOutput::AltOutputDef* pDef = AltOutput::Available( this );
+        if ( pDef )
+        {
+            str = "Converting " + CMaterialTypes::GetDesc( pDef->m_iInputMat ) +
+                  " to " + CMaterialTypes::GetDesc( pDef->m_iOutputMat );
+            return;
+        }
     }
 
     std::string sNum  = IntToStr( (int)( GetFrameProd( 1 ) * (float)GetData( )->GetBldPower( )->GetPower( ) ) );

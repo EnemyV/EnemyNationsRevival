@@ -795,11 +795,13 @@ void CRsrchArray::Open( )
         }
     }
 
-    // In-code research topics: Coal Liquefaction (2 tiers, not in the DAT file). A coal
+    // In-code research topics: Coal Liquefaction (2 tiers, not in the DAT file). An OIL
     // POWER PLANT, once tier 1 is researched and its per-building alt-output toggle is ON,
-    // also converts coal into oil via the shared AltOutput system (eRatioConsume). Tier 1
-    // runs the recipe at 3 coal -> 1 oil; tier 2 improves it to 2 coal -> 1 oil (the ratio
-    // is read per-tier by CPlayer::GetCoalLiqRatio and wired into the def's m_pfnRatioIn).
+    // STOPS generating power and cracks DELIVERED coal into oil via the shared AltOutput
+    // system (eRatioConsume, eTimeDriven). Tier 1 runs the recipe at 3 coal -> 1 oil; tier 2
+    // improves it to 2 coal -> 1 oil (the ratio is read per-tier by CPlayer::GetCoalLiqRatio
+    // and wired into the def's m_pfnRatioIn). It was hosted on the COAL plant before the
+    // relocation, where the coal was the plant's own fuel and the oil could not be exported.
     // Tier 1 chained off Advanced Manufacturing. Tier 2 is a deliberate MEGA-EXPENSIVE
     // endgame tech: a flat 2,000,000-point cost, gated behind fuel_efficiency_5 (so a few
     // fuel-efficiency techs are researched first) as well as tier 1. Appended LAST in the
@@ -819,8 +821,8 @@ void CRsrchArray::Open( )
         pRi->m_piRsrchRequired[0] = (int)manf_3;
 
         pRi->m_sName   = "Coal Liquefaction";
-        pRi->m_sDesc   = "Fischer-Tropsch synthesis cracks coal into liquid fuel: a toggled coal power plant turns 3 coal into 1 oil.";
-        pRi->m_sResult = "Coal liquefaction online. Coal power plants can convert coal to oil (toggle per plant).";
+        pRi->m_sDesc   = "Fischer-Tropsch synthesis cracks coal into liquid fuel: a toggled oil power plant stops generating power and turns 3 delivered coal into 1 oil.";
+        pRi->m_sResult = "Coal liquefaction online. An oil power plant can be switched to crack trucked-in coal into oil (toggle per plant).";
 
         // Tier 2: better catalysts wring more oil from the same coal (3:1 -> 2:1). Priced as a
         // super-expensive endgame prize (2 million points) and gated behind a chunk of the fuel-
@@ -840,35 +842,38 @@ void CRsrchArray::Open( )
 
         pRi2->m_sName   = "Catalytic Coal Cracking";
         pRi2->m_sDesc   = "A better catalyst bed should let our plants squeeze the same oil from less coal, dropping the recipe to 2 coal for 1 oil. It will take a fortune in research to perfect.";
-        pRi2->m_sResult = "Catalytic cracking is dialed in. Our coal plants now make 1 oil from just 2 coal instead of 3.";
+        pRi2->m_sResult = "Catalytic cracking is dialed in. A liquefying oil plant now makes 1 oil from just 2 delivered coal instead of 3.";
     }
 
-    // In-code research topic: Charcoal (5 tiers, not in the DAT file). A lumber MILL (the
-    // sawmill -- UTfarm whose GetTypeFarm() == lumber), once a Charcoal tier is researched
-    // and its per-building alt-output toggle is ON, runs a kiln: it converts harvested
-    // lumber into coal ("Charcoal" label only) at a fixed 2 lumber -> 1 coal via the shared
-    // AltOutput system (eRatioConsume), MODE-SWITCH (lumber output stops while the kiln
-    // runs). The 2:1 ratio is fixed; the THROUGHPUT is tier-scaled by CPlayer::GetCharcoalPct
-    // (T1 = VERY LOW per operator spec, T2-5 raise it). No energy cost. T1 chained off Gas
-    // Turbines; T2-4 chain the prior tier (mirrors the BioFuel line). Cost doubles each tier.
-    // Appended LAST in the enum so save indices don't shift. The AI's frozen research path
-    // doesn't pursue these.
+    // In-code research topic: Charcoal (5 tiers, not in the DAT file). A COAL POWER PLANT,
+    // once a Charcoal tier is researched and its per-building alt-output toggle is ON, STOPS
+    // generating power and runs as a KILN: it chars DELIVERED lumber into coal via the shared
+    // AltOutput system (eRatioConsume, eTimeDriven). The tier ladder scales the RECIPE --
+    // CPlayer::GetCharcoalRatio, 4/3/3/2/2 lumber per coal -- because there is no harvest to
+    // take a slice of at a power plant (the pre-relocation host was the lumber mill, scaled by
+    // the now-deleted GetCharcoalPct). Only T2 and T4 actually move the ratio; T3 and T5 are
+    // flavour/prerequisite steps, and the text below must not claim otherwise. Draws +2
+    // workers. T1 chained off Gas Turbines; T2-5 chain the prior tier (mirrors the BioFuel
+    // line). Cost doubles each tier. Appended LAST in the enum so save indices don't shift.
+    // The AI's frozen research path doesn't pursue these.
     {
         static const char* aszChName[5] = {
             "Charcoal Kiln", "Retort Kiln", "Continuous Carbonization", "Pyrolysis Refinery",
             "Fluidized-Bed Reactor" };
+        // Ratio by tier: T1 4:1, T2 3:1, T3 3:1, T4 2:1, T5 2:1 (CPlayer::GetCharcoalRatio).
+        // T3 and T5 do NOT improve the recipe -- their text says so rather than inventing a gain.
         static const char* aszChDesc[5] = {
-            "A simple wood kiln chars lumber into coal: a toggled sawmill converts 2 lumber into 1 coal at a very low rate.",
-            "Sealed retort kilns char lumber more efficiently, raising the sawmill's charcoal output.",
-            "Continuous carbonization lines keep the kiln running, raising charcoal output again.",
-            "A full pyrolysis refinery wrings still more charcoal from every log.",
-            "A fluidized-bed reactor chars every scrap at once, squeezing the most coal yet from each log." };
+            "A simple wood kiln chars lumber into coal: a toggled coal power plant stops generating power and converts 4 delivered lumber into 1 coal.",
+            "Sealed retort kilns waste less of every log, cutting the kiln's recipe to 3 lumber for 1 coal.",
+            "Continuous carbonization lines keep the kiln burning around the clock instead of in batches. The recipe stays at 3 lumber for 1 coal, but the line is the groundwork for the pyrolysis refinery.",
+            "A full pyrolysis refinery captures the volatiles a kiln normally loses, cutting the recipe to 2 lumber for 1 coal.",
+            "A fluidized-bed reactor chars every scrap at once. The recipe holds at 2 lumber for 1 coal - this is the end of the ladder, not a further saving." };
         static const char* aszChRslt[5] = {
-            "Charcoal kiln online. Sawmills can convert lumber into coal (toggle per mill).",
-            "Retort kilns fielded. Sawmill charcoal output rises.",
-            "Continuous carbonization in service. More charcoal per log.",
-            "Pyrolysis refinery fielded. Charcoal output climbs again.",
-            "Fluidized-bed reactor perfected. Maximum charcoal from every sawmill." };
+            "Charcoal kiln online. A coal power plant can be switched to char trucked-in lumber into coal at 4 lumber per coal (toggle per plant).",
+            "Retort kilns fielded. Our kilns now need only 3 lumber per coal.",
+            "Continuous carbonization in service. Still 3 lumber per coal, but the pyrolysis refinery is now within reach.",
+            "Pyrolysis refinery fielded. Our kilns now need only 2 lumber per coal.",
+            "Fluidized-bed reactor perfected. The kiln line is complete at 2 lumber per coal." };
 
         // Level (0-based) -> enum id. Tiers 1-4 are contiguous; tier 5 was appended at the
         // enum end for save parity, so it is NOT charcoal_4+1 -- map it explicitly.

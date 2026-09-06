@@ -657,21 +657,19 @@ class CPlayer : public CObject
     BOOL CanMoho( )          { return ( m_aRsrch.GetSize( ) > CRsrchArray::mine_2 && GetRsrch( CRsrchArray::mine_2 ).m_bDiscovered ); }
     int  GetMohoIronPerMin( ) { return ( CanMoho( ) ? 10 : 0 ); }
 
-    // Charcoal kiln THROUGHPUT -- the percent of harvested lumber fed into the kiln, then
-    // converted at the fixed 2 lumber -> 1 coal. Operator steer (2026-06-28): charcoal is
-    // "free coal" (lumber is harvested for free), so keep it deliberately INEFFICIENT. Base
-    // ~30:1 (33 lumber -> 1 coal) at the first Charcoal tech, easing toward ~17:1 at max tech.
-    // coal% = feed%/2 (the 2:1 kiln halves the feed), so feed { 0, 6, 8, 10, 12 }% by highest
-    // tier -> coal output { 0, 3, 4, 5, 6 }% of harvest (effective 33:1 / 25:1 / 20:1 / 16.7:1
-    // lumber-per-coal). The 2:1 kiln ratio is fixed; only throughput scales with research.
-    // Guarded for older/short save research arrays. See Charcoal (#44).
-    int GetCharcoalPct( )
+    // Charcoal kiln input ratio: LUMBER consumed per 1 coal, by the owner's highest Charcoal
+    // tier. The kiln lives on the COAL POWER PLANT and is fed TRUCKED lumber, so the tier ladder
+    // scales the recipe itself -- the old GetCharcoalPct scaled a slice of a lumber-mill HARVEST,
+    // and there is no harvest at a power plant. Top tier is 2:1 (one plant absorbs two fertility-8
+    // mills); tier 1 needs four. Wired into the Charcoal def's m_pfnRatioIn. Guarded for
+    // older/short save research arrays. See Charcoal (#44).
+    int GetCharcoalRatio( )
     {
         int iTier = 0;
         // Tiers 1-4 are CONTIGUOUS; tier 5 sits at the enum end (unrelated topics in between),
         // so scan the 1-4 block then test tier 5 on its own -- never walk the gap. Clamp the
         // block scan to what the array actually holds (ElementAt is unchecked; old/short saves)
-        // so a player with just charcoal_1 still gets the tier-1 throughput, not a silent 0.
+        // so a player with just charcoal_1 still gets the tier-1 ratio, not a silent 0.
         int iTop = CRsrchArray::charcoal_4;
         if ( m_aRsrch.GetSize( ) <= iTop )
             iTop = m_aRsrch.GetSize( ) - 1;
@@ -680,8 +678,8 @@ class CPlayer : public CObject
                 iTier = iOn - CRsrchArray::charcoal_1 + 1;   // highest discovered (tiers chain)
         if ( m_aRsrch.GetSize( ) > CRsrchArray::charcoal_5 && GetRsrch( CRsrchArray::charcoal_5 ).m_bDiscovered )
             iTier = 5;   // tier 5 sits at the enum end (unrelated topics between charcoal_4 and it)
-        static const int aiPct[6] = { 0, 6, 8, 10, 12, 14 };   // coal output 3/4/5/6/7% (base ~33 lumber:1 coal; free coal = stingy)
-        return ( aiPct[iTier] );
+        static const int aiRatio[6] = { 0, 4, 3, 3, 2, 2 };   // lumber per 1 coal by tier (0 = untechhed)
+        return ( aiRatio[iTier] );
     }
 
     BOOL CanMultiArea( ) { return ( GetRsrch( CRsrchArray::radio ).m_bDiscovered ); }

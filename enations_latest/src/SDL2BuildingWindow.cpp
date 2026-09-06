@@ -162,47 +162,48 @@ static const char* const kStoreNames[SDL2BuildingWindow::kNumStoreMats] = {
 static bool secStorage(CBuilding* b) {
     return ( b->GetData()->GetUnionType() == CStructureData::UTwarehouse );   // warehouse + rocket
 }
-static bool secCoalLiqActive(CBuilding* b);   // fwd (defined below; used to gate secPower for C6)
+static bool secAltPowerActive(CBuilding* b);   // fwd (defined below; used to gate secPower for C6)
 static bool secPower(CBuilding* b) {
-    // C6: a coal plant in Coal-Liquefaction mode is shown as a PRODUCER (Production/Inputs/Outputs),
-    // not as a Power section — so suppress Power when liq is active. (The rocket always has Power.)
-    if ( ( b->GetData()->GetUnionType() == CStructureData::UTpower ) && secCoalLiqActive( b ) )
+    // C6: a plant in a power-stopping alt mode is shown as a PRODUCER (Production/Inputs/Outputs),
+    // not as a Power section — so suppress Power while it is active. (The rocket always has Power.)
+    if ( ( b->GetData()->GetUnionType() == CStructureData::UTpower ) && secAltPowerActive( b ) )
         return false;
     return ( b->GetData()->GetType() == CStructureData::rocket ) ||
            ( b->GetData()->GetUnionType() == CStructureData::UTpower );
 }
-// #43: is this building actively in Coal Liquefaction mode? i.e. its AltOutput toggle is ON,
-// the def is available (researched), AND it's the coal-liq def (oil output via consuming coal).
-// In this mode the plant stops generating power and converts coal->oil, so the Power section
-// switches to an oil readout. (Returns false for BioFuel/Charcoal/Fracking — those don't host
-// a Power section — and for any plant with the toggle OFF.)
-// C6 (operator): the coal-liq window must render the SAME Production/Inputs/Outputs sections as a
-// refinery (not the repurposed Power section). Because the section SET differs between liq-on and
-// liq-off, computeLayout must be able to size the window for BOTH modes without mutating the real
-// game flag. This override lets the layout math force "coal-liq on/off" for height calc only:
+// #43: is this plant actively in a POWER-STOPPING alt-output mode? i.e. its AltOutput toggle is
+// ON, the def is available (researched), and the def suppresses power generation — which is
+// exactly AltOutput::StopsPower (a UTpower host running a store-consuming conversion). Derived,
+// not a materials literal: the old in==coal && out==oil test matched ONLY the coal plant's
+// liquefaction and would silently miss the Charcoal kiln (lumber -> coal on a coal plant) and
+// the relocated liquefaction (coal -> oil on an OIL plant), leaving both rendering the Power
+// section. Note this keys on StopsPower, NOT m_eDrive: the window must flip its section set for
+// any plant that has stopped generating, however its conversion happens to be driven.
+// (Returns false for BioFuel/Fracking/Scrounging — those don't host a Power section — and for
+// any plant with the toggle OFF.)
+// C6 (operator): such a window must render the SAME Production/Inputs/Outputs sections as a
+// refinery (not the repurposed Power section). Because the section SET differs between on and
+// off, computeLayout must be able to size the window for BOTH modes without mutating the real
+// game flag. This override lets the layout math force "alt on/off" for height calc only:
 //   -1 = read the live alt_oil flag (normal);  0/1 = force off/on (set+restored synchronously).
 static int s_coalLiqLayoutOverride = -1;
 
-static bool secCoalLiqActive(CBuilding* b) {
+static bool secAltPowerActive(CBuilding* b) {
     bool altOn = ( s_coalLiqLayoutOverride >= 0 ) ? ( s_coalLiqLayoutOverride != 0 )
                                                   : b->IsFlag( CUnit::alt_oil );
     if ( !altOn ) return false;
-    const AltOutput::AltOutputDef* pDef = AltOutput::Available( b );
-    return ( pDef != nullptr ) && ( pDef->m_eMode == AltOutput::eRatioConsume )
-           && ( pDef->m_iInputMat == CMaterialTypes::coal )
-           && ( pDef->m_iOutputMat == CMaterialTypes::oil );
+    return AltOutput::StopsPower( b, AltOutput::Available( b ) );
 }
-// C6: can this plant do coal-liq AT ALL (regardless of the current toggle)? Such a plant's window
-// flips its section SET on toggle, so it gets the max-of-both-modes frame + the relayout-on-toggle.
-static bool coalLiqCapable(CBuilding* b) {
+// C6: can this plant run a power-stopping alt mode AT ALL (regardless of the current toggle)?
+// Such a plant's window flips its section SET on toggle, so it gets the max-of-both-modes frame
+// + the relayout-on-toggle. (The UTpower test short-circuits the research read for everything else;
+// StopsPower re-checks it anyway.)
+static bool altPowerCapable(CBuilding* b) {
     if ( b->GetData()->GetUnionType() != CStructureData::UTpower ) return false;
-    const AltOutput::AltOutputDef* pDef = AltOutput::Available( b );
-    return ( pDef != nullptr ) && ( pDef->m_eMode == AltOutput::eRatioConsume )
-           && ( pDef->m_iInputMat == CMaterialTypes::coal )
-           && ( pDef->m_iOutputMat == CMaterialTypes::oil );
+    return AltOutput::StopsPower( b, AltOutput::Available( b ) );
 }
 // Desperate Measures (rocket EDICT) / Scrounging (warehouse AltOutput toggle): is the scrounge ON?
-// Its Production section shows only while ON, so the section SET flips on toggle — same as coal-liq.
+// Its Production section shows only while ON, so the section SET flips on toggle — same as an alt power plant.
 // The override lets computeLayout size for both on/off modes without touching game state.
 static int s_scroungeLayoutOverride = -1;   // -1 = live; 0/1 = force off/on (height calc only)
 static bool scroungeActive(CBuilding* b) {
@@ -214,7 +215,7 @@ static bool scroungeActive(CBuilding* b) {
     return ( pDef != nullptr ) && ( pDef->m_eMode == AltOutput::eMultiTrickle );
 }
 // Can this building scrounge at all (rocket, or a warehouse with the Scrounging def)? Gets the
-// max-of-both-modes frame + relayout-on-toggle, like coalLiqCapable.
+// max-of-both-modes frame + relayout-on-toggle, like altPowerCapable.
 static bool scroungeCapable(CBuilding* b) {
     if ( b->GetData()->GetType() == CStructureData::rocket ) return true;
     const AltOutput::AltOutputDef* pDef = AltOutput::Available( b );
@@ -300,16 +301,14 @@ static std::string AltProductionStatus(CBuilding* b, const AltOutput::AltOutputD
     // eRatioConsume / eGlobalConsume: a conversion. Show the OUTPUT RATE (units/min) using the
     // rebranded display label, computed from the building's primary throughput exactly as the
     // production hook (mainloop.cpp) feeds Convert():
-    //   Charcoal (lumber mill): a GetCharcoalPct% slice of the lumber harvest -> coal at ratio:1.
-    //   Bio Oil  (refinery)   : each production batch -> 1/ratio oil (food burned at ratio:1).
-    std::string label = pDef->m_szLabel;   // "Charcoal" / "Bio Oil" (UI label, not the raw mat)
+    //   Bio Oil (refinery): each production batch -> 1/ratio oil (food burned at ratio:1).
+    // The old UTfarm branch (Charcoal on a lumber mill, rate derived from GetCharcoalPct) is gone
+    // with the def: no UTfarm host runs a conversion any more. A power-plant host does NOT come
+    // through here -- it is handled by the alt-power block in RefreshDynamic.
+    std::string label = pDef->m_szLabel;   // "Bio Oil" (UI label, not the raw mat)
     int rate = -1;
     int ut   = b->GetData()->GetUnionType();
-    if ( ut == CStructureData::UTfarm ) {
-        int lumber = primaryRatePerMin( b );   // lumber/min the mill harvests (then diverts to kiln)
-        if ( pDef->m_iRatioIn > 0 )
-            rate = ( lumber > 0 ) ? ( lumber * p->GetCharcoalPct() ) / ( 100 * pDef->m_iRatioIn ) : 0;
-    } else if ( ut == CStructureData::UTmaterials ) {
+    if ( ut == CStructureData::UTmaterials ) {
         CBuildMaterials const* pm = b->GetData()->GetBldMaterials();
         if ( pm && pm->GetTime() > 0 && pDef->m_iRatioIn > 0 ) {
             // Operator: the rate must reflect ACTUAL output. BioFuel (eGlobalConsume) runs even
@@ -358,7 +357,7 @@ static int nCivEdictsFor(CBuilding* b) {
 // The UNGATED host count (research ignored): how many civ-wide edicts COULD this building
 // type ever host. computeLayout/BuildEdicts reserve section height for this maximum so a
 // topic discovered while the window is open can add its row live (Refresh → Rebuild)
-// without an SDL window resize — the same size-for-the-max trick the coal-liq relayout uses.
+// without an SDL window resize — the same size-for-the-max trick the alt-power relayout uses.
 static int nCivEdictsHostMax(CBuilding* b) {
     CStructureData::BLDG_TYPE bt = b->GetData()->GetBldgType();
     CStructureData::BLDG_TYPE gt = b->GetData()->GetType();
@@ -392,9 +391,9 @@ static bool secTurret(CBuilding* b) {
 }
 static bool secProduction(CBuilding* b) {
     int ut = b->GetData()->GetUnionType();
-    // C6: a coal-liq-active power plant is a producer (coal -> oil), so it gets the Production
+    // C6: an alt-active power plant is a producer (it converts instead of generating), so it gets the Production
     // section + bar like a refinery instead of the Power section.
-    if ( ( ut == CStructureData::UTpower ) && secCoalLiqActive( b ) ) return true;
+    if ( ( ut == CStructureData::UTpower ) && secAltPowerActive( b ) ) return true;
     // Desperate Measures (rocket edict) / Scrounging (warehouse): Production section shown ONLY
     // while the scrounge is ON (section set flips -> relayout on toggle; sized for max-of-both).
     if ( scroungeCapable( b ) ) return scroungeActive( b );
@@ -414,10 +413,9 @@ static bool secRepair(CBuilding* b) {
 // Collect the material types this building consumes (GetInputs > 0), e.g. oil for a
 // refinery, iron + coal for a smelter. Returns how many were written to outMats.
 static int collectInputMats(CBuilding* b, int* outMats, int maxOut) {
-    // C6: a coal-liq-active power plant consumes coal (the def's input mat) -> oil. Its GetInputs()
-    // doesn't list a material (power "input" is fuel, tracked on CBuildPower), so name coal directly
-    // from the def so the Inputs section shows "Coal" like a refinery's "Oil".
-    if ( ( b->GetData()->GetUnionType() == CStructureData::UTpower ) && secCoalLiqActive( b ) ) {
+    // C6: an alt-active power plant consumes the def's input mat. Name it directly from the def so
+    // the Inputs section shows "Coal" (liquefaction) / "Lumber" (charcoal kiln) like a refinery's "Oil".
+    if ( ( b->GetData()->GetUnionType() == CStructureData::UTpower ) && secAltPowerActive( b ) ) {
         if ( const AltOutput::AltOutputDef* pDef = AltOutput::Available( b ) ) {
             if ( maxOut > 0 ) { outMats[0] = pDef->m_iInputMat; return 1; }
         }
@@ -463,7 +461,7 @@ static int collectOutputMats(CBuilding* b, int* outMats, int maxOut) {
     int ut = b->GetData()->GetUnionType();
     // C6: a coal-liq-active power plant outputs oil (the def's output mat) — show it as the Output
     // section like a refinery, so the window reads coal IN / oil OUT.
-    if ( ( ut == CStructureData::UTpower ) && secCoalLiqActive( b ) ) {
+    if ( ( ut == CStructureData::UTpower ) && secAltPowerActive( b ) ) {
         if ( const AltOutput::AltOutputDef* pDef = AltOutput::Available( b ) )
             if ( maxOut > 0 ) { outMats[0] = pDef->m_iOutputMat; return 1; }
         return 0;
@@ -1000,7 +998,7 @@ int SDL2BuildingWindow::BuildAltOutput(int x, int y, int w) {
     // so it needs a window relayout — but NOT here (clearing widgets mid-callback frees this very
     // checkbox). Just request it; OnFrame does the rebuild next frame. Other alt hosts (charcoal/
     // bio-oil/fracking) keep the same sections, so they only need the existing live-Refresh swap.
-    bool bRelayout = coalLiqCapable( m_pBldg ) || scroungeCapable( m_pBldg );  // Scrounging: Production appears on toggle
+    bool bRelayout = altPowerCapable( m_pBldg ) || scroungeCapable( m_pBldg );  // Scrounging: Production appears on toggle
     m_chkAltOut = AddWidget<SDL2Checkbox>(
         cbX, yh, cbW, ROW_H, pDef->m_szLabel, checked,
         [this, pBldg, bRelayout]( bool on ) {
@@ -1020,9 +1018,10 @@ int SDL2BuildingWindow::BuildAltOutput(int x, int y, int w) {
     AddWidget<SDL2InfoIcon>( cbX + cbW + 4, yh + ( ROW_H - kInfoSz ) / 2,
                              kInfoSz, kInfoSz, tip );
 
-    // Mode-aware OUTPUT readout (#43-audit item 2). The coal-liq host shows its conversion in
-    // the Power section; the BioFuel / Charcoal / Fracking hosts have no Power section, so mirror
-    // that readout here: a status row + this-building store + colony have/made for the def's
+    // (#43-audit item 2, then #51 half-b: there is deliberately NO output readout in this box --
+    // it is checkbox + (i) only. Every host, power plants included, shows its conversion in the
+    // Production/Inputs/Outputs sections; a power-stopping alt mode has no Power section at all,
+    // because secPower() is suppressed by secAltPowerActive.)
 
     return y + H + SEC_PAD;
 }
@@ -1333,7 +1332,7 @@ int SDL2BuildingWindow::BuildPower(int x, int y, int w) {
     // #43/#6: header reflects the live mode — "Oil" when this coal plant is liquefying coal,
     // else "Power". Captured into m_lblPowerHdr so Refresh() swaps the header text in lockstep
     // with the body rows when coal-liq is toggled while the window is open (was build-time-only).
-    bool bOil = secCoalLiqActive( m_pBldg );
+    bool bOil = secAltPowerActive( m_pBldg );
     // operator C1/C3 (2026-06-28): in oil (coal-liq) mode show the OIL material icon, NOT the power
     // bulb — the plant produces oil, not power. (Header icon is build-time = correct when the window
     // opens with coal-liq already ON, the operator's case.)
@@ -2194,35 +2193,46 @@ void SDL2BuildingWindow::Refresh() {
         const AltOutput::AltOutputDef* pAlt = AltOutput::Available( m_pBldg );
         // C6: a coal-liq-active power plant is now rendered HERE as a producer (coal -> oil), so it
         // gets a real Production status + bar instead of the old repurposed Power section.
-        bool bCoalLiq = secCoalLiqActive( m_pBldg );
-        bool bAlt = ( pAlt != nullptr ) && m_pBldg->IsFlag( CUnit::alt_oil ) && !bCoalLiq;
+        bool bAltPower = secAltPowerActive( m_pBldg );
+        bool bAlt = ( pAlt != nullptr ) && m_pBldg->IsFlag( CUnit::alt_oil ) && !bAltPower;
         // Desperate Measures (rocket edict): not an AltOutput def, so show its fixed scrounge rate here.
         bool bScroungeRocket = ( m_pBldg->GetData()->GetType() == CStructureData::rocket )
                                && m_pBldg->GetOwner() && m_pBldg->GetOwner()->IsEdictActive( EDICT_DESPERATE_MEASURES );
         std::string str;
         if ( bScroungeRocket ) {
             str = "Producing: +10 lumber +5 iron +5 food +5 coal / min";
-        } else if ( bCoalLiq ) {
-            // Name the oil product and show its per-minute rate so it matches every other producer
-            // widget ("Producing Oil: N / min"), per the operator. The coal plant burns coal at
-            // GetRate() build-units per coal (BuildPower) and Convert credits 1 oil per m_iRatioIn
-            // coal (eRatioConsume). Effective oil/min = GetFrameProd(framesPerMin / GetRate()) /
-            // ratioIn — the SAME GetFrameProd(speed * 24*60 * out / batchTime) form the materials
-            // status uses (new_unit.cpp:167), with power's prod basis of 1.
-            int oilMat = pAlt ? pAlt->m_iOutputMat : CMaterialTypes::oil;
-            str = std::string( "Producing " ) + CMaterialTypes::GetDesc( oilMat ).c_str();
-            CBuildPower* pBp     = m_pBldg->GetData()->GetBldPower();
-            int          ratioIn = pAlt ? pAlt->m_iRatioIn : 3;
-            if ( pBp && pBp->GetRate() > 0 && ratioIn > 0 ) {
-                // Reflect ACTUAL production, like the other producers: an empty coal store means the
-                // plant converts NOTHING -> show 0/min, not the theoretical max. Mirrors the I1 fix
-                // in primaryRatePerMin (empty input -> 0) and the runtime BuildPower gate
-                // (mainloop.cpp:2476: GetStore(input)<=0 -> no burn, no oil).
-                int inMat     = pAlt ? pAlt->m_iInputMat : CMaterialTypes::coal;
-                int oilPerMin = ( productionHalted( m_pBldg ) || m_pBldg->GetStore( inMat ) <= 0 ) ? 0
+        } else if ( bAltPower ) {
+            // Name the product and show its per-minute rate so it matches every other producer
+            // widget ("Producing Oil: N / min" / "Producing Coal: N / min"), per the operator.
+            // pAlt is never null here: secAltPowerActive requires AltOutput::Available.
+            str = std::string( "Producing " ) + CMaterialTypes::GetDesc( pAlt->m_iOutputMat ).c_str();
+            CBuildPower* pBp = m_pBldg->GetData()->GetBldPower();
+            if ( pBp && pBp->GetRate() > 0 ) {
+                // Reflect ACTUAL production, like the other producers: an input store that cannot
+                // fund a batch means the plant converts NOTHING -> show 0/min, not the theoretical
+                // max. Same starvation rule as the sim's own gate in BuildPower.
+                int outPerMin = -1;
+                if ( pAlt->m_eDrive == AltOutput::eTimeDriven ) {
+                    // TIME-DRIVEN: one whole batch converts every GetRate() production units, and a
+                    // batch emits exactly ONE output unit. Do NOT divide by the ratio — the ratio
+                    // scales the INPUT draw, and BuildPower has already applied it by handing
+                    // Convert( ) iDo * iRatio. Dividing again under-reports by exactly the ratio.
+                    int iRatio = AltOutput::InputRatio( m_pBldg, pAlt );
+                    if ( iRatio > 0 )
+                        outPerMin = ( productionHalted( m_pBldg )
+                                      || m_pBldg->GetStore( pAlt->m_iInputMat ) < iRatio ) ? 0
+                                    : (int)m_pBldg->GetFrameProd( float( 24 * 60 ) / (float)pBp->GetRate() );
+                } else if ( pAlt->m_iRatioIn > 0 ) {
+                    // FUEL-DRIVEN: the legacy shape, kept verbatim for a def whose conversion is
+                    // still scaled by the fuel burned per batch (Convert gets the batch count, so
+                    // output IS batches / ratio here).
+                    outPerMin = ( productionHalted( m_pBldg )
+                                  || m_pBldg->GetStore( pAlt->m_iInputMat ) <= 0 ) ? 0
                                 : (int)( m_pBldg->GetFrameProd( float( 24 * 60 ) / (float)pBp->GetRate() )
-                                         / (float)ratioIn );
-                str += ": " + FmtNum( oilPerMin ) + " / min";
+                                         / (float)pAlt->m_iRatioIn );
+                }
+                if ( outPerMin >= 0 )
+                    str += ": " + FmtNum( outPerMin ) + " / min";
             }
         } else if ( bAlt ) {
             str = AltProductionStatus( m_pBldg, pAlt );
@@ -2240,11 +2250,14 @@ void SDL2BuildingWindow::Refresh() {
             // Operator (H2): the Production widget must ALWAYS keep its progress bar — hiding it
             // for a flat-trickle alt mode (Fracking) was a regression. Keep the bar visible; show
             // the real cycle progress when there is one, else 0 (the bar stays present).
-            // C6: the coal-liq plant has no GetProductionPer cycle, so drive it from the conversion
+            // C6: an alt-power plant's bar. A TIME-DRIVEN conversion has a real batch cycle
+            // (CPowerBuilding::GetProductionPer) and its m_fAltAccum is always exactly 0, so the
+            // accumulator bar would sit frozen; a fuel-driven one has no cycle and must use the
             // accumulator (GetAltProgressPer, the same source as the old C4 power-section bar).
             int per;
-            if ( bCoalLiq )
-                per = m_pBldg->GetAltProgressPer();
+            if ( bAltPower )
+                per = ( pAlt->m_eDrive == AltOutput::eTimeDriven ) ? m_pBldg->GetProductionPer()
+                                                                   : m_pBldg->GetAltProgressPer();
             else if ( bScroungeRocket || ( bAlt && pAlt && ( pAlt->m_eMode == AltOutput::eMultiTrickle ) ) )
                 per = m_pBldg->GetAltProgressPerMulti();   // rocket edict / warehouse scrounge trickle
             else
@@ -2260,7 +2273,7 @@ void SDL2BuildingWindow::Refresh() {
     // alt input/output is a single material each, so we swap slot 0; other slots (multi-input smelter,
     // which isn't alt-capable) are untouched. Coal-liq is excluded (shows in the Power section).
     const AltOutput::AltOutputDef* pIO = AltOutput::Available( m_pBldg );
-    bool bAltIO = ( pIO != nullptr ) && m_pBldg->IsFlag( CUnit::alt_oil ) && !secCoalLiqActive( m_pBldg );
+    bool bAltIO = ( pIO != nullptr ) && m_pBldg->IsFlag( CUnit::alt_oil ) && !secAltPowerActive( m_pBldg );
     int altInMat  = ( bAltIO && ( pIO->m_eMode == AltOutput::eRatioConsume ||
                                   pIO->m_eMode == AltOutput::eGlobalConsume ) ) ? pIO->m_iInputMat : -1;
     int altOutMat = bAltIO ? pIO->m_iOutputMat : -1;
@@ -2355,7 +2368,7 @@ void SDL2BuildingWindow::Refresh() {
         // (status + this-building store + colony have/made). Otherwise: the normal power
         // readout, oil rows hidden. (Both row sets exist from BuildPower; we just toggle
         // visibility so a live checkbox toggle needs no window rebuild.)
-        bool bOil = secCoalLiqActive( m_pBldg );
+        bool bOil = secAltPowerActive( m_pBldg );
 
         // #6: swap the section HEADER text live too (was fixed at build → showed the open-time
         // mode even after toggling). Mirrors the row-visibility swap below.

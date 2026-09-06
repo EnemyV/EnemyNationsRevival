@@ -2653,6 +2653,23 @@ int CPowerBuilding::EffInputPerMin( ) const
     return ( PROD_PER_MIN / iRate );
 }
 
+int CPowerBuilding::GetProductionPer( ) const
+{
+    // A time-driven conversion has a real batch cycle, so show it. NOT the alt accumulator:
+    // in this mode m_fAltAccum is always exactly 0 (BuildPower only ever hands Convert a whole
+    // batch's worth of input), so GetAltProgressPer( ) would sit frozen at 0 forever.
+    AltOutput::AltOutputDef const* pDef = TimeDrivenDef( );
+    if ( !pDef )
+        return ( -1 );      // fuel plant: unchanged, the CBuilding base answer
+
+    int iRate = GetData( )->GetBldPower( )->GetRate( );
+    if ( iRate <= 0 )
+        return ( -1 );
+
+    int iPer = (int)( m_iBuildDone * 100 / iRate );
+    return ( iPer < 0 ) ? 0 : ( ( iPer > 100 ) ? 100 : iPer );
+}
+
 void CPowerBuilding::GetInputs( int* pVals ) const
 {
 

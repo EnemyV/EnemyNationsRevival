@@ -1135,6 +1135,10 @@ public:
 		virtual int		EffInputPerMin () const;
 		virtual int		EffInputBatch () const;
 
+		// Conversion-cycle progress for a TIME-DRIVEN alt mode (the batch timer). A fuel plant
+		// keeps the CBuilding base answer of -1 ("no production cycle").
+		virtual int		GetProductionPer () const;
+
 protected:
 
 		// The def driving this plant's TIME-DRIVEN alt mode, or NULL: toggle on, def Available()

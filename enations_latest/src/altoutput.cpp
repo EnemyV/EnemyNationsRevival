@@ -45,7 +45,21 @@ namespace
         return ( pBp && ( pBp->GetInput( ) == CMaterialTypes::coal ) );
     }
 
+    // An oil-burning power plant: a power building whose input fuel is oil. Coal Liquefaction's
+    // host since the relocation -- the coal it cracks is DELIVERED, not its own fuel.
+    bool IsOilPowerPlant( CBuilding* b )
+    {
+        if ( b->GetData( )->GetUnionType( ) != CStructureData::UTpower )
+            return ( false );
+        CBuildPower* pBp = b->GetData( )->GetBldPower( );
+        return ( pBp && ( pBp->GetInput( ) == CMaterialTypes::oil ) );
+    }
+
     // A lumber mill (the sawmill): a farm building whose harvest output is lumber.
+    // NOTE: no def names this predicate right now -- Charcoal moved off the mill to the coal
+    // power plant. Kept deliberately: the mill is the intended host for the next def, and
+    // deleting then re-adding a shipped predicate is churn. MSVC is silent about it at this
+    // warning level; gcc/clang will report it as an unused static function until a def uses it.
     bool IsLumberMill( CBuilding* b )
     {
         if ( b->GetData( )->GetUnionType( ) != CStructureData::UTfarm )
@@ -96,6 +110,11 @@ namespace
     // 2 at tier 2 (Catalytic Coal Cracking). Wired into the coal-liq def's m_pfnRatioIn.
     int CoalLiqRatio( CPlayer* p ) { return ( p->GetCoalLiqRatio( ) ); }
 
+    // Charcoal input ratio (lumber per 1 coal) by the owner's highest tier: 4/3/3/2/2. Wired into
+    // the charcoal def's m_pfnRatioIn. Replaces the old GetCharcoalPct throughput scaling, which
+    // scaled a slice of a HARVEST -- there is no harvest at a power plant.
+    int CharcoalRatio( CPlayer* p ) { return ( p->GetCharcoalRatio( ) ); }
+
     // ---- Per-tier flat-rate accessors (eFlatTrickle only) -----------------------------
     // Oil/min an exhausted, fracked well trickles by the owner's highest Fracking tier
     // (0/10/15/20/25/30). Convert() scales this per-minute rate by the opers elapsed.
@@ -126,12 +145,22 @@ namespace
             0                            // m_iWorkforceAdd (no extra labor)
         },
 
-        // 2) Coal Liquefaction (NEW) -- a coal power plant converts 2 coal -> 1 oil when
-        //    toggled. eRatioConsume: pulls coal from the plant's own store and credits oil.
+        // 2) Coal Liquefaction -- hosted on the OIL power plant. Toggled ON, the plant stops
+        //    generating power and cracks DELIVERED coal into oil at 3:1 (2:1 at Catalytic Coal
+        //    Cracking, via m_pfnRatioIn). eTimeDriven: the conversion runs off elapsed production
+        //    time and burns NO fuel -- see BuildPower's time-driven branch. It was previously
+        //    hosted on the COAL plant, where the coal it consumed was also its own fuel; the
+        //    move makes the produced oil exportable (an oil plant's own fuel is oil, which the
+        //    router refuses to source, so the delivery rules in EffInputMat/EffOutputMat and the
+        //    human router's source rule are what make this work at all).
+        //    SAVE HAZARD, knowingly unguarded (no VER_RELEASE bump this phase): an OLD save with
+        //    a liquefying COAL plant reloads with alt_oil set on a plant that now resolves to
+        //    CHARCOAL -- it silently demands lumber it has never been sent and its oil income
+        //    stops. Test on fresh saves only until the migration lands.
         {
             "Coal Liquefaction",
-            "Stops power generation; converts coal into oil",
-            &IsCoalPowerPlant,
+            "Stops power generation; cracks delivered coal into oil at 3:1 (2:1 with Catalytic Coal Cracking)",
+            &IsOilPowerPlant,
             &TechCoalLiq,
             CMaterialTypes::coal,
             CMaterialTypes::oil,
@@ -144,34 +173,41 @@ namespace
             0,                           // m_iPowerMultAdd (no extra power)
             {},                          // m_aMulti (unused)
             0,                           // m_nMulti
-            &CoalLiqRatio                // per-tier input ratio (3 -> 2 at Catalytic Coal Cracking)
+            &CoalLiqRatio,               // per-tier input ratio (3 -> 2 at Catalytic Coal Cracking)
+            AltOutput::eTimeDriven       // m_eDrive: conversion runs off TIME, no fuel burned
         },
 
-        // 3) Charcoal (NEW) -- a lumber mill (the sawmill: UTfarm with lumber output) runs a
-        //    kiln that converts harvested lumber into coal ("Charcoal" label only). The
-        //    Convert() slice-ratio below is a fixed 2 lumber -> 1 coal, BUT the production hook
-        //    only feeds a tier-scaled 6/8/10/12% of the harvest into the kiln and discards the
-        //    rest, so the player-VISIBLE effective rate is ~1 coal per 17-33 lumber (stingy by
-        //    design). Do NOT describe this as "2 lumber -> 1 coal" in the player desc -- that is
-        //    the internal slice ratio, not what the player experiences. eRatioConsume: pulls
-        //    lumber from the mill's own store and
-        //    credits coal. MODE-SWITCH: the production hook (CFarmBuilding::BuildFarm lumber
-        //    branch) diverts the harvest into the kiln instead of crediting player lumber, and
-        //    feeds Convert() a TIER-SCALED amount (CPlayer::GetCharcoalPct; T1 very low) so the
-        //    2:1 ratio stays fixed while throughput scales with research. No energy cost.
+        // 3) Charcoal -- hosted on the COAL power plant, which runs as a KILN. Toggled ON, the
+        //    plant stops generating power and chars DELIVERED lumber into coal. eTimeDriven: the
+        //    conversion runs off elapsed production time and burns NO fuel, so the coal it makes
+        //    LEAVES the plant instead of feeding its own furnace -- that is the whole point, the
+        //    chain is trees -> lumber -> charcoal -> liquefaction -> oil -> gas.
+        //    It was previously hosted on the lumber MILL, where a tier-scaled slice of the
+        //    harvest was diverted into the kiln (CPlayer::GetCharcoalPct). There is no harvest at
+        //    a power plant, so the tier ladder now scales the RATIO instead
+        //    (CPlayer::GetCharcoalRatio, 4/3/3/2/2 lumber per coal, via m_pfnRatioIn).
+        //    SAVE HAZARD, knowingly unguarded (no VER_RELEASE bump this phase): an OLD save with
+        //    a charcoal-burning LUMBER MILL reloads with alt_oil set on a mill that no longer
+        //    matches any def, so the toggle silently does nothing there. Fresh saves only.
         {
             "Charcoal",
-            "Stops lumber output; burns the mill's whole harvest into a small coal trickle (yield scales with Charcoal research), at +15 workers",
-            &IsLumberMill,
+            "Stops power generation; chars delivered lumber into coal at 4:1, improving to 2:1 with Charcoal research, at +2 workers",
+            &IsCoalPowerPlant,
             &TechCharcoal,
             CMaterialTypes::lumber,
             CMaterialTypes::coal,
             AltOutput::eRatioConsume,
             nullptr,                     // m_pfnPct
             nullptr,                     // m_pfnFlat
-            2,                            // 2 lumber per 1 coal
+            4,                            // 4 lumber per 1 coal at tier 1 (m_pfnRatioIn scales it to 2 by T4)
             1.0f,
-            15                           // m_iWorkforceAdd (#2: kiln draws +15 workers ABSOLUTE; operator-tunable, approved linux1)
+            2,                           // m_iWorkforceAdd: 20% of power_1's base GetPeople() (8) -- operator:
+                                         // "the plant's workers plus a small percentage". ABSOLUTE, see the field doc.
+            0,                           // m_iPowerMultAdd (no extra power)
+            {},                          // m_aMulti (unused)
+            0,                           // m_nMulti
+            &CharcoalRatio,              // per-tier input ratio (4 -> 2 up the Charcoal ladder)
+            AltOutput::eTimeDriven       // m_eDrive: conversion runs off TIME, no fuel burned
         },
 
         // 4) Fracking (NEW) -- an EXHAUSTED oil well (its deposit run dry, so it is
