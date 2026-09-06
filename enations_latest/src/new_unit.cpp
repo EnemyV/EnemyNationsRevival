@@ -6173,12 +6173,28 @@ void CVehicle::Serialize( CArchive& ar )
         TRAP( m_route.GetCount( ) > 0 );
         while ( pos != NULL )
         {
-            CRoute* pR = m_route.GetNext( pos );
-            pR->Serialize( ar );
+            // BUGS #88: compare the cursor BEFORE GetNext advances pos. The shipped
+            // post-advance compare stored a cursor sitting on element k as k-1; only
+            // the head (k == 0) came out right, and only by accident - the shipped
+            // compare never matched there and iPos starts at 0. A stale non-NULL
+            // cursor (in no list node) matches nothing either way and still stores 0.
             if ( pos == m_pos )
                 iPos = iOn;
+            CRoute* pR = m_route.GetNext( pos );
+            pR->Serialize( ar );
             iOn++;
         }
+        // BUGS #88: the ONE case the pre-advance compare changes that is not a cursor
+        // sitting on an element - a NULL cursor. The shipped post-advance compare
+        // matched on the final iteration (GetNext leaves pos NULL, and NULL == NULL),
+        // so a NULL cursor on an N-element route stored N-1; pre-advance it would
+        // store 0. Restore N-1 explicitly, so this fix is a provable no-op outside
+        // its trigger. Whether N-1 (rather than 0, or a real "no cursor" sentinel) is
+        // the RIGHT value for a NULL cursor is a separate question, tracked as
+        // BUGS #99 - it is NOT decided here; this only preserves the pre-existing
+        // accidental policy.
+        if ( ( m_pos == NULL ) && ( iOn > 0 ) )
+            iPos = iOn - 1;
         ar << (WORD)iPos;
 
         ar << m_ptDest;
