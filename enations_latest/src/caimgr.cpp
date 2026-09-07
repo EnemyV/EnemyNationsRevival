@@ -3803,6 +3803,13 @@ void CAIMgr::MessageArrived( CNetCmd const* pNewMsg )
                 Perf::CounterInc( "ai.msg.drop" );   // redundant pending alert dropped
                 return;
             }
+            // BUGS #105 instrument (approved WinFable 03:03Z). Resident DISTINCT dedup keys
+            // for this AI. Compared against ai.q.depth it separates two explanations of the
+            // unbounded growth: tracking ~1:1 means every queued alert is a UNIQUE
+            // (type,attacker,target) key and the dedup is at its structural ceiling (the
+            // churning-partner chain); far below depth means keys leak or the erase is
+            // mismatched and that chain is WRONG. Gauge only, no behaviour change.
+            Perf::GaugeSet( "ai.dedup.keys", (int) m_setPendingAttack.size( ) );
         }
         m_plTmpQueue->AddTail( (CObject*)pMsg );
         LeaveCriticalSection( &m_cs );

@@ -1722,6 +1722,36 @@ void CVehicle::EnterBuilding() {
             }
         }
 
+        // [ENTERDEST] (015 R17) INSTRUMENT ONLY. The positive witness [ENTERWRONG] and
+        // [DOORSTEP] cannot give: the vehicle entered the building standing on its OWN
+        // destination hex. Same gate and same site as [ENTERWRONG], and it must stay ABOVE
+        // the m_hexDest/m_ptDest rewrite and the MaterialChange/unload below, so the cargo
+        // it ARRIVED with is the cargo printed. mat/amt are the truck's material load read
+        // through CUnit::GetStore(i) (unit.h:560, unit.inl:152) - the same m_aiStore array
+        // CHPRouter::GetVehicleCargo copies into m_iStore (chproute.cpp:3059) before an
+        // unload. mat is the material type holding the most, amt that type's amount;
+        // mat -1 amt 0 = carrying nothing. Nothing the game reads changes.
+        if (EnTrafficLogOn()) {
+            CBuilding *pBldgDest = theBuildingHex._GetBuilding(m_hexDest);
+            if (pBldg == pBldgDest) {
+                int iMatOn = -1, iMatAmt = 0;
+                for (int iMatInd = 0; iMatInd < CMaterialTypes::GetNumTypes(); ++iMatInd) {
+                    int const iHas = GetStore(iMatInd);
+                    if (iHas > iMatAmt) {
+                        iMatAmt = iHas;
+                        iMatOn = iMatInd;
+                    }
+                }
+                EnTrafficLog("[ENTERDEST] veh %lu vtype %d plyr %d ai %d transport %d hpctl %d "
+                             "bldg %lu btype %d mat %d amt %d at %d,%d",
+                             (unsigned long) GetID(), GetData()->GetType(), GetOwner()->GetPlyrNum(),
+                             GetOwner()->IsAI() ? 1 : 0, GetData()->IsTransport() ? 1 : 0,
+                             IsHpControl() ? 1 : 0,
+                             (unsigned long) pBldg->GetID(), pBldg->GetData()->GetType(),
+                             iMatOn, iMatAmt, m_ptHead.x, m_ptHead.y);
+            }
+        }
+
         GetExitLoc(pBldg, GetData()->GetType(), m_ptNext, m_ptHead, m_ptTail);
         CheckExit();
 
@@ -3515,12 +3545,12 @@ void CVehicle::PostArrivedOrBlocked() {
         // is the datum.
         if (EnTrafficLogOn() && !(m_ptDest == m_ptHead)) {
             EnTrafficLog("[ARRIVEMISS] veh %lu plyr %d ai %d transport %d vtype %d event %d "
-                         "mode %d at %d,%d dest %d,%d hexdest %d,%d why %s fixed 1",
+                         "mode %d at %d,%d dest %d,%d hexdest %d,%d hpctl %d why %s fixed 1",
                          (unsigned long) GetID(), GetOwner()->GetPlyrNum(),
                          GetOwner()->IsAI() ? 1 : 0, GetData()->IsTransport() ? 1 : 0,
                          GetData()->GetType(), (int) m_iEvent, (int) m_cMode,
                          m_ptHead.x, m_ptHead.y, m_ptDest.x, m_ptDest.y,
-                         m_hexDest.X(), m_hexDest.Y(),
+                         m_hexDest.X(), m_hexDest.Y(), IsHpControl() ? 1 : 0,
                          g_pszPostWhy != NULL ? g_pszPostWhy : "?");
         }
 
