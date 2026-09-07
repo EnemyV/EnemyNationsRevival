@@ -2531,6 +2531,26 @@ static void SetVehDest( CMsgVehSetDest* pMsg )
     else
         pVeh->SetDestAndMode( pMsg->m_hex, (CVehicle::VEH_POS)pMsg->m_iSub );
 
+    // R11 human order denominator (015 R11 item 4). `orders_ok` used to be AI-only,
+    // so a human row of 0 meant "no counter" rather than "no orders". This is the
+    // engine's acceptance point for a veh_set_dest that arrives as a MESSAGE, counted
+    // AFTER the SetDest above so a dropped/rewritten order is never counted. AI owners
+    // are EXCLUDED because the AI already counts at its own PostToServer site
+    // (caiunit.cpp:54) and counting here too would double it.
+    // SCOPE - read the human column with this in mind: what lands here for a human is
+    // the HP auto-router (CHPRouter::SetDestination -> CGame::PostToClient -> AddToQueue
+    // -> ProcessMessage). A player's own right-click does NOT come through here:
+    // CWndArea::SetDestAndSfx calls CVehicle::SetDest in-process (area.cpp:4032/4045),
+    // and area.cpp is outside this change. A human orders_ok is therefore ROUTER orders
+    // accepted, not manual gotos, and unlike the AI side it is not split into wake vs
+    // real - the HP router has no wake order to separate out.
+    if ( EnTrafficLogOn( ) && ( pVeh->GetOwner( ) != NULL ) && ( !pVeh->GetOwner( )->IsAI( ) ) )
+    {
+        int const iPlyrOk = pVeh->GetOwner( )->GetPlyrNum( );
+        if ( ( iPlyrOk >= 0 ) && ( iPlyrOk < EN_AI_TICK_PLYRS ) )
+            ++g_alTrafOrdersOk[iPlyrOk];
+    }
+
     // this can happen if the unit needs to change its destination because its going to a building and 
     // needs to get to the entrance
 #ifdef STRICTER_ASSERTS2

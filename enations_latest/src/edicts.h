@@ -21,6 +21,7 @@
 #define ENATIONS_EDICTS_H
 
 #include "building.h"   // CStructureData::BLDG_TYPE (host buildings)
+#include "altoutput.h"  // AltOutput::AltMat (Desperate Measures' per-draft scrounge rates)
 
 enum EdictScope { EDICT_CIVWIDE, EDICT_BLDG_SCOPED };
 
@@ -93,5 +94,26 @@ extern const EdictDef g_aEdicts[EDICT_COUNT];
 
 // Convenience: is this building type an edict host (so SDL2BuildingWindow shows the section)?
 bool EdictHostHasEdicts( CStructureData::BLDG_TYPE bldgType );
+
+// --- Desperate Measures tuning (EDICT_DESPERATE_MEASURES) -----------------------------------
+// The rocket conscripts a flat base draft PLUS a cut of the workforce the colony is not using,
+// and scrounges proportionally harder for it: a civ sitting on idle population gets more out of
+// the edict than one already running flat out, at the SAME resources-per-worker exchange rate.
+// See CPlayer::GetDesperateDraft for how the cut is made stable (it cannot be a naive percentage
+// of "spare", because the draft is itself part of what makes the workforce un-spare).
+const int DESPERATE_BASE_DRAFT  = 100;  // workers drafted even with zero spare population
+const int DESPERATE_EXCESS_PCT  = 50;   // pct of the REMAINING spare workforce drafted on top
+const int DESPERATE_RATE_PER    = 200;  // workers that buy one helping of DESPERATE_BASE_RATES.
+                                        // Deliberately NOT the base draft: the base is the floor
+                                        // of the CONSCRIPTION, this is the EXCHANGE RATE, and the
+                                        // two are tuned against each other. Raising this alone
+                                        // makes the edict weaker per worker without changing how
+                                        // many workers it takes.
+
+// What the edict scrounges per DESPERATE_RATE_PER workers drafted. The sim scales these by the
+// live draft (CBuilding::Operate) and the rocket's info window quotes them scaled the same way,
+// so the number on screen and the number credited come from this one table. Def in edicts.cpp.
+const int DESPERATE_RATE_LINES = 4;
+extern const AltOutput::AltMat DESPERATE_BASE_RATES[DESPERATE_RATE_LINES];
 
 #endif // ENATIONS_EDICTS_H

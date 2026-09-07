@@ -861,6 +861,13 @@ void CHPRouter::DestinationResponse( CAIMsg* pMsg )
                 // and clear the truck of assignment
                 BOOL bNeedMore = UnloadMaterials( pUnit, pBldg );
 
+                // R10 denominator `deliveries` (015 T2b item 2): the HUMAN auto-router's
+                // completed unload, counted where it actually happens. Same array and the
+                // same runtime range check as the AI site in caimgr.cpp, so the census
+                // field is no longer AI-only and a human row of 0 now means what it says.
+                if ( EnTrafficLogOn( ) && ( m_iPlayer >= 0 ) && ( m_iPlayer < EN_AI_TICK_PLYRS ) )
+                    ++g_alTrafDeliveries[m_iPlayer];
+
                 // now move the truck out of the building and into
                 // an unoccupied location some distance away from it
                 CHexCoord hexDest;
@@ -903,6 +910,13 @@ void CHPRouter::DestinationResponse( CAIMsg* pMsg )
                 // transfer the qty needed to the building
                 // and clear the truck of assignment
                 BOOL bNeedMore = UnloadMaterials( pUnit, pBldg );
+
+                // R10 denominator `deliveries` (015 T2b item 2): the SAME human unload,
+                // reached through the post-restore branch (truck has no assignment, the
+                // building hex supplies the id). Counted here too or a restored game would
+                // silently under-report deliveries.
+                if ( EnTrafficLogOn( ) && ( m_iPlayer >= 0 ) && ( m_iPlayer < EN_AI_TICK_PLYRS ) )
+                    ++g_alTrafDeliveries[m_iPlayer];
 
                 // now move the truck out of the building and into
                 // an unoccupied location some distance away from it

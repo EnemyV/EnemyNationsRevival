@@ -3,7 +3,7 @@
 #define __ENPROBES_H__
 
 #define EN_AI_PROBES_WAR  0  // war: staging, launches, bridges, bunker, recall
-#define EN_AI_PROBES_ECON 0  // economy/logistics/census: trucks, cranes, roads, factories
+#define EN_AI_PROBES_ECON 1  // economy/logistics/census: trucks, cranes, roads, factories
 #define EN_PERF_PROBES    0  // performance: MAINSTALL/SLOWMSG/SLOWBLDG/SLOWPATH/SLOWROAD stall reporters
 #define EN_SAVE_PROBES    0  // save/load mineral flag round-trip ([SAVE store]/[LOAD] + worlddbg.log in the run dir)
 #define EN_PATH_PROBES    0  // CPathMgr movement-A* exit-mix counters (mpath.* in perf.log; needs EN_PERF=1 at runtime)

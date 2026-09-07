@@ -95,6 +95,9 @@ void CPlayer::ctor( )
     m_iPwrNeed        = 1;
     m_iPwrHave        = 0;
     m_iPplNeedBldg    = 1;
+    m_iPplNeedLast    = -1;   // no finished tick yet -- Desperate Measures drafts the flat base
+    m_iDespDraftLast  = 0;
+    m_iDespDraftTick  = 0;
     m_iPplBldg        = 0;
     m_iPplVeh         = 0;
     m_fPplMult        = 1.0;
@@ -608,6 +611,50 @@ void CPlayer::AddGas( int iNum )
     m_aiMade[CMaterialTypes::gas] += iNum;
 }
 
+// Desperate Measures (EDICT_DESPERATE_MEASURES): how many workers the rocket conscripts this
+// tick. The edict's scrounge rate scales with this, so an empire with idle population gets more
+// out of it -- at the same resources-per-worker rate, it just runs bigger.
+//
+//   draft = DESPERATE_BASE_DRAFT + DESPERATE_EXCESS_PCT% of the spare workforce left after it
+//
+// The whole difficulty is making that percentage HOLD STILL. The draft is itself part of the
+// workforce need, so a naive pct of "spare = have - need" chases its own tail: draft up -> spare
+// down -> draft down -> spare up, oscillating every tick and flickering the output with it. Two
+// things are required, and neither alone is enough:
+//
+//   1. Read LAST tick's FINISHED need. The live m_iPplNeedBldg is a partial sum while the
+//      buildings are still accumulating, so its mid-tick value depends on where the rocket
+//      happens to sit in the iteration order -- jitter even with no feedback at all.
+//   2. Add our own previous draft back before taking the cut. What is left is the spare
+//      workforce as it would be if this edict were not running -- a quantity the draft does not
+//      appear in. The draft therefore computes the same answer every tick while the rest of the
+//      economy holds, which is the fixed point we want, rather than orbiting one.
+//
+// The flat base comes out of the spare FIRST, so the scaling half can never by itself push the
+// colony into a workforce deficit. A colony with no slack pays exactly the flat base, i.e. what
+// this edict has always cost.
+int CPlayer::GetDesperateDraft( ) const
+{
+
+    ASSERT_STRICT_VALID( this );
+
+    // No finished tick to read yet (new game, or the first tick after a load -- these are
+    // runtime-only). Reading a zeroed need here would score the ENTIRE workforce as spare and
+    // spike the draft for one tick.
+    if ( m_iPplNeedLast < 0 )
+        return ( DESPERATE_BASE_DRAFT );
+
+    // spare workforce as if this edict were not drafting (point 2 above)
+    LONG lSpare = m_iPplBldg - ( m_iPplNeedLast - m_iDespDraftLast );
+
+    // the flat base is taken out of the spare before the percentage
+    lSpare -= DESPERATE_BASE_DRAFT;
+    if ( lSpare <= 0 )
+        return ( DESPERATE_BASE_DRAFT );
+
+    return ( DESPERATE_BASE_DRAFT + (int)( ( lSpare * DESPERATE_EXCESS_PCT ) / 100 ) );
+}
+
 void CPlayer::StartLoop( )
 {
 
@@ -659,6 +706,47 @@ void CPlayer::StartLoop( )
         SampleHistory( );
     }
 
+    // Desperate Measures reads the workforce as of a FINISHED tick, so snapshot here -- after
+    // the edict upkeep fold-in above (so it matches the need m_fPplMult was just computed from)
+    // and before the reset below wipes it. The draft total rolls over the same way: what the
+    // rocket(s) drew this tick becomes next tick's add-back. (The upkeep pct also scaled the
+    // draft inside m_iPplNeedBldg while the add-back is the raw figure; the difference is
+    // upkeepPct * draft, which only makes the spare estimate slightly conservative.)
+    m_iPplNeedLast   = m_iPplNeedBldg;
+    m_iDespDraftLast = m_iDespDraftTick;
+    m_iDespDraftTick = 0;
+
+    // [PWRLOOP]/[PPLLOOP] (015 R12) INSTRUMENT ONLY, read HERE because this is the last
+    // point at which the finished economic loop's totals still exist - the reset below is
+    // untouched. m_iPwrHave < 0 means a negative power stock survived a whole accumulation
+    // cycle. m_iPplBldg is deliberately NOT reset by this function (it is a running stock,
+    // unlike m_iPwrHave), which is exactly why a bad value persists - #82 has it at
+    // ~2,137,000,000 on live players. Neither line writes anything.
+    if ( EnTrafficLogOn( ) )
+    {
+        if ( m_iPwrHave < 0 )
+            EnTrafficLog( "[PWRLOOP] plyr %d have %d need %d", GetPlyrNum( ), (int)m_iPwrHave,
+                          (int)m_iPwrNeed );
+
+        if ( ( m_iPplBldg < 0 ) || ( m_iPplBldg > 1000000000 ) )
+        {
+            // one line per player per 10 s. EN_AI_TICK_PLYRS (vehicle.h) is the same
+            // generous fixed bound the other per-player probes carry, and the index is
+            // range-checked because the game has no fixed player array.
+            static DWORD s_adwNextPplLoop[EN_AI_TICK_PLYRS] = { 0 };
+            const int    iPl   = GetPlyrNum( );
+            const DWORD  dwNow = timeGetTime( );
+            DWORD*       pdw   = ( ( iPl >= 0 ) && ( iPl < EN_AI_TICK_PLYRS ) ) ? &s_adwNextPplLoop[iPl] : NULL;
+            if ( ( pdw == NULL ) || ( dwNow >= *pdw ) )
+            {
+                if ( pdw != NULL )
+                    *pdw = dwNow + 10000;
+                EnTrafficLog( "[PPLLOOP] plyr %d pplbldg %d pplneed %d pplveh %d", iPl,
+                              (int)m_iPplBldg, (int)m_iPplNeedBldg, (int)m_iPplVeh );
+            }
+        }
+    }
+
     // clear for next count
     m_iPwrHave     = 0;
     m_iPwrNeed     = 0;
@@ -672,6 +760,13 @@ void CPlayer::StartLoop( )
 // StartLoop). Feeds the building-info windows' history graphs.
 void CPlayer::SampleHistory( )
 {
+    // [HISTBAD] (015 R15) INSTRUMENT ONLY. m_iHistHead indexes m_aHist* on the very next
+    // line with no bound of its own, so a head outside [0, HIST_LEN) - which only a save
+    // can introduce, see [HISTLOAD] - writes past the arrays. This line ONLY logs it: the
+    // writes below are deliberately untouched so the failure stays reproducible.
+    if ( EnTrafficLogOn( ) && ( ( m_iHistHead < 0 ) || ( m_iHistHead >= HIST_LEN ) ) )
+        EnTrafficLog( "[HISTBAD] plyr %d fine head %d", (int)m_iPlyrNum, (int)m_iHistHead );
+
     m_aHistPwrHave[m_iHistHead]  = m_iPwrHave;
     m_aHistPwrNeed[m_iHistHead]  = m_iPwrNeed;
     m_aHistPplTotal[m_iHistHead] = GetPplTotal( );
@@ -695,6 +790,10 @@ void CPlayer::SampleHistory( )
         if ( ++m_iHRTick[r] >= _hrCad[r] ) {
             m_iHRTick[r] = 0;
             int h = m_iHRHead[r];
+            // [HISTBAD] (015 R15) INSTRUMENT ONLY - same check as the fine head above, for
+            // the coarse ring head that indexes m_aHR on the next line. Logs only.
+            if ( EnTrafficLogOn( ) && ( ( h < 0 ) || ( h >= HIST_LEN ) ) )
+                EnTrafficLog( "[HISTBAD] plyr %d ring %d head %d", (int)m_iPlyrNum, r, h );
             for ( int s = 0; s < HR_SERIES; s++ ) m_aHR[r][s][h] = hv[s];
             m_iHRHead[r] = ( h + 1 ) % HIST_LEN;
             if ( m_iHRCount[r] < HIST_LEN )
@@ -805,7 +904,15 @@ void CPlayer::Research( int iNumSec )
     CRsrchStatus* pRs      = &GetRsrch( GetRsrchItem( ) );
     ASSERT( !pRs->m_bDiscovered );
 
-    int iNum = m_iRsrchHave * iNumSec * 2;
+    // Research Speed line: +10% points per level (100% at none .. 150% at level 5).
+    // 64-bit intermediate because the scaled product is 1.5x what this line used to
+    // compute, and the 32-bit version of this arithmetic has overflowed before (see
+    // the m_iPtsDiscovered note below). At 100% the result is bit-identical to the old
+    // expression, so saves and pre-line games are unaffected.
+    long long llNum = ( (long long)m_iRsrchHave * iNumSec * 2 * GetRsrchSpeedPct( ) ) / 100;
+    if ( llNum > 0x7FFFFFFF ) llNum = 0x7FFFFFFF;   // unreachable in practice, but this
+    if ( llNum < 0 )          llNum = 0;            // line has overflowed before (see below)
+    int iNum = (int)llNum;
     pRs->m_iPtsDiscovered += iNum;
 
     // did we discover it
@@ -1141,6 +1248,22 @@ BOOL CPlayer::CanRsrch( int iIndex )
         if ( !GetExists( *piNum ) )
             return ( FALSE );
 
+    // Research Speed 1: gated on how much research the colony has ALREADY completed,
+    // not on a precursor topic (the prereq array is AND-only and cannot express "any
+    // N of them"). Only PAID topics count -- the free ones load pre-discovered, so
+    // counting them would grant 5 of the 10 before the game even starts. Loop bound is
+    // GetRsrchSize() (the player's own array), not num_types, so a save still being
+    // resized up cannot walk off the end.
+    if ( iIndex == CRsrchArray::rsrch_speed_1 )
+    {
+        int iDone = 0;
+        for ( int iOn = 1; iOn < GetRsrchSize( ); iOn++ )
+            if ( GetRsrch( iOn ).m_bDiscovered && ( theRsrch[iOn].m_iPtsRequired > 0 ) )
+                iDone++;
+        if ( iDone < RSRCH_SPEED_MIN_TOPICS )
+            return ( FALSE );
+    }
+
     // Pontoon Bridges: ONE-OF building gate (light factory line / refinery /
     // heavy factory) - the prereq array is AND-only, so the OR lives here
     if ( iIndex == CRsrchArray::bridge_short )
@@ -1439,6 +1562,34 @@ void CPlayer::Serialize( CArchive& ar )
                         for ( int i = 0; i < HIST_LEN; i++ )
                             ar >> m_aHR[r][s][i];
                 }
+
+            // [HISTLOAD] (015 R15) INSTRUMENT ONLY. Placed here because this is the first
+            // statement after the WHOLE history block is deserialized (the fine head/count
+            // above, and the coarse rings under the >= 6 gate just above) and BEFORE anything
+            // samples or seeds them: SeedHRFromHist is further down in this same block and
+            // SampleHistory only runs from CPlayer::StartLoop. So these are the ring indices
+            // EXACTLY as the save produced them. `bad` is a read-only range check - nothing
+            // is clamped, no ring is touched, and the game reads none of this.
+            // NOTE: on a save older than release 6 the m_iHR* values printed are the ctor
+            // defaults, not saved data (the gate above did not read them) - SeedHRFromHist
+            // overwrites them below. The three-slot format matches HR_RINGS == 3.
+            if ( EnTrafficLogOn( ) )
+            {
+                int iBad = ( ( m_iHistHead  < 0 ) || ( m_iHistHead  >= HIST_LEN )
+                          || ( m_iHistCount < 0 ) || ( m_iHistCount >  HIST_LEN ) ) ? 1 : 0;
+                for ( int r = 0; r < HR_RINGS; r++ )
+                    if ( ( m_iHRHead[r]  < 0 ) || ( m_iHRHead[r]  >= HIST_LEN )
+                      || ( m_iHRCount[r] < 0 ) || ( m_iHRCount[r] >  HIST_LEN ) )
+                        iBad = 1;
+                EnTrafficLog( "[HISTLOAD] plyr %d ver %lu fine head %d count %d "
+                              "hr head %d,%d,%d count %d,%d,%d tick %d,%d,%d bad %d",
+                              (int)m_iPlyrNum, (unsigned long)theGame.m_dwVer,
+                              (int)m_iHistHead, (int)m_iHistCount,
+                              (int)m_iHRHead[0],  (int)m_iHRHead[1],  (int)m_iHRHead[2],
+                              (int)m_iHRCount[0], (int)m_iHRCount[1], (int)m_iHRCount[2],
+                              (int)m_iHRTick[0],  (int)m_iHRTick[1],  (int)m_iHRTick[2],
+                              iBad );
+            }
 
             // Diagnostic (EN_SAVE_DIAG): confirm how many history samples were READ back.
             // If save wrote >0 but load reads 0 (or the graph is still empty), that isolates
