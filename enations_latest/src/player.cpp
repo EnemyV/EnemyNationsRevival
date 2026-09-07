@@ -3475,6 +3475,36 @@ void CGame::Serialize( CArchive& ar )
 
         // version, cheats, & debug
         ar >> m_dwMaj >> m_dwMin >> m_dwVer >> m_wDbg >> m_wCht;
+
+        // BUGS #102: m_dwVer is the SAVE-FORMAT counter - the field readers gate on it
+        // (theGame.m_dwVer >= 3/4/5/6 at :1399, :1410, :1424, :1432, :1462) - but nothing
+        // validated it. A save written by a LATER build carries the same major/minor, so
+        // it passes the product-version check below, and is then decoded under a counter
+        // this build does not implement: there is no branch for the newer fields, they
+        // cannot be skipped, and every subsequent read is misaligned. That is a stream
+        // desync rather than a refusal, which is the failure the >= gates exist to avoid.
+        // Refuse forward saves explicitly. OLDER saves are unaffected - reading them is
+        // exactly what those gates are for - and this check is deliberately NOT under
+        // Cheat\DiffVer: a format the build cannot parse is not a tester preference.
+        if ( m_dwVer > (DWORD)VER_RELEASE )
+        {
+            // strPrintf is NOT printf: it substitutes MFC-style POSITIONAL %1/%2
+            // and pulls every argument with va_arg( va, const char* )
+            // (EnSettings.cpp:246). printf specifiers are copied through verbatim,
+            // so the original %lu form showed the player the literal text "%lu".
+            // Format the numbers into strings first and use positional placeholders,
+            // the way the sibling IDS_SAVE_VER message below already does.
+            std::string sSaveFmt  = std::to_string( (unsigned long)m_dwVer );
+            std::string sBuildFmt = std::to_string( (unsigned long)VER_RELEASE );
+            std::string sMsg = strPrintf(
+                "This saved game was written by a newer version of Second Chance.\n\n"
+                "Save format %1; this build reads up to %2.\n\n"
+                "Load it with the version that wrote it.",
+                sSaveFmt.c_str( ), sBuildFmt.c_str( ) );
+            EnMessageBox( sMsg.c_str( ) );
+            ThrowError( ERR_RES_CREATE_WND );
+        }
+
         if ( EnGetProfileInt( "Cheat", "DiffVer", 1 ) )
         {
             //			if ((m_dwMaj != VER_MAJOR) || (m_dwMin != VER_MINOR) ||
