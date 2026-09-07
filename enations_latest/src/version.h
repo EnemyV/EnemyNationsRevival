@@ -42,9 +42,11 @@ const char GameLogFile[] = "ENations.log";
 // so a factory's remaining build queue survives save/load (was lost -> queue truncated).
 #define         VER_RELEASE     7
 
-// 3.00.015: open lane. No save-format change (VER_RELEASE stays 7).
-#define         VER_STRING                              "3.00.015"
-#define         RES_VER_STRING                          "3.00.015\0"
+// 3.1.001: display version only. No save-format and no header change -
+// VER_MAJOR/VER_MINOR stay 3/0 and VER_RELEASE stays 7, so every 3.00.x save
+// still loads. Bumping VER_MINOR would refuse them all (CGame::Serialize).
+#define         VER_STRING                              "3.1.001"
+#define         RES_VER_STRING                          "3.1.001\0"
 
 #ifdef _DEBUG
 	#define         VER_FLAGS         VS_FF_DEBUG | VS_FF_PRIVATEBUILD | VS_FF_PRERELEASE
