@@ -196,7 +196,14 @@ void CAIMgr::Manage( void )
         // [attack-dedup] this alert is leaving the queue → allow the next identical
         // (id,id2) one of this type to enqueue again.
         if ( pMsg != NULL && IsDedupAlert( pMsg->m_iMsg ) )
-            m_setPendingAttack.erase( DedupKey( pMsg ) );
+        {
+            // BUGS #106: the bookkeeping counts MULTIPLICITY (a restored save can queue
+            // several copies of one key), so only the last copy to leave unkeys it.
+            std::unordered_map<unsigned long long, int>::iterator itDedup =
+                m_setPendingAttack.find( DedupKey( pMsg ) );
+            if ( itDedup != m_setPendingAttack.end( ) && --itDedup->second <= 0 )
+                m_setPendingAttack.erase( itDedup );
+        }
         LeaveCriticalSection( &m_cs );
         m_iIdle = 0;
 
@@ -3738,13 +3745,15 @@ void CAIMgr::MessageArrived( CNetCmd const* pNewMsg )
         // melee flood from growing ai.q.depth without bound. Erased in Manage on dequeue.
         if ( IsDedupAlert( pMsg->m_iMsg ) )
         {
-            if ( !m_setPendingAttack.insert( DedupKey( pMsg ) ).second )
+            int& iPending = m_setPendingAttack[ DedupKey( pMsg ) ];
+            if ( iPending > 0 )
             {
                 LeaveCriticalSection( &m_cs );
                 delete pMsg;
                 Perf::CounterInc( "ai.msg.drop" );   // redundant pending alert dropped
                 return;
             }
+            iPending = 1;
         }
         m_plTmpQueue->AddTail( (CObject*)pMsg );
         LeaveCriticalSection( &m_cs );
@@ -4897,6 +4906,27 @@ void CAIMgr::Load( CArchive& ar )
             m_plTmpQueue->AddTail( (CObject*)pMsg );
         }
     }
+
+    // BUGS #106: the two queues above were restored verbatim, bypassing MessageArrived, so no
+    // [attack-dedup] bookkeeping was built for them -- every restored alert was unkeyed (the
+    // first post-load duplicate of a queued pair slipped through) and a later dequeue could
+    // unkey copies still queued. Re-key here, walking both restored queues in order and
+    // counting MULTIPLICITY so each queued copy holds its own count. Nothing is dropped and
+    // neither queue nor its order is touched. Same lock as the insert/erase sites.
+    EnterCriticalSection( &m_cs );
+    for ( POSITION posD = m_plMsgQueue->GetHeadPosition( ); posD != NULL; )
+    {
+        CAIMsg* pMsgD = (CAIMsg*)m_plMsgQueue->GetNext( posD );
+        if ( pMsgD != NULL && IsDedupAlert( pMsgD->m_iMsg ) )
+            ++m_setPendingAttack[ DedupKey( pMsgD ) ];
+    }
+    for ( POSITION posD = m_plTmpQueue->GetHeadPosition( ); posD != NULL; )
+    {
+        CAIMsg* pMsgD = (CAIMsg*)m_plTmpQueue->GetNext( posD );
+        if ( pMsgD != NULL && IsDedupAlert( pMsgD->m_iMsg ) )
+            ++m_setPendingAttack[ DedupKey( pMsgD ) ];
+    }
+    LeaveCriticalSection( &m_cs );
 
     // Messages restored above bypassed MessageArrived, so neither the backlog
     // gauge nor the Phase-1 work semaphore saw them. Without this, ai.q.depth
