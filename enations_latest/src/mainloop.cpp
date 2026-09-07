@@ -3125,6 +3125,30 @@ void CFarmBuilding::BuildFarm( )
         GrowFields( );
     UpdateFieldStage( FARM_HARVEST_SLOW * GetData( )->GetBldFarm( )->GetTimeToFarm( ) );
 
+    // EXHAUSTED SITE -- draw nothing at all, exactly like a depleted mine (operator).
+    // m_iTerMult is the 0..10 terrain multiplier and it is the whole of fMul below, so at 0 this
+    // farm can never yield anything: it is the mill's equivalent of CMineBuilding's
+    // `m_iMinerals <= 0`. Mirror that hook's shape -- and note WHERE it sits, which is the point
+    // of the fix: BuildMine returns BEFORE AddPwrNeed/AddPplNeedBldg, so a dead mine costs the
+    // colony no power and no workers. A mill that has slashed its own box flat was still paying
+    // full upkeep for nothing.
+    //
+    // Reachable only since Slash and Burn: before it, terrain never changed at runtime, so a
+    // built farm's m_iTerMult never fell. (A food farm sited on zero-fertility soil hits the same
+    // path; same rule, and it is correct for it too.)
+    //
+    // `stopped` is what CBuilding::Operate gates on (m_unitFlags & (stopped | abandoned)), so the
+    // building idles instead of ticking. It is self-correcting rather than a one-way door: if the
+    // flag is ever cleared while the site is still barren, the next tick simply re-sets it.
+    if ( m_iTerMult <= 0 )
+    {
+        m_iBuildDone = 0;
+        SetFlag( stopped );
+        m_iLastPer = 0;
+        AnimateOperating( FALSE );
+        return;
+    }
+
     // add in its power & people usuage
     GetOwner( )->AddPwrNeed( GetData( )->GetPower( ) );
     // Agricultural Subsidy edict bumps only the farm's own worker requirement (default ×1.0).
