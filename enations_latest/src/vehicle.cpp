@@ -284,9 +284,19 @@ void CVehicle::TrafficCensus(std::string &out)
                     iCtxOff += iPut;
                 }
 
+                // BUGS #111 instrument (WinFable 04:29Z): the cubic wait bar from
+                // vehmove.cpp:2836 is 3 * bc^3 * m_iSpeed * STEPS_HEX opers. Printing the
+                // accumulated wait (tblk), the step cost it is scaled by (speed) and the
+                // computed bar decides PERMANENCE: tblk climbing against a huge bar means the
+                // pin IS the bar and no external re-zeroer is needed; tblk snapping to 0
+                // reopens the external-reset question. APPENDED per the field convention.
+                const unsigned long ulBar =
+                    (unsigned long) ( 3.0 * (double) pVeh->m_iBlockCount * (double) pVeh->m_iBlockCount
+                                    * (double) pVeh->m_iBlockCount * (double) pVeh->m_iSpeed
+                                    * (double) STEPS_HEX );
                 EnTrafficLog("[STUCK] veh %lu vtype %d plyr %d ai %d stagnant_ms %lu retries %d bc %ld "
                              "head %d,%d next %d,%d blocker %lu blocker_mode %d blocker_next %d,%d "
-                             "lastsub %s lastsub_age_ms %s ctx %s",
+                             "lastsub %s lastsub_age_ms %s ctx %s tblk %lu speed %ld bar %lu",
                              (unsigned long) pVeh->GetID(), pData != NULL ? pData->GetType() : -1,
                              pVeh->GetOwner()->GetPlyrNum(), pVeh->GetOwner()->IsAI() ? 1 : 0,
                              (unsigned long) dwAge, pVeh->m_iNumRetries, (long) pVeh->m_iBlockCount,
@@ -295,7 +305,8 @@ void CVehicle::TrafficCensus(std::string &out)
                              pBlk != NULL ? (int) pBlk->m_cMode : -1,
                              pBlk != NULL ? pBlk->m_ptNext.x : 0,
                              pBlk != NULL ? pBlk->m_ptNext.y : 0,
-                             szSeq, szAge, szCtx);
+                             szSeq, szAge, szCtx,
+                             (unsigned long) pVeh->m_dwTimeBlocked, (long) pVeh->m_iSpeed, ulBar);
             }
         }
     }
