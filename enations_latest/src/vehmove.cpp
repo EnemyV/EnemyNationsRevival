@@ -2007,6 +2007,10 @@ static int fnEnumFindNewDest(CHex *pHex, CHexCoord hex, void *pData) {
 // return we use >= instead of == and we try it the next time around if
 // necessary
 void CVehicle::HandleBlocked() {
+    // BUGS #111: which exit reached GiveUp. Declared BEFORE every goto so no jump
+    // crosses its initialisation. Without this the watch-vs-ladder share is inferred
+    // from stagnation age, which is exactly the number I had to withdraw.
+    const char* pszGiveUpWhy = "fallthrough";
 
     ASSERT_VALID (this);
 
@@ -2297,7 +2301,7 @@ void CVehicle::HandleBlocked() {
             m_hexStagnant     = _hexNow;
             m_dwStagnantSince = theGame.GettimeGetTime();
         } else if (theGame.GettimeGetTime() - m_dwStagnantSince > (DWORD)TRUCK_JUMP_TIME * 1000)
-            goto GiveUp;
+            { pszGiveUpWhy = "stagnation_watch_6min"; goto GiveUp; }
     }
 
     // wait a bit
@@ -2317,7 +2321,7 @@ void CVehicle::HandleBlocked() {
 #ifdef _LOGOUT
                 logPrintf(LOG_PRI_VERBOSE, LOG_VEH_MOVE, "Vehicle %d can't get closer", GetID());
 #endif
-                goto GiveUp;
+                { pszGiveUpWhy = "cant_get_closer"; goto GiveUp; }
             }
 
             // we check N random sub hexes around the dest - if can't travel in any of them we're there
@@ -2338,7 +2342,7 @@ void CVehicle::HandleBlocked() {
 #ifdef _LOGOUT
                     logPrintf(LOG_PRI_VERBOSE, LOG_VEH_MOVE, "Vehicle %d probably can't get closer", GetID());
 #endif
-                    goto GiveUp;
+                    { pszGiveUpWhy = "probably_cant_get_closer"; goto GiveUp; }
                 }
 
                 // if it's a land/water break we're there (actually travel/no travel)
@@ -2355,7 +2359,7 @@ void CVehicle::HandleBlocked() {
 #ifdef _LOGOUT
                         logPrintf(LOG_PRI_VERBOSE, LOG_VEH_MOVE, "Vehicle %d hit land/water break", GetID());
 #endif
-                        goto GiveUp;
+                        { pszGiveUpWhy = "land_water_break"; goto GiveUp; }
                     }
                 }
             }
@@ -2688,13 +2692,17 @@ void CVehicle::HandleBlocked() {
             }
         }
 #endif
+        // NOTE: %s goes LAST because pszGiveUpWhy is the LAST argument. Putting the
+        // conversion mid-format while appending the argument at the end made %s consume
+        // m_ptHead.x as a char* and crashed the game ~6 s after load.
         EnReissueLog( "[GIVEUP2] veh %lu ai %d transport %d hpctl %d mode %d retries %d bc %ld"
-                      " head %d,%d dest %d,%d stagnant_ms %lu",
+                      " head %d,%d dest %d,%d stagnant_ms %lu why %s",
                       (unsigned long)GetID( ), GetOwner( )->IsAI( ) ? 1 : 0,
                       GetData( )->IsTransport( ) ? 1 : 0, ( m_bFlags & hp_controls ) ? 1 : 0,
                       (int)m_cMode, m_iNumRetries, (long)m_iBlockCount,
                       m_ptHead.x, m_ptHead.y, m_ptDest.x, m_ptDest.y,
-                      (unsigned long)( m_dwStagnantSince ? theGame.GettimeGetTime( ) - m_dwStagnantSince : 0 ) );
+                      (unsigned long)( m_dwStagnantSince ? theGame.GettimeGetTime( ) - m_dwStagnantSince : 0 ),
+                      pszGiveUpWhy );
         m_dwStagnantSince = 0;   // one give-up per stagnation window
         _SetRouteMode(stop);
         if (theBuildingHex._GetBuilding(_hexHead) != NULL)
