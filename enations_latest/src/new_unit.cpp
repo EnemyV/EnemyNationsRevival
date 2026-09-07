@@ -4212,7 +4212,9 @@ void CFarmBuilding::SlashTick( )
             break;
         }
 
-        if ( ApplySlash( hex ) && theGame.IsNetGame( ) )
+        const BOOL bCut = ApplySlash( hex );
+
+        if ( bCut && theGame.IsNetGame( ) )
         {
             // BuildFarm runs only on the owner's client, but terrain is SHARED world state, so
             // the edit must be replicated or the map forks (pathing, LandMult, vision,
@@ -4221,6 +4223,22 @@ void CFarmBuilding::SlashTick( )
             // message forks that client's map permanently.
             CNetHexRetype msg( hex, CHex::plain );
             theNet.Broadcast( &msg, sizeof( msg ), TRUE );
+        }
+
+        // STOP AT FERTILITY ZERO, re-checked INSIDE the loop. ApplySlash -> UpdateFarm has just
+        // recomputed m_iTerMult, so this is current. The productivity gate in BuildFarm is
+        // evaluated ONCE, before this call, so it cannot stop iterations 2..n of a catch-up
+        // tick: one long frame (this engine has documented multi-second stalls -- see the
+        // message-drain budget in CConquerApp::ProcessAllMessages) delivers a whole game-minute
+        // of opers at once, and the loop would keep cutting straight past the stopping point.
+        // Measured by an external review on an extracted fixture: 8 forest hexes in a 72-hex box
+        // (fertility 1), one tick of 23040 opers -> all 8 cleared, though fertility hit 0 after
+        // the FIRST cut. Discard the remaining accumulator rather than banking it, exactly as
+        // the no-hex-found branch above does.
+        if ( bCut && ( m_iTerMult <= 0 ) )
+        {
+            m_fSlashAccum = 0.0f;
+            break;
         }
     }
 }

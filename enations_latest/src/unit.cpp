@@ -2602,8 +2602,10 @@ int CShipyardBuilding::GetBldgResReq( int iInd, BOOL bAll ) const
 // GetNextMinuteMat, IsOperating, BuildPower, ShowStatusText and the human router's source rule
 // -- reads these four accessors instead of re-deriving the rule from CBuildPower::GetInput().
 //
-// NO def is eTimeDriven today, so TimeDrivenDef() is NULL everywhere and all four answers are
-// exactly the shipped fuel-plant values.
+// TimeDrivenDef() is non-NULL only for a plant whose toggle is ON with an eTimeDriven def
+// Available() -- Charcoal on a coal plant, Coal Liquefaction on an oil plant. For every other
+// plant, and for those two with the toggle off, it is NULL and all four answers are exactly the
+// shipped fuel-plant values.
 // ---------------------------------------------------------------------------------------
 
 // Production units CBuilding::GetProd( 1 ) accrues per GAME minute. GetProd adds

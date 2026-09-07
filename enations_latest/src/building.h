@@ -1143,7 +1143,8 @@ protected:
 
 		// The def driving this plant's TIME-DRIVEN alt mode, or NULL: toggle on, def Available()
 		// for the owner, and m_eDrive == eTimeDriven. One source of truth for all four Eff*
-		// answers and for BuildPower's gates. NULL for every def shipped today (all fuel-driven).
+		// answers and for BuildPower's gates. NULL unless this plant is actively running a kiln
+		// (Charcoal) or liquefaction conversion; every other def is fuel-driven.
 		AltOutput::AltOutputDef const *	TimeDrivenDef () const;
 
 #ifdef _DEBUG

@@ -125,9 +125,9 @@ namespace AltOutput
         int         (*m_pfnRatioIn)(CPlayer*);   // eRatioConsume: optional PER-TIER input ratio override
                                                  // (units of input per 1 output). nullptr = use m_iRatioIn.
                                                  // Coal Liquefaction uses this to drop 3:1 -> 2:1 at tier 2.
-        EDrive      m_eDrive;                    // PRODUCTION driver (see EDrive). Every entry in
-                                                 // s_aDefs omits it, so every def is eFuelDriven and
-                                                 // the shipped fuel-burn path is byte-identical.
+        EDrive      m_eDrive;                    // PRODUCTION driver (see EDrive). Charcoal and Coal
+                                                 // Liquefaction set eTimeDriven; every other def omits
+                                                 // it and stays eFuelDriven on the shipped fuel path.
     };
 
     // The matching def for this building's type, or nullptr. Type-only -- does NOT check the
