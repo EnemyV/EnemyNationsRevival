@@ -3183,7 +3183,16 @@ void CVehicle::PostArrivedOrBlocked() {
 
     m_bFlags |= told_ai_stop;
 
-    if (m_ptDest == m_ptHead) {
+    // BUGS #100: a vehicle standing in its destination hex on ANOTHER sub-hex is
+    // reported ARRIVED, not permanently blocked. This function decided with the
+    // exact SUB test alone; run 13 saw the miss from the HandleBlocked give-up
+    // (this file) and the stop backup (vehicle.cpp), where a vehicle stuck one
+    // sub-hex from its exact destination sub, inside its destination hex, was told
+    // BLOCKED: an AI owner got CMsgVehGoto::ToErr and abandoned a destination it had
+    // reached, a human transport's router got MsgErrGoto. NOTIFICATION only: it does
+    // not perform ArrivedDest, building entry, route advance or load/unload. The
+    // policy per owner is unchanged - AI: CMsgVehDest, hp-router transport: MsgArrived, else nothing.
+    if ((m_ptDest == m_ptHead) || m_hexDest.SameHex(m_ptHead)) {
         // tell the AI
         if (GetOwner()->IsAI()) {
 #if EN_AI_PROBES_ECON && defined(_WIN32)
