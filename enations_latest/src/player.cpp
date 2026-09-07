@@ -3505,23 +3505,27 @@ void CGame::Serialize( CArchive& ar )
             ThrowError( ERR_RES_CREATE_WND );
         }
 
-        if ( EnGetProfileInt( "Cheat", "DiffVer", 1 ) )
+        // BUGS #101: the Cheat\DiffVer tester door waived the WHOLE header check, so a
+        // Release build with DiffVer=0 accepted a mismatched product version and then
+        // deserialised it instead of refusing. Narrow the door rather than remove it:
+        // the three conditions are computed unconditionally (pure reads of fields
+        // deserialised above plus compile-time constants - no calls, no side effects,
+        // no ordering dependency), and DiffVer now waives ONLY the debug/cheat-flag
+        // pair it exists for. With DiffVer non-zero the predicate is identical to the
+        // shipped one, so the default path is unchanged.
+        const BOOL bDiffVer              = EnGetProfileInt( "Cheat", "DiffVer", 1 ) ? TRUE : FALSE;
+        const BOOL wrongMajorVersion     = ( m_dwMaj != VER_MAJOR );
+        const BOOL wrongMinorVersion     = ( m_dwMin != VER_MINOR );
+        const BOOL debugCheatMissmatched = ( m_wDbg != _wDebug ) || ( m_wCht != _wCheat );
+
+        if ( wrongMajorVersion || wrongMinorVersion || ( debugCheatMissmatched && bDiffVer ) )
         {
-            //			if ((m_dwMaj != VER_MAJOR) || (m_dwMin != VER_MINOR) ||
-
-            BOOL wrongMajorVersion     = ( m_dwMaj != VER_MAJOR );
-            BOOL wrongMinorVersion     = ( m_dwMin != VER_MINOR );
-            BOOL debugCheatMissmatched = ( m_wDbg != _wDebug ) || ( m_wCht != _wCheat );
-
-            if ( wrongMajorVersion || wrongMinorVersion || debugCheatMissmatched )
-            {
-                std::string sVer1 = GetVerText( m_dwMaj, m_dwMin, m_dwVer, m_wDbg, m_wCht );
-                std::string sVer2 = GetVerText( VER_MAJOR, VER_MINOR, VER_RELEASE, _wDebug, _wCheat );
-                std::string sMsg = strPrintf( EnLoadStdString( IDS_SAVE_VER ).c_str(),
-                                              sVer1.c_str( ), sVer2.c_str( ) );
-                EnMessageBox( sMsg.c_str() );
-                ThrowError( ERR_RES_CREATE_WND );
-            }
+            std::string sVer1 = GetVerText( m_dwMaj, m_dwMin, m_dwVer, m_wDbg, m_wCht );
+            std::string sVer2 = GetVerText( VER_MAJOR, VER_MINOR, VER_RELEASE, _wDebug, _wCheat );
+            std::string sMsg = strPrintf( EnLoadStdString( IDS_SAVE_VER ).c_str(),
+                                          sVer1.c_str( ), sVer2.c_str( ) );
+            EnMessageBox( sMsg.c_str() );
+            ThrowError( ERR_RES_CREATE_WND );
         }
 
         ar >> m_sFileName;
