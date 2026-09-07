@@ -3094,11 +3094,19 @@ void CVehicle::SetDestAndMode( CSubHex sub, VEH_POS iMode )
     // already gone and a probe gated on retries==25 at GetPath CANNOT see a real
     // reissue. Log the state BEFORE the reset - retries_before == 25 means this call
     // is re-tasking a vehicle that had given up.
-    EnReissueLog( "[SETDEST] veh %lu ai %d transport %d hpctl %d retries_before %d"
-                  " mode_before %d dest %d,%d",
-                  (unsigned long)GetID( ), GetOwner( )->IsAI( ) ? 1 : 0,
-                  GetData( )->IsTransport( ) ? 1 : 0, ( m_bFlags & hp_controls ) ? 1 : 0,
-                  m_iNumRetries, (int)m_cMode, sub.x, sub.y );
+    // Volume control: log only calls that matter (retries_before != 0). The routine
+    // retries==0 case was ~86% of rows and a 21k-line/5min log got the run killed for
+    // host memory. s_seq still counts EVERY call, and is printed on each logged line,
+    // so the DENOMINATOR survives the filter - a filtered log must not silently lose
+    // the total it is a fraction of.
+    static unsigned long s_seq = 0;
+    ++s_seq;
+    if ( m_iNumRetries != 0 )
+        EnReissueLog( "[SETDEST] veh %lu ai %d transport %d hpctl %d retries_before %d"
+                      " mode_before %d dest %d,%d seq %lu",
+                      (unsigned long)GetID( ), GetOwner( )->IsAI( ) ? 1 : 0,
+                      GetData( )->IsTransport( ) ? 1 : 0, ( m_bFlags & hp_controls ) ? 1 : 0,
+                      m_iNumRetries, (int)m_cMode, sub.x, sub.y, s_seq );
     ASSERT_VALID( this );
     DeletePath( );
     m_hexLastDest = sub;
@@ -3349,17 +3357,10 @@ void CVehicle::GetPath( BOOL bNoOcc )
             _SetRouteMode( cant_deploy );
             return;
         }
-        EnReissueLog( "[STAMP] veh %lu ai %d site nopath mode_before %d retries_before %d"
-                      " reissue %d head %d,%d hexdest %d,%d",
+                EnReissueLog( "[STAMP] veh %lu ai %d site nopath mode_before %d retries_before %d"
+                      " head %d,%d hexdest %d,%d",
                       (unsigned long)GetID( ), GetOwner( )->IsAI( ) ? 1 : 0,
                       _iModeBefore, _iRetriesBefore,
-                      ( _iRetriesBefore == MAX_NUM_RETRIES ) ? 1 : 0,
-                      m_ptHead.x, m_ptHead.y, m_hexDest.X( ), m_hexDest.Y( ) );
-        EnReissueLog( "[STAMP] veh %lu ai %d site samepath mode_before %d retries_before %d"
-                      " reissue %d head %d,%d hexdest %d,%d",
-                      (unsigned long)GetID( ), GetOwner( )->IsAI( ) ? 1 : 0,
-                      _iModeBefore, _iRetriesBefore,
-                      ( _iRetriesBefore == MAX_NUM_RETRIES ) ? 1 : 0,
                       m_ptHead.x, m_ptHead.y, m_hexDest.X( ), m_hexDest.Y( ) );
         _SetRouteMode( blocked );
         m_iNumRetries = MAX_NUM_RETRIES;
@@ -3388,6 +3389,11 @@ void CVehicle::GetPath( BOOL bNoOcc )
             m_hexLastDest = _dest;
             return;
         }
+                EnReissueLog( "[STAMP] veh %lu ai %d site samepath mode_before %d retries_before %d"
+                      " head %d,%d hexdest %d,%d",
+                      (unsigned long)GetID( ), GetOwner( )->IsAI( ) ? 1 : 0,
+                      _iModeBefore, _iRetriesBefore,
+                      m_ptHead.x, m_ptHead.y, m_hexDest.X( ), m_hexDest.Y( ) );
         _SetRouteMode( blocked );
         m_iNumRetries = MAX_NUM_RETRIES;
         m_iBlockCount = 6;

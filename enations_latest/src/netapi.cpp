@@ -2529,15 +2529,20 @@ static void SetVehDest( CMsgVehSetDest* pMsg )
     }
 #endif
     pVeh->SetEvent( CVehicle::none );
+    // BUGS #111: the NETWORK/message delivery path - how an externally posted goto
+    // reaches a vehicle. BOTH arms are braced and instrumented on purpose: an
+    // unbraced marker before the else made SetDestAndMode UNCONDITIONAL, so a sub
+    // order ran BOTH arms and executed twice. The witness must not change behaviour.
     if ( pMsg->m_iSub == CVehicle::sub )
+    {
+        EnReissueLog( "[MSGGOTO] veh %lu arm sub", (unsigned long)pVeh->GetID( ) );
         pVeh->SetDest( pMsg->m_sub );
+    }
     else
-        // BUGS #111: the NETWORK/message delivery path - this is how an AI re-task
-        // (CMsgVehGoto) and an HP-router order actually reach a vehicle. A [SETDEST]
-        // immediately preceded by this line is an EXTERNALLY issued destination;
-        // one without it came from internal movement code.
-        EnReissueLog( "[MSGGOTO] veh %lu", (unsigned long)pVeh->GetID( ) );
+    {
+        EnReissueLog( "[MSGGOTO] veh %lu arm hex", (unsigned long)pVeh->GetID( ) );
         pVeh->SetDestAndMode( pMsg->m_hex, (CVehicle::VEH_POS)pMsg->m_iSub );
+    }
 
     // this can happen if the unit needs to change its destination because its going to a building and 
     // needs to get to the entrance
