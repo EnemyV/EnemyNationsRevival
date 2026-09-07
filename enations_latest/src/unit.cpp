@@ -37,6 +37,9 @@
 #include "building.inl"
 #include "vehicle.inl"
 
+// BUGS #111 reissue witness - defined in vehmove.cpp.
+extern void EnReissueLog( const char* fmt, ... );
+
 
 #ifdef _DEBUG
 #undef THIS_FILE
@@ -3086,6 +3089,16 @@ void CVehicle::SetDestAndMode( CSubHex sub, VEH_POS iMode )
     logPrintf( LOG_PRI_USEFUL, LOG_VEH_MOVE, "Vehicle %d at sub (%d,%d) SetDest to (%d,%d)", GetID( ), m_ptHead.x,
                m_ptHead.y, sub.x, sub.y );
 #endif
+    // BUGS #111 caller witness. THIS is the reissue site: SetDestAndMode clears
+    // m_iNumRetries a few lines below, so by the time GetPath runs the stamp is
+    // already gone and a probe gated on retries==25 at GetPath CANNOT see a real
+    // reissue. Log the state BEFORE the reset - retries_before == 25 means this call
+    // is re-tasking a vehicle that had given up.
+    EnReissueLog( "[SETDEST] veh %lu ai %d transport %d hpctl %d retries_before %d"
+                  " mode_before %d dest %d,%d",
+                  (unsigned long)GetID( ), GetOwner( )->IsAI( ) ? 1 : 0,
+                  GetData( )->IsTransport( ) ? 1 : 0, ( m_bFlags & hp_controls ) ? 1 : 0,
+                  m_iNumRetries, (int)m_cMode, sub.x, sub.y );
     ASSERT_VALID( this );
     DeletePath( );
     m_hexLastDest = sub;
@@ -3253,8 +3266,27 @@ BOOL CVehicle::HavePath( ) const
     return ( FALSE );
 }
 
+
 void CVehicle::GetPath( BOOL bNoOcc )
 {
+
+    // BUGS #111: a re-plan on a vehicle already carrying the stamp is a REISSUE.
+    // Record the state BEFORE the search so the stamp sites below can say whether
+    // this call created the stamp or merely re-applied it to a vehicle that was
+    // already stopped - the latter is the cycle.
+    const int   _iModeBefore    = (int)m_cMode;
+    const int   _iRetriesBefore = m_iNumRetries;
+
+    // BUGS #111: log EVERY re-plan attempted on an already-stamped vehicle, not just
+    // the ones that fail. The [STAMP] lines below fire only on the failure paths, so
+    // counting them alone would silently miss a stamped vehicle that re-planned
+    // SUCCESSFULLY - and "the reissuer barely exists" would be an artifact of the
+    // instrument rather than a fact. REPLAN minus the reissue STAMPs = successes.
+    if ( _iRetriesBefore == MAX_NUM_RETRIES )
+        EnReissueLog( "[REPLAN] veh %lu ai %d transport %d hpctl %d mode_before %d nooc %d",
+                      (unsigned long)GetID( ), GetOwner( )->IsAI( ) ? 1 : 0,
+                      GetData( )->IsTransport( ) ? 1 : 0, ( m_bFlags & hp_controls ) ? 1 : 0,
+                      _iModeBefore, bNoOcc ? 1 : 0 );
 
 #ifdef _DEBUG
     ASSERT_VALID( this );
@@ -3317,6 +3349,18 @@ void CVehicle::GetPath( BOOL bNoOcc )
             _SetRouteMode( cant_deploy );
             return;
         }
+        EnReissueLog( "[STAMP] veh %lu ai %d site nopath mode_before %d retries_before %d"
+                      " reissue %d head %d,%d hexdest %d,%d",
+                      (unsigned long)GetID( ), GetOwner( )->IsAI( ) ? 1 : 0,
+                      _iModeBefore, _iRetriesBefore,
+                      ( _iRetriesBefore == MAX_NUM_RETRIES ) ? 1 : 0,
+                      m_ptHead.x, m_ptHead.y, m_hexDest.X( ), m_hexDest.Y( ) );
+        EnReissueLog( "[STAMP] veh %lu ai %d site samepath mode_before %d retries_before %d"
+                      " reissue %d head %d,%d hexdest %d,%d",
+                      (unsigned long)GetID( ), GetOwner( )->IsAI( ) ? 1 : 0,
+                      _iModeBefore, _iRetriesBefore,
+                      ( _iRetriesBefore == MAX_NUM_RETRIES ) ? 1 : 0,
+                      m_ptHead.x, m_ptHead.y, m_hexDest.X( ), m_hexDest.Y( ) );
         _SetRouteMode( blocked );
         m_iNumRetries = MAX_NUM_RETRIES;
         m_iBlockCount = 6;

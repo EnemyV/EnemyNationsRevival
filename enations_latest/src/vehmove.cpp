@@ -32,6 +32,35 @@ const int MAX_TIMES_CIRCLE = 16;
 
 
 // the vehicle is moving
+// ---------------------------------------------------------------------------
+// BUGS #111 reissue witness (WinOpus). Self-contained because the lane has
+// EN_AI_PROBES_ECON 0 and no EnTrafficLog. Writes to the path in EN_REISSUE_LOG;
+// with the variable unset this is one getenv on the first call and nothing else,
+// so an unprobed run pays nothing. Deliberately UNTHROTTLED and owner-agnostic:
+// the shipped [GIVEUP] probe is AI-only and rate-limited to one line per 2 s,
+// which is precisely why the human cycle was never visible.
+void EnReissueLog( const char* fmt, ... )
+{
+    static FILE*  s_fp      = NULL;
+    static bool   s_tried   = false;
+    if ( !s_tried )
+    {
+        s_tried = true;
+        const char* path = getenv( "EN_REISSUE_LOG" );
+        if ( path && path[0] )
+            s_fp = fopen( path, "w" );
+    }
+    if ( !s_fp )
+        return;
+    fprintf( s_fp, "[%lu] ", (unsigned long)theGame.GettimeGetTime( ) );
+    va_list va;
+    va_start( va, fmt );
+    vfprintf( s_fp, fmt, va );
+    va_end( va );
+    fputc( 10, s_fp );   // newline; numeric to avoid an escape entirely
+    fflush( s_fp );
+}
+
 void CVehicle::Move() {
 
 #ifdef STRICTER_ASSERTS
@@ -2659,6 +2688,13 @@ void CVehicle::HandleBlocked() {
             }
         }
 #endif
+        EnReissueLog( "[GIVEUP2] veh %lu ai %d transport %d hpctl %d mode %d retries %d bc %ld"
+                      " head %d,%d dest %d,%d stagnant_ms %lu",
+                      (unsigned long)GetID( ), GetOwner( )->IsAI( ) ? 1 : 0,
+                      GetData( )->IsTransport( ) ? 1 : 0, ( m_bFlags & hp_controls ) ? 1 : 0,
+                      (int)m_cMode, m_iNumRetries, (long)m_iBlockCount,
+                      m_ptHead.x, m_ptHead.y, m_ptDest.x, m_ptDest.y,
+                      (unsigned long)( m_dwStagnantSince ? theGame.GettimeGetTime( ) - m_dwStagnantSince : 0 ) );
         m_dwStagnantSince = 0;   // one give-up per stagnation window
         _SetRouteMode(stop);
         if (theBuildingHex._GetBuilding(_hexHead) != NULL)
@@ -3248,6 +3284,14 @@ void CVehicle::PostArrivedOrBlocked() {
 #endif
 
     // tell the AI/router
+    // BUGS #111: name the branch actually taken. A human NON-transport falls off
+    // the end of this if/else and is told by NOBODY - branch "none" is the case
+    // that must never be followed by a re-plan, and if it is, the reissuer is
+    // something other than these two notifiers.
+    EnReissueLog( "[NOTIFY] veh %lu ai %d transport %d hpctl %d branch %s",
+                  (unsigned long)GetID( ), GetOwner( )->IsAI( ) ? 1 : 0,
+                  GetData( )->IsTransport( ) ? 1 : 0, ( m_bFlags & hp_controls ) ? 1 : 0,
+                  GetOwner( )->IsAI( ) ? "ai" : ( GetData( )->IsTransport( ) ? "transport" : "none" ) );
     if (GetOwner()->IsAI()) {
 #ifdef _LOGOUT
         logPrintf(LOG_PRI_CRITICAL, LOG_VEH_MOVE, "AI told vehicle %d at sub (%d,%d) permanently blocked", GetID(),

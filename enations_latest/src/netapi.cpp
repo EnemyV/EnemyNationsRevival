@@ -11,6 +11,9 @@
 
 #include "netapi.h"
 
+// BUGS #111 reissue witness - defined in vehmove.cpp.
+extern void EnReissueLog( const char* fmt, ... );
+
 #include "SDL2GameDialogs.h"
 #include "enprobes.h"
 #include "ai.h"
@@ -2529,6 +2532,11 @@ static void SetVehDest( CMsgVehSetDest* pMsg )
     if ( pMsg->m_iSub == CVehicle::sub )
         pVeh->SetDest( pMsg->m_sub );
     else
+        // BUGS #111: the NETWORK/message delivery path - this is how an AI re-task
+        // (CMsgVehGoto) and an HP-router order actually reach a vehicle. A [SETDEST]
+        // immediately preceded by this line is an EXTERNALLY issued destination;
+        // one without it came from internal movement code.
+        EnReissueLog( "[MSGGOTO] veh %lu", (unsigned long)pVeh->GetID( ) );
         pVeh->SetDestAndMode( pMsg->m_hex, (CVehicle::VEH_POS)pMsg->m_iSub );
 
     // this can happen if the unit needs to change its destination because its going to a building and 
