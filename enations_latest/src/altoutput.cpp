@@ -172,7 +172,7 @@ namespace
             {},                          // m_aMulti (unused)
             0,                           // m_nMulti
             &CoalLiqRatio,               // per-tier input ratio (3 -> 2 at Catalytic Coal Cracking)
-            AltOutput::eTimeDriven       // m_eDrive: conversion runs off TIME, no fuel burned
+            AltOutput::EDrive::eTimeDriven       // m_eDrive: conversion runs off TIME, no fuel burned
         },
 
         // 3) Charcoal -- hosted on the COAL power plant, which runs as a KILN. Toggled ON, the
@@ -205,7 +205,7 @@ namespace
             {},                          // m_aMulti (unused)
             0,                           // m_nMulti
             &CharcoalRatio,              // per-tier input ratio (4 -> 2 up the Charcoal ladder)
-            AltOutput::eTimeDriven       // m_eDrive: conversion runs off TIME, no fuel burned
+            AltOutput::EDrive::eTimeDriven       // m_eDrive: conversion runs off TIME, no fuel burned
         },
 
         // 4) Fracking (NEW) -- an EXHAUSTED oil well (its deposit run dry, so it is
@@ -302,7 +302,7 @@ namespace
             {},                          // m_aMulti (unused)
             0,                           // m_nMulti
             nullptr,                     // m_pfnRatioIn (no per-tier ratio)
-            AltOutput::eFuelDriven       // m_eDrive: meaningless for eModifier (nothing converts);
+            AltOutput::EDrive::eFuelDriven       // m_eDrive: meaningless for eModifier (nothing converts);
                                          // spelled out rather than omitted so the tail is explicit
         },
     };

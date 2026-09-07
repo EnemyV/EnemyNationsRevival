@@ -2222,7 +2222,7 @@ void SDL2BuildingWindow::Refresh() {
                 // fund a batch means the plant converts NOTHING -> show 0/min, not the theoretical
                 // max. Same starvation rule as the sim's own gate in BuildPower.
                 int outPerMin = -1;
-                if ( pAlt->m_eDrive == AltOutput::eTimeDriven ) {
+                if ( pAlt->m_eDrive == AltOutput::EDrive::eTimeDriven ) {
                     // TIME-DRIVEN: one whole batch converts every GetRate() production units, and a
                     // batch emits exactly ONE output unit. Do NOT divide by the ratio — the ratio
                     // scales the INPUT draw, and BuildPower has already applied it by handing
@@ -2266,7 +2266,7 @@ void SDL2BuildingWindow::Refresh() {
             // accumulator (GetAltProgressPer, the same source as the old C4 power-section bar).
             int per;
             if ( bAltPower )
-                per = ( pAlt->m_eDrive == AltOutput::eTimeDriven ) ? m_pBldg->GetProductionPer()
+                per = ( pAlt->m_eDrive == AltOutput::EDrive::eTimeDriven ) ? m_pBldg->GetProductionPer()
                                                                    : m_pBldg->GetAltProgressPer();
             else if ( bScroungeRocket || ( bAlt && pAlt && ( pAlt->m_eMode == AltOutput::eMultiTrickle ) ) )
                 per = m_pBldg->GetAltProgressPerMulti();   // rocket edict / warehouse scrounge trickle

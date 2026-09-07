@@ -69,7 +69,16 @@ namespace AltOutput
     // (trailing fields simply omitted), so a bool appended next to another bool would silently
     // mis-bind if the tail were ever reordered, while a distinct type fails to compile instead.
     // eFuelDriven is FIRST so a def that omits the trailing initializer stays fuel-driven.
-    enum EDrive { eFuelDriven, eTimeDriven };
+    // (Belt and braces only -- the scoped enum below is what actually catches a misorder.)
+    // SCOPED on purpose (enum class), and this is not style. This field sits at the TAIL of
+    // AltOutputDef, which is initialised POSITIONALLY. A plain enum converts implicitly to bool
+    // and to int, so when a merge inserted `bool m_bTerrainScaled` ahead of it, every relocated
+    // def's trailing `eTimeDriven` silently landed in m_bTerrainScaled (as `true`) and m_eDrive
+    // fell back to its value-initialised 0 == eFuelDriven. It compiled clean and the kilns
+    // quietly burned their own fuel and produced nothing. A scoped enum cannot convert, so the
+    // same mistake is a COMPILE ERROR. Do not un-scope it, and do not add another same-typed
+    // trailing field beside it.
+    enum class EDrive { eFuelDriven, eTimeDriven };
 
     // Slash and Burn (eModifier): the lumber mill's harvest multiplier while the toggle is ON.
     // THE single tuning dial for the harvest half -- read by CFarmBuilding::BuildFarm and by the

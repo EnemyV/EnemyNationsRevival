@@ -2619,7 +2619,7 @@ AltOutput::AltOutputDef const* CPowerBuilding::TimeDrivenDef( ) const
     if ( !pThis->IsFlag( CUnit::alt_oil ) )
         return ( NULL );
     AltOutput::AltOutputDef const* pDef = AltOutput::Available( pThis );
-    if ( !pDef || ( pDef->m_eDrive != AltOutput::eTimeDriven ) )
+    if ( !pDef || ( pDef->m_eDrive != AltOutput::EDrive::eTimeDriven ) )
         return ( NULL );
     return ( pDef );
 }

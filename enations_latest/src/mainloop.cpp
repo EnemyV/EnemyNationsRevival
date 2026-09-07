@@ -2821,7 +2821,7 @@ void CPowerBuilding::BuildPower( )
     //                     shipped today, so the fuel-burn path below is byte-identical.
     const AltOutput::AltOutputDef* pAlt = IsFlag( CUnit::alt_oil ) ? AltOutput::Available( this ) : nullptr;
     const bool bAltStopsPower = pAlt && AltOutput::StopsPower( this, pAlt );
-    const bool bAltTimeDriven = pAlt && ( pAlt->m_eDrive == AltOutput::eTimeDriven );
+    const bool bAltTimeDriven = pAlt && ( pAlt->m_eDrive == AltOutput::EDrive::eTimeDriven );
 
     if ( pBp->GetInput( ) < 0 )
     {
