@@ -3486,7 +3486,18 @@ void CGame::Serialize( CArchive& ar )
         // Refuse forward saves explicitly. OLDER saves are unaffected - reading them is
         // exactly what those gates are for - and this check is deliberately NOT under
         // Cheat\DiffVer: a format the build cannot parse is not a tester preference.
-        if ( m_dwVer > (DWORD)VER_RELEASE )
+        // DEBUG OVERRIDE (Cheat\IgnoreSaveVersion, default 0 = OFF).
+        // #101 deliberately narrowed Cheat\DiffVer so it can no longer waive a
+        // MAJOR/MINOR mismatch - correct for the shipped tester door, but it left no
+        // way to force-load a mismatched save while debugging. This is that way, and
+        // it is deliberately a SEPARATE, self-describing key rather than widening
+        // DiffVer again: it waives the forward-counter refusal and the whole header
+        // check, it is named for exactly what it does, and it is off unless someone
+        // sets it. RELEASE GATE: must be absent from a shipping registry, same as
+        // DiffVer. Registry base is HKCU\Software\Second Chance\Second Chance.
+        const BOOL bIgnoreSaveVer = EnGetProfileInt( "Cheat", "IgnoreSaveVersion", 0 ) ? TRUE : FALSE;
+
+        if ( ( m_dwVer > (DWORD)VER_RELEASE ) && ( !bIgnoreSaveVer ) )
         {
             // strPrintf is NOT printf: it substitutes MFC-style POSITIONAL %1/%2
             // and pulls every argument with va_arg( va, const char* )
@@ -3518,7 +3529,8 @@ void CGame::Serialize( CArchive& ar )
         const BOOL wrongMinorVersion     = ( m_dwMin != VER_MINOR );
         const BOOL debugCheatMissmatched = ( m_wDbg != _wDebug ) || ( m_wCht != _wCheat );
 
-        if ( wrongMajorVersion || wrongMinorVersion || ( debugCheatMissmatched && bDiffVer ) )
+        if ( ( wrongMajorVersion || wrongMinorVersion || ( debugCheatMissmatched && bDiffVer ) )
+             && ( !bIgnoreSaveVer ) )
         {
             std::string sVer1 = GetVerText( m_dwMaj, m_dwMin, m_dwVer, m_wDbg, m_wCht );
             std::string sVer2 = GetVerText( VER_MAJOR, VER_MINOR, VER_RELEASE, _wDebug, _wCheat );
