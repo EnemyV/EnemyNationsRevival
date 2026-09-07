@@ -3164,7 +3164,28 @@ void CFarmBuilding::BuildFarm( )
     // (Note this does NOT exclude an unpowered mill: the lumber mill has a non-zero
     // CStructureData::GetNoPower, so it keeps producing at a reduced rate without power and
     // keeps slashing. That is existing behaviour, not a choice made here.)
-    if ( SlashBurnActive( ) && ( GetFrameProdNoPeople( fMul ) > 0.0f ) )
+    // "Is this mill actually harvesting?" -- the per-FRAME production rate. Computed once and
+    // used for BOTH the animation and the slash gate, because it is the same question.
+    const BOOL bProducing = ( GetFrameProdNoPeople( fMul ) > 0.0f );
+
+    // Stop the harvest animation when it is NOT harvesting (operator-reported). A mill that has
+    // slashed its own box down to fertility 0 keeps standing and keeps animating while yielding
+    // nothing. Before Slash and Burn that state was effectively unreachable -- terrain never
+    // changed at runtime, so a built mill's m_iTerMult never fell -- which is why BuildFarm never
+    // had to turn the animation off and, unlike BuildPower, never called AnimateOperating at all.
+    //
+    // Gate on the RATE, never on the truncated iInc below: iInc is 0 on many ticks for a weak
+    // mill (the remainder carries in m_fOperMod), so gating on it would strobe the animation and,
+    // because AnimateOperating posts CMsgBldgStat on every state CHANGE, spam that message across
+    // the network every few frames. AnimateOperating is idempotent, so calling it each tick with
+    // an unchanged value costs nothing -- the same pattern BuildPower already uses.
+    //
+    // NOTE this also covers food farms (fertility 0, or wrecked to m_fDamPerfMult == 0), which
+    // previously kept animating too. Same rule, one line, and it is the correct answer for them
+    // as well -- but it IS a behaviour change slightly wider than Slash and Burn itself.
+    AnimateOperating( bProducing );
+
+    if ( SlashBurnActive( ) && bProducing )
         SlashTick( );
 
     // get change based on everything
