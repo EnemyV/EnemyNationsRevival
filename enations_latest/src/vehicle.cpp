@@ -1308,7 +1308,9 @@ void CVehicle::StopShooting(CUnit *pNewTarget) {
             pBldg->_SetTarget(pNewTarget);
             if (pBldg->GetOwner()->IsAI()) {
                 CMsgOutOfLos msg(pBldg, this);
-                theGame.PostToClient(GetOwner(), &msg, sizeof(msg));
+                // BUGS #104: the out-of-LOS message names the BUILDING as the attacker (ai.cpp gates delivery on attacker-owner agreement),
+                // so it must go to the building's owner, as the vehicle branch above does; it was posted to the victim's owner and always rejected.
+                theGame.PostToClient(pBldg->GetOwner(), &msg, sizeof(msg));
             }
         }
     }
