@@ -4979,6 +4979,15 @@ void CVehicle::ctor( )
     m_iResumeMode      = 0;
     m_bResume          = FALSE;
     m_dwCensus         = 0;
+    m_dwLaneLog        = 0;
+    m_iJamAnchorX      = 0;
+    m_iJamAnchorY      = 0;
+    m_iJamWatch        = 0;
+    m_iJamClear        = 0;
+    m_iJamCool         = 0;
+    m_iJamFwd          = 0;
+    m_bConfined        = FALSE;
+    m_iCorrLen         = 0;
     m_dwBlockLog       = 0;
     m_bReversing       = FALSE;
     m_iHoldFrames      = 0;

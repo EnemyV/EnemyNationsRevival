@@ -32,6 +32,29 @@ void WaitLog (const char *fmt, ...);   // wait/resume probe, inert unless EN_WAI
 
 const int MAX_NUM_RETRIES = 25;
 const int MAX_BACK_UPS    = 2;      // per destination, so a stuck pair cannot ping-pong forever
+// Adjacent-truck clearance ("panic"), per WinAstra's 015-winastra-adjacent-clearance
+// plan. A truck stuck this long asks the trucks TOUCHING it to make space for a brief
+// window; each recipient forwards ONCE to its own neighbours, carrying the REMAINING
+// window rather than a fresh one, so an adjacency cycle cannot refresh itself forever.
+// No manager, no group object, no recursion, no requester-chosen direction.
+const int JAM_STUCK_FRAMES  = 24 * 30;   // stagnation before a truck may raise a request
+const int JAM_WINDOW_FRAMES = 24 * 30;   // how long the shared make-space priority lasts.
+                                    // FIVE seconds could not work: the trucks at the front
+                                    // need the ones BEHIND them to clear first, and the
+                                    // window expired long before a vacancy could travel in.
+                                    // The panic has to outlast the queue it is unwinding.
+const int JAM_FWD_HEXES     = 2;         // how far a clearance request reaches - a jam has GAPS,
+                                    // so strict touching breaks the chain at the first empty sub
+const int JAM_FWD_EVERY     = 24 * 2;    // ...and re-offer it, so trucks that drift into the
+                                    // cluster later are recruited instead of being missed
+const int JAM_STAGGER_FRAMES = 24 * 8;   // spread of per-truck expiry, so a whole cluster
+                                    // does not come off its clearance window in one frame
+                                    // and pile straight back into the knot together
+const int JAM_COOL_FRAMES   = 24 * 10;   // cooldown after participating - short enough that a
+                                    // corridor which is still jammed panics again soon
+const int JAM_MOVE_SUBS     = 2;         // body-centre travel that counts as real progress
+const int MAX_BACK_UPS_JAM = 12;    // ...but inside a packed corridor a walled-in truck must be
+                                    // able to keep trying, or the cluster cannot drain from the rear
 const int PARK_SEARCH_SUBS = 16;    // how far a nudged vehicle will look for somewhere off-road to park
 const int CORRIDOR_LOOK_HEXES = 12; // how far ahead to look when sizing a narrow corridor
 const int CORRIDOR_MIN_HEXES  = 3;  // shorter than this is a pinch, not a corridor worth fleeing
@@ -327,6 +350,9 @@ public:
 		BOOL					ResumeJob ();		// back onto the job a traffic detour interrupted
 		BOOL					ClearOfRoad (CSubHex const &_sub);	// off the span AND off the pavement
 		int						CorridorAhead (int &iVehs);	// hexes of NARROW corridor ahead, 0 if none
+		void					JamWatch ();		// stagnation watch + raise a clearance request
+		void					JamForward ();		// pass the request to the trucks TOUCHING us, once
+		BOOL					JamEligible () const;
 		BOOL					FindNextHex ();
 		void					ArrivedNextHex ();
 		BOOL					GetNextHex (BOOL bNew);
@@ -613,6 +639,15 @@ protected:
 		int						m_iResumeMode;					// its VEH_POS
 		BOOL					m_bResume;							// TRUE if m_subResume is armed
 		DWORD					m_dwCensus;							// last bridge-census line (probe only)
+		DWORD					m_dwLaneLog;						// last lane-occupancy line (probe only)
+		int						m_iJamAnchorX;						// body-centre (doubled) when the stuck watch began
+		int						m_iJamAnchorY;						// - centre, not head: a head/tail relabel must not reset it
+		int						m_iJamWatch;						// frames stagnant; 0 = not watching
+		int						m_iJamClear;						// frames left making space for a clearance request
+		int						m_iJamCool;							// frames until we may take part again
+		int						m_iJamFwd;							// frames until we pass the request on again
+		BOOL					m_bConfined;						// last blocked check: no room to manoeuvre here
+		int						m_iCorrLen;							// ...and how far the corridor ran along OUR axis
 		DWORD					m_dwBlockLog;						// last blocked-step line (probe only)
 		BOOL					m_bReversing;						// backing up: hold the facing while the body moves
 		int						m_iHoldFrames;						// game frames left in the post-retreat hold; 0 = not holding

@@ -186,6 +186,30 @@ void CVehicle::Operate() {
         }
     }
 
+    // LANE OCCUPANCY, every truck on the deck, not only the stuck ones.
+    //
+    // My lane numbers so far came from [BLOCK], which fires only for a BLOCKED
+    // vehicle - a truck wedged in the wrong lane keeps being sampled while a truck
+    // driving correctly is never sampled at all, so that ratio cannot tell a working
+    // lane rule from a broken one. This is the instrument WinFable asked for: a
+    // periodic census of EVERY deck truck's sub-lane and travel direction, so
+    // wrong-lane share is a property of the fleet rather than of the jam.
+    if (GetOwner()->IsMe() && GetData()->IsTransport() &&
+        (theGame.GettimeGetTime() - m_dwLaneLog > 2000)) {
+        CHexCoord _hL(GetHexHead());
+        if ((_hL.X() >= 18) && (_hL.X() <= 42) && (_hL.Y() >= 332) && (_hL.Y() <= 348)) {
+            m_dwLaneLog = theGame.GettimeGetTime();
+            WaitLog("[LANE] veh %d hex %d,%d head %d,%d tail %d,%d mode %d dest %d,%d",
+                    GetID(), _hL.X(), _hL.Y(), m_ptHead.x, m_ptHead.y, m_ptTail.x, m_ptTail.y,
+                    (int) m_cMode, m_hexDest.X(), m_hexDest.Y());
+        }
+    }
+
+    // stuck watch + adjacent clearance request ("panic"), before the stopped test so
+    // a truck making space is still ticked, but it is gated on the vehicle being ours
+    // and automatic inside JamEligible.
+    JamWatch();
+
     if (m_iFrameHit > 0) {
         m_iFrameHit -= theGame.GetFramesElapsed();
         if (m_iFrameHit <= 0) {
