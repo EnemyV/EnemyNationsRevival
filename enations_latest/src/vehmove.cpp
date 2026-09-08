@@ -1536,7 +1536,31 @@ BOOL CVehicle::CanEnter(CSubHex const &_sub, BOOL bStrict) {
     if (theVehicleHex._GetVehicle(_sub) != NULL)
         return (FALSE);
 
-    return (IsPassable(_sub, bStrict));
+    if (!IsPassable(_sub, bStrict))
+        return (FALSE);
+
+    // LANE EXCLUSIVITY, not lane preference.
+    //
+    // InLane was consulted at ONE site - FindSubEx's first pass - out of 42 places
+    // that write m_ptNext, and that site had a fallback pass which dropped it. So
+    // every go-around, every ladder rotate and every re-path was free to end in the
+    // oncoming lane, and on a two-lane deck a go-around IS an overtake. That is how
+    // a truck whose wait expires puts itself nose-to-nose with oncoming traffic:
+    // measured, the 10s wait expires INTO the ladder that overtakes, which makes the
+    // build "overtake after 10 seconds" and is why a longer wait cannot help.
+    //
+    // Putting the test HERE covers every writer at once, because they all validate
+    // through CanEnter - one predicate, no fallback, rather than 42 edits.
+    //
+    // Two exemptions keep it from trapping anyone:
+    //   - a REVERSING truck is recovering and moves against its lane by definition;
+    //   - InLane returns TRUE for a step INTO our own lane, so a truck already on the
+    //     wrong side can always correct. "Never END in the oncoming lane" is not the
+    //     same as "never move while you are in it".
+    if ((!m_bReversing) && (!InLane(_sub)))
+        return (FALSE);
+
+    return (TRUE);
 }
 
 // set the ptLoc based on the hexes so if we got off its fixed each hex
@@ -2334,28 +2358,38 @@ int CVehicle::CorridorAhead(int &iVehs) {
 
     iVehs = 0;
 
-    // travel axis, in HEXES, from the body
-    CHexCoord _h(GetHexHead());
-    CHexCoord _t(m_ptTail);          // no GetHexTail(); build it the way GetHexHead does
-    _t.Wrap();
-    int adx = CHexCoord::Diff(_h.X() - _t.X());
-    int ady = _h.Y() - _t.Y();
-    if ((adx == 0) && (ady == 0))
+    // Heading comes from the SUB axis, not the hex axis. Both ends of a two-sub hull
+    // usually sit inside ONE hex, so hex-minus-hex was zero most of the time and the
+    // whole detector silently answered "no corridor" - WinAstra's review48 defect.
+    int sdx = CSubHex::Diff(m_ptHead.x - m_ptTail.x);
+    int sdy = m_ptHead.y - m_ptTail.y;
+    if ((sdx == 0) && (sdy == 0))
         return (0);
-    if (adx > 1)  adx = 1;
-    if (adx < -1) adx = -1;
-    if (ady > 1)  ady = 1;
-    if (ady < -1) ady = -1;
 
-    int iRun = 0;
-    int x = _h.X(), y = _h.Y();
-    for (int iStep = 0; iStep < CORRIDOR_LOOK_HEXES; iStep++) {
-        x += adx;
-        y += ady;
-        CHexCoord _on(x, y);
+    int      iRun = 0;
+    CSubHex  _at(m_ptHead);
+    CHexCoord _prev(GetHexHead());
+
+    // Walk in SUBS - two to a hex - and judge each new hex once.
+    for (int iStep = 0; iStep < CORRIDOR_LOOK_HEXES * 2; iStep++) {
+        _at.x += sdx;
+        _at.y += sdy;
+        _at.Wrap();
+
+        CHexCoord _on(_at);
+        _on.Wrap();
+        if ((_on.X() == _prev.X()) && (_on.Y() == _prev.Y()))
+            continue;                       // still inside the hex we already judged
+
+        // hex-level heading, from the hex we just left to this one
+        int adx = CHexCoord::Diff(_on.X() - _prev.X());
+        int ady = _on.Y() - _prev.Y();
+        _prev = _on;
+        if ((adx == 0) && (ady == 0))
+            continue;
 
         // off the end of the world stops the walk, not the corridor
-        if ((y < 0) || (y >= theMap.Get_eY()))
+        if ((_on.Y() < 0) || (_on.Y() >= theMap.Get_eY()))
             break;
 
         // can we stand here at all? if not we are looking past the corridor's end
@@ -2363,8 +2397,10 @@ int CVehicle::CorridorAhead(int &iVehs) {
             break;
 
         // the two flanks, perpendicular to travel
-        CHexCoord _l(x + ady, y - adx);
-        CHexCoord _r(x - ady, y + adx);
+        CHexCoord _l(_on.X() + ady, _on.Y() - adx);
+        CHexCoord _r(_on.X() - ady, _on.Y() + adx);
+        _l.Wrap();
+        _r.Wrap();
         BOOL bL = (theMap.GetTerrainCost(_l, _l, 0, GetData()->GetWheelType()) != 0) &&
                   (!(theMap._GetHex(CSubHex(_l))->GetUnits() & CHex::bldg));
         BOOL bR = (theMap.GetTerrainCost(_r, _r, 0, GetData()->GetWheelType()) != 0) &&
@@ -2374,8 +2410,17 @@ int CVehicle::CorridorAhead(int &iVehs) {
             break;               // there is a way out sideways here - not confined
 
         iRun++;
-        if (theVehicleHex._GetVehicle(CSubHex(_on)) != NULL)
-            iVehs++;
+
+        // DENSITY, not one corner. A hex is 2x2 subs and holds up to four vehicles,
+        // so sampling only the even/even sub answered a different question than the
+        // one being asked - also WinAstra's.
+        for (int iSx = 0; iSx < 2; iSx++)
+            for (int iSy = 0; iSy < 2; iSy++) {
+                CSubHex _s(_on.X() * 2 + iSx, _on.Y() * 2 + iSy);
+                _s.Wrap();
+                if (theVehicleHex._GetVehicle(_s) != NULL)
+                    iVehs++;
+            }
     }
     return (iRun);
 }
@@ -2397,8 +2442,13 @@ BOOL CVehicle::FindOffRoadSpot(CSubHex &_found, CVehicle *pAsker) {
     // because parking at its mouth just puts it back in the same queue. Deriving the
     // distance from the geometry means no per-truck retry counter has to be tracked;
     // and reaching LeaveRoad at all already means wait, go-around and back-up failed.
+    // ...and ONLY when this is our own exhausted recovery. FindOffRoadSpot is shared
+    // with AskToMove, where pAsker is the truck politely asking us to shift: a
+    // courtesy step should move us aside, not send us fleeing the whole corridor.
+    // 137 of the 156 corridor fires had a NUDGE as their next event, 104 of them
+    // repeating inside 30s - WinAstra's scope defect.
     int iVehs = 0;
-    int iCorr = CorridorAhead(iVehs);
+    int iCorr = (pAsker == NULL) ? CorridorAhead(iVehs) : 0;
     int iMin  = ((iCorr >= CORRIDOR_MIN_HEXES) && (iVehs >= CORRIDOR_MIN_VEHS)) ? (1 + iCorr) : 1;
     if (iMin > 1)
         WaitLog("[CORRIDOR] veh %d at hex %d,%d in a %d-hex corridor holding %d vehicles, "
@@ -2406,7 +2456,7 @@ BOOL CVehicle::FindOffRoadSpot(CSubHex &_found, CVehicle *pAsker) {
 
     // Pass 0 keeps clear of the shoreline; pass 1 accepts it if nothing else exists.
     for (int iPass = 0; iPass < 2; iPass++)
-    for (int iRing = iMin; iRing <= iMin + PARK_SEARCH_SUBS; iRing++)
+    for (int iRing = iMin; iRing < iMin + PARK_SEARCH_SUBS; iRing++)
         for (int xOff = -iRing; xOff <= iRing; xOff++)
             for (int yOff = -iRing; yOff <= iRing; yOff++) {
                 // only the edge of the ring - the inside was covered already
@@ -2801,6 +2851,18 @@ void CVehicle::HandleBlocked() {
         TRAP();
         return;
     }
+
+    // ARE WE SOMEWHERE WITH NO ROOM TO MANOEUVRE? Computed ONCE per blocked call and
+    // reused by the rungs below, so a truck deep in the ladder does not pay for the
+    // corridor walk over and over. On a bridge or between building rows there is
+    // nowhere to swing out to, so the circling rungs - random re-route, rotate,
+    // turn-around - cannot succeed; they only spend retries, spin the hull on the
+    // spot and hand the truck to the oncoming lane. Skip them there and let the
+    // ladder fall through to the reverse, which is the only move that fits.
+    int  iCorrVehs  = 0;
+    BOOL bConfined  = (TrafficOpts() & 8) &&
+                      ((theMap._GetHex(m_ptHead)->GetUnits() & CHex::bridge) ||
+                       (CorridorAhead(iCorrVehs) >= CORRIDOR_MIN_HEXES));
 
     // one time out of 4 we do nothing to avoid deadlock
     if ((MyRand() & 0x3000) == 0x1000)
@@ -3212,6 +3274,9 @@ void CVehicle::HandleBlocked() {
         }
 
     // we try a new route picked at random
+    // confined: a new route picked at random cannot help here - see HandleBlocked head
+    if ((m_iNumRetries == 10) && bConfined)
+        m_iNumRetries++;
     if (m_iNumRetries == 10) {
         m_iNumRetries++;
         m_ptNext = m_ptHead;
@@ -3231,6 +3296,9 @@ void CVehicle::HandleBlocked() {
     }
 
     // if not a ship or 1 hex try angle 3, -3
+    // confined: another randomised rotate cannot help here - see HandleBlocked head
+    if ((m_iNumRetries == 11) && bConfined)
+        m_iNumRetries++;
     if (m_iNumRetries == 11) {
         m_iNumRetries++;
         if ((!(GetData()->GetVehFlags() & CTransportData::FL1hex)) && (!GetData()->IsBoat())) {
@@ -3261,6 +3329,9 @@ void CVehicle::HandleBlocked() {
     //   else go around
     //     if new > oldlen-5 go all non-inuse
     //     else splice
+    // confined: a clear-route search that re-routes around vehicles cannot help here - see HandleBlocked head
+    if ((m_iNumRetries == 12) && bConfined)
+        m_iNumRetries++;
     if (m_iNumRetries == 12) {
         m_iNumRetries++;
 
@@ -3381,11 +3452,9 @@ void CVehicle::HandleBlocked() {
             // is the spinning that shows up on screen. Skip it on the span and let the
             // ladder fall through to rung 16, where BackUp reverses down our own axis.
             // Only the span: on open ground turning round is still the right answer.
-            BOOL bOnSpan = (TrafficOpts() & 8) &&
-                           ((theMap._GetHex(m_ptHead)->GetUnits() & CHex::bridge) ? TRUE : FALSE);
-
             // before we turn let's make sure the other direction is better
-            for (int iDir = -3; (!bOnSpan) && (iDir <= 3); iDir++) {
+            // (bConfined now covers building-lined streets too, not just the span)
+            for (int iDir = -3; (!bConfined) && (iDir <= 3); iDir++) {
                 CSubHex _next = ::Rotate(iDir, m_ptTail, m_ptHead);
                 if (CanEnter(_next)) {
                     Turn180();
