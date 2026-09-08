@@ -7720,7 +7720,7 @@ static CPoint HarnessHexToWindow( CAnimAtr& aa, const CHexCoord& hex )
 // click the crane (or any unit) deterministically instead of blind-sweeping.
 // Declared in en_harness.h. Called on the game/render thread (reads live state).
 // One line per unit:
-//   vehicle:  "<id> <screenX> <screenY> <kind> <me|other> <vtype> <hexX> <hexY>\n"
+//   vehicle:  "<id> <screenX> <screenY> <kind> <me|other> <hexX> <hexY>\n"
 //   building: "<id> <screenX> <screenY> building <me|other> <constructing|operational> <hexX> <hexY>\n"
 // The hex pair is appended LAST on both line kinds - backward-compatible, the same
 // convention as the build-state field (older parsers read fields 1-5 / 1-6). Read it
@@ -7797,16 +7797,9 @@ void HarnessDumpUnits( std::string& out )
         // above are view-relative, so two clients' dumps are not comparable - the
         // hex IS. Costs nothing: GetHexHead() is already in hand for the projection.
         CHexCoord hexV = pVeh->GetHexHead( );
-        // vtype = CTransportData::GetType( ), the NUMERIC vehicle type. `kind` above is a
-        // coarse bucket (crane/transport/carrier/infantry/vehicle) that cannot tell a
-        // landing_craft from an infantry_carrier, so ship-population questions were
-        // unanswerable from this dump. Inserted BEFORE the hex pair on purpose: the header
-        // contract is that the hex is the LAST TWO fields, and appending after it would
-        // break every consumer reading it that way. Fields 0..4 are unchanged too.
-        const int iVType = ( pData != NULL ) ? (int) pData->GetType( ) : -1;
-        snprintf( line, sizeof( line ), "%lu %d %d %s %s %d %d %d\n",
+        snprintf( line, sizeof( line ), "%lu %d %d %s %s %d %d\n",
                   (unsigned long) dwID, (int) pt.x, (int) pt.y, kind,
-                  bMine ? "me" : "other", iVType, hexV.X( ), hexV.Y( ) );
+                  bMine ? "me" : "other", hexV.X( ), hexV.Y( ) );
         body += line;
     }
 

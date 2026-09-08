@@ -27,7 +27,38 @@ class CVehicle;
 class CBridgeUnit;
 
 
+int  TrafficOpts ();   // EN_TRAFFIC bitmask: which traffic rules are live
+void WaitLog (const char *fmt, ...);   // wait/resume probe, inert unless EN_WAIT_LOG is set
+
 const int MAX_NUM_RETRIES = 25;
+const int MAX_BACK_UPS    = 2;      // per destination, so a stuck pair cannot ping-pong forever
+const int PARK_SEARCH_SUBS = 16;    // how far a nudged vehicle will look for somewhere off-road to park
+const int CORRIDOR_LOOK_HEXES = 12; // how far ahead to look when sizing a narrow corridor
+const int CORRIDOR_MIN_HEXES  = 3;  // shorter than this is a pinch, not a corridor worth fleeing
+const int CORRIDOR_MIN_VEHS   = 3;  // ...and an empty corridor is not a jam, so do not flee it
+const int BACK_UP_SUBS    = 40;     // how far back to look for somewhere useful to reverse to.
+                                    // Reversing ONE hex on a long bridge just moves the wedge one
+                                    // hex, so we back up until we are off the span.
+const int GIVEUP_HOLD_FRAMES = 24 * 30;  // after GIVING UP and parking off-road, stay parked this
+                                    // long before letting the router have the truck back. Measured:
+                                    // 14 trucks leave the bridge region in 8 minutes and 13-14 of
+                                    // them are back inside it minutes later, because parking with no
+                                    // job reports "stopped" and the router re-sends them to the same
+                                    // destination at once. Departures that return immediately cannot
+                                    // drain a corridor.
+const int HOLD_FRAMES     = 240;    // after a retreat, wait this long before rejoining the haul,
+                                    // so the trucks we backed off for can actually use the gap.
+                                    // GAME FRAMES, 24 to the second: timeGetTime is wall clock and
+                                    // would keep running while the game is paused. Each truck adds
+                                    // 0-3s of its own so a queue that retreated together does not
+                                    // pile back in together.
+
+// Traffic waits, in game frames (24 frames = 1 second).
+//   MSG   - the 1996 wait used by the network position-conflict paths (unchanged at 1s)
+//   MOVER - hold this long behind a vehicle that is itself moving before we
+//           give up on it and start looking for a way around
+const DWORD TRAFFIC_WAIT_MSG   = 24;
+const DWORD TRAFFIC_WAIT_MOVER = 24 * 10;
 const int NUM_SUBS_OWNED = 4;
 
 
@@ -268,6 +299,10 @@ public:
 
 		enum VEH_EVENT { none, route, build, build_road, attack, load, repair_self, repair_bldg, num_event };		// m_iEvent
 
+		// TRUE if this vehicle is actually driving, so anything planning a route
+		// through its hex will find it gone by the time it arrives.
+		BOOL					IsOnTheMove () const	{ return ((m_cMode == moving) || (m_cMode == traffic)); }
+
 									CVehicle () { ctor (); }
 									~CVehicle ();
 									// FIXIT: Once all calls are located, default iTurretID to -1
@@ -289,6 +324,9 @@ public:
 		void					Move ();
 		BOOL					MoveInHex ();
 		void					ArrivedDest ();
+		BOOL					ResumeJob ();		// back onto the job a traffic detour interrupted
+		BOOL					ClearOfRoad (CSubHex const &_sub);	// off the span AND off the pavement
+		int						CorridorAhead (int &iVehs);	// hexes of NARROW corridor ahead, 0 if none
 		BOOL					FindNextHex ();
 		void					ArrivedNextHex ();
 		BOOL					GetNextHex (BOOL bNew);
@@ -508,8 +546,19 @@ protected:
 		void					AssignNextHex ();
 		BOOL					TestStuck ();
 		void					HandleBlocked ();
+		BOOL					WaitForMover ();
+		BOOL					ResumeWaitedStep ();
+		BOOL					AskToMove (CVehicle *pAsker);
+		BOOL					BackUp ();
+		BOOL					LeaveRoad ();
+		BOOL					OnPavement (CSubHex const &_sub);
+		void					DetourTo (CSubHex const &_sub, BOOL bResume);
+		BOOL					FindOffRoadSpot (CSubHex &_found, CVehicle *pAsker);
+		BOOL					IsShoreline (CHexCoord const &_hex);
 		BOOL					TryNewSub (BOOL bNoNewPath);
 		BOOL					FindSub (BOOL bCloser = FALSE);
+		BOOL					FindSubEx (BOOL bCloser, BOOL bLane);
+		BOOL					InLane (CSubHex const &_next);
 		CSubHex				Rotate (int iDir);
 		void					Turn180 ();
 		BOOL					IsPassable (CSubHex const & _sub, BOOL bStrict = TRUE);
@@ -552,6 +601,21 @@ protected:
 		int						m_iClosest;							// closest we got to the dest
 
 		DWORD					m_dwTimeBlocked;				// we only wait 1.2 * hex transit time when blocked
+		DWORD					m_dwTrafficWait;				// frames to hold in traffic mode before falling through to blocked
+		BOOL					m_bWaitedForMover;			// TRUE once we have spent our wait on this block (one wait per bump)
+		CSubHex				m_subWaitNext;					// the step we are holding for while in traffic mode (x -1 = none)
+		int						m_iBackUps;							// back-ups taken for this destination (capped)
+		DWORD					m_dwAskedToMove;				// last time we were nudged out of the way (0 = never)
+		DWORD					m_dwLeftRoad;						// last time we pulled off the road on giving up (0 = never)
+		CSubHex				m_subResume;						// destination to go back to once a detour finishes.
+																		// the SUB-hex, not its hex: a lane-sensitive job names an
+																		// exact sub and rounding it to hex*2 moves the goal
+		int						m_iResumeMode;					// its VEH_POS
+		BOOL					m_bResume;							// TRUE if m_subResume is armed
+		DWORD					m_dwCensus;							// last bridge-census line (probe only)
+		DWORD					m_dwBlockLog;						// last blocked-step line (probe only)
+		BOOL					m_bReversing;						// backing up: hold the facing while the body moves
+		int						m_iHoldFrames;						// game frames left in the post-retreat hold; 0 = not holding
 		LONG					m_iBlockCount;					// number of consecutive times blocked
 		CHexCoord			m_hexStagnant;					// blocked-stagnation watch: last hex seen blocked at (transient, not saved)
 		DWORD					m_dwStagnantSince;			// real ms when we first saw it blocked at that hex (0 = not watching)

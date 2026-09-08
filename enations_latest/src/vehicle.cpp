@@ -172,6 +172,20 @@ void CVehicle::Operate() {
 
     xASSERT_VALID (ASSERT_PRI_ANAL, ASSERT_VEH_MOVE, this);
 
+    // Bridge census (probe only). The queue does not drain in ANY build, control
+    // included, and almost nobody crosses. Before tuning mechanisms further, find
+    // out what these vehicles are actually trying to do.
+    if (GetOwner()->IsMe()) {
+        CHexCoord _hC(GetHexHead());
+        if ((_hC.X() >= 18) && (_hC.X() <= 42) && (_hC.Y() >= 332) && (_hC.Y() <= 348) &&
+            (theGame.GettimeGetTime() - m_dwCensus > 60000)) {
+            m_dwCensus = theGame.GettimeGetTime();
+            WaitLog("[CENSUS] veh %d type %d at %d,%d mode %d event %d dest %d,%d pathlen %d",
+                    GetID(), GetData()->GetType(), _hC.X(), _hC.Y(), (int) m_cMode, (int) m_iEvent,
+                    m_hexDest.X(), m_hexDest.Y(), (int) m_iPathLen);
+        }
+    }
+
     if (m_iFrameHit > 0) {
         m_iFrameHit -= theGame.GetFramesElapsed();
         if (m_iFrameHit <= 0) {
@@ -182,6 +196,26 @@ void CVehicle::Operate() {
 
     if ((m_unitFlags & (dying | stopped)) || (GetOwner() == NULL))
         return;
+
+    // A retreat hold has run out - rejoin the haul. Counted in GAME FRAMES the way
+    // m_iFrameHit above is, so a paused game pauses the hold. This sits AFTER the
+    // stopped test on purpose: a truck the player parked stays parked.
+    // Only while actually STOPPED. A hold armed at the moment a truck gives up must
+    // start when it reaches its parking spot, not tick away during the drive there.
+    if ((m_iHoldFrames > 0) && (m_cMode == stop)) {
+        m_iHoldFrames -= theGame.GetFramesElapsed();
+        if (m_iHoldFrames <= 0) {
+            m_iHoldFrames = 0;
+
+            // If there is no job left to go back to, UNDEAFEN the truck. The hold
+            // buys its silence by setting told_ai_stop without anybody actually
+            // being told, so a hold that ends with nothing to resume would leave it
+            // parked, unreported and idle for the rest of the game. Clearing the
+            // flag lets the stop branch below notify the router the normal way.
+            if (!ResumeJob())
+                m_bFlags &= ~told_ai_stop;
+        }
+    }
 
     // are we destroying?
     if (GetOwner()->IsLocal() && (m_unitFlags & CUnit::destroying)) {
@@ -271,9 +305,20 @@ void CVehicle::Operate() {
                 return;
 
             if (GetOwner()->IsLocal()) {
-                m_dwTimeBlocked += theGame.GetFramesElapsed();
-                if (m_dwTimeBlocked < 24)
+                // if the slot we were holding for has cleared, take that same step
+                // now and stay in lane instead of sitting out the rest of the wait
+                if (ResumeWaitedStep())
                     return;
+
+                m_dwTimeBlocked += theGame.GetFramesElapsed();
+                if (m_dwTimeBlocked < m_dwTrafficWait)
+                    return;
+
+                // the wait did not pay off - fall through to the existing recovery
+                if (m_subWaitNext.x >= 0)
+                    WaitLog("[WAITFAIL] veh %d hex %d,%d gave up on sub %d,%d", GetID(),
+                            GetHexHead().X(), GetHexHead().Y(), m_subWaitNext.x, m_subWaitNext.y);
+                m_subWaitNext.x = m_subWaitNext.y = -1;
                 _SetRouteMode(blocked);
                 m_dwTimeBlocked = 0;
                 m_iNumRetries = m_iBlockCount = 0;

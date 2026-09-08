@@ -88,6 +88,31 @@ CHexCoord* CPathMgr::GetPath( CVehicle* pVehicle, CHexCoord& hexFrom, CHexCoord&
 // return the path via a CHexCoord array, passing the size
 // back as the m_iX element of the first CHexCoord
 //
+// Is every vehicle occupying this hex on the move? Such a hex is passable for
+// planning purposes - it will be clear by the time anyone routed through it
+// arrives. A stopped, blocked or waiting vehicle is a genuine obstacle.
+BOOL CPathMgr::IsHexMovingVehicle( CHexCoord const & hex )
+{
+    // ALL FOUR sub-hexes: a hex is passable only if everything sitting in it is
+    // actually driving. Checking just the first occupant accepted a hex whose
+    // other half was parked, which is exactly the obstacle we must not plan through.
+    BOOL bAny = FALSE;
+
+    for ( int iX = 0; iX < 2; iX++ )
+        for ( int iY = 0; iY < 2; iY++ )
+        {
+            CVehicle* pVeh = theVehicleHex._GetVehicle( CSubHex( hex.X( ) * 2 + iX, hex.Y( ) * 2 + iY ) );
+            if ( pVeh == NULL )
+                continue;
+
+            if ( !pVeh->IsOnTheMove( ) )
+                return ( FALSE );  // something is parked here - a real obstacle
+            bAny = TRUE;
+        }
+
+    return ( bAny );
+}
+
 CHexCoord* CPathMgr::_GetPath( CVehicle* pVehicle, CHexCoord& hexFrom, CHexCoord& hexTo, int& iPathLen, int iVehType,
                               BOOL bVehBlock, BOOL bDirectPath )
 {
@@ -1069,7 +1094,12 @@ void CPathMgr::GetCellCosts( int iPos, CCell* pFromCell, CCell* pToCell )
         else if ( bUnits & ( CHex::ul | CHex::ur | CHex::ll | CHex::lr ) )
         {
             // vehicle hexes are considered open unless block set
-            if ( m_bVehBlock )
+            //
+            // ...and even then, a MOVING vehicle is not an obstacle: it will have
+            // driven on long before we reach its hex, so planning around it is what
+            // turns a queue into a detour into the oncoming lane. Only a vehicle
+            // that is actually sitting there blocks the route.
+            if ( m_bVehBlock && ( ( !( TrafficOpts( ) & 32 ) ) || ( !IsHexMovingVehicle( hexDest ) ) ) )
                 pToCell->m_iDist = 0xFFFE;  // no entry
         }
     }

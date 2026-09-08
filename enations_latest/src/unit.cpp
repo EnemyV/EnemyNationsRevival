@@ -37,9 +37,6 @@
 #include "building.inl"
 #include "vehicle.inl"
 
-// BUGS #111 reissue witness - defined in vehmove.cpp.
-extern void EnReissueLog( const char* fmt, ... );
-
 
 #ifdef _DEBUG
 #undef THIS_FILE
@@ -3089,24 +3086,6 @@ void CVehicle::SetDestAndMode( CSubHex sub, VEH_POS iMode )
     logPrintf( LOG_PRI_USEFUL, LOG_VEH_MOVE, "Vehicle %d at sub (%d,%d) SetDest to (%d,%d)", GetID( ), m_ptHead.x,
                m_ptHead.y, sub.x, sub.y );
 #endif
-    // BUGS #111 caller witness. THIS is the reissue site: SetDestAndMode clears
-    // m_iNumRetries a few lines below, so by the time GetPath runs the stamp is
-    // already gone and a probe gated on retries==25 at GetPath CANNOT see a real
-    // reissue. Log the state BEFORE the reset - retries_before == 25 means this call
-    // is re-tasking a vehicle that had given up.
-    // Volume control: log only calls that matter (retries_before != 0). The routine
-    // retries==0 case was ~86% of rows and a 21k-line/5min log got the run killed for
-    // host memory. s_seq still counts EVERY call, and is printed on each logged line,
-    // so the DENOMINATOR survives the filter - a filtered log must not silently lose
-    // the total it is a fraction of.
-    static unsigned long s_seq = 0;
-    ++s_seq;
-    if ( m_iNumRetries != 0 )
-        EnReissueLog( "[SETDEST] veh %lu ai %d transport %d hpctl %d retries_before %d"
-                      " mode_before %d dest %d,%d seq %lu",
-                      (unsigned long)GetID( ), GetOwner( )->IsAI( ) ? 1 : 0,
-                      GetData( )->IsTransport( ) ? 1 : 0, ( m_bFlags & hp_controls ) ? 1 : 0,
-                      m_iNumRetries, (int)m_cMode, sub.x, sub.y, s_seq );
     ASSERT_VALID( this );
     DeletePath( );
     m_hexLastDest = sub;
@@ -3120,6 +3099,21 @@ void CVehicle::SetDestAndMode( CSubHex sub, VEH_POS iMode )
     m_iNumRetries   = 0;
     m_dwTimeBlocked = 0;
     m_iBlockCount   = 0;
+    m_iBackUps      = 0;   // fresh destination, fresh back-up budget
+
+    // ...and a genuinely new order CANCELS any pending traffic resume. Without
+    // this, order A -> detour D -> the player orders B ends with the vehicle
+    // driving itself back to A on arrival at B. DetourTo re-arms afterwards,
+    // so internal traffic moves still keep their job.
+    m_bResume       = FALSE;
+
+    // and a new order ends a reverse - whatever we are told to do next, we do it
+    // facing the way we drive.
+    m_bReversing    = FALSE;
+
+    // ...and it ends a post-retreat hold: we were waiting to go back to a job that
+    // has just been replaced, so there is nothing left to wait for.
+    m_iHoldFrames   = 0;
     m_bFlags &= ~told_ai_stop;
 
     // for a building there is only one entrance
@@ -3274,27 +3268,8 @@ BOOL CVehicle::HavePath( ) const
     return ( FALSE );
 }
 
-
 void CVehicle::GetPath( BOOL bNoOcc )
 {
-
-    // BUGS #111: a re-plan on a vehicle already carrying the stamp is a REISSUE.
-    // Record the state BEFORE the search so the stamp sites below can say whether
-    // this call created the stamp or merely re-applied it to a vehicle that was
-    // already stopped - the latter is the cycle.
-    const int   _iModeBefore    = (int)m_cMode;
-    const int   _iRetriesBefore = m_iNumRetries;
-
-    // BUGS #111: log EVERY re-plan attempted on an already-stamped vehicle, not just
-    // the ones that fail. The [STAMP] lines below fire only on the failure paths, so
-    // counting them alone would silently miss a stamped vehicle that re-planned
-    // SUCCESSFULLY - and "the reissuer barely exists" would be an artifact of the
-    // instrument rather than a fact. REPLAN minus the reissue STAMPs = successes.
-    if ( _iRetriesBefore == MAX_NUM_RETRIES )
-        EnReissueLog( "[REPLAN] veh %lu ai %d transport %d hpctl %d mode_before %d nooc %d",
-                      (unsigned long)GetID( ), GetOwner( )->IsAI( ) ? 1 : 0,
-                      GetData( )->IsTransport( ) ? 1 : 0, ( m_bFlags & hp_controls ) ? 1 : 0,
-                      _iModeBefore, bNoOcc ? 1 : 0 );
 
 #ifdef _DEBUG
     ASSERT_VALID( this );
@@ -3357,11 +3332,6 @@ void CVehicle::GetPath( BOOL bNoOcc )
             _SetRouteMode( cant_deploy );
             return;
         }
-                EnReissueLog( "[STAMP] veh %lu ai %d site nopath mode_before %d retries_before %d"
-                      " head %d,%d hexdest %d,%d",
-                      (unsigned long)GetID( ), GetOwner( )->IsAI( ) ? 1 : 0,
-                      _iModeBefore, _iRetriesBefore,
-                      m_ptHead.x, m_ptHead.y, m_hexDest.X( ), m_hexDest.Y( ) );
         _SetRouteMode( blocked );
         m_iNumRetries = MAX_NUM_RETRIES;
         m_iBlockCount = 6;
@@ -3389,11 +3359,6 @@ void CVehicle::GetPath( BOOL bNoOcc )
             m_hexLastDest = _dest;
             return;
         }
-                EnReissueLog( "[STAMP] veh %lu ai %d site samepath mode_before %d retries_before %d"
-                      " head %d,%d hexdest %d,%d",
-                      (unsigned long)GetID( ), GetOwner( )->IsAI( ) ? 1 : 0,
-                      _iModeBefore, _iRetriesBefore,
-                      m_ptHead.x, m_ptHead.y, m_hexDest.X( ), m_hexDest.Y( ) );
         _SetRouteMode( blocked );
         m_iNumRetries = MAX_NUM_RETRIES;
         m_iBlockCount = 6;

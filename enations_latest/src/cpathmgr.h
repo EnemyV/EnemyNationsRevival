@@ -86,6 +86,7 @@ class CPathMgr
 	CHexCoord m_lastFrom;	// to stop repeating path requests
 	CHexCoord m_lastTo;
 
+	BOOL IsHexMovingVehicle ( CHexCoord const & hex );
 	BOOL m_bVehBlock;	// indicates if vehicles on path block path
 
 	CTransportData const *m_pTD; // pointer for this vehicle type

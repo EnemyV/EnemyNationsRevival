@@ -4969,6 +4969,19 @@ void CVehicle::ctor( )
 
     m_hexStagnant     = CHexCoord( 0, 0 );
     m_dwStagnantSince = 0;
+    m_dwTrafficWait    = TRAFFIC_WAIT_MSG;
+    m_bWaitedForMover  = FALSE;
+    m_subWaitNext.x    = m_subWaitNext.y = -1;
+    m_iBackUps         = 0;
+    m_dwAskedToMove    = 0;
+    m_dwLeftRoad       = 0;
+    m_subResume        = CSubHex( 0, 0 );
+    m_iResumeMode      = 0;
+    m_bResume          = FALSE;
+    m_dwCensus         = 0;
+    m_dwBlockLog       = 0;
+    m_bReversing       = FALSE;
+    m_iHoldFrames      = 0;
 #if EN_PATH_PROBES
     m_hexLastClamp    = CHexCoord( -1, -1 );  // no prior clamp
 #endif
@@ -7035,7 +7048,12 @@ void CVehicle::AssertValidAndLoc( ) const
 #ifndef _GG
 #if STRICTER_ASSERTS2
             // triggers on every vehicle spawn (and building completed?)
-            ASSERT( m_iDir == aiDir[GetDirIndex( m_ptHead, m_ptTail )] )
+            // A REVERSING vehicle is the deliberate exception: backing up swaps the
+            // head/tail LABELS while the hull keeps pointing the way it came, so its
+            // facing is derived from tail->head. Widen the invariant rather than drop
+            // it - the assert is still the thing that catches a genuinely wrong hull.
+            ASSERT( m_iDir == aiDir[GetDirIndex( m_bReversing ? m_ptTail : m_ptHead,
+                                                 m_bReversing ? m_ptHead : m_ptTail )] )
 #endif
 #endif
                 ;

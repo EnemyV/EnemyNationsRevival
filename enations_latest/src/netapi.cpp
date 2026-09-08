@@ -11,9 +11,6 @@
 
 #include "netapi.h"
 
-// BUGS #111 reissue witness - defined in vehmove.cpp.
-extern void EnReissueLog( const char* fmt, ... );
-
 #include "SDL2GameDialogs.h"
 #include "enprobes.h"
 #include "ai.h"
@@ -2529,20 +2526,10 @@ static void SetVehDest( CMsgVehSetDest* pMsg )
     }
 #endif
     pVeh->SetEvent( CVehicle::none );
-    // BUGS #111: the NETWORK/message delivery path - how an externally posted goto
-    // reaches a vehicle. BOTH arms are braced and instrumented on purpose: an
-    // unbraced marker before the else made SetDestAndMode UNCONDITIONAL, so a sub
-    // order ran BOTH arms and executed twice. The witness must not change behaviour.
     if ( pMsg->m_iSub == CVehicle::sub )
-    {
-        EnReissueLog( "[MSGGOTO] veh %lu arm sub", (unsigned long)pVeh->GetID( ) );
         pVeh->SetDest( pMsg->m_sub );
-    }
     else
-    {
-        EnReissueLog( "[MSGGOTO] veh %lu arm hex", (unsigned long)pVeh->GetID( ) );
         pVeh->SetDestAndMode( pMsg->m_hex, (CVehicle::VEH_POS)pMsg->m_iSub );
-    }
 
     // this can happen if the unit needs to change its destination because its going to a building and 
     // needs to get to the entrance
