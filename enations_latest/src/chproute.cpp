@@ -3376,7 +3376,10 @@ CAIUnit* CHPRouter::GetNearestShip( CAIUnit* pCAITruck )
 
             // get distance from truck
             int iDist = theMap.GetRangeDistance( hexVeh, hexShip );
-            if ( iDist && iDist < iNearest )
+            // `iDist &&` REJECTED DISTANCE ZERO - a unit on the very hex we are
+            // searching from, the nearest one possible, was silently skipped. Distance
+            // is not a truth value; the validity guard is the GetVehicleHex check above.
+            if ( iDist < iNearest )
             {
                 pNearest = pShip;
                 iNearest = iDist;
@@ -3468,7 +3471,10 @@ CAIUnit* CHPRouter::GetNearestTruck( CAIUnit* pCAIBldg )
                 }
             }
 
-            if ( iDist && iDist < iNearest )
+            // `iDist &&` REJECTED DISTANCE ZERO - a unit on the very hex we are
+            // searching from, the nearest one possible, was silently skipped. Distance
+            // is not a truth value; the validity guard is the GetVehicleHex check above.
+            if ( iDist < iNearest )
             {
                 pNearest = pTruck;
                 iNearest = iDist;
