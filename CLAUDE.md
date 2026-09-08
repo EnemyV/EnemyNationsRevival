@@ -13,6 +13,7 @@ from one tree. MFC is fully stripped (`./mfc-status.ps1` must report `mfc_linked
   (live board in the discussion repo `EnemyV/EnemyNationsDiscussion`, branch matches the release):
   pull at loop start, post when you change shared code, get blocked, or finish.
 - Plans/design/investigation docs live in the discussion repo under `docs/` — not here.
+- Roads are two-way, a hex holds 4 vehicles, and vehicles have a side preference.
 
 ## Fix workflow (the law)
 
