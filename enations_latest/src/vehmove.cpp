@@ -2893,11 +2893,11 @@ BOOL CVehicle::BackUp() {
 
     m_iBackUps++;
     WaitLog("[BACKUP] veh %d hex %d,%d sub %d,%d reversing to hex %d,%d sub %d,%d "
-            "(%d sub-hexes back, backup %d, ondeck %d, partial %d)", GetID(),
+            "(%d sub-hexes back, backup %d, ondeck %d, partial %d, already_reversing %d, jam %d)", GetID(),
             GetHexHead().X(), GetHexHead().Y(), m_ptHead.x, m_ptHead.y,
             CHexCoord(_target.ToCoord()).X(), CHexCoord(_target.ToCoord()).Y(), _target.x, _target.y,
             abs(CSubHex::Diff(_target.x - m_ptHead.x)) + abs(CSubHex::Diff(_target.y - m_ptHead.y)),
-            m_iBackUps, (int) bWasBridge, (int) bPartial);
+            m_iBackUps, (int) bWasBridge, (int) bPartial, (int) m_bReversing, m_iJamClear);
     // REVERSE, do not turn around. The body ends up on the same squares either way -
     // head and tail simply swap labels - so the only thing that made this a pivot was
     // recomputing the facing from the new labels. Pin the facing and the identical
