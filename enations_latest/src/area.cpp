@@ -7768,9 +7768,9 @@ void HarnessVehicleState(unsigned long id, std::string& out)
         v->m_iHoldFrames, v->m_iJamClear, v->m_iJamWatch, v->m_iJamCool,
         v->m_iNumRetries, v->m_iBackUps, v->m_iDir);
     out = line;
-    const char* names[] = { "head", "tail", "next", "dest" };
-    CSubHex subs[] = { v->m_ptHead, v->m_ptTail, v->m_ptNext, v->m_ptDest };
-    for (int i = 0; i < 4; ++i) {
+    const char* names[] = { "head", "tail", "next", "dest", "waiting" };
+    CSubHex subs[] = { v->m_ptHead, v->m_ptTail, v->m_ptNext, v->m_ptDest, v->m_subWaitNext };
+    for (int i = 0; i < 5; ++i) {
         if (subs[i].x < 0 || subs[i].y < 0 ||
             subs[i].x >= theMap.Get_eX() * 2 || subs[i].y >= theMap.Get_eY() * 2) {
             snprintf(line, sizeof(line), "%s %d,%d unavailable\n", names[i], subs[i].x, subs[i].y);
