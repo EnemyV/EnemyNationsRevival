@@ -1071,10 +1071,14 @@ BOOL CVehicle::GetNextHex(BOOL bNew) {
                 straight.Wrap(); shifted.Wrap();
                 if (CanEnter(straight) && !CanEnter(shifted)) {
                     CVehicle* on = theVehicleHex._GetVehicle(shifted);
-                    WaitLog("[REVERSE-LANE] veh %d head %d,%d tail %d,%d free %d,%d replaced by %d,%d blocker %d",
+                    WaitLog("[REVERSE-LANE-KEPT] veh %d head %d,%d tail %d,%d free %d,%d instead of %d,%d blocker %d",
                             GetID(), m_ptHead.x, m_ptHead.y, m_ptTail.x, m_ptTail.y,
                             straight.x, straight.y, shifted.x, shifted.y, on ? on->GetID() : 0);
                 }
+                // Backing up keeps the lane we occupied; it does not cross to
+                // the lane for vehicles driving forward in the other direction.
+                xStep = oldX;
+                yStep = oldY;
             }
         }
     }    // end not bAtDest
@@ -1332,14 +1336,21 @@ BOOL CVehicle::InLane(CSubHex const &_next) {
     if (!(theMap._GetHex(_next)->GetUnits() & CHex::bridge))
         return (TRUE);
 
+    if (m_bReversing) {
+        if (m_ptHead.y == m_ptTail.y)
+            return (_next.y == m_ptHead.y);
+        if (m_ptHead.x == m_ptTail.x)
+            return (_next.x == m_ptHead.x);
+        return (TRUE); // an angled hull still needs room to straighten
+    }
+
     // Which way are we travelling? Not m_hexNext - that is the NEXT STEP, it is
     // rewritten by every go-around and it points backwards for a whole step after
     // a reversal, so half the lane answers on a busy span were about a direction
     // the vehicle was not going. The DESTINATION is stable for the whole journey.
     //
-    // A retreat needs no exception case for this: DetourTo makes the retreat
-    // target the destination, so a reversing truck's correct lane flips to the
-    // reverse lane automatically and its recovery is never filtered.
+    // Reversing keeps the current lane above. The forward-driving preference
+    // below must not send a retreat across the oncoming lane.
     int dx = CSubHex::Diff(m_hexDest.X() * 2 - m_ptHead.x);
     int dy = CSubHex::Diff(m_hexDest.Y() * 2 - m_ptHead.y);
 
@@ -3757,7 +3768,10 @@ void CVehicle::HandleBlocked() {
         m_iNumRetries++;
 
         if (!(GetData()->GetVehFlags() & CTransportData::FL1hex)) {
-            for (int iDir = -3; iDir <= 3; iDir++) {
+            // Match FindSubEx: an aligned hull must not turn across a narrow
+            // corridor just because this later recovery rung was reached.
+            int iTurnLimit = (bConfined && iCorrLen >= 2) ? 1 : 3;
+            for (int iDir = -iTurnLimit; iDir <= iTurnLimit; iDir++) {
                 CSubHex _next = Rotate(iDir);
                 if (CanEnter(_next)) {
                     if (bConfined && abs(iDir) > 1)
