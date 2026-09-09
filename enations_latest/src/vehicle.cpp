@@ -276,6 +276,12 @@ void CVehicle::Operate() {
             if (TestStuck())
                 return;
 
+            // Also handle units loaded or left stopped on a through-route. The
+            // local method protects explicit Stop, active construction and units
+            // inside buildings, and throttles its own parking search.
+            if (!GetData()->IsBoat() && (GetData()->IsTransport() || GetData()->IsCrane()) && LeaveRoad())
+                return;
+
             xASSERT (ASSERT_PRI_ANAL, ASSERT_VEH_MOVE, (!m_cOwn) || (theBuildingHex.GetBuilding(m_ptHead) == NULL));
             if (!(m_bFlags & told_ai_stop)) {
 #ifdef _LOGOUT

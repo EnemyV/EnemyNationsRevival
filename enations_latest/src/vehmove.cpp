@@ -2618,7 +2618,8 @@ BOOL CVehicle::AskToMove(CVehicle *pAsker) {
 
     // A HAULING truck (m_iEvent == route) is exactly the case we care about - those
     // are what park on the bridge. Only genuinely busy jobs are off limits.
-    if ((m_iEvent != none) && (m_iEvent != route))
+    if ((m_iEvent != none) && (m_iEvent != route) &&
+        !(GetData()->IsCrane() && m_iEvent == build))
         return (FALSE);
     if (m_pBldg != NULL)
         return (FALSE);
@@ -2641,6 +2642,9 @@ BOOL CVehicle::AskToMove(CVehicle *pAsker) {
         WaitLog("[NUDGE] veh %d hex %d,%d asked by veh %d, parking off-road at hex %d,%d", GetID(),
                 GetHexHead().X(), GetHexHead().Y(), pAsker->GetID(), CHexCoord(_spot.ToCoord()).X(),
                 CHexCoord(_spot.ToCoord()).Y());
+        // Give the requester time to use the space we clear.
+        if (m_iHoldFrames <= 0 && (OnPavement(m_ptHead) || OnPavement(m_ptTail)))
+            m_iHoldFrames = HOLD_FRAMES + (int) (GetID() % 4) * 24;
         // a vehicle that has ALREADY arrived is simply parked in a bad place, so the
         // new spot becomes its home. One that still has somewhere to be resumes.
         DetourTo(_spot, (m_ptHead == m_ptDest) ? FALSE : TRUE);
@@ -2990,7 +2994,15 @@ BOOL CVehicle::LeaveRoad() {
 
     if (!GetOwner()->IsLocal())
         return (FALSE);
-    if (m_iEvent != none)
+    // A build order is not active construction while an idle/blocked crane has
+    // no building attached. Preserve that order through the parking detour.
+    if (m_iEvent != none && !(GetData()->IsCrane() && m_iEvent == build))
+        return (FALSE);
+    if (!m_cOwn || m_pBldg != NULL || IsFlag(stopped) || IsHpControl())
+        return (FALSE);
+    if (!OnPavement(m_ptHead) && !OnPavement(m_ptTail))
+        return (FALSE);
+    if (m_dwLeftRoad != 0 && theGame.GettimeGetTime() - m_dwLeftRoad < 30000)
         return (FALSE);
 
     // Ordinarily: NEVER GIVE UP INSIDE A CORRIDOR. Abandoning the haul to go and park
@@ -3001,27 +3013,19 @@ BOOL CVehicle::LeaveRoad() {
     // to GET OFF the corridor, and a truck that cannot reverse - nothing behind it, or
     // an angle that will not take it - has no other way out. Forbidding this during a
     // panic shut down half the escape routes of exactly the trucks being asked to leave.
-    if (m_iJamClear <= 0) {
+    // An already stopped unit cannot advance the queue; let it clear the road.
+    if (m_iJamClear <= 0 && m_cMode != stop) {
         int iVehsHere = 0;
         if ((theMap._GetHex(m_ptHead)->GetUnits() & CHex::bridge) ||
             (CorridorAhead(iVehsHere) >= CORRIDOR_MIN_HEXES))
             return (FALSE);
     }
-    // only ROAD OCCUPANCY matters. A vehicle inside a building has already released
-    // its hexes via EnterBuilding, so evicting it back out through ExitBuilding
-    // helps nobody and disturbs a vehicle that was not in the way.
-    if (!OnPavement(m_ptHead))
-        return (FALSE);          // already out of everyone's way
-    if (IsFlag(stopped))
-        return (FALSE);          // ordered to stand still
-
-    // one attempt per stagnation window, so this cannot become a shuffle loop
-    if ((m_dwLeftRoad != 0) && (theGame.GettimeGetTime() - m_dwLeftRoad < 30000))
-        return (FALSE);
+    // Rate-limit attempts, including a failed search. The stopped-state update
+    // may retry later without rescanning the parking rings every frame.
+    m_dwLeftRoad = theGame.GettimeGetTime();
 
     CSubHex _spot;
     if (FindOffRoadSpot(_spot, NULL)) {
-        m_dwLeftRoad = theGame.GettimeGetTime();
         WaitLog("[OFFROAD] veh %d giving up at hex %d,%d, parking off-road at hex %d,%d", GetID(),
                 GetHexHead().X(), GetHexHead().Y(), CHexCoord(_spot.ToCoord()).X(),
                 CHexCoord(_spot.ToCoord()).Y());
@@ -3031,7 +3035,7 @@ BOOL CVehicle::LeaveRoad() {
         // preserves this across SetDestAndMode; Operate only counts it down once we
         // are actually stopped, so it starts when we arrive, not when we set off.
         m_iHoldFrames = GIVEUP_HOLD_FRAMES;
-        DetourTo(_spot, FALSE);
+        DetourTo(_spot, m_ptHead != m_ptDest);
         return (TRUE);
     }
 
@@ -3044,11 +3048,10 @@ BOOL CVehicle::LeaveRoad() {
         if (!CanEnter(_next))
             continue;
 
-        m_dwLeftRoad = theGame.GettimeGetTime();
         WaitLog("[OFFROAD] veh %d giving up at hex %d,%d, pulling off to sub %d,%d", GetID(),
                 GetHexHead().X(), GetHexHead().Y(), _next.x, _next.y);
         m_iHoldFrames = GIVEUP_HOLD_FRAMES;   // see above - a departure that returns at once drains nothing
-        DetourTo(_next, FALSE);       // we were giving up anyway - just do it off the road
+        DetourTo(_next, m_ptHead != m_ptDest);
         return (TRUE);
     }
 
