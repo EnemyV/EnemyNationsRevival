@@ -2779,16 +2779,20 @@ void CVehicle::JamWatch() {
 
     // taking part in someone's request
     if (m_iJamClear > 0) {
-        m_iJamFwd -= iFr;
-        if (m_iJamFwd <= 0) {
-            m_iJamFwd = JAM_FWD_EVERY;       // re-offer periodically, on our OWN update,
-            JamForward();                    // never as a recursive call into movement
-        }
+        // Expire before forwarding. Otherwise a one-frame request can pass to
+        // a neighbour, expire here, and be passed back later in the same update.
+        // Each recipient must spend elapsed time before it can relay the request.
         m_iJamClear -= iFr;
         if (m_iJamClear <= 0) {
             m_iJamClear = 0;
             m_iJamFwd   = 0;
             m_iJamCool  = JAM_COOL_FRAMES;   // participation costs the right to start one
+        } else {
+            m_iJamFwd -= iFr;
+            if (m_iJamFwd <= 0) {
+                m_iJamFwd = JAM_FWD_EVERY;
+                JamForward();
+            }
         }
         return;
     }
