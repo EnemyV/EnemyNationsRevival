@@ -7750,6 +7750,28 @@ void HarnessDumpSelection( std::string& out )
     out = line;
 }
 
+bool HarnessMoveVehicle(unsigned long id, int hexX, int hexY)
+{
+    CWndArea* a = theAreaList.GetTop();
+    CVehicle* v = NULL;
+    if (a == NULL || hexX < 0 || hexY < 0 || hexX >= theMap.Get_eX() || hexY >= theMap.Get_eY() ||
+        !theVehicleMap.Lookup((DWORD) id, v) || v == NULL || v->GetOwner() == NULL ||
+        !v->GetOwner()->IsMe() || !v->GetOwner()->IsLocal() || v->IsFlag(CUnit::dying) || v->GetTransport())
+        return false;
+    CHexCoord target(hexX, hexY);
+    // Ground movement only: do not accidentally turn a QA move into a pickup/repair.
+    if (theMap._GetHex(target)->GetUnits() & CHex::bldg)
+        return false;
+    // Same order replacement as the single-vehicle goto in DoCommandAt.
+    a->StopRoute(v);
+    v->TempTargetOff();
+    v->SetEvent(CVehicle::none);
+    v->ResumeUnit();
+    a->SetDestAndSfx(v, target);
+    v->_SetTarget(NULL);
+    return true;
+}
+
 void HarnessVehicleState(unsigned long id, std::string& out)
 {
     CVehicle* v = NULL;

@@ -204,6 +204,9 @@ std::mutex              g_unitsMutex;
 std::string            g_unitsResult;
 std::atomic<bool>      g_unitsPending{false};
 std::atomic<bool>      g_unitsDone{false};
+std::atomic<unsigned long> g_moveVehId{0};
+std::atomic<int> g_moveVehX{0}, g_moveVehY{0};
+std::atomic<bool> g_moveVehPending{false}, g_moveVehDone{false}, g_moveVehOK{false};
 std::atomic<unsigned long> g_unitsStateId{0}; // 0: list; otherwise read one vehicle
 
 // Pending `sel` request (HarnessDumpSelection) — same render-thread handshake.
@@ -526,6 +529,20 @@ void handle_command(const std::string& line, en_socket_t conn) {
         if (!g_unitsDone.load()) out = "err units timeout (not in-game?)\n";
         en_send(conn, out.c_str(), out.size());
         return;
+    } else if (strcmp(cmd, "moveveh") == 0) {
+        unsigned long id = 0;
+        int x = 0, y = 0;
+        char extra;
+        if (sscanf(line.c_str(), "%*s %lu %d %d %c", &id, &x, &y, &extra) != 3 || id == 0) {
+            const char* usage = "err usage: moveveh <vehicle-id> <hex-x> <hex-y>\n";
+            en_send(conn, usage, strlen(usage));
+            return;
+        }
+        g_moveVehId = id; g_moveVehX = x; g_moveVehY = y;
+        g_moveVehDone = false; g_moveVehOK = false; g_moveVehPending = true;
+        for (int i = 0; i < 400 && !g_moveVehDone.load(); ++i) { en_sleep_poll(); }
+        snprintf(reply, sizeof(reply), !g_moveVehDone.load() ? "err moveveh timeout\n" :
+                 (g_moveVehOK.load() ? "ok move order issued\n" : "err moveveh invalid vehicle or target\n"));
     } else if (strcmp(cmd, "sel") == 0) {
         // sel — report the current selection (count + primary unit) on the render
         // thread. Answers "did that click select anything?" without pixel-diffing.
@@ -1048,6 +1065,11 @@ void EnHarness_Service() {
         else HarnessDumpUnits(out);
         { std::lock_guard<std::mutex> lk(g_unitsMutex); g_unitsResult = out; }
         g_unitsDone = true;
+        return;
+    }
+    if (g_moveVehPending.exchange(false)) {
+        g_moveVehOK = HarnessMoveVehicle(g_moveVehId.load(), g_moveVehX.load(), g_moveVehY.load());
+        g_moveVehDone = true;
         return;
     }
     if (g_selPending.exchange(false)) {

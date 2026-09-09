@@ -125,6 +125,7 @@ public:
 
 class CWndArea : public CWndAnim
 {
+friend bool HarnessMoveVehicle(unsigned long id, int hexX, int hexY);
 friend class CWndAreaStatic;
 friend class CWndListUnits;
 friend class CWndWorld;
