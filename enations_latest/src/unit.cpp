@@ -3100,6 +3100,8 @@ void CVehicle::SetDestAndMode( CSubHex sub, VEH_POS iMode )
     m_dwTimeBlocked = 0;
     m_iBlockCount   = 0;
     m_iBackUps      = 0;   // fresh destination, fresh back-up budget
+    m_bWaitedForMover = FALSE; // a new destination starts a new bump/wait episode
+    m_subWaitNext.x = m_subWaitNext.y = -1;
 
     // ...and a genuinely new order CANCELS any pending traffic resume. Without
     // this, order A -> detour D -> the player orders B ends with the vehicle
