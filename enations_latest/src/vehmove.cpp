@@ -2239,6 +2239,29 @@ BOOL CVehicle::WaitForMover() {
     CVehicle *pVehInWay = theVehicleHex._GetVehicle(m_ptNext);
     if ((pVehInWay == NULL) || (pVehInWay == this))
         return (FALSE);
+
+    // A retreat needs the follower behind it to make room, not keep driving
+    // into it. Either participant can notice the contact. Signal the existing
+    // clearance behavior; the follower starts its own legal backup on its update.
+    if (m_bReversing != pVehInWay->m_bReversing && GetOwner() == pVehInWay->GetOwner()) {
+        CVehicle *pRetreat = m_bReversing ? this : pVehInWay;
+        CVehicle *pFollower = m_bReversing ? pVehInWay : this;
+        int nx = CSubHex::Diff(pFollower->m_ptHead.x - pFollower->m_ptTail.x);
+        int ny = CSubHex::Diff(pFollower->m_ptHead.y - pFollower->m_ptTail.y);
+        int dx = CSubHex::Diff(pRetreat->m_ptTail.x - pFollower->m_ptHead.x);
+        int dy = CSubHex::Diff(pRetreat->m_ptTail.y - pFollower->m_ptHead.y);
+        // Reversing swaps movement head/tail, so its nose points tail minus head.
+        if (pFollower->JamEligible() && pFollower->m_iJamClear <= 0 &&
+            nx == CSubHex::Diff(pRetreat->m_ptTail.x - pRetreat->m_ptHead.x) &&
+            ny == CSubHex::Diff(pRetreat->m_ptTail.y - pRetreat->m_ptHead.y) &&
+            dx * nx + dy * ny > 0 &&
+            (m_ptNext == pVehInWay->m_ptHead || m_ptNext == pVehInWay->m_ptTail)) {
+            pFollower->m_iJamClear = pRetreat->m_iJamClear > 0 ? pRetreat->m_iJamClear : JAM_WINDOW_FRAMES;
+            pFollower->m_iJamFwd = 0;
+            WaitLog("[REVERSE-FOLLOW] retreat %d follower %d nose %d,%d frames %d",
+                    pRetreat->GetID(), pFollower->GetID(), nx, ny, pFollower->m_iJamClear);
+        }
+    }
     // The elapsed counter resets when traffic waiting expires. The per-bump
     // flag does not: use it so an exhausted wait reaches the recovery ladder.
     if (m_bWaitedForMover)
@@ -2694,7 +2717,7 @@ BOOL CVehicle::AskToMove(CVehicle *pAsker) {
 //
 // Deliberately NOT a manager: nothing owns the group, nothing scans the map, and no
 // truck is told which way to move. A request only ever passes between trucks that are
-// physically touching, each recipient forwards it ONCE on its own update, and the
+// physically touching, each recipient re-offers it on its own timer, and the
 // REMAINING window is carried rather than refreshed - so a ring of trucks cannot keep
 // handing the same request round in circles.
 
@@ -2710,7 +2733,12 @@ BOOL CVehicle::JamEligible() const {
         return (FALSE);
     if (IsHpControl())                       // the player is driving this one
         return (FALSE);
-    if (!GetData()->IsTransport())           // trucks only, not military
+    if (GetData()->IsBoat())
+        return (FALSE);
+    // An inactive crane clearing the road needs to request space too. Active
+    // construction remains excluded by m_pBldg below; preserve its build order.
+    if (!GetData()->IsTransport() &&
+        !(GetData()->IsCrane() && (m_iEvent == none || m_iEvent == build)))
         return (FALSE);
     if (GetData()->GetVehFlags() & CTransportData::FL1hex)
         return (FALSE);
@@ -2723,32 +2751,33 @@ BOOL CVehicle::JamEligible() const {
 // own two ends, nothing radial, nothing distant.
 void CVehicle::JamForward() {
 
-    // A JAM IS NOT A CHAIN OF TOUCHING TRUCKS. It has gaps - a free sub here and there -
-    // and strict adjacency stopped the request dead at the first one, which is why the
-    // panic reached a couple of trucks instead of the cluster. Sweep a small box instead:
-    // every eligible truck within JAM_FWD_HEXES gets the request, and since each of them
-    // sweeps its own box in turn, the wave crosses gaps and covers the whole knot without
-    // anyone building a group or scanning the map.
-    CHexCoord _c(GetHexHead());
+    // Only occupied body squares touching either end participate. A reservation
+    // for a future step is not physical contact, and a nearby queue is not ours.
     int iSent = 0;
-    for (int dx = -JAM_FWD_HEXES; dx <= JAM_FWD_HEXES; dx++)
-        for (int dy = -JAM_FWD_HEXES; dy <= JAM_FWD_HEXES; dy++)
-            for (int iSx = 0; iSx < 2; iSx++)
-                for (int iSy = 0; iSy < 2; iSy++) {
-                    CSubHex _n((_c.X() + dx) * 2 + iSx, (_c.Y() + dy) * 2 + iSy);
-                    _n.Wrap();
-                    CVehicle *pOn = theVehicleHex._GetVehicle(_n);
-                    if ((pOn == NULL) || (pOn == this))
-                        continue;
-                    if (!pOn->JamEligible())
-                        continue;
-                    // cooling blocks RAISING a wave, not joining one
-                    if (pOn->m_iJamClear > 0)
-                        continue;              // already in, keep its own deadline
-                    pOn->m_iJamClear = m_iJamClear;   // carry what is LEFT, never a fresh window
-                    pOn->m_iJamFwd   = 0;             // pass it on at its next update
-                    iSent++;
-                }
+    for (int iEnd = 0; iEnd < 2; iEnd++)
+        for (int dx = -1; dx <= 1; dx++)
+            for (int dy = -1; dy <= 1; dy++) {
+                CSubHex _n(iEnd == 0 ? m_ptHead : m_ptTail);
+                _n.x += dx;
+                _n.y += dy;
+                _n.Wrap();
+                CVehicle *pOn = theVehicleHex._GetVehicle(_n);
+                if ((pOn == NULL) || (pOn == this))
+                    continue;
+                if (pOn->GetOwner() != GetOwner() ||
+                    (_n != pOn->m_ptHead && _n != pOn->m_ptTail))
+                    continue;
+                if (!pOn->JamEligible())
+                    continue;
+                // Cooling blocks raising a request, not joining one.
+                if (pOn->m_iJamClear > 0)
+                    continue;                    // already in, keep its deadline
+                pOn->m_iJamClear = m_iJamClear;    // carry only what is left
+                pOn->m_iJamFwd = 0;
+                iSent++;
+                WaitLog("[CLEAR-CONTACT] from %d to %d sub %d,%d frames %d", GetID(),
+                        pOn->GetID(), _n.x, _n.y, m_iJamClear);
+            }
 
     if (iSent > 0)
         WaitLog("[JAM] veh %d at hex %d,%d passed clearance to %d trucks, %d frames left",

@@ -34,7 +34,7 @@ const int MAX_NUM_RETRIES = 25;
 const int MAX_BACK_UPS    = 2;      // per destination, so a stuck pair cannot ping-pong forever
 // Adjacent-truck clearance ("panic"), per WinAstra's 015-winastra-adjacent-clearance
 // plan. A truck stuck this long asks the trucks TOUCHING it to make space for a brief
-// window; each recipient forwards ONCE to its own neighbours, carrying the REMAINING
+// window; each recipient re-offers it to touching neighbours, carrying the REMAINING
 // window rather than a fresh one, so an adjacency cycle cannot refresh itself forever.
 // No manager, no group object, no recursion, no requester-chosen direction.
 const int JAM_STUCK_FRAMES  = 24 * 30;   // stagnation before a truck may raise a request
@@ -43,8 +43,6 @@ const int JAM_WINDOW_FRAMES = 24 * 30;   // how long the shared make-space prior
                                     // need the ones BEHIND them to clear first, and the
                                     // window expired long before a vacancy could travel in.
                                     // The panic has to outlast the queue it is unwinding.
-const int JAM_FWD_HEXES     = 2;         // how far a clearance request reaches - a jam has GAPS,
-                                    // so strict touching breaks the chain at the first empty sub
 const int JAM_FWD_EVERY     = 24 * 2;    // ...and re-offer it, so trucks that drift into the
                                     // cluster later are recruited instead of being missed
 const int JAM_STAGGER_FRAMES = 24 * 8;   // spread of per-truck expiry, so a whole cluster
