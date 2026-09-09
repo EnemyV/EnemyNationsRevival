@@ -358,6 +358,27 @@ void CVehicle::ArrivedDest() {
     // truck hold with its tail still lying across the roadway, which is the one thing
     // the hold exists to stop.
     BOOL bClear = ClearOfRoad(m_ptHead) && ClearOfRoad(m_ptTail);
+    // A safe destination for the head may leave the tail across the road.
+    // Finish with one legal local step: its tail will occupy our current safe
+    // head square. Keep the saved job and start/continue the hold only once clear.
+    if ((TrafficOpts() & 8) && !bClear && ClearOfRoad(m_ptHead) &&
+        ((bWasReversing && m_bResume) || m_iHoldFrames > 0)) {
+        const int turns[] = { 0, -1, 1, -2, 2, -3, 3 };
+        for (int i = 0; i < 7; ++i) {
+            CSubHex next = Rotate(turns[i]);
+            if (next == m_ptHead || !ClearOfRoad(next) ||
+                (theMap._GetHex(next)->GetUnits() & CHex::bldg) || !CanEnter(next))
+                continue;
+            if (m_iHoldFrames <= 0)
+                m_iHoldFrames = HOLD_FRAMES + (int) (GetID() % 4) * 24;
+            WaitLog("[TAIL-CLEAR] veh %d head %d,%d tail %d,%d taking sub %d,%d, hold %d",
+                    GetID(), m_ptHead.x, m_ptHead.y, m_ptTail.x, m_ptTail.y,
+                    next.x, next.y, m_iHoldFrames);
+            m_bReversing = bWasReversing;
+            DetourTo(next, FALSE);
+            return;
+        }
+    }
     if (bWasReversing && bClear && m_bResume && (TrafficOpts() & 8))
         m_iHoldFrames = HOLD_FRAMES + (int) (GetID() % 4) * 24;
 
