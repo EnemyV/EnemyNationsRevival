@@ -2731,6 +2731,8 @@ BOOL CVehicle::JamEligible() const {
         return (FALSE);
     if (m_unitFlags & (dying | stopped))
         return (FALSE);
+    if (!m_cOwn)                            // no physical road occupancy to clear
+        return (FALSE);
     if (IsHpControl())                       // the player is driving this one
         return (FALSE);
     if (GetData()->IsBoat())
@@ -2794,6 +2796,13 @@ void CVehicle::JamWatch() {
     if (m_iJamCool > 0)
         m_iJamCool -= iFr;
 
+    // Eligibility can change during a request (building entry, player Stop,
+    // manual control, death). Never relay from a stale, unoccupied footprint.
+    if (!JamEligible()) {
+        m_iJamClear = m_iJamFwd = m_iJamWatch = 0;
+        return;
+    }
+
     // taking part in someone's request
     if (m_iJamClear > 0) {
         // Expire before forwarding. Otherwise a one-frame request can pass to
@@ -2813,9 +2822,6 @@ void CVehicle::JamWatch() {
         }
         return;
     }
-
-    if (!JamEligible())
-        return;
 
     int cx = m_ptHead.x + m_ptTail.x;        // doubled centre
     int cy = m_ptHead.y + m_ptTail.y;
