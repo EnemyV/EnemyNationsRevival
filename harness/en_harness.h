@@ -63,6 +63,8 @@ void HarnessVehicleState(unsigned long id, std::string& out);
 // Explicit operator move for one owned vehicle; replaces its order through normal APIs.
 // Acceptance means an order was issued, not that the vehicle arrived.
 bool HarnessMoveVehicle(unsigned long id, int hexX, int hexY);
+// Same explicit Stop method used by the area toolbar; local owned vehicle only.
+bool HarnessStopVehicle(unsigned long id);
 
 // Report the CURRENT SELECTION (count + primary unit description) from live game
 // state. Added because there is no way to read "what is selected" on Linux: the

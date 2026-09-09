@@ -207,6 +207,7 @@ std::atomic<bool>      g_unitsDone{false};
 std::atomic<unsigned long> g_moveVehId{0};
 std::atomic<int> g_moveVehX{0}, g_moveVehY{0};
 std::atomic<bool> g_moveVehPending{false}, g_moveVehDone{false}, g_moveVehOK{false};
+std::atomic<bool> g_stopVeh{false}; // shares the serialized vehicle-order handshake
 std::atomic<unsigned long> g_unitsStateId{0}; // 0: list; otherwise read one vehicle
 
 // Pending `sel` request (HarnessDumpSelection) — same render-thread handshake.
@@ -529,6 +530,19 @@ void handle_command(const std::string& line, en_socket_t conn) {
         if (!g_unitsDone.load()) out = "err units timeout (not in-game?)\n";
         en_send(conn, out.c_str(), out.size());
         return;
+    } else if (strcmp(cmd, "stopveh") == 0) {
+        unsigned long id = 0;
+        char extra;
+        if (sscanf(line.c_str(), "%*s %lu %c", &id, &extra) != 1 || id == 0) {
+            const char* usage = "err usage: stopveh <vehicle-id>\n";
+            en_send(conn, usage, strlen(usage));
+            return;
+        }
+        g_moveVehId = id; g_stopVeh = true;
+        g_moveVehDone = false; g_moveVehOK = false; g_moveVehPending = true;
+        for (int i = 0; i < 400 && !g_moveVehDone.load(); ++i) { en_sleep_poll(); }
+        snprintf(reply, sizeof(reply), !g_moveVehDone.load() ? "err stopveh timeout\n" :
+                 (g_moveVehOK.load() ? "ok stop order issued\n" : "err stopveh invalid vehicle\n"));
     } else if (strcmp(cmd, "moveveh") == 0) {
         unsigned long id = 0;
         int x = 0, y = 0;
@@ -538,7 +552,7 @@ void handle_command(const std::string& line, en_socket_t conn) {
             en_send(conn, usage, strlen(usage));
             return;
         }
-        g_moveVehId = id; g_moveVehX = x; g_moveVehY = y;
+        g_moveVehId = id; g_moveVehX = x; g_moveVehY = y; g_stopVeh = false;
         g_moveVehDone = false; g_moveVehOK = false; g_moveVehPending = true;
         for (int i = 0; i < 400 && !g_moveVehDone.load(); ++i) { en_sleep_poll(); }
         snprintf(reply, sizeof(reply), !g_moveVehDone.load() ? "err moveveh timeout\n" :
@@ -1068,7 +1082,8 @@ void EnHarness_Service() {
         return;
     }
     if (g_moveVehPending.exchange(false)) {
-        g_moveVehOK = HarnessMoveVehicle(g_moveVehId.load(), g_moveVehX.load(), g_moveVehY.load());
+        g_moveVehOK = g_stopVeh.load() ? HarnessStopVehicle(g_moveVehId.load()) :
+            HarnessMoveVehicle(g_moveVehId.load(), g_moveVehX.load(), g_moveVehY.load());
         g_moveVehDone = true;
         return;
     }

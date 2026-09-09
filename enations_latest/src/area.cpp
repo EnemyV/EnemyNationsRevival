@@ -7772,6 +7772,16 @@ bool HarnessMoveVehicle(unsigned long id, int hexX, int hexY)
     return true;
 }
 
+bool HarnessStopVehicle(unsigned long id)
+{
+    CVehicle* v = NULL;
+    if (!theVehicleMap.Lookup((DWORD) id, v) || v == NULL || v->GetOwner() == NULL ||
+        !v->GetOwner()->IsMe() || !v->GetOwner()->IsLocal() || v->IsFlag(CUnit::dying))
+        return false;
+    v->StopUnit(); // CWndArea::StopUnit invokes this same virtual method.
+    return true;
+}
+
 void HarnessVehicleState(unsigned long id, std::string& out)
 {
     CVehicle* v = NULL;
@@ -7812,6 +7822,12 @@ void HarnessVehicleState(unsigned long id, std::string& out)
             on ? (unsigned long) on->GetID() : 0, (int) v->ClearOfRoad(subs[i]));
         out += line;
     }
+    CHex* headHex = theMap._GetHex(v->m_ptHead);
+    snprintf(line, sizeof(line), "terrain head_alt %d sea_level %d wading_depth %d travel_head %d local_cost %d\n",
+             headHex->GetAlt(), (int) CHex::sea_level, v->GetData()->GetWaterDepth(),
+             (int) v->GetData()->CanTravelHex(headHex),
+             theMap.GetTerrainCost(headHex, headHex, 0, v->GetData()->GetWheelType()));
+    out += line;
     snprintf(line, sizeof(line), "path next_hex %d,%d offset %d length %d block_count %ld speed %d confined %d corridor %d\n",
              v->m_hexNext.X(), v->m_hexNext.Y(), v->m_iPathOff, v->m_iPathLen,
              (long) v->m_iBlockCount, v->m_iSpeed, (int) v->m_bConfined, v->m_iCorrLen);
