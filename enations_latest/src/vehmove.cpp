@@ -2623,6 +2623,11 @@ BOOL CVehicle::AskToMove(CVehicle *pAsker) {
     if (m_pBldg != NULL)
         return (FALSE);
 
+    // A blocked detour is already answering an earlier move request. Do not
+    // replace its destination or reset its wait/retry state with the same request.
+    if (m_bResume && m_cMode == blocked)
+        return (TRUE);
+
     // do not nudge the same vehicle over and over
     if ((m_dwAskedToMove != 0) &&
         (theGame.GettimeGetTime() - m_dwAskedToMove < 5000))
