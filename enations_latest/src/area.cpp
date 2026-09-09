@@ -7812,6 +7812,18 @@ void HarnessVehicleState(unsigned long id, std::string& out)
             on ? (unsigned long) on->GetID() : 0, (int) v->ClearOfRoad(subs[i]));
         out += line;
     }
+    snprintf(line, sizeof(line), "path next_hex %d,%d offset %d length %d block_count %ld speed %d confined %d corridor %d\n",
+             v->m_hexNext.X(), v->m_hexNext.Y(), v->m_iPathOff, v->m_iPathLen,
+             (long) v->m_iBlockCount, v->m_iSpeed, (int) v->m_bConfined, v->m_iCorrLen);
+    out += line;
+    for (int turn = -3; turn <= 3; ++turn) {
+        CSubHex s = v->Rotate(turn);
+        CVehicle* on = theVehicleHex._GetVehicle(s);
+        snprintf(line, sizeof(line), "step %d sub %d,%d occupant %lu passable %d lane %d\n",
+                 turn, s.x, s.y, on ? (unsigned long) on->GetID() : 0,
+                 (int) v->IsPassable(s), (int) v->InLane(s));
+        out += line;
+    }
 }
 
 void HarnessDumpUnits( std::string& out )
