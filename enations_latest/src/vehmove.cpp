@@ -2767,7 +2767,12 @@ void CVehicle::JamWatch() {
         return;
 
     // only while a truck is actually in our way - a slow queue is not a jam
-    CVehicle *pIn = theVehicleHex._GetVehicle(m_ptNext);
+    // Traffic waiting parks m_ptNext on our own head. The actual blocked step
+    // remains in m_subWaitNext; testing our head mistakes a stuck queue for no blocker.
+    CSubHex const &blockedStep = (m_cMode == traffic) ? m_subWaitNext : m_ptNext;
+    if (blockedStep.x < 0 || blockedStep.y < 0)
+        return;
+    CVehicle *pIn = theVehicleHex._GetVehicle(blockedStep);
     if ((pIn == NULL) || (pIn == this))
         return;
 
@@ -2775,8 +2780,8 @@ void CVehicle::JamWatch() {
     // stagger the expiry per truck so the cluster does not resume all at once
     m_iJamClear = JAM_WINDOW_FRAMES + (int) (GetID() % 8) * (JAM_STAGGER_FRAMES / 8);
     m_iJamFwd   = 0;
-    WaitLog("[JAM] veh %d at hex %d,%d STUCK, raising clearance request for %d frames",
-            GetID(), GetHexHead().X(), GetHexHead().Y(), m_iJamClear);
+    WaitLog("[JAM] veh %d at hex %d,%d STUCK, raising clearance request for %d frames, blocker %d traffic %d",
+            GetID(), GetHexHead().X(), GetHexHead().Y(), m_iJamClear, pIn->GetID(), (int) (m_cMode == traffic));
 }
 
 BOOL CVehicle::BackUp() {
