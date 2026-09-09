@@ -2235,6 +2235,10 @@ BOOL CVehicle::WaitForMover() {
     CVehicle *pVehInWay = theVehicleHex._GetVehicle(m_ptNext);
     if ((pVehInWay == NULL) || (pVehInWay == this))
         return (FALSE);
+    // The elapsed counter resets when traffic waiting expires. The per-bump
+    // flag does not: use it so an exhausted wait reaches the recovery ladder.
+    if (m_bWaitedForMover)
+        return (FALSE);
 
     // TWO-PARTY STANDOFF. If the vehicle in our way wants the square we are
     // standing on, we are each other's obstacle and waiting is symmetric: both
@@ -2262,12 +2266,6 @@ BOOL CVehicle::WaitForMover() {
     if (!pVehInWay->IsOnTheMove()) {
         if (!pVehInWay->AskToMove(this))
             return (FALSE);          // it cannot move - go around it as before
-    } else if (m_bWaitedForMover) {
-        // we already spent a wait here and it is still not our turn. Waiting again
-        // behind a MOVING vehicle is right (it is a queue, and queues advance);
-        // the ladder still gets its turn once the hold expires.
-        if (m_dwTimeBlocked >= m_dwTrafficWait)
-            return (FALSE);
     }
 
     BOOL bPriorWait = m_bWaitedForMover;
