@@ -2222,7 +2222,9 @@ BOOL CVehicle::WaitForMover() {
     // Stable local priority: the LOWER id holds its ground, the higher id yields.
     // Both vehicles evaluate the same comparison and reach opposite conclusions,
     // so the conflict resolves without anyone coordinating them.
-    if ((TrafficOpts() & 2) &&
+    // A reversing truck has already yielded by committing to an escape.
+    // Keep waiting for its rear-led step instead of yielding back into recovery.
+    if ((!m_bReversing) && (TrafficOpts() & 2) &&
         ((pVehInWay->m_ptNext == m_ptHead) || (pVehInWay->m_ptNext == m_ptTail) ||
          (pVehInWay->m_subWaitNext == m_ptHead) || (pVehInWay->m_subWaitNext == m_ptTail))) {
         if (GetID() > pVehInWay->GetID()) {
@@ -2779,6 +2781,12 @@ void CVehicle::JamWatch() {
 
 BOOL CVehicle::BackUp() {
 
+    // Head and tail were swapped when this retreat began. Starting another
+    // backup now would swap them back and replace the escape with its opposite.
+    // Let the existing movement/retry ladder finish or fail this detour first.
+    if (m_bReversing)
+        return (FALSE);
+
     if (!(TrafficOpts() & 8))
         return (FALSE);
 
@@ -3135,7 +3143,9 @@ void CVehicle::HandleBlocked() {
     // forced and no direction was dictated by the asker.
     // Reverse if we can; if we cannot, get off the road instead. Either counts as
     // making space, and a truck that can do neither simply waits - nothing is forced.
-    if (m_iJamClear > 0) {
+    // An active request must not restart an escape at every blocked update.
+    // A committed retreat uses ordinary step retries and bounded failure below.
+    if ((m_iJamClear > 0) && (!m_bReversing)) {
         if (BackUp())
             return;
         if (LeaveRoad())
