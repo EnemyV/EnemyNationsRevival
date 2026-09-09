@@ -7824,6 +7824,12 @@ void HarnessVehicleState(unsigned long id, std::string& out)
                  (int) v->IsPassable(s), (int) v->InLane(s));
         out += line;
     }
+    int bodyFacing = (v->CalcDir() + (v->m_bReversing ? FULL_ROT / 2 : 0)) % FULL_ROT;
+    int stepTurn = GetAngle(v->m_ptNext, v->m_ptHead, v->m_ptHead, v->m_ptTail);
+    int expected = (bodyFacing + (STEPS_HEX - v->m_iStepsLeft) * stepTurn + FULL_ROT) % FULL_ROT;
+    snprintf(line, sizeof(line), "facing body %d expected_moving %d steps_left %d turn %d actual_turn %d\n",
+             bodyFacing, expected, v->m_iStepsLeft, stepTurn, v->m_iDadd);
+    out += line;
 }
 
 void HarnessDumpUnits( std::string& out )
