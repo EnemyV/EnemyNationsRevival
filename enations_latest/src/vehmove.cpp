@@ -2270,6 +2270,8 @@ BOOL CVehicle::WaitForMover() {
             return (FALSE);
     }
 
+    BOOL bPriorWait = m_bWaitedForMover;
+    DWORD dwPriorWaitTime = m_dwTimeBlocked;
     m_bWaitedForMover = TRUE;
     m_subWaitNext = m_ptNext;          // the step we intend to take when it clears
     m_ptNext = m_ptHead;
@@ -2277,8 +2279,8 @@ BOOL CVehicle::WaitForMover() {
     _SetRouteMode(traffic);
     m_dwTimeBlocked = 0;
     m_dwTrafficWait = TRAFFIC_WAIT_MOVER;
-    WaitLog("[WAIT] veh %d hex %d,%d holds sub %d,%d for veh %d", GetID(), GetHexHead().X(),
-            GetHexHead().Y(), m_subWaitNext.x, m_subWaitNext.y, pVehInWay->GetID());
+    WaitLog("[WAIT] veh %d hex %d,%d holds sub %d,%d for veh %d prior_wait %d prior_time %lu", GetID(), GetHexHead().X(),
+            GetHexHead().Y(), m_subWaitNext.x, m_subWaitNext.y, pVehInWay->GetID(), (int) bPriorWait, (unsigned long) dwPriorWaitTime);
 #ifdef _LOGOUT
     logPrintf(LOG_PRI_VERBOSE, LOG_VEH_MOVE, "Vehicle %d waiting for moving vehicle %d", GetID(),
               pVehInWay->GetID());
@@ -2320,6 +2322,10 @@ BOOL CVehicle::ResumeWaitedStep() {
 // visible. Anything that moves a vehicle for traffic reasons must come through
 // here.
 void CVehicle::DetourTo(CSubHex const &_sub, BOOL bResume) {
+
+    WaitLog("[DETOUR] veh %d head %d,%d tail %d,%d from %d,%d to %d,%d reverse %d resume %d hold %d",
+            GetID(), m_ptHead.x, m_ptHead.y, m_ptTail.x, m_ptTail.y,
+            m_ptDest.x, m_ptDest.y, _sub.x, _sub.y, (int) m_bReversing, (int) m_bResume, m_iHoldFrames);
 
     // Save the EXACT destination sub-hex, not its hex. A job that names a
     // particular sub - a lane, a building door - loses that when it is rounded
@@ -2569,6 +2575,10 @@ BOOL CVehicle::FindOffRoadSpot(CSubHex &_found, CVehicle *pAsker) {
                         continue;
                 }
 
+                CVehicle *pTarget = theVehicleHex._GetVehicle(_cand);
+                if (pTarget != NULL && pTarget != this)
+                    WaitLog("[PARK-OCCUPIED] veh %d selected sub %d,%d occupied by %d",
+                            GetID(), _cand.x, _cand.y, pTarget->GetID());
                 _found = _cand;
                 return (TRUE);
             }
