@@ -2540,9 +2540,6 @@ BOOL CVehicle::FindOffRoadSpot(CSubHex &_found, CVehicle *pAsker) {
                 if (theMap.GetTerrainCost(CHexCoord(_cand.ToCoord()), CHexCoord(_cand.ToCoord()), 0,
                                           GetData()->GetWheelType()) == 0)
                     continue;
-                if (pAsker != NULL)
-                    if ((_cand == pAsker->m_ptNext) || (_cand == pAsker->m_ptHead))
-                        continue;
 
                 if ((iPass == 0) && IsShoreline(CHexCoord(_cand.ToCoord())))
                     continue;
@@ -2560,17 +2557,25 @@ BOOL CVehicle::FindOffRoadSpot(CSubHex &_found, CVehicle *pAsker) {
                 // a free pair for head and tail rather than a single free corner.
                 {
                     int iFree = 0;
+                    CSubHex firstFree(_cand);
                     for (int iSx = 0; iSx < 2; iSx++)
                         for (int iSy = 0; iSy < 2; iSy++) {
                             CSubHex _s(CHexCoord(_cand.ToCoord()).X() * 2 + iSx,
                                        CHexCoord(_cand.ToCoord()).Y() * 2 + iSy);
                             _s.Wrap();
                             CVehicle *pOn = theVehicleHex._GetVehicle(_s);
-                            if ((pOn == NULL) || (pOn == this))
+                            if (pAsker != NULL &&
+                                (_s == pAsker->m_ptNext || _s == pAsker->m_ptHead))
+                                continue;
+                            if ((pOn == NULL) || (pOn == this)) {
+                                if (iFree == 0)
+                                    firstFree = _s;
                                 iFree++;
+                            }
                         }
                     if (iFree < 2)
                         continue;
+                    _cand = firstFree; // return a free corner, not always even/even
                 }
 
                 CVehicle *pTarget = theVehicleHex._GetVehicle(_cand);
