@@ -1066,6 +1066,7 @@ BOOL CVehicle::GetNextHex(BOOL bNew) {
 
         // handle wrong lane
         if (bCheckStreet) {
+            int oldX = xStep, oldY = yStep;
             if (xStep == 0) {
                 if ((m_ptHead.x & 1) && (yStep > 0))
                     xStep = -1;
@@ -1077,6 +1078,17 @@ BOOL CVehicle::GetNextHex(BOOL bNew) {
                     yStep = -1;
                 else if ((!(m_ptHead.y & 1)) && (xStep > 0))
                     yStep = 1;
+            }
+            if (m_bReversing && (oldX != xStep || oldY != yStep)) {
+                CSubHex straight(m_ptHead.x + oldX, m_ptHead.y + oldY);
+                CSubHex shifted(m_ptHead.x + xStep, m_ptHead.y + yStep);
+                straight.Wrap(); shifted.Wrap();
+                if (CanEnter(straight) && !CanEnter(shifted)) {
+                    CVehicle* on = theVehicleHex._GetVehicle(shifted);
+                    WaitLog("[REVERSE-LANE] veh %d head %d,%d tail %d,%d free %d,%d replaced by %d,%d blocker %d",
+                            GetID(), m_ptHead.x, m_ptHead.y, m_ptTail.x, m_ptTail.y,
+                            straight.x, straight.y, shifted.x, shifted.y, on ? on->GetID() : 0);
+                }
             }
         }
     }    // end not bAtDest
@@ -3773,6 +3785,10 @@ void CVehicle::HandleBlocked() {
             for (int iDir = -3; iDir <= 3; iDir++) {
                 CSubHex _next = Rotate(iDir);
                 if (CanEnter(_next)) {
+                    if (bConfined && abs(iDir) > 1)
+                        WaitLog("[CONFINED-TURN] veh %d head %d,%d tail %d,%d turn %d next %d,%d reverse %d corridor %d",
+                                GetID(), m_ptHead.x, m_ptHead.y, m_ptTail.x, m_ptTail.y,
+                                iDir, _next.x, _next.y, (int) m_bReversing, iCorrLen);
                     m_ptNext = _next;
 #ifdef _LOGOUT
                     logPrintf(LOG_PRI_VERBOSE, LOG_VEH_MOVE, "Vehicle %d turn (-)3 try 2", GetID());
