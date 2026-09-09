@@ -197,17 +197,9 @@ BOOL CVehicle::MoveInHex() {
     m_maploc.x = __roll(0, MAX_HEX_HT * theMap.Get_eX(), m_maploc.x);
     m_maploc.y += iStep * m_iYadd;
     m_maploc.y = __roll(0, MAX_HEX_HT * theMap.Get_eY(), m_maploc.y);
-    // A REVERSING HULL NEVER ROTATES - guarded HERE, where the turn is actually
-    // applied, rather than only where m_iDadd is computed. m_iDadd is worked out once
-    // in SetMoveParams and then applied on every step, so any path that recomputed it
-    // while m_bReversing was momentarily clear - SetDestAndMode clears the flag, and
-    // CheckExit calls SetMoveParams (unit.cpp:3565) - baked a half turn in that the
-    // later restore could not undo. That is the truck seen backing up facing the wrong
-    // way. Guarding the application closes every such path at once.
-    if (!m_bReversing) {
-        m_iDir += iStep * m_iDadd;
-        m_iDir = __roll(0, FULL_ROT, m_iDir);
-    }
+    // A backing truck follows the body's turn too; only its nose is reversed.
+    m_iDir += iStep * m_iDadd;
+    m_iDir = __roll(0, FULL_ROT, m_iDir);
 
     if (GetTurret())
         GetTurret()->m_iDir = __roll(0, FULL_ROT, GetTurret()->m_iDir + iStep * m_iTadd);
@@ -832,13 +824,7 @@ void CVehicle::SetMoveParams(BOOL bFixTurret) {
         m_iXadd = CSubHex::Diff(m_ptNext.x - m_ptHead.x) * 2;
         m_iYadd = CSubHex::Diff(m_ptNext.y - m_ptHead.y) * 2;
     } else {
-        // A REVERSING vehicle DOES NOT TURN. m_iDadd is a per-step rotation the move
-        // loop applies every frame (m_iDir += iStep * m_iDadd, vehmove.cpp:200), so
-        // pinning m_iDir in SetLoc was never enough to stop a pivot: right after
-        // Turn180 the angle between the intended step and the body axis IS a half
-        // turn, and this line animated the hull through exactly the turn-around the
-        // pin was written to prevent. Backing up means the hull does not rotate.
-        m_iDadd = m_bReversing ? 0 : GetAngle(m_ptNext, m_ptHead, m_ptHead, m_ptTail);
+        m_iDadd = GetAngle(m_ptNext, m_ptHead, m_ptHead, m_ptTail);
         m_iXadd = CSubHex::Diff((m_ptNext.x + m_ptHead.x) - (m_ptHead.x + m_ptTail.x));
         m_iYadd = CSubHex::Diff((m_ptNext.y + m_ptHead.y) - (m_ptHead.y + m_ptTail.y));
     }
@@ -1643,19 +1629,14 @@ void CVehicle::SetLoc(BOOL)
             m_maploc.y -= theMap.Get_eY() * MAX_HEX_HT;
     }
 
-    // A REVERSING vehicle KEEPS ITS FACING. Direction is normally derived from the
-    // body - head to tail - so swapping those labels to retreat spun the hull on the
-    // spot and drove it away nose-first. That is a turn-around, and on a one-lane
-    // bridge deck there is no room to turn around. Pinning the facing while the
-    // labels move makes the same motion a genuine backup: the hull slides back down
-    // its own axis, still pointing the way it came.
-    if (!m_bReversing) {
-        if (GetData()->GetVehFlags() & CTransportData::FL1hex) {
-            if (m_ptNext != m_ptHead)
-                m_iDir = CalcNextDir();
-        } else
-            m_iDir = CalcDir();
-    }
+    // Reverse swaps the movement head/tail, so the nose is half a turn from
+    // that axis. Derive it each step: pinning an old bearing made a truck slide
+    // sideways when its route curved. Straight backing keeps the same facing.
+    if (GetData()->GetVehFlags() & CTransportData::FL1hex) {
+        if (m_ptNext != m_ptHead)
+            m_iDir = CalcNextDir();
+    } else
+        m_iDir = __roll(0, FULL_ROT, CalcDir() + (m_bReversing ? FULL_ROT / 2 : 0));
 
     // turret - on target if shooting, else with tank
     if (GetTurret()) {
@@ -2360,15 +2341,11 @@ void CVehicle::DetourTo(CSubHex const &_sub, BOOL bResume) {
     m_iBackUps    = iBudget;
     m_iHoldFrames = iHold;
 
-    // WITHOUT THIS THE HULL ENDS UP FACING BACKWARDS. m_bReversing is what pins the
-    // facing while the body moves down its own axis, and SetDestAndMode clears it - so
-    // a truck nudged or re-tasked part way through a retreat lost the pin, the facing
-    // was recomputed from the swapped head/tail labels, and it drove on pointing 180
-    // degrees wrong. The budget and the hold were already carried across; the reverse
-    // has to be too.
+    // SetDestAndMode calculated movement while reverse was temporarily clear.
+    // Recompute the facing and turn increment after restoring the movement mode.
     m_bReversing  = bRev;
     if (bRev)
-        m_iDadd = m_iTadd = 0;       // ...and discard any turn SetDestAndMode banked
+        SetMoveParams(FALSE);
 
     if (bResume || _arm) {
         m_subResume   = _keep;
@@ -2970,17 +2947,11 @@ BOOL CVehicle::BackUp() {
             CHexCoord(_target.ToCoord()).X(), CHexCoord(_target.ToCoord()).Y(), _target.x, _target.y,
             abs(CSubHex::Diff(_target.x - m_ptHead.x)) + abs(CSubHex::Diff(_target.y - m_ptHead.y)),
             m_iBackUps, (int) bWasBridge, (int) bPartial, (int) m_bReversing, m_iJamClear);
-    // REVERSE, do not turn around. The body ends up on the same squares either way -
-    // head and tail simply swap labels - so the only thing that made this a pivot was
-    // recomputing the facing from the new labels. Pin the facing and the identical
-    // motion reads as backing up, which is the only one of the two a truck wedged on
-    // a one-lane deck has room to do.
-    int iFacing  = m_iDir;
+    // Swap the movement endpoints without moving the body. SetLoc accounts for
+    // the reverse-facing offset, so the nose still points the original way.
     m_bReversing = TRUE;
     Turn180();
     DetourTo(_target, TRUE);          // and carry on with the haul afterwards
-    m_bReversing = TRUE;              // DetourTo -> SetDestAndMode clears it; re-arm
-    m_iDir       = iFacing;
     return (TRUE);
 }
 
