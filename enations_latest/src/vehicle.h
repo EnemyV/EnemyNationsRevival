@@ -300,6 +300,7 @@ friend void CTransport::InitSprites ();
 friend void CTransport::InitLang ();
 friend void CTransport::Close ();
 friend class CWndOrders;
+friend void HarnessVehicleState(unsigned long id, std::string& out);
 friend class CMsgVehGoto;
 friend class CMsgVehLoc;
 friend class CMsgBlocked;

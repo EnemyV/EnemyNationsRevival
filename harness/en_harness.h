@@ -58,6 +58,8 @@ void EnHarness_RegisterWindowSurface(unsigned int windowId, SDL_Surface* surface
 // (Linux/mac) and a Windows debug hotkey (same fn) to make crane/unit location
 // deterministic instead of a blind dblclick-sweep. Call on the game/render thread.
 void HarnessDumpUnits(std::string& out);
+// Read-only, render-thread snapshot for a single vehicle and its occupied/goal subs.
+void HarnessVehicleState(unsigned long id, std::string& out);
 
 // Report the CURRENT SELECTION (count + primary unit description) from live game
 // state. Added because there is no way to read "what is selected" on Linux: the

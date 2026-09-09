@@ -7750,6 +7750,44 @@ void HarnessDumpSelection( std::string& out )
     out = line;
 }
 
+void HarnessVehicleState(unsigned long id, std::string& out)
+{
+    CVehicle* v = NULL;
+    if (!theVehicleMap.Lookup((DWORD) id, v) || v == NULL) {
+        out = "err no-vehicle\n";
+        return;
+    }
+    char line[1024];
+    snprintf(line, sizeof(line),
+        "veh %lu type %d mode %d event %d owned %d hpcontrol %d stopped %d "
+        "reverse %d resume %d resume_sub %d,%d hold %d jam %d watch %d cool %d "
+        "retries %d backups %d dir %d\n",
+        id, v->GetData()->GetType(), (int) v->m_cMode, (int) v->m_iEvent,
+        (int) v->m_cOwn, (int) v->IsHpControl(), (int) v->IsFlag(CUnit::stopped),
+        (int) v->m_bReversing, (int) v->m_bResume, v->m_subResume.x, v->m_subResume.y,
+        v->m_iHoldFrames, v->m_iJamClear, v->m_iJamWatch, v->m_iJamCool,
+        v->m_iNumRetries, v->m_iBackUps, v->m_iDir);
+    out = line;
+    const char* names[] = { "head", "tail", "next", "dest" };
+    CSubHex subs[] = { v->m_ptHead, v->m_ptTail, v->m_ptNext, v->m_ptDest };
+    for (int i = 0; i < 4; ++i) {
+        if (subs[i].x < 0 || subs[i].y < 0 ||
+            subs[i].x >= theMap.Get_eX() * 2 || subs[i].y >= theMap.Get_eY() * 2) {
+            snprintf(line, sizeof(line), "%s %d,%d unavailable\n", names[i], subs[i].x, subs[i].y);
+            out += line;
+            continue;
+        }
+        CHex* h = theMap._GetHex(subs[i]);
+        CVehicle* on = theVehicleHex._GetVehicle(subs[i]);
+        snprintf(line, sizeof(line), "%s %d,%d terrain %d bridge %d building %d occupant %lu clear %d\n",
+            names[i], subs[i].x, subs[i].y, h->GetType(),
+            (int) ((h->GetUnits() & CHex::bridge) != 0),
+            (int) ((h->GetUnits() & CHex::bldg) != 0),
+            on ? (unsigned long) on->GetID() : 0, (int) v->ClearOfRoad(subs[i]));
+        out += line;
+    }
+}
+
 void HarnessDumpUnits( std::string& out )
 {
     out.clear( );

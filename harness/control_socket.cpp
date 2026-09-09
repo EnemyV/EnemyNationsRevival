@@ -204,6 +204,7 @@ std::mutex              g_unitsMutex;
 std::string            g_unitsResult;
 std::atomic<bool>      g_unitsPending{false};
 std::atomic<bool>      g_unitsDone{false};
+std::atomic<unsigned long> g_unitsStateId{0}; // 0: list; otherwise read one vehicle
 
 // Pending `sel` request (HarnessDumpSelection) — same render-thread handshake.
 std::mutex              g_selMutex;
@@ -506,9 +507,18 @@ void handle_command(const std::string& line, en_socket_t conn) {
         // wait (up to ~2s) for the render thread to service it
         for (int i = 0; i < 400 && !g_shotDone.load(); ++i) { en_sleep_poll(); }
         snprintf(reply, sizeof(reply), g_shotOK.load() ? "ok %d %d %s\n" : "err shot failed\n", g_shotW.load(), g_shotH.load(), path);
-    } else if (strcmp(cmd, "units") == 0) {
-        // Enumerate the local player's units (HarnessDumpUnits) on the render
-        // thread, then return the lines. Deterministic crane/unit location.
+    } else if ((strcmp(cmd, "units") == 0) || (strcmp(cmd, "vehstate") == 0)) {
+        unsigned long id = 0;
+        if (strcmp(cmd, "vehstate") == 0) {
+            char extra;
+            if (sscanf(line.c_str(), "%*s %lu %c", &id, &extra) != 1 || id == 0) {
+                const char* usage = "err usage: vehstate <vehicle-id>\n";
+                en_send(conn, usage, strlen(usage));
+                return;
+            }
+        }
+        // Read game state on the render thread, using the existing units handshake.
+        g_unitsStateId = id;
         g_unitsDone = false; g_unitsPending = true;
         for (int i = 0; i < 400 && !g_unitsDone.load(); ++i) { en_sleep_poll(); }
         std::string out;
@@ -1033,7 +1043,9 @@ void EnHarness_Service() {
     // state safely, in sync with the game loop). One request per frame.
     if (g_unitsPending.exchange(false)) {
         std::string out;
-        HarnessDumpUnits(out);
+        unsigned long id = g_unitsStateId.load();
+        if (id != 0) HarnessVehicleState(id, out);
+        else HarnessDumpUnits(out);
         { std::lock_guard<std::mutex> lk(g_unitsMutex); g_unitsResult = out; }
         g_unitsDone = true;
         return;
