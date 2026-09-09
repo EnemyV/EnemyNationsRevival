@@ -3024,6 +3024,19 @@ BOOL CVehicle::LeaveRoad() {
 
     CSubHex _spot;
     if (FindOffRoadSpot(_spot, NULL)) {
+        // An exit behind a confined hull needs reverse movement, not a forward
+        // route that tries to turn around on the deck. Reuse the bounded backup.
+        int dx = CSubHex::Diff(_spot.x - m_ptHead.x);
+        int dy = CSubHex::Diff(_spot.y - m_ptHead.y);
+        int iVehs = 0;
+        if (dx * CSubHex::Diff(m_ptHead.x - m_ptTail.x) +
+                dy * CSubHex::Diff(m_ptHead.y - m_ptTail.y) < 0 &&
+            ((theMap._GetHex(m_ptHead)->GetUnits() & CHex::bridge) ||
+             (theMap._GetHex(m_ptTail)->GetUnits() & CHex::bridge) ||
+             CorridorAhead(iVehs) >= CORRIDOR_MIN_HEXES) && BackUp()) {
+            WaitLog("[PARK-REVERSE] veh %d backing out for off-road exit %d,%d", GetID(), _spot.x, _spot.y);
+            return (TRUE);
+        }
         WaitLog("[OFFROAD] veh %d giving up at hex %d,%d, parking off-road at hex %d,%d", GetID(),
                 GetHexHead().X(), GetHexHead().Y(), CHexCoord(_spot.ToCoord()).X(),
                 CHexCoord(_spot.ToCoord()).Y());
