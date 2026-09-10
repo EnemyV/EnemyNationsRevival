@@ -2499,45 +2499,16 @@ void CVehicle::DetourTo(CSubHex const &_sub, BOOL bResume) {
             GetID(), m_ptHead.x, m_ptHead.y, m_ptTail.x, m_ptTail.y,
             m_ptDest.x, m_ptDest.y, _sub.x, _sub.y, (int) m_bReversing, (int) m_bResume, m_iHoldFrames);
 
-    // Save the EXACT destination sub-hex, not its hex. A job that names a
-    // particular sub - a lane, a building door - loses that when it is rounded
-    // to hex*2 and comes back a different place than it left.
-    CSubHex _keep     = m_ptDest;
-    int     _keepMode = m_iDestMode;
-    BOOL    _arm      = (bResume && (!m_bResume)) ? TRUE : m_bResume;
-    if (m_bResume) {
-        _keep     = m_subResume;      // already armed - keep the ORIGINAL job
-        _keepMode = m_iResumeMode;
+    // Arm the exact original job before route selection. A nested detour keeps
+    // that job; it must not replace it with the previous parking destination.
+    if (bResume && !m_bResume) {
+        m_subResume   = m_ptDest;
+        m_iResumeMode = m_iDestMode;
+        m_bResume     = TRUE;
     }
 
-    // SetDestAndMode clears the back-up budget, the retreat hold and any pending
-    // resume, because a genuinely NEW order deserves a fresh budget and must not
-    // drag the vehicle back to a job the player replaced. A detour is not a new
-    // order, so it re-arms all three AFTERWARDS - the hold included, or a courtesy
-    // move part way through one would silently end it.
-    int  iBudget = m_iBackUps;
-    int  iHold   = m_iHoldFrames;
-    BOOL bRev    = m_bReversing;     // ...and we are still reversing afterwards
-    BOOL bForward = m_bForwardEscape;
-    // Retargeting a detour continues its existing reverse geometry. Only a
-    // replacement order or a finished detour should normalize the endpoints.
-    m_bReversing = FALSE;
-    SetDestAndMode(_sub, sub);
-    m_iBackUps    = iBudget;
-    m_iHoldFrames = iHold;
-
-    // SetDestAndMode calculated movement while reverse was temporarily clear.
-    // Recompute the facing and turn increment after restoring the movement mode.
-    m_bReversing  = bRev;
-    m_bForwardEscape = bForward;
-    if (bRev)
-        SetMoveParams(FALSE);
-
-    if (bResume || _arm) {
-        m_subResume   = _keep;
-        m_iResumeMode = _keepMode;
-        m_bResume     = _arm;
-    }
+    // Keep reverse geometry and parking rules active through GetPath/KickStart.
+    SetDestAndMode(_sub, sub, TRUE);
 }
 
 // Look for somewhere off the road to sit. Spirals outward from where we are, so a

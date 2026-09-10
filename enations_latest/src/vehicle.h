@@ -486,7 +486,7 @@ public:
 		void					SetDestAndMode (CHexCoord const & hex, VEH_POS iMode)
 													{ CSubHex _sub (hex.X () * 2, hex.Y () * 2);
 														SetDestAndMode (_sub, iMode); }
-		void					SetDestAndMode (CSubHex sub, VEH_POS iMode);
+		void					SetDestAndMode (CSubHex sub, VEH_POS iMode, BOOL bTrafficDetour = FALSE);
 		void					KickStart ();
 
 		void					SetEventAndRoute (VEH_EVENT iEvent, VEH_MODE iMode) { SetEvent (iEvent); SetRouteMode (iMode); }
