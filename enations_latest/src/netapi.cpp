@@ -2680,6 +2680,16 @@ static void DeleteUnit( CMsgDeleteUnit* pCmd )
     ASSERT_CMD( pCmd );
     ASSERT( pUnit->GetFlags( ) & CUnit::dying );
 
+    // Diagnostic only: disappearing traffic must not count as successful recovery.
+    if ( pUnit->GetUnitType( ) == CUnit::vehicle )
+    {
+        CVehicle* v = (CVehicle*)pUnit;
+        WaitLog( "[VEH-DELETE] veh %lu health %d dying %d owner %d killer %d head %d,%d tail %d,%d",
+                 (unsigned long)v->GetID(), v->GetDamagePoints(), (int) !!v->IsFlag(CUnit::dying),
+                 v->GetOwner() ? v->GetOwner()->GetPlyrNum() : -1, pCmd->m_iPlyrKiller,
+                 v->GetPtHead().x, v->GetPtHead().y, v->GetPtTail().x, v->GetPtTail().y );
+    }
+
     CPlayer* pPlr;
     if ( pCmd->m_iPlyrKiller >= 0 )
         pPlr = theGame._GetPlayerByPlyr( pCmd->m_iPlyrKiller );

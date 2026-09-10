@@ -7900,6 +7900,11 @@ void HarnessVehicleState(unsigned long id, std::string& out)
              (unsigned long) v->m_dwTrafficWait, (int) (v->m_pBldg != NULL),
              v->GetTransport() ? (unsigned long)v->GetTransport()->GetID() : 0);
     out += line;
+    snprintf(line, sizeof(line), "health points %d maximum %d dying %d owner %d\n",
+             v->GetDamagePoints(), v->GetData()->GetDamagePoints(),
+             (int) !!v->IsFlag(CUnit::dying),
+             v->GetOwner() ? v->GetOwner()->GetPlyrNum() : -1);
+    out += line;
     const char* names[] = { "head", "tail", "next", "dest", "waiting" };
     CSubHex subs[] = { v->m_ptHead, v->m_ptTail, v->m_ptNext, v->m_ptDest, v->m_subWaitNext };
     for (int i = 0; i < 5; ++i) {
