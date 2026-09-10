@@ -7835,9 +7835,9 @@ void HarnessVehicleState(unsigned long id, std::string& out)
     for (int turn = -3; turn <= 3; ++turn) {
         CSubHex s = v->Rotate(turn);
         CVehicle* on = theVehicleHex._GetVehicle(s);
-        snprintf(line, sizeof(line), "step %d sub %d,%d occupant %lu passable %d lane %d\n",
+        snprintf(line, sizeof(line), "step %d sub %d,%d occupant %lu passable %d lane %d enter %d\n",
                  turn, s.x, s.y, on ? (unsigned long) on->GetID() : 0,
-                 (int) v->IsPassable(s), (int) v->InLane(s));
+                 (int) v->IsPassable(s), (int) v->InLane(s), (int) v->CanEnter(s));
         out += line;
     }
     int bodyFacing = (v->CalcDir() + (v->m_bReversing ? FULL_ROT / 2 : 0)) % FULL_ROT;
