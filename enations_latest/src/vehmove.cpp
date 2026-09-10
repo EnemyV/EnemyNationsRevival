@@ -100,7 +100,8 @@ void CVehicle::Move() {
     if (m_ptDest != m_ptHead) {
         // we've arrived at ptNext
         //   inside if for special case of already there
-        ArrivedNextHex();
+        if (m_ptNext != m_ptHead)
+            ArrivedNextHex();
 
         // We've made it to m_hexNext
         // if its not ours, we wait
@@ -863,6 +864,11 @@ void CVehicle::SetMoveParams(BOOL bFixTurret) {
     }
 
     DetermineSpeed(FALSE);
+
+    // Arrival and blocked movement can leave next==head. There is no step to
+    // interpolate: animating it pulls the tail into the head and invents a turn.
+    if (m_ptNext == m_ptHead)
+        ZeroMoveParams();
 
     ASSERT_VALID_LOC (this);
     ASSERT ((!m_cOwn) || (theVehicleHex.GetVehicle(m_ptHead) == this));
