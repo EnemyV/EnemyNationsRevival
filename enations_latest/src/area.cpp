@@ -7881,6 +7881,19 @@ void HarnessVehicleState(unsigned long id, std::string& out)
     snprintf(line, sizeof(line), "circling visits %d anchor %d,%d\n",
              v->m_iTimesOn, v->m_subOn.x, v->m_subOn.y);
     out += line;
+    // Exercise the production full/compact encoders and decoder without
+    // applying a packet or mutating the vehicle being inspected.
+    CMsgVehGoto full(v);
+    CMsgVehCompLocElem packed;
+    memset(&packed, 0, sizeof(packed));
+    packed = *v;
+    CMsgVehLoc expanded(&packed);
+    snprintf(line, sizeof(line), "wire full_next %d,%d compact_next %d,%d full_dest %d,%d compact_dest %d,%d "
+             "full_dir %d compact_dir %d full_steps %d compact_steps %d\n",
+             full.m_hexNext.X(), full.m_hexNext.Y(), expanded.m_hexNext.X(), expanded.m_hexNext.Y(),
+             full.m_hexDest.X(), full.m_hexDest.Y(), expanded.m_hexDest.X(), expanded.m_hexDest.Y(),
+             full.m_iDir, expanded.m_iDir, full.m_iStepsLeft, expanded.m_iStepsLeft);
+    out += line;
 }
 
 void HarnessDumpUnits( std::string& out )
