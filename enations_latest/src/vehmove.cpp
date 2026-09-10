@@ -4176,6 +4176,9 @@ void CVehicle::EndReverse() {
     if (!m_bReversing)
         return;
 
+    WaitLog("[END-REVERSE-START] veh %d mode %d owned %d head %d,%d tail %d,%d next %d,%d steps %d turn %d",
+            GetID(), (int)m_cMode, (int)m_cOwn, m_ptHead.x, m_ptHead.y,
+            m_ptTail.x, m_ptTail.y, m_ptNext.x, m_ptNext.y, m_iStepsLeft, m_iDadd);
     int oldDir = m_iDir;
     CMapLoc oldLoc(m_maploc);
     m_bReversing = FALSE;
