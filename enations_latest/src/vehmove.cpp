@@ -1276,7 +1276,7 @@ BOOL CVehicle::GetNextHex(BOOL bNew) {
                 int iOld = ((xDif >= 0) ? xDif : -(xDif + 1)) + ((yDif >= 0) ? yDif : -(yDif + 1));
                 // Escaping a jam can require moving away from a corner before
                 // the route becomes reachable. Keep the chosen legal step.
-                BOOL bEscape = m_bResume && (m_bReversing || m_bForwardEscape) && JamEligible();
+                BOOL bEscape = m_bResume && (m_bReversing || m_bForwardEscape || m_iHoldFrames > 0) && JamEligible();
                 if ((iOld <= iNew) && (iNew != 0) && bEscape)
                     WaitLog("[ESCAPE-STEP] veh %d source next head %d,%d tail %d,%d next %d,%d "
                             "hexnext %d,%d distance %d to %d times %d",
@@ -3339,8 +3339,9 @@ BOOL CVehicle::TryNewSub(BOOL bNoNewPath) {
         xDif = CSubHex::Diff(m_hexNext.X() * 2 - m_ptHead.x);
         yDif = CSubHex::Diff(m_hexNext.Y() * 2 - m_ptHead.y);
         int iOld = ((xDif >= 0) ? xDif : -(xDif + 1)) + ((yDif >= 0) ? yDif : -(yDif + 1));
+        // Parking detours must finish clearing too; their hold starts only off-road.
         // Apply the same escape exception as ordinary next-step selection.
-        BOOL bEscape = m_bResume && (m_bReversing || m_bForwardEscape) && JamEligible();
+        BOOL bEscape = m_bResume && (m_bReversing || m_bForwardEscape || m_iHoldFrames > 0) && JamEligible();
         if ((iOld <= iNew) && (iNew != 0) && bEscape)
             WaitLog("[ESCAPE-STEP] veh %d source retry head %d,%d tail %d,%d next %d,%d "
                     "hexnext %d,%d distance %d to %d times %d",
