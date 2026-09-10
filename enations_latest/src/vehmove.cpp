@@ -2672,6 +2672,41 @@ BOOL CVehicle::FindOffRoadSpot(CSubHex &_found, CVehicle *pAsker) {
     // breaks the convergence, because they no longer scan the ring in the same order.
     int iSkew = (int) (GetID() % 8);
 
+    CHexCoord searchCenter(_hexOn);
+    for (int origin = 0; origin < 2; ++origin) {
+        // No nearby parking can exist in the middle of a long causeway. After
+        // the ordinary search fails, follow our current road direction to its
+        // end and reuse the same parking checks there. Vehicles remain temporary
+        // blockers; ordinary movement must negotiate the route to that exit.
+        if (origin != 0) {
+            int dx = CSubHex::Diff(m_ptHead.x - m_ptTail.x);
+            int dy = CSubHex::Diff(m_ptHead.y - m_ptTail.y);
+            if (GetData()->IsBoat() || (!GetData()->IsTransport() && !GetData()->IsCrane()) ||
+                (dx == 0) == (dy == 0) || !OnPavement(m_ptHead))
+                break;
+            CSubHex ray(m_ptHead);
+            BOOL foundExit = FALSE;
+            for (int step = 0; step < 2 * __max(theMap.Get_eX(), theMap.Get_eY()); ++step) {
+                CSubHex next(ray.x + dx, ray.y + dy);
+                if (next.y < 0 || next.y >= theMap.Get_eY() * 2)
+                    break;
+                next.Wrap();
+                if (next == m_ptHead || (theMap._GetHex(next)->GetUnits() & CHex::bldg) ||
+                    !GetData()->CanEnterHex(CHexCoord(ray), CHexCoord(next), FALSE, TRUE))
+                    break;
+                ray = next;
+                if (!OnPavement(ray)) {
+                    searchCenter = CHexCoord(ray);
+                    foundExit = TRUE;
+                    break;
+                }
+            }
+            if (!foundExit)
+                break;
+            WaitLog("[PARK-DISTANT] veh %d from %d,%d searching at exit %d,%d",
+                    GetID(), _hexOn.X(), _hexOn.Y(), searchCenter.X(), searchCenter.Y());
+        }
+
     // Pass 0 keeps clear of the shoreline; pass 1 accepts it if nothing else exists.
     for (int iPass = 0; iPass < 2; iPass++)
     for (int iRing = iMin; iRing < iMin + PARK_SEARCH_SUBS; iRing++)
@@ -2684,7 +2719,7 @@ BOOL CVehicle::FindOffRoadSpot(CSubHex &_found, CVehicle *pAsker) {
                 if ((abs(xOff) != iRing) && (abs(yOff) != iRing))
                     continue;
 
-                CSubHex _cand((_hexOn.X() + xOff) * 2, (_hexOn.Y() + yOff) * 2);
+                CSubHex _cand((searchCenter.X() + xOff) * 2, (searchCenter.Y() + yOff) * 2);
                 _cand.Wrap();
 
                 if (OnPavement(_cand))
@@ -2767,6 +2802,7 @@ BOOL CVehicle::FindOffRoadSpot(CSubHex &_found, CVehicle *pAsker) {
                 return (TRUE);
             }
 
+    }
     return (FALSE);
 }
 
