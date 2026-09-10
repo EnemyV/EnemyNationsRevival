@@ -64,7 +64,7 @@ void HarnessVehicleState(unsigned long id, std::string& out);
 void HarnessMapRect(int x, int y, int width, int height, std::string& out);
 // Explicit operator move for one owned vehicle; replaces its order through normal APIs.
 // Acceptance means an order was issued, not that the vehicle arrived.
-bool HarnessMoveVehicle(unsigned long id, int hexX, int hexY);
+bool HarnessMoveVehicle(unsigned long id, int hexX, int hexY, bool detachForTest = false);
 // Same explicit Stop method used by the area toolbar; local owned vehicle only.
 bool HarnessStopVehicle(unsigned long id);
 

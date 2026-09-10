@@ -207,6 +207,7 @@ std::atomic<bool>      g_unitsDone{false};
 std::atomic<unsigned long> g_moveVehId{0};
 std::atomic<int> g_moveVehX{0}, g_moveVehY{0};
 std::atomic<bool> g_moveVehPending{false}, g_moveVehDone{false}, g_moveVehOK{false};
+std::atomic<bool> g_detachVehForTest{false};
 std::atomic<bool> g_stopVeh{false}; // shares the serialized vehicle-order handshake
 std::atomic<unsigned long> g_unitsStateId{0}; // 0: list; otherwise read one vehicle
 std::atomic<int> g_unitsMapX{0}, g_unitsMapY{0}, g_unitsMapWidth{0}, g_unitsMapHeight{0};
@@ -556,7 +557,7 @@ void handle_command(const std::string& line, en_socket_t conn) {
         for (int i = 0; i < 400 && !g_moveVehDone.load(); ++i) { en_sleep_poll(); }
         snprintf(reply, sizeof(reply), !g_moveVehDone.load() ? "err stopveh timeout\n" :
                  (g_moveVehOK.load() ? "ok stop order issued\n" : "err stopveh invalid vehicle\n"));
-    } else if (strcmp(cmd, "moveveh") == 0) {
+    } else if (strcmp(cmd, "moveveh") == 0 || strcmp(cmd, "testmoveveh") == 0) {
         unsigned long id = 0;
         int x = 0, y = 0;
         char extra;
@@ -566,6 +567,7 @@ void handle_command(const std::string& line, en_socket_t conn) {
             return;
         }
         g_moveVehId = id; g_moveVehX = x; g_moveVehY = y; g_stopVeh = false;
+        g_detachVehForTest = strcmp(cmd, "testmoveveh") == 0;
         g_moveVehDone = false; g_moveVehOK = false; g_moveVehPending = true;
         for (int i = 0; i < 400 && !g_moveVehDone.load(); ++i) { en_sleep_poll(); }
         snprintf(reply, sizeof(reply), !g_moveVehDone.load() ? "err moveveh timeout\n" :
@@ -1098,7 +1100,7 @@ void EnHarness_Service() {
     }
     if (g_moveVehPending.exchange(false)) {
         g_moveVehOK = g_stopVeh.load() ? HarnessStopVehicle(g_moveVehId.load()) :
-            HarnessMoveVehicle(g_moveVehId.load(), g_moveVehX.load(), g_moveVehY.load());
+            HarnessMoveVehicle(g_moveVehId.load(), g_moveVehX.load(), g_moveVehY.load(), g_detachVehForTest.load());
         g_moveVehDone = true;
         return;
     }

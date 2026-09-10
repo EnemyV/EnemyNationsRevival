@@ -7750,7 +7750,7 @@ void HarnessDumpSelection( std::string& out )
     out = line;
 }
 
-bool HarnessMoveVehicle(unsigned long id, int hexX, int hexY)
+bool HarnessMoveVehicle(unsigned long id, int hexX, int hexY, bool detachForTest)
 {
     CWndArea* a = theAreaList.GetTop();
     CVehicle* v = NULL;
@@ -7762,8 +7762,16 @@ bool HarnessMoveVehicle(unsigned long id, int hexX, int hexY)
     // Ground movement only: do not accidentally turn a QA move into a pickup/repair.
     if (theMap._GetHex(target)->GetUnits() & CHex::bldg)
         return false;
+    // A fixture must retain automatic traffic eligibility while it is staged.
+    // Taking dispatch ownership through the UI would instead set HpControl.
+    if (detachForTest && (theGame.m_pHpRtr == NULL || v->GetData()->IsBoat() ||
+        (!v->GetData()->IsTransport() && !v->GetData()->IsCrane()) ||
+        (theMap._GetHex(v->GetHexHead())->GetUnits() & CHex::bldg)))
+        return false;
     // Same order replacement as the single-vehicle goto in DoCommandAt.
     a->StopRoute(v);
+    if (detachForTest)
+        theGame.m_pHpRtr->MsgTakeVeh(v);
     v->TempTargetOff();
     v->SetEvent(CVehicle::none);
     v->ResumeUnit();
@@ -7883,6 +7891,14 @@ void HarnessVehicleState(unsigned long id, std::string& out)
     out += line;
     // Exercise the production full/compact encoders and decoder without
     // applying a packet or mutating the vehicle being inspected.
+    // Read the actual route, without issuing a speculative path search.
+    const CHexCoord *firstPath = v->m_phexPath != NULL && v->m_iPathLen > 0 ? v->m_phexPath : NULL;
+    const CHexCoord *lastPath = firstPath != NULL ? firstPath + v->m_iPathLen - 1 : NULL;
+    snprintf(line, sizeof(line), "route_nodes first %d,%d last %d,%d requested %d,%d\n",
+             firstPath ? firstPath->X() : -1, firstPath ? firstPath->Y() : -1,
+             lastPath ? lastPath->X() : -1, lastPath ? lastPath->Y() : -1,
+             v->m_hexDest.X(), v->m_hexDest.Y());
+    out += line;
     CMsgVehGoto full(v);
     CMsgVehCompLocElem packed;
     memset(&packed, 0, sizeof(packed));
