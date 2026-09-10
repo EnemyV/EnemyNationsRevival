@@ -793,6 +793,20 @@ void CVehicle::MoveCargo(BOOL bCarried) {
             if (pVeh == this)
                 continue;
 
+            // A carried unit should own no road squares. Bound this diagnostic
+            // across all carriers; it must not turn a bad cargo state into log spam.
+            if (pVeh->m_cOwn) {
+                static DWORD lastCargoOwnedLog = 0;
+                DWORD now = theGame.GettimeGetTime();
+                if (now - lastCargoOwnedLog >= 1000) {
+                    lastCargoOwnedLog = now;
+                    WaitLog("[CARGO-OWNED] carrier %d cargo %d transport %d mode %d head %d,%d next %d,%d resume %d hold %d",
+                            GetID(), pVeh->GetID(), pVeh->GetTransport() ? pVeh->GetTransport()->GetID() : 0,
+                            (int)pVeh->m_cMode, pVeh->m_ptHead.x, pVeh->m_ptHead.y,
+                            pVeh->m_ptNext.x, pVeh->m_ptNext.y, (int)pVeh->m_bResume, pVeh->m_iHoldFrames);
+                }
+            }
+
             pVeh->m_hexDest = pVeh->m_ptDest = pVeh->m_ptHead = m_ptHead;
             if (pVeh->GetData()->GetVehFlags() & CTransportData::FL1hex)
                 pVeh->m_ptTail = m_ptHead;

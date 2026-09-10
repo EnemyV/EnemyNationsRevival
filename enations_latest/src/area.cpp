@@ -7829,9 +7829,10 @@ void HarnessVehicleState(unsigned long id, std::string& out)
         v->m_iHoldFrames, v->m_iJamClear, v->m_iJamWatch, v->m_iJamCool,
         v->m_iNumRetries, v->m_iBackUps, v->m_iDir);
     out = line;
-    snprintf(line, sizeof(line), "wait_spent %d wait_time %lu wait_limit %lu active_building %d\n",
+    snprintf(line, sizeof(line), "wait_spent %d wait_time %lu wait_limit %lu active_building %d carrier %lu\n",
              (int) v->m_bWaitedForMover, (unsigned long) v->m_dwTimeBlocked,
-             (unsigned long) v->m_dwTrafficWait, (int) (v->m_pBldg != NULL));
+             (unsigned long) v->m_dwTrafficWait, (int) (v->m_pBldg != NULL),
+             v->GetTransport() ? (unsigned long)v->GetTransport()->GetID() : 0);
     out += line;
     const char* names[] = { "head", "tail", "next", "dest", "waiting" };
     CSubHex subs[] = { v->m_ptHead, v->m_ptTail, v->m_ptNext, v->m_ptDest, v->m_subWaitNext };
