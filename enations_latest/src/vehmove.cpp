@@ -3396,10 +3396,11 @@ void CVehicle::HandleBlocked() {
     // Reverse if we can; if we cannot, get off the road instead. Either counts as
     // making space, and a truck that can do neither simply waits - nothing is forced.
     // An active request must not restart an escape at every blocked update.
-    // A committed retreat uses ordinary step retries and bounded failure below.
+    // Both reverse and forward escapes use ordinary step retries and bounded
+    // failure below. Immediate parking would replace their chosen exit route.
     if (m_bReversing && BackUp()) // only the opposing-retreat exception can restart it
         return;
-    if ((m_iJamClear > 0) && (!m_bReversing)) {
+    if ((m_iJamClear > 0) && (!m_bReversing) && (!m_bForwardEscape)) {
         if (BackUp())
             return;
         if (LeaveRoad())
