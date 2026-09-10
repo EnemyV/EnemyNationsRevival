@@ -3460,6 +3460,18 @@ void CVehicle::HandleBlocked() {
     m_bConfined = bConfined;     // cached for FindSubEx, which must not re-walk per step
     m_iCorrLen  = iCorrLen;      // ...and HOW FAR it ran along our own axis - see FindSubEx
 
+    // A truck can be trapped facing into a building doorway even with no
+    // vehicle ahead. Once its existing stagnation watch expires, try the same
+    // legal reverse used for traffic. Do not interrupt a visit to this building.
+    if (m_iJamWatch >= JAM_STUCK_FRAMES && !m_bReversing && !m_bForwardEscape && JamEligible()) {
+        CBuilding *pDoorway = theBuildingHex._GetBuilding(m_ptHead);
+        if (pDoorway != NULL && pDoorway != theBuildingHex._GetBuilding(m_ptDest) && BackUp()) {
+            WaitLog("[DOORWAY-BACKUP] veh %d leaving building %d for saved job %d,%d",
+                    GetID(), pDoorway->GetID(), m_subResume.x, m_subResume.y);
+            return;
+        }
+    }
+
     // MAKING SPACE for a clearance request: skip the ladder and reverse now. The
     // recipient still chooses its own motion - if it can go forward it never reaches
     // HandleBlocked at all - and BackUp does its own legality checks, so nothing is
