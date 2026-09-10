@@ -2226,6 +2226,7 @@ void CVehicle::MakeBlocked() {
 //   bit 3 (8)  bounded retreat and leaving the road on give-up
 //   bit 4 (16) lane preference in FindSub
 //   bit 5 (32) path through moving vehicles
+//   bit 7 (128) diagnostic: suppress legacy TestStuck teleportation
 int TrafficOpts() {
 
     static int s_iOpts = -1;

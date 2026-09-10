@@ -47,6 +47,10 @@ int aiDir[9] = {7 * EIGHTH_ROT, 6 * EIGHTH_ROT, 5 * EIGHTH_ROT, 0, 0, 4 * EIGHTH
 
 BOOL CVehicle::TestStuck() {
 
+    // Diagnostic: prove physical recovery without the legacy six-minute hop.
+    if (TrafficOpts() & 128)
+        return FALSE;
+
     // VANILLA GUARD RESTORED (operator, 2026-07-16: 'horrible change, revert
     // for sure'): 2cc7163c flipped this so the 6-min stuck-escape ran for AI
     // vehicles - TELEPORTING AI trucks/cranes into their destination buildings
