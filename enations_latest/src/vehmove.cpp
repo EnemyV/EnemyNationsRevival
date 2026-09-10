@@ -1274,16 +1274,17 @@ BOOL CVehicle::GetNextHex(BOOL bNew) {
                 xDif = CSubHex::Diff(m_hexNext.X() * 2 - m_ptHead.x);
                 yDif = CSubHex::Diff(m_hexNext.Y() * 2 - m_ptHead.y);
                 int iOld = ((xDif >= 0) ? xDif : -(xDif + 1)) + ((yDif >= 0) ? yDif : -(yDif + 1));
-                if ((iOld <= iNew) && (iNew != 0)) {
-                    CSubHex rejected(m_ptNext);
+                // Escaping a jam can require moving away from a corner before
+                // the route becomes reachable. Keep the chosen legal step.
+                BOOL bEscape = m_bResume && (m_bReversing || m_bForwardEscape) && JamEligible();
+                if ((iOld <= iNew) && (iNew != 0) && bEscape)
+                    WaitLog("[ESCAPE-STEP] veh %d source next head %d,%d tail %d,%d next %d,%d "
+                            "hexnext %d,%d distance %d to %d times %d",
+                            GetID(), m_ptHead.x, m_ptHead.y, m_ptTail.x, m_ptTail.y,
+                            m_ptNext.x, m_ptNext.y, m_hexNext.X(), m_hexNext.Y(), iOld, iNew, m_iTimesOn);
+                if ((iOld <= iNew) && (iNew != 0) && !bEscape) {
                     m_ptNext = m_ptHead;
                     if (!FindSub(TRUE)) {
-                        if (m_bResume && (m_bReversing || m_bForwardEscape) && GetOwner()->IsMe())
-                            WaitLog("[CIRCLE-REJECT] veh %d source next head %d,%d tail %d,%d candidate %d,%d "
-                                    "hexnext %d,%d distance %d to %d times %d reverse %d forward %d",
-                                    GetID(), m_ptHead.x, m_ptHead.y, m_ptTail.x, m_ptTail.y,
-                                    rejected.x, rejected.y, m_hexNext.X(), m_hexNext.Y(), iOld, iNew,
-                                    m_iTimesOn, (int)m_bReversing, (int)m_bForwardEscape);
 #ifdef _LOGOUT
                         logPrintf(LOG_PRI_VERBOSE, LOG_VEH_MOVE, "Vehicle %d moving away from next", GetID());
 #endif
@@ -3331,18 +3332,16 @@ BOOL CVehicle::TryNewSub(BOOL bNoNewPath) {
         xDif = CSubHex::Diff(m_hexNext.X() * 2 - m_ptHead.x);
         yDif = CSubHex::Diff(m_hexNext.Y() * 2 - m_ptHead.y);
         int iOld = ((xDif >= 0) ? xDif : -(xDif + 1)) + ((yDif >= 0) ? yDif : -(yDif + 1));
-        if ((iOld <= iNew) && (iNew != 0)) {
-            CSubHex rejected(m_ptNext);
-            if (!FindSub(TRUE)) {
-                if (m_bResume && (m_bReversing || m_bForwardEscape) && GetOwner()->IsMe())
-                    WaitLog("[CIRCLE-REJECT] veh %d source retry head %d,%d tail %d,%d candidate %d,%d "
-                            "hexnext %d,%d distance %d to %d times %d reverse %d forward %d",
-                            GetID(), m_ptHead.x, m_ptHead.y, m_ptTail.x, m_ptTail.y,
-                            rejected.x, rejected.y, m_hexNext.X(), m_hexNext.Y(), iOld, iNew,
-                            m_iTimesOn, (int)m_bReversing, (int)m_bForwardEscape);
+        // Apply the same escape exception as ordinary next-step selection.
+        BOOL bEscape = m_bResume && (m_bReversing || m_bForwardEscape) && JamEligible();
+        if ((iOld <= iNew) && (iNew != 0) && bEscape)
+            WaitLog("[ESCAPE-STEP] veh %d source retry head %d,%d tail %d,%d next %d,%d "
+                    "hexnext %d,%d distance %d to %d times %d",
+                    GetID(), m_ptHead.x, m_ptHead.y, m_ptTail.x, m_ptTail.y,
+                    m_ptNext.x, m_ptNext.y, m_hexNext.X(), m_hexNext.Y(), iOld, iNew, m_iTimesOn);
+        if ((iOld <= iNew) && (iNew != 0) && !bEscape)
+            if (!FindSub(TRUE))
                 return (FALSE);
-            }
-        }
     }
 
     // set it up to go
