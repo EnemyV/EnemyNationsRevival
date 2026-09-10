@@ -3095,6 +3095,7 @@ BOOL CVehicle::BackUp() {
     // counter: a longer corridor produces a longer retreat by construction.
     int iMinBack  = bCluster ? (iCorrLen * 2) : 0;      // hexes -> subs
 
+    BOOL bOnWater = IsOnWater() || (GetData()->GetWheelType() == CWheelTypes::water);
     for (int iStep = 0; iStep < BACK_UP_SUBS; iStep++) {
         // FOLLOW THE ROAD BACK, not the hull's exact diagonal. A truck sitting at an
         // angle has a body vector like (+1,+1), and stepping strictly along it walks
@@ -3115,8 +3116,11 @@ BOOL CVehicle::BackUp() {
         for (int iT = 0; iT < iTries; iT++) {
             CSubHex _c(_alt[iT]);
             _c.Wrap();
-            if (theMap.GetTerrainCost(CHexCoord(_c.ToCoord()), CHexCoord(_c.ToCoord()), 0,
-                                      GetData()->GetWheelType()) == 0)
+            // Usable terrain beside a bridge is not necessarily a legal exit.
+            // Follow the same terrain transitions as movement, without treating
+            // queued vehicles as permanent obstacles or backing into buildings.
+            if ((theMap._GetHex(_c)->GetUnits() & CHex::bldg) ||
+                !GetData()->CanEnterHex(CHexCoord(_back), CHexCoord(_c), bOnWater, TRUE))
                 continue;
             _back = _c;
             bStep = TRUE;
