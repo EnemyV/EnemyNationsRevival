@@ -2582,10 +2582,10 @@ BOOL CVehicle::FindOffRoadSpot(CSubHex &_found, CVehicle *pAsker) {
     int iCorr = (pAsker == NULL) ? CorridorAhead(iVehs) : 0;
     // A parking retry must not turn a committed reverse back into the queue.
     // BackUp already swapped the movement endpoints: head-tail now points OUT.
-    // Keep that exit side until the body is out of the confined passage.
+    // Keep that exit side until the body is off the road as well. At an angled
+    // city corner the corridor walk can return zero while a tail still blocks it.
     BOOL bKeepReverseExit = (m_bReversing || m_bForwardEscape) &&
-        (m_bConfined || (theMap._GetHex(m_ptHead)->GetUnits() & CHex::bridge) ||
-         (theMap._GetHex(m_ptTail)->GetUnits() & CHex::bridge) ||
+        (m_bConfined || OnPavement(m_ptHead) || OnPavement(m_ptTail) ||
          iCorr >= CORRIDOR_MIN_HEXES);
     int iMin  = ((iCorr >= CORRIDOR_MIN_HEXES) && (iVehs >= CORRIDOR_MIN_VEHS)) ? (1 + iCorr) : 1;
     if (iMin > 1)
