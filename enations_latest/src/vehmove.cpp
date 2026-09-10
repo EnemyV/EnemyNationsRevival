@@ -369,8 +369,8 @@ void CVehicle::ArrivedDest() {
     //
     // Only where we are ACTUALLY out of the way. A partial retreat ends on the deck,
     // and holding there would free the truck in front at the price of parking on the
-    // span in front of everyone behind us - so a partial retreat rejoins at once and
-    // only a full one, off the span and off the pavement, earns the hold.
+    // span in front of everyone behind us. Try to finish clearing below; only a
+    // full retreat, off the span and off the pavement, earns the hold.
     // THE WHOLE BODY has to be clear, not just the head. Testing the head alone let a
     // truck hold with its tail still lying across the roadway, which is the one thing
     // the hold exists to stop.
@@ -396,6 +396,24 @@ void CVehicle::ArrivedDest() {
             DetourTo(next, FALSE);
             return;
         }
+    }
+    // Reaching a straight retreat endpoint is not clearance if the body is
+    // still on the road. Continue toward an existing off-road parking candidate
+    // before rejoining the queue we just backed out of. Keep the movement ends
+    // and escape direction intact; ordinary movement checks the route.
+    if (!bClear && (bWasReversing || bWasForwardEscape) && m_bResume && JamEligible()) {
+        m_bForwardEscape = bWasForwardEscape;
+        CSubHex spot;
+        if (FindOffRoadSpot(spot, NULL) && spot != m_ptHead) {
+            if (m_iHoldFrames <= 0)
+                m_iHoldFrames = HOLD_FRAMES + (int) (GetID() % 4) * 24;
+            WaitLog("[RETREAT-CLEAR] veh %d head %d,%d tail %d,%d to %d,%d reverse %d forward %d hold %d",
+                    GetID(), m_ptHead.x, m_ptHead.y, m_ptTail.x, m_ptTail.y,
+                    spot.x, spot.y, (int)bWasReversing, (int)bWasForwardEscape, m_iHoldFrames);
+            DetourTo(spot, FALSE);
+            return;
+        }
+        m_bForwardEscape = FALSE;
     }
     if (bWasReversing) {
         EndReverse();
