@@ -7822,6 +7822,8 @@ void HarnessVehicleState(unsigned long id, std::string& out)
             on ? (unsigned long) on->GetID() : 0, (int) v->ClearOfRoad(subs[i]));
         out += line;
     }
+    snprintf(line, sizeof(line), "world %d,%d\n", v->m_maploc.x, v->m_maploc.y);
+    out += line;
     CHex* headHex = theMap._GetHex(v->m_ptHead);
     snprintf(line, sizeof(line), "terrain head_alt %d sea_level %d wading_depth %d travel_head %d local_cost %d\n",
              headHex->GetAlt(), (int) CHex::sea_level, v->GetData()->GetWaterDepth(),

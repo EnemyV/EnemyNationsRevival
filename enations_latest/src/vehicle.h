@@ -587,6 +587,7 @@ protected:
 		BOOL					InLane (CSubHex const &_next);
 		CSubHex				Rotate (int iDir);
 		void					Turn180 ();
+		void                    EndReverse ();
 		BOOL					IsPassable (CSubHex const & _sub, BOOL bStrict = TRUE);
 		BOOL					CanEnter (CSubHex const & _sub, BOOL bStrict = TRUE);
 		int		GetTiltIndex( BOOL bOnBridge ) 		const;

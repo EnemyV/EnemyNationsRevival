@@ -329,12 +329,10 @@ void CVehicle::ArrivedDest() {
     ASSERT ((m_cMode != moving) || (theVehicleHex.GetVehicle(m_ptNext) == this));
 #endif
 
-    // We have stopped, so we are no longer backing up. Releasing the facing here
-    // means the next forward step turns the hull the normal way - by then we are off
-    // the span, where there is room for it.
+    // Keep reverse geometry until any tail-clear step has finished. The final
+    // arrival restores forward endpoint labels before holding or resuming.
     BOOL bWasReversing = m_bReversing;
     BOOL bWasForwardEscape = m_bForwardEscape;
-    m_bReversing = FALSE;
     m_bForwardEscape = FALSE;
 
     // A RETREAT has ended. Hold here before rejoining the haul: the whole point of
@@ -373,6 +371,13 @@ void CVehicle::ArrivedDest() {
             DetourTo(next, FALSE);
             return;
         }
+    }
+    if (bWasReversing) {
+        EndReverse();
+        // This temporary detour has arrived; the saved job still names its
+        // original destination. Its arrival point follows the relabelled head.
+        m_ptDest = m_ptHead;
+        m_hexDest = m_ptHead.ToCoord();
     }
     if ((bWasReversing || bWasForwardEscape) && bClear && m_bResume && (TrafficOpts() & 8))
         m_iHoldFrames = HOLD_FRAMES + (int) (GetID() % 4) * 24;
@@ -2428,6 +2433,9 @@ void CVehicle::DetourTo(CSubHex const &_sub, BOOL bResume) {
     int  iHold   = m_iHoldFrames;
     BOOL bRev    = m_bReversing;     // ...and we are still reversing afterwards
     BOOL bForward = m_bForwardEscape;
+    // Retargeting a detour continues its existing reverse geometry. Only a
+    // replacement order or a finished detour should normalize the endpoints.
+    m_bReversing = FALSE;
     SetDestAndMode(_sub, sub);
     m_iBackUps    = iBudget;
     m_iHoldFrames = iHold;
@@ -4162,6 +4170,44 @@ BOOL CVehicle::TryNextHex() {
     ASSERT (m_ptNext != m_ptHead);
     ASSERT_VALID_LOC (this);
     return (TRUE);
+}
+
+void CVehicle::EndReverse() {
+    if (!m_bReversing)
+        return;
+
+    int oldDir = m_iDir;
+    CMapLoc oldLoc(m_maploc);
+    m_bReversing = FALSE;
+    if (m_cMode == moving && m_cOwn && m_ptNext != m_ptHead &&
+        theVehicleHex._GetVehicle(m_ptNext) == this &&
+        m_iStepsLeft > 0 && m_iStepsLeft < STEPS_HEX) {
+        // A->B->C at fraction f is C->B->A at fraction 1-f. Keep all three
+        // reservations and the displayed pose; retrace the partial step nose-first.
+        CSubHex oldTail(m_ptTail);
+        m_ptTail = m_ptNext;
+        m_ptNext = oldTail;
+        m_iStepsLeft = STEPS_HEX - m_iStepsLeft;
+        m_iXadd = -m_iXadd;
+        m_iYadd = -m_iYadd;
+        m_iDadd = -m_iDadd;
+        m_iTadd = -m_iTadd;
+        WaitLog("[END-REVERSE] veh %d partial dir %d>%d world %d,%d>%d,%d",
+                GetID(), oldDir, m_iDir, oldLoc.x, oldLoc.y, m_maploc.x, m_maploc.y);
+        return;
+    }
+
+    // A completed interpolation may still await its endpoint update.
+    if (m_cMode == moving && m_cOwn && m_iStepsLeft == 0 &&
+        m_ptNext != m_ptHead && theVehicleHex._GetVehicle(m_ptNext) == this)
+        ArrivedNextHex();
+    if (m_ptNext != m_ptHead && m_ptNext != m_ptTail &&
+        theVehicleHex._GetVehicle(m_ptNext) == this)
+        theVehicleHex.ReleaseHex(m_ptNext, this);
+    ZeroMoveParams();
+    Turn180();
+    WaitLog("[END-REVERSE] veh %d settled dir %d>%d world %d,%d>%d,%d",
+            GetID(), oldDir, m_iDir, oldLoc.x, oldLoc.y, m_maploc.x, m_maploc.y);
 }
 
 void CVehicle::Turn180() {

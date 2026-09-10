@@ -3091,6 +3091,7 @@ void CVehicle::SetDestAndMode( CSubHex sub, VEH_POS iMode )
                m_ptHead.y, sub.x, sub.y );
 #endif
     ASSERT_VALID( this );
+    EndReverse( );
     DeletePath( );
     m_hexLastDest = sub;
 
@@ -3113,9 +3114,7 @@ void CVehicle::SetDestAndMode( CSubHex sub, VEH_POS iMode )
     // so internal traffic moves still keep their job.
     m_bResume       = FALSE;
 
-    // and a new order ends a reverse - whatever we are told to do next, we do it
-    // facing the way we drive.
-    m_bReversing    = FALSE;
+    // EndReverse restored forward movement before the path was discarded.
     m_bForwardEscape = FALSE;
 
     // ...and it ends a post-retreat hold: we were waiting to go back to a job that
@@ -3812,6 +3811,7 @@ void CVehicle::StopUnit( )
 
     CUnit::StopUnit( );
 
+    EndReverse( );
     SetEvent( CVehicle::none );
     SetDest( GetPtNext( ) );
 }
