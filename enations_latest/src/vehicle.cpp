@@ -454,7 +454,9 @@ void CVehicle::Operate() {
 
             // figures out when we can deploy
         case cant_deploy : {
-            if (!GetOwner()->IsLocal())
+            // A carried truck cannot deploy itself onto ground squares. The
+            // carrier's unload path clears m_pTransport before placing it.
+            if (!GetOwner()->IsLocal() || GetTransport() != NULL)
                 return;
 
             if (TestStuck())
