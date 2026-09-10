@@ -7878,6 +7878,9 @@ void HarnessVehicleState(unsigned long id, std::string& out)
     snprintf(line, sizeof(line), "facing body %d expected_moving %d steps_left %d turn %d actual_turn %d\n",
              bodyFacing, expected, v->m_iStepsLeft, stepTurn, v->m_iDadd);
     out += line;
+    snprintf(line, sizeof(line), "circling visits %d anchor %d,%d\n",
+             v->m_iTimesOn, v->m_subOn.x, v->m_subOn.y);
+    out += line;
 }
 
 void HarnessDumpUnits( std::string& out )
