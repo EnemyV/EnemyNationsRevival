@@ -375,6 +375,10 @@ void CVehicle::ArrivedDest() {
     // truck hold with its tail still lying across the roadway, which is the one thing
     // the hold exists to stop.
     BOOL bClear = ClearOfRoad(m_ptHead) && ClearOfRoad(m_ptTail);
+    // Successful clearance ends this parking attempt. A later trip must not
+    // inherit its retry delay and wait on the road until the old timer expires.
+    if (bClear)
+        m_dwLeftRoad = 0;
     // A safe destination for the head may leave the tail across the road.
     // Finish with one legal local step: its tail will occupy our current safe
     // head square. Keep the saved job and start/continue the hold only once clear.
