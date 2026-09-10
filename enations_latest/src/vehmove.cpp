@@ -2999,7 +2999,11 @@ BOOL CVehicle::BackUp() {
     // behind can actually execute, which is the rearmost; when they go, the next
     // inherit clear space and succeed in turn. The evacuation orders itself, and no
     // truck ever instructs another - the post-retreat hold rate-limits the retries.
-    if (!bForwardYield && m_iBackUps >= (bCluster ? MAX_BACK_UPS_JAM : MAX_BACK_UPS))
+    // A later clearance request must still be answerable after this job spent
+    // its ordinary retry budget. The active window and escape commitment bound
+    // repeated attempts; the cap otherwise strands the very blocker being asked.
+    if (!bForwardYield && m_iJamClear <= 0 &&
+        m_iBackUps >= (bCluster ? MAX_BACK_UPS_JAM : MAX_BACK_UPS))
         return (FALSE);
 
     // How FAR back? Far enough to actually be out of the way. Reversing a single
