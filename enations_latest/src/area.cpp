@@ -7790,6 +7790,56 @@ bool HarnessStopVehicle(unsigned long id)
     return true;
 }
 
+// One-shot QA terrain setup, never called by traffic behavior. It creates a
+// long road with water flanks wider than the ordinary parking search radius.
+// Every hex is checked before any mutation; no occupied body, bridge, building
+// or neighboring foundation is removed. Never usable in a multiplayer game.
+void HarnessTestCorridor(int x, int y, int length, std::string& out)
+{
+    const int halfWidth = 17, pad = 3;
+    if (theAreaList.GetTop() == NULL || theGame.IsNetGame()) {
+        out = "err testcorridor requires a loaded single-player game\n";
+        return;
+    }
+    if (length < 41 || length > 80 || x < halfWidth + 1 || y < pad + 1 ||
+        x >= theMap.Get_eX() - halfWidth - 1 || y > theMap.Get_eY() - length - pad - 1) {
+        out = "err testcorridor bounds\n";
+        return;
+    }
+    char line[160];
+    // Include a one-hex buffer: altitude vertices can affect adjacent ground.
+    for (int yy = y-pad-1; yy <= y+length+pad; ++yy)
+        for (int xx = x-halfWidth-1; xx <= x+halfWidth+1; ++xx) {
+            CHex* hex = theMap._GetHex(CHexCoord(xx, yy));
+            if (hex->GetUnits() & (CHex::unit | CHex::bridge | CHex::proj)) {
+                snprintf(line, sizeof(line), "err testcorridor occupied at %d,%d\n", xx, yy);
+                out = line;
+                return;
+            }
+            for (int sub = 0; sub < 4; ++sub)
+                if (theVehicleHex._GetVehicle(CSubHex(xx*2+sub%2, yy*2+sub/2)) != NULL ||
+                    theBuildingHex._GetBuilding(CSubHex(xx*2+sub%2, yy*2+sub/2)) != NULL) {
+                    snprintf(line, sizeof(line), "err testcorridor occupied at %d,%d\n", xx, yy);
+                    out = line;
+                    return;
+                }
+        }
+    // Establish all heights before SetType derives slope-dependent land types.
+    for (int yy = y-pad; yy < y+length+pad; ++yy)
+        for (int xx = x-halfWidth; xx <= x+halfWidth; ++xx) {
+            bool water = yy >= y && yy < y+length && xx != x;
+            theMap._GetHex(CHexCoord(xx, yy))->SetAlt(water ? CHex::sea_level : CHex::sea_level+CHex::map_step);
+        }
+    for (int yy = y-pad; yy < y+length+pad; ++yy)
+        for (int xx = x-halfWidth; xx <= x+halfWidth; ++xx) {
+            bool corridor = yy >= y && yy < y+length;
+            theMap._GetHex(CHexCoord(xx, yy))->SetType(corridor ? (xx == x ? CHex::road : CHex::lake) : CHex::plain);
+        }
+    theAreaList.GetTop()->InvalidateWindow();
+    snprintf(line, sizeof(line), "ok testcorridor x %d y %d length %d halfwidth %d pad %d\n", x, y, length, halfWidth, pad);
+    out = line;
+}
+
 void HarnessMapRect(int x, int y, int width, int height, std::string& out)
 {
     out.clear();
