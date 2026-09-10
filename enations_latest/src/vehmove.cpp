@@ -2682,7 +2682,28 @@ BOOL CVehicle::FindOffRoadSpot(CSubHex &_found, CVehicle *pAsker) {
             int dx = CSubHex::Diff(m_ptHead.x - m_ptTail.x);
             int dy = CSubHex::Diff(m_ptHead.y - m_ptTail.y);
             if (GetData()->IsBoat() || (!GetData()->IsTransport() && !GetData()->IsCrane()) ||
-                (dx == 0) == (dy == 0) || !OnPavement(m_ptHead))
+                !OnPavement(m_ptHead))
+                break;
+            // Arrival can leave the hull diagonal on a straight road. Follow the
+            // only paved axis, probing a whole hex so the other half of our own
+            // road hex cannot masquerade as an exit into the water.
+            if (dx != 0 && dy != 0) {
+                CSubHex across(m_ptHead.x + dx * 2, m_ptHead.y);
+                CSubHex along(m_ptHead.x, m_ptHead.y + dy * 2);
+                across.Wrap();
+                along.Wrap();
+                BOOL roadX = OnPavement(across) &&
+                    !(theMap._GetHex(across)->GetUnits() & CHex::bldg) &&
+                    GetData()->CanEnterHex(CHexCoord(m_ptHead), CHexCoord(across), FALSE, TRUE);
+                BOOL roadY = OnPavement(along) &&
+                    !(theMap._GetHex(along)->GetUnits() & CHex::bldg) &&
+                    GetData()->CanEnterHex(CHexCoord(m_ptHead), CHexCoord(along), FALSE, TRUE);
+                if (roadX == roadY)
+                    break; // no unique road axis; keep ordinary recovery
+                if (roadX) dy = 0;
+                else dx = 0;
+            }
+            if (dx == 0 && dy == 0)
                 break;
             CSubHex ray(m_ptHead);
             BOOL foundExit = FALSE;
