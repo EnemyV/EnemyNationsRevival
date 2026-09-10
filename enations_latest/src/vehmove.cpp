@@ -2523,6 +2523,13 @@ BOOL CVehicle::FindOffRoadSpot(CSubHex &_found, CVehicle *pAsker) {
     // repeating inside 30s - WinAstra's scope defect.
     int iVehs = 0;
     int iCorr = (pAsker == NULL) ? CorridorAhead(iVehs) : 0;
+    // A parking retry must not turn a committed reverse back into the queue.
+    // BackUp already swapped the movement endpoints: head-tail now points OUT.
+    // Keep that exit side until the body is out of the confined passage.
+    BOOL bKeepReverseExit = m_bReversing &&
+        (m_bConfined || (theMap._GetHex(m_ptHead)->GetUnits() & CHex::bridge) ||
+         (theMap._GetHex(m_ptTail)->GetUnits() & CHex::bridge) ||
+         iCorr >= CORRIDOR_MIN_HEXES);
     int iMin  = ((iCorr >= CORRIDOR_MIN_HEXES) && (iVehs >= CORRIDOR_MIN_VEHS)) ? (1 + iCorr) : 1;
     if (iMin > 1)
         WaitLog("[CORRIDOR] veh %d at hex %d,%d in a %d-hex corridor holding %d vehicles, "
@@ -2600,6 +2607,11 @@ BOOL CVehicle::FindOffRoadSpot(CSubHex &_found, CVehicle *pAsker) {
                         continue;
                     _cand = firstFree; // return a free corner, not always even/even
                 }
+
+                if (bKeepReverseExit &&
+                    CSubHex::Diff(_cand.x - m_ptHead.x) * CSubHex::Diff(m_ptHead.x - m_ptTail.x) +
+                    CSubHex::Diff(_cand.y - m_ptHead.y) * CSubHex::Diff(m_ptHead.y - m_ptTail.y) < 0)
+                    continue;
 
                 CVehicle *pTarget = theVehicleHex._GetVehicle(_cand);
                 if (pTarget != NULL && pTarget != this)
