@@ -2589,8 +2589,10 @@ int CVehicle::CorridorAhead(int &iVehs) {
         if ((_on.Y() < 0) || (_on.Y() >= theMap.Get_eY()))
             break;
 
-        // can we stand here at all? if not we are looking past the corridor's end
-        if (theMap.GetTerrainCost(_on, _on, 0, GetData()->GetWheelType()) == 0)
+        // Building ground has a travel cost too, but its footprint is not a
+        // corridor. Looking through it falsely restricts turns while exiting.
+        if ((theMap._GetHex(_on)->GetUnits() & CHex::bldg) ||
+            theMap.GetTerrainCost(_on, _on, 0, GetData()->GetWheelType()) == 0)
             break;
 
         // the two flanks, perpendicular to travel
