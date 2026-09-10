@@ -4007,8 +4007,11 @@ void CVehicle::HandleBlocked() {
         }
     }
 
-    // at this point we wait a little longer
-    if (m_dwTimeBlocked < (DWORD) (3 * m_iBlockCount * m_iBlockCount * m_iBlockCount * m_iSpeed * STEPS_HEX)) {
+    // Trucks/cranes that passed this wait must reach the remaining recovery
+    // steps instead of restarting it whenever block_count grows. MAX_NUM_RETRIES
+    // is also a direct no-path marker, not evidence that this wait was completed.
+    if ((m_iNumRetries <= 13 || m_iNumRetries >= MAX_NUM_RETRIES || !JamEligible()) &&
+        m_dwTimeBlocked < (DWORD) (3 * m_iBlockCount * m_iBlockCount * m_iBlockCount * m_iSpeed * STEPS_HEX)) {
         if (GetOwner()->IsMe() && theGame.GettimeGetTime() - m_dwBlockLog > 5000) {
             m_dwBlockLog = theGame.GettimeGetTime();
             WaitLog("[RETRY-WAIT] veh %d head %d,%d tail %d,%d next %d,%d retry %d count %ld "
