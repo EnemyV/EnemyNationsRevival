@@ -1285,6 +1285,11 @@ BOOL CVehicle::GetNextHex(BOOL bNew) {
                 if ((iOld <= iNew) && (iNew != 0) && !bEscape) {
                     m_ptNext = m_ptHead;
                     if (!FindSub(TRUE)) {
+                        if (GetOwner()->IsMe() && m_bResume && m_iHoldFrames > 0)
+                            WaitLog("[PARK-CIRCLE] veh %d source next head %d,%d tail %d,%d hexnext %d,%d "
+                                    "retry %d visits %d hold %d",
+                                    GetID(), m_ptHead.x, m_ptHead.y, m_ptTail.x, m_ptTail.y,
+                                    m_hexNext.X(), m_hexNext.Y(), m_iNumRetries, m_iTimesOn, m_iHoldFrames);
 #ifdef _LOGOUT
                         logPrintf(LOG_PRI_VERBOSE, LOG_VEH_MOVE, "Vehicle %d moving away from next", GetID());
 #endif
@@ -3340,8 +3345,14 @@ BOOL CVehicle::TryNewSub(BOOL bNoNewPath) {
                     GetID(), m_ptHead.x, m_ptHead.y, m_ptTail.x, m_ptTail.y,
                     m_ptNext.x, m_ptNext.y, m_hexNext.X(), m_hexNext.Y(), iOld, iNew, m_iTimesOn);
         if ((iOld <= iNew) && (iNew != 0) && !bEscape)
-            if (!FindSub(TRUE))
+            if (!FindSub(TRUE)) {
+                if (GetOwner()->IsMe() && m_bResume && m_iHoldFrames > 0)
+                    WaitLog("[PARK-CIRCLE] veh %d source retry head %d,%d tail %d,%d hexnext %d,%d "
+                            "retry %d visits %d hold %d",
+                            GetID(), m_ptHead.x, m_ptHead.y, m_ptTail.x, m_ptTail.y,
+                            m_hexNext.X(), m_hexNext.Y(), m_iNumRetries, m_iTimesOn, m_iHoldFrames);
                 return (FALSE);
+            }
     }
 
     // set it up to go
@@ -3998,6 +4009,15 @@ void CVehicle::HandleBlocked() {
 
     // at this point we wait a little longer
     if (m_dwTimeBlocked < (DWORD) (3 * m_iBlockCount * m_iBlockCount * m_iBlockCount * m_iSpeed * STEPS_HEX)) {
+        if (GetOwner()->IsMe() && theGame.GettimeGetTime() - m_dwBlockLog > 5000) {
+            m_dwBlockLog = theGame.GettimeGetTime();
+            WaitLog("[RETRY-WAIT] veh %d head %d,%d tail %d,%d next %d,%d retry %d count %ld "
+                    "speed %d elapsed %lu threshold %lu reverse %d forward %d resume %d hold %d",
+                    GetID(), m_ptHead.x, m_ptHead.y, m_ptTail.x, m_ptTail.y, m_ptNext.x, m_ptNext.y,
+                    m_iNumRetries, (long)m_iBlockCount, m_iSpeed, (unsigned long)m_dwTimeBlocked,
+                    (unsigned long)(3 * m_iBlockCount * m_iBlockCount * m_iBlockCount * m_iSpeed * STEPS_HEX),
+                    (int)m_bReversing, (int)m_bForwardEscape, (int)m_bResume, m_iHoldFrames);
+        }
         m_iBlockCount--;
         return;
     }
