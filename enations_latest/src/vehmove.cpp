@@ -1677,12 +1677,13 @@ BOOL CVehicle::CanEnterBldg(CBuilding *pBldg) const {
 // return TRUE if is passable (ie CanEnter is TRUE if no vehicle there)
 BOOL CVehicle::IsPassable(CSubHex const &_sub, BOOL bStrict) {
 
-    // Parking must not use another building as a shortcut. Once inside,
-    // retain the normal exit rules so a truck or crane can still get out.
-    if (m_iHoldFrames > 0 && JamEligible() &&
-        !(theMap._GetHex(m_ptDest)->GetUnits() & CHex::bldg)) {
+    // Match route planning: another building is not a through-road. Local
+    // lane correction must not enter it and become trapped by its exit rules.
+    // Preserve entry to our destination and movement out of our current building.
+    if (JamEligible()) {
         CBuilding *pNextBuilding = theBuildingHex._GetBuilding(_sub);
-        if (pNextBuilding != NULL && pNextBuilding != theBuildingHex._GetBuilding(m_ptHead))
+        if (pNextBuilding != NULL && pNextBuilding != theBuildingHex._GetBuilding(m_ptHead) &&
+            pNextBuilding != theBuildingHex._GetBuilding(m_ptDest))
             return (FALSE);
     }
 
