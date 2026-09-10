@@ -2738,6 +2738,20 @@ BOOL CVehicle::FindOffRoadSpot(CSubHex &_found, CVehicle *pAsker) {
                     CSubHex::Diff(_cand.y - m_ptHead.y) * CSubHex::Diff(m_ptHead.y - m_ptTail.y) < 0)
                     continue;
 
+                // Empty ground can be a sealed courtyard. Accept a parking
+                // target only if the existing terrain pathfinder reaches it;
+                // temporary vehicles must not make a usable exit disappear.
+                CHexCoord from(_hexOn), to(_cand);
+                int pathLength = 0;
+                CHexCoord *path = thePathMgr.GetPath(this, from, to, pathLength, 0, FALSE, TRUE);
+                BOOL reachable = from == to || (path != NULL && pathLength > 0 && path[pathLength - 1] == to);
+                delete[] path;
+                if (!reachable) {
+                    WaitLog("[PARK-UNREACHABLE] veh %d from %d,%d rejected %d,%d",
+                            GetID(), from.X(), from.Y(), to.X(), to.Y());
+                    continue;
+                }
+
                 CVehicle *pTarget = theVehicleHex._GetVehicle(_cand);
                 if (pTarget != NULL && pTarget != this)
                     WaitLog("[PARK-OCCUPIED] veh %d selected sub %d,%d occupied by %d",
