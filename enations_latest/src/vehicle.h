@@ -348,6 +348,7 @@ public:
 		void					ArrivedDest ();
 		BOOL					ResumeJob ();		// back onto the job a traffic detour interrupted
 		BOOL					ClearOfRoad (CSubHex const &_sub);	// off the span AND off the pavement
+		BOOL                    FinishClearDetour (); // failed parking reached a safe resting pose
 		int						CorridorAhead (int &iVehs);	// hexes of NARROW corridor ahead, 0 if none
 		void					JamWatch ();		// stagnation watch + raise a clearance request
 		void					JamForward ();		// pass the request to the trucks TOUCHING us, once

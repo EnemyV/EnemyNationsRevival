@@ -287,6 +287,30 @@ BOOL CVehicle::ClearOfRoad(CSubHex const &_sub) {
     return (!OnPavement(_sub));
 }
 
+// Failure to reach a temporary parking target is not failure of the saved haul.
+// At a settled, safe pose we can finish the detour and use the normal hold/rejoin.
+BOOL CVehicle::FinishClearDetour() {
+    if (!m_bResume || !(m_bReversing || m_bForwardEscape || m_iHoldFrames > 0) ||
+        !JamEligible() || GetTransport() != NULL || m_iStepsLeft != 0)
+        return (FALSE);
+    CHex *pHead = theMap._GetHex(m_ptHead);
+    CHex *pTail = theMap._GetHex(m_ptTail);
+    if (!ClearOfRoad(m_ptHead) || !ClearOfRoad(m_ptTail) ||
+        ((pHead->GetUnits() | pTail->GetUnits()) & CHex::bldg) ||
+        !GetData()->CanTravelHex(pHead) || !GetData()->CanTravelHex(pTail))
+        return (FALSE);
+    WaitLog("[PARK-HERE] veh %d failed parking %d,%d; clear at head %d,%d tail %d,%d, job %d,%d",
+            GetID(), m_ptDest.x, m_ptDest.y, m_ptHead.x, m_ptHead.y,
+            m_ptTail.x, m_ptTail.y, m_subResume.x, m_subResume.y);
+    if (m_ptNext != m_ptHead && m_ptNext != m_ptTail &&
+        theVehicleHex._GetVehicle(m_ptNext) == this)
+        theVehicleHex.ReleaseHex(m_ptNext, this);
+    m_ptNext = m_ptDest = m_ptHead;
+    m_hexDest = m_ptHead.ToCoord();
+    ArrivedDest();
+    return (TRUE);
+}
+
 BOOL CVehicle::ResumeJob() {
 
     if (!m_bResume)
@@ -3368,25 +3392,8 @@ void CVehicle::HandleBlocked() {
     // The parking path failed, but we already made space. Complete this detour
     // where we stand rather than spend minutes chasing an unreachable parking
     // square. ArrivedDest supplies the usual hold and resumes the saved job.
-    if (m_bResume && (m_bReversing || m_bForwardEscape || m_iHoldFrames > 0) &&
-        m_iPathLen == 0 && m_iNumRetries == MAX_NUM_RETRIES && JamEligible()) {
-        CHex *pHead = theMap._GetHex(m_ptHead);
-        CHex *pTail = theMap._GetHex(m_ptTail);
-        if (ClearOfRoad(m_ptHead) && ClearOfRoad(m_ptTail) &&
-            !((pHead->GetUnits() | pTail->GetUnits()) & CHex::bldg) &&
-            GetData()->CanTravelHex(pHead) && GetData()->CanTravelHex(pTail)) {
-            WaitLog("[PARK-HERE] veh %d failed parking %d,%d; clear at head %d,%d tail %d,%d, job %d,%d",
-                    GetID(), m_ptDest.x, m_ptDest.y, m_ptHead.x, m_ptHead.y,
-                    m_ptTail.x, m_ptTail.y, m_subResume.x, m_subResume.y);
-            if (m_ptNext != m_ptHead && m_ptNext != m_ptTail &&
-                theVehicleHex._GetVehicle(m_ptNext) == this)
-                theVehicleHex.ReleaseHex(m_ptNext, this);
-            m_ptNext = m_ptDest = m_ptHead;
-            m_hexDest = m_ptHead.ToCoord();
-            ArrivedDest();
-            return;
-        }
-    }
+    if (m_iPathLen == 0 && m_iNumRetries == MAX_NUM_RETRIES && FinishClearDetour())
+        return;
 
     // ARE WE SOMEWHERE WITH NO ROOM TO MANOEUVRE? Computed ONCE per blocked call and
     // reused by the rungs below, so a truck deep in the ladder does not pay for the
@@ -4710,6 +4717,13 @@ void CVehicleHex::CheckHex(CSubHex const &_sub) {
 
 void CVehicle::PostArrivedOrBlocked() {
 
+    // FindNextHex can stop a failed parking path and notify directly, bypassing
+    // HandleBlocked. Preserve the haul instead of reporting this temporary target
+    // to the router and letting a replacement order cancel the retreat's hold.
+    if (FinishClearDetour()) {
+        WaitLog("[DETOUR-NOTIFY-HANDLED] veh %d", GetID());
+        return;
+    }
     m_bFlags |= told_ai_stop;
 
     // BUGS #100: a vehicle standing in its destination hex on ANOTHER sub-hex is
