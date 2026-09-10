@@ -7833,9 +7833,17 @@ void HarnessTestCorridor(int x, int y, int length, std::string& out)
     for (int yy = y-pad; yy < y+length+pad; ++yy)
         for (int xx = x-halfWidth; xx <= x+halfWidth; ++xx) {
             bool corridor = yy >= y && yy < y+length;
-            theMap._GetHex(CHexCoord(xx, yy))->SetType(corridor ? (xx == x ? CHex::road : CHex::lake) : CHex::plain);
+            CHex* hex = theMap._GetHex(CHexCoord(xx, yy));
+            hex->SetTree(0);
+            hex->SetType(corridor ? (xx == x ? CHex::road : CHex::lake) : CHex::plain);
         }
     theAreaList.GetTop()->InvalidateWindow();
+    for (int yy = y; yy < y+length; ++yy) {
+        CHexCoord road(x, yy);
+        theMap._GetHex(road)->ChangeToRoad(road, FALSE, TRUE);
+    }
+    extern unsigned g_enStaticDirtyGen;
+    ++g_enStaticDirtyGen; // retyping the empty region also removed its trees
     snprintf(line, sizeof(line), "ok testcorridor x %d y %d length %d halfwidth %d pad %d\n", x, y, length, halfWidth, pad);
     out = line;
 }
