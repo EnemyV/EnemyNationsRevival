@@ -487,7 +487,11 @@ BOOL CTransportData::CanTravelHex( CHex const* pHex ) const
         {
         case CHex::lake:
         case CHex::ocean:
-            return ( GetWaterDepth( ) > CHex::sea_level - pHex->GetAlt( ) );
+            // Raised water (for example beside a flattened bridge approach)
+            // can have negative calculated depth. It still requires wading:
+            // otherwise zero-depth trucks can drive into water that A* rejects.
+            return ( GetWaterDepth( ) > 0 &&
+                     GetWaterDepth( ) > CHex::sea_level - pHex->GetAlt( ) );
         case CHex::river:
             return ( GetWaterDepth( ) > 0 );
         default:
