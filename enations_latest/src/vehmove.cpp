@@ -2907,6 +2907,13 @@ void CVehicle::JamWatch() {
         return;
     }
 
+    // Idle parking and recovery holds are not failed travel. Start a fresh
+    // watch on departure; active clearance requests above still expire/relay.
+    if (m_cMode == stop) {
+        m_iJamWatch = 0;
+        return;
+    }
+
     int cx = m_ptHead.x + m_ptTail.x;        // doubled centre
     int cy = m_ptHead.y + m_ptTail.y;
 
@@ -2929,9 +2936,6 @@ void CVehicle::JamWatch() {
         return;
     if (m_iJamCool > 0)
         return;
-    if (m_cMode == stop)                     // parked, not jammed
-        return;
-
     // only while a truck is actually in our way - a slow queue is not a jam
     // Traffic waiting parks m_ptNext on our own head. The actual blocked step
     // remains in m_subWaitNext; testing our head mistakes a stuck queue for no blocker.
