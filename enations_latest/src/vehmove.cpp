@@ -1377,6 +1377,14 @@ BOOL CVehicle::InLane(CSubHex const &_next) {
 // restriction - nothing that used to be reachable becomes unreachable.
 BOOL CVehicle::FindSub(BOOL bCloser) {
 
+    // Refusing to overtake must retain the real blocked step for waiting and
+    // clearance requests, rather than leave a rejected free side-step or self.
+    CSubHex blockedStep;
+    if (BlockedLaneStep(blockedStep)) {
+        m_ptNext = blockedStep;
+        return (FALSE);
+    }
+
     if (FindSubEx(bCloser, TRUE))
         return (TRUE);
     return (FindSubEx(bCloser, FALSE));
@@ -1596,49 +1604,54 @@ BOOL CVehicle::IsPassable(CSubHex const &_sub, BOOL bStrict) {
     return (GetData()->CanEnterHex(m_ptHead, _sub, bOnWater, bStrict));
 }
 
+// Identify the actual vehicle ahead when an aligned hull cannot overtake.
+// No state changes: callers use the same step for lane policy and recovery.
+BOOL CVehicle::BlockedLaneStep(CSubHex &blockedStep) {
+    if (!(TrafficOpts() & 16) || !m_cOwn || IsHpControl() ||
+        !(GetData()->IsTransport() || GetData()->IsCrane()) || GetData()->IsBoat())
+        return (FALSE);
+
+    int dx = CSubHex::Diff(m_ptHead.x - m_ptTail.x);
+    int dy = CSubHex::Diff(m_ptHead.y - m_ptTail.y);
+    if ((dx == 0) == (dy == 0)) // angled hulls must be allowed to straighten
+        return (FALSE);
+    CSubHex ahead(m_ptHead.x + dx, m_ptHead.y + dy);
+    ahead.Wrap();
+    CVehicle *blocker = theVehicleHex._GetVehicle(ahead);
+    if (blocker == NULL || blocker == this)
+        return (FALSE);
+
+    BOOL confined = (theMap._GetHex(m_ptHead)->GetUnits() & CHex::bridge) &&
+                    (theMap._GetHex(ahead)->GetUnits() & CHex::bridge);
+    if (!confined && OnPavement(m_ptHead) && OnPavement(ahead)) {
+        CHexCoord here(m_ptHead);
+        CHexCoord left(here.X() + dy, here.Y() - dx);
+        CHexCoord right(here.X() - dy, here.Y() + dx);
+        left.Wrap(); right.Wrap();
+        BOOL leftClosed = (theMap._GetHex(left)->GetUnits() & CHex::bldg) ||
+            theMap.GetTerrainCost(left, left, 0, GetData()->GetWheelType()) == 0;
+        BOOL rightClosed = (theMap._GetHex(right)->GetUnits() & CHex::bldg) ||
+            theMap.GetTerrainCost(right, right, 0, GetData()->GetWheelType()) == 0;
+        confined = leftClosed && rightClosed;
+    }
+    if (!confined)
+        return (FALSE);
+    blockedStep = ahead;
+    return (TRUE);
+}
+
 // return TRUE if can enter sub-hex
 BOOL CVehicle::CanEnter(CSubHex const &_sub, BOOL bStrict) {
-
-    // if vehicle there then NO
     if (theVehicleHex._GetVehicle(_sub) != NULL)
         return (FALSE);
 
-    // Follow a blocked lane in a narrow passage; do not overtake into the other
-    // lane. Apply at the common step gate, so later avoidance rungs cannot undo
-    // the initial wait. A self-backup swaps the movement axis and remains legal.
-    if ((TrafficOpts() & 16) && m_cOwn && !IsHpControl() &&
-        (GetData()->IsTransport() || GetData()->IsCrane()) && !GetData()->IsBoat()) {
-        int dx = CSubHex::Diff(m_ptHead.x - m_ptTail.x);
-        int dy = CSubHex::Diff(m_ptHead.y - m_ptTail.y);
-        // An already angled hull must be allowed to straighten first.
-        if ((dx == 0) != (dy == 0)) {
-            int sx = CSubHex::Diff(_sub.x - m_ptHead.x);
-            int sy = CSubHex::Diff(_sub.y - m_ptHead.y);
-            if (sx * dy != sy * dx) {
-                CSubHex ahead(m_ptHead.x + dx, m_ptHead.y + dy);
-                ahead.Wrap();
-                CVehicle *blocker = theVehicleHex._GetVehicle(ahead);
-                if (blocker != NULL && blocker != this) {
-                    BOOL confined = (theMap._GetHex(m_ptHead)->GetUnits() & CHex::bridge) &&
-                                    (theMap._GetHex(ahead)->GetUnits() & CHex::bridge);
-                    if (!confined && OnPavement(m_ptHead) && OnPavement(ahead)) {
-                        CHexCoord here(m_ptHead);
-                        CHexCoord left(here.X() + dy, here.Y() - dx);
-                        CHexCoord right(here.X() - dy, here.Y() + dx);
-                        left.Wrap(); right.Wrap();
-                        BOOL leftClosed = (theMap._GetHex(left)->GetUnits() & CHex::bldg) ||
-                            theMap.GetTerrainCost(left, left, 0, GetData()->GetWheelType()) == 0;
-                        BOOL rightClosed = (theMap._GetHex(right)->GetUnits() & CHex::bldg) ||
-                            theMap.GetTerrainCost(right, right, 0, GetData()->GetWheelType()) == 0;
-                        confined = leftClosed && rightClosed;
-                    }
-                    if (confined)
-                        return (FALSE);
-                }
-            }
-        }
-    }
-
+    int dx = CSubHex::Diff(m_ptHead.x - m_ptTail.x);
+    int dy = CSubHex::Diff(m_ptHead.y - m_ptTail.y);
+    int sx = CSubHex::Diff(_sub.x - m_ptHead.x);
+    int sy = CSubHex::Diff(_sub.y - m_ptHead.y);
+    CSubHex blockedStep;
+    if (sx * dy != sy * dx && BlockedLaneStep(blockedStep))
+        return (FALSE);
     return (IsPassable(_sub, bStrict));
 }
 
@@ -2272,6 +2285,9 @@ BOOL CVehicle::WaitForMover() {
     if (!GetOwner()->IsLocal())
         return (FALSE);
 
+    CSubHex blockedStep;
+    if (BlockedLaneStep(blockedStep))
+        m_ptNext = blockedStep;
     CVehicle *pVehInWay = theVehicleHex._GetVehicle(m_ptNext);
     if ((pVehInWay == NULL) || (pVehInWay == this))
         return (FALSE);
@@ -2899,7 +2915,8 @@ void CVehicle::JamWatch() {
     // only while a truck is actually in our way - a slow queue is not a jam
     // Traffic waiting parks m_ptNext on our own head. The actual blocked step
     // remains in m_subWaitNext; testing our head mistakes a stuck queue for no blocker.
-    CSubHex const &blockedStep = (m_cMode == traffic) ? m_subWaitNext : m_ptNext;
+    CSubHex blockedStep = (m_cMode == traffic) ? m_subWaitNext : m_ptNext;
+    BlockedLaneStep(blockedStep);
     if (blockedStep.x < 0 || blockedStep.y < 0)
         return;
     CVehicle *pIn = theVehicleHex._GetVehicle(blockedStep);
@@ -3489,6 +3506,9 @@ void CVehicle::HandleBlocked() {
         }
     }
 
+    CSubHex blockedStep;
+    if (BlockedLaneStep(blockedStep))
+        m_ptNext = blockedStep;
     CVehicle *pVehInWay = theVehicleHex._GetVehicle(m_ptNext);
 
     // is the block legit (didn't release properly?)

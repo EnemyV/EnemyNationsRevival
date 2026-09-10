@@ -571,6 +571,7 @@ protected:
 		void					AssignNextHex ();
 		BOOL					TestStuck ();
 		void					HandleBlocked ();
+		BOOL					BlockedLaneStep (CSubHex &blockedStep);
 		BOOL					WaitForMover ();
 		BOOL					ResumeWaitedStep ();
 		BOOL					AskToMove (CVehicle *pAsker);
