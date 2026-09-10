@@ -3332,6 +3332,29 @@ void CVehicle::HandleBlocked() {
         return;
     }
 
+    // The parking path failed, but we already made space. Complete this detour
+    // where we stand rather than spend minutes chasing an unreachable parking
+    // square. ArrivedDest supplies the usual hold and resumes the saved job.
+    if (m_bResume && (m_bReversing || m_bForwardEscape || m_iHoldFrames > 0) &&
+        m_iPathLen == 0 && m_iNumRetries == MAX_NUM_RETRIES && JamEligible()) {
+        CHex *pHead = theMap._GetHex(m_ptHead);
+        CHex *pTail = theMap._GetHex(m_ptTail);
+        if (ClearOfRoad(m_ptHead) && ClearOfRoad(m_ptTail) &&
+            !((pHead->GetUnits() | pTail->GetUnits()) & CHex::bldg) &&
+            GetData()->CanTravelHex(pHead) && GetData()->CanTravelHex(pTail)) {
+            WaitLog("[PARK-HERE] veh %d failed parking %d,%d; clear at head %d,%d tail %d,%d, job %d,%d",
+                    GetID(), m_ptDest.x, m_ptDest.y, m_ptHead.x, m_ptHead.y,
+                    m_ptTail.x, m_ptTail.y, m_subResume.x, m_subResume.y);
+            if (m_ptNext != m_ptHead && m_ptNext != m_ptTail &&
+                theVehicleHex._GetVehicle(m_ptNext) == this)
+                theVehicleHex.ReleaseHex(m_ptNext, this);
+            m_ptNext = m_ptDest = m_ptHead;
+            m_hexDest = m_ptHead.ToCoord();
+            ArrivedDest();
+            return;
+        }
+    }
+
     // ARE WE SOMEWHERE WITH NO ROOM TO MANOEUVRE? Computed ONCE per blocked call and
     // reused by the rungs below, so a truck deep in the ladder does not pay for the
     // corridor walk over and over. On a bridge or between building rows there is
