@@ -4990,6 +4990,7 @@ void CVehicle::ctor( )
     m_iCorrLen         = 0;
     m_dwBlockLog       = 0;
     m_bReversing       = FALSE;
+    m_bForwardEscape   = FALSE;
     m_iHoldFrames      = 0;
 #if EN_PATH_PROBES
     m_hexLastClamp    = CHexCoord( -1, -1 );  // no prior clamp

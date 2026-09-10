@@ -650,6 +650,7 @@ protected:
 		int						m_iCorrLen;							// ...and how far the corridor ran along OUR axis
 		DWORD					m_dwBlockLog;						// last blocked-step line (probe only)
 		BOOL					m_bReversing;						// backing up: hold the facing while the body moves
+		BOOL					m_bForwardEscape;                  // committed forward yield after opposing retreats meet
 		int						m_iHoldFrames;						// game frames left in the post-retreat hold; 0 = not holding
 		LONG					m_iBlockCount;					// number of consecutive times blocked
 		CHexCoord			m_hexStagnant;					// blocked-stagnation watch: last hex seen blocked at (transient, not saved)

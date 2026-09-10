@@ -333,7 +333,9 @@ void CVehicle::ArrivedDest() {
     // means the next forward step turns the hull the normal way - by then we are off
     // the span, where there is room for it.
     BOOL bWasReversing = m_bReversing;
+    BOOL bWasForwardEscape = m_bForwardEscape;
     m_bReversing = FALSE;
+    m_bForwardEscape = FALSE;
 
     // A RETREAT has ended. Hold here before rejoining the haul: the whole point of
     // backing off is to give the trucks in front somewhere to go, and one that
@@ -354,7 +356,7 @@ void CVehicle::ArrivedDest() {
     // Finish with one legal local step: its tail will occupy our current safe
     // head square. Keep the saved job and start/continue the hold only once clear.
     if ((TrafficOpts() & 8) && !bClear && ClearOfRoad(m_ptHead) &&
-        ((bWasReversing && m_bResume) || m_iHoldFrames > 0)) {
+        (((bWasReversing || bWasForwardEscape) && m_bResume) || m_iHoldFrames > 0)) {
         const int turns[] = { 0, -1, 1, -2, 2, -3, 3 };
         for (int i = 0; i < 7; ++i) {
             CSubHex next = Rotate(turns[i]);
@@ -367,11 +369,12 @@ void CVehicle::ArrivedDest() {
                     GetID(), m_ptHead.x, m_ptHead.y, m_ptTail.x, m_ptTail.y,
                     next.x, next.y, m_iHoldFrames);
             m_bReversing = bWasReversing;
+            m_bForwardEscape = bWasForwardEscape;
             DetourTo(next, FALSE);
             return;
         }
     }
-    if (bWasReversing && bClear && m_bResume && (TrafficOpts() & 8))
+    if ((bWasReversing || bWasForwardEscape) && bClear && m_bResume && (TrafficOpts() & 8))
         m_iHoldFrames = HOLD_FRAMES + (int) (GetID() % 4) * 24;
 
     // Park for whatever is LEFT of the hold - whether we just armed it, or a courtesy
@@ -2423,6 +2426,7 @@ void CVehicle::DetourTo(CSubHex const &_sub, BOOL bResume) {
     int  iBudget = m_iBackUps;
     int  iHold   = m_iHoldFrames;
     BOOL bRev    = m_bReversing;     // ...and we are still reversing afterwards
+    BOOL bForward = m_bForwardEscape;
     SetDestAndMode(_sub, sub);
     m_iBackUps    = iBudget;
     m_iHoldFrames = iHold;
@@ -2430,6 +2434,7 @@ void CVehicle::DetourTo(CSubHex const &_sub, BOOL bResume) {
     // SetDestAndMode calculated movement while reverse was temporarily clear.
     // Recompute the facing and turn increment after restoring the movement mode.
     m_bReversing  = bRev;
+    m_bForwardEscape = bForward;
     if (bRev)
         SetMoveParams(FALSE);
 
@@ -2578,7 +2583,7 @@ BOOL CVehicle::FindOffRoadSpot(CSubHex &_found, CVehicle *pAsker) {
     // A parking retry must not turn a committed reverse back into the queue.
     // BackUp already swapped the movement endpoints: head-tail now points OUT.
     // Keep that exit side until the body is out of the confined passage.
-    BOOL bKeepReverseExit = m_bReversing &&
+    BOOL bKeepReverseExit = (m_bReversing || m_bForwardEscape) &&
         (m_bConfined || (theMap._GetHex(m_ptHead)->GetUnits() & CHex::bridge) ||
          (theMap._GetHex(m_ptTail)->GetUnits() & CHex::bridge) ||
          iCorr >= CORRIDOR_MIN_HEXES);
@@ -2933,11 +2938,43 @@ void CVehicle::JamWatch() {
 
 BOOL CVehicle::BackUp() {
 
-    // Head and tail were swapped when this retreat began. Starting another
-    // backup now would swap them back and replace the escape with its opposite.
-    // Let the existing movement/retry ladder finish or fail this detour first.
-    if (m_bReversing)
+    if (m_bForwardEscape)
         return (FALSE);
+
+    // Two retreats can meet rear-to-rear in the same lane. Keep that lane's
+    // ordinary travel direction; the other drives nose-first until clear. A vehicle
+    // meeting that forward escape makes the same local choice on its own update.
+    // The forward commitment lasts to arrival, so another request cannot undo it.
+    BOOL bForwardYield = FALSE;
+    int axisX = CSubHex::Diff(m_ptHead.x - m_ptTail.x);
+    int axisY = CSubHex::Diff(m_ptHead.y - m_ptTail.y);
+    if (m_bReversing) {
+        CSubHex blockedStep;
+        if (!BlockedLaneStep(blockedStep))
+            return (FALSE);
+        CVehicle *pIn = theVehicleHex._GetVehicle(blockedStep);
+        // Match InLane's convention. Independent pairs in one lane must choose
+        // the same direction, or their escaping groups meet head-on again.
+        BOOL bAgainstLane = axisX != 0 ? ((m_ptHead.y & 1) != (axisX > 0 ? 1 : 0)) :
+                                       ((m_ptHead.x & 1) != (axisY > 0 ? 0 : 1));
+        if (pIn == NULL || pIn->GetOwner() != GetOwner() || !pIn->JamEligible() ||
+            (blockedStep != pIn->m_ptHead && blockedStep != pIn->m_ptTail) ||
+            CSubHex::Diff(pIn->m_ptHead.x - pIn->m_ptTail.x) != -axisX ||
+            CSubHex::Diff(pIn->m_ptHead.y - pIn->m_ptTail.y) != -axisY ||
+            (!pIn->m_bForwardEscape &&
+             !(m_iJamClear > 0 && pIn->m_bReversing && bAgainstLane)))
+            return (FALSE);
+        bForwardYield = TRUE;
+    } else if (m_iJamClear > 0 && ((axisX == 0) != (axisY == 0))) {
+        CSubHex behind(m_ptTail.x - axisX, m_ptTail.y - axisY);
+        behind.Wrap();
+        CVehicle *pBehind = theVehicleHex._GetVehicle(behind);
+        bForwardYield = pBehind != NULL && pBehind != this &&
+            pBehind->GetOwner() == GetOwner() && pBehind->JamEligible() &&
+            pBehind->m_bForwardEscape && pBehind->m_ptHead == behind &&
+            CSubHex::Diff(pBehind->m_ptHead.x - pBehind->m_ptTail.x) == axisX &&
+            CSubHex::Diff(pBehind->m_ptHead.y - pBehind->m_ptTail.y) == axisY;
+    }
 
     if (!(TrafficOpts() & 8))
         return (FALSE);
@@ -2962,7 +2999,7 @@ BOOL CVehicle::BackUp() {
     // behind can actually execute, which is the rearmost; when they go, the next
     // inherit clear space and succeed in turn. The evacuation orders itself, and no
     // truck ever instructs another - the post-retreat hold rate-limits the retries.
-    if (m_iBackUps >= (bCluster ? MAX_BACK_UPS_JAM : MAX_BACK_UPS))
+    if (!bForwardYield && m_iBackUps >= (bCluster ? MAX_BACK_UPS_JAM : MAX_BACK_UPS))
         return (FALSE);
 
     // How FAR back? Far enough to actually be out of the way. Reversing a single
@@ -2972,6 +3009,10 @@ BOOL CVehicle::BackUp() {
     // and nudge rules still apply on the way out.
     int xBack = CSubHex::Diff(m_ptTail.x - m_ptHead.x);
     int yBack = CSubHex::Diff(m_ptTail.y - m_ptHead.y);
+    if (bForwardYield && !m_bReversing) {
+        xBack = -xBack;
+        yBack = -yBack;
+    }
     if ((xBack == 0) && (yBack == 0))
         return (FALSE);
 
@@ -3060,8 +3101,15 @@ BOOL CVehicle::BackUp() {
             m_iBackUps, (int) bWasBridge, (int) bPartial, (int) m_bReversing, m_iJamClear);
     // Swap the movement endpoints without moving the body. SetLoc accounts for
     // the reverse-facing offset, so the nose still points the original way.
-    m_bReversing = TRUE;
-    Turn180();
+    BOOL bSwapEnds = !bForwardYield || m_bReversing;
+    m_bReversing = !bForwardYield;
+    m_bForwardEscape = bForwardYield;
+    if (bSwapEnds)
+        Turn180();
+    if (bForwardYield)
+        WaitLog("[FORWARD-YIELD] veh %d head %d,%d tail %d,%d target %d,%d swapped %d",
+                GetID(), m_ptHead.x, m_ptHead.y, m_ptTail.x, m_ptTail.y,
+                _target.x, _target.y, (int) bSwapEnds);
     DetourTo(_target, TRUE);          // and carry on with the haul afterwards
     return (TRUE);
 }
@@ -3303,6 +3351,8 @@ void CVehicle::HandleBlocked() {
     // making space, and a truck that can do neither simply waits - nothing is forced.
     // An active request must not restart an escape at every blocked update.
     // A committed retreat uses ordinary step retries and bounded failure below.
+    if (m_bReversing && BackUp()) // only the opposing-retreat exception can restart it
+        return;
     if ((m_iJamClear > 0) && (!m_bReversing)) {
         if (BackUp())
             return;

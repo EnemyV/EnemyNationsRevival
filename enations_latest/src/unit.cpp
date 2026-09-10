@@ -3116,6 +3116,7 @@ void CVehicle::SetDestAndMode( CSubHex sub, VEH_POS iMode )
     // and a new order ends a reverse - whatever we are told to do next, we do it
     // facing the way we drive.
     m_bReversing    = FALSE;
+    m_bForwardEscape = FALSE;
 
     // ...and it ends a post-retreat hold: we were waiting to go back to a job that
     // has just been replaced, so there is nothing left to wait for.

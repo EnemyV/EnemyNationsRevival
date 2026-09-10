@@ -7792,11 +7792,11 @@ void HarnessVehicleState(unsigned long id, std::string& out)
     char line[1024];
     snprintf(line, sizeof(line),
         "veh %lu type %d mode %d event %d owned %d hpcontrol %d stopped %d "
-        "reverse %d resume %d resume_sub %d,%d hold %d jam %d watch %d cool %d "
+        "reverse %d forward_escape %d resume %d resume_sub %d,%d hold %d jam %d watch %d cool %d "
         "retries %d backups %d dir %d\n",
         id, v->GetData()->GetType(), (int) v->m_cMode, (int) v->m_iEvent,
         (int) v->m_cOwn, (int) v->IsHpControl(), (int) v->IsFlag(CUnit::stopped),
-        (int) v->m_bReversing, (int) v->m_bResume, v->m_subResume.x, v->m_subResume.y,
+        (int) v->m_bReversing, (int) v->m_bForwardEscape, (int) v->m_bResume, v->m_subResume.x, v->m_subResume.y,
         v->m_iHoldFrames, v->m_iJamClear, v->m_iJamWatch, v->m_iJamCool,
         v->m_iNumRetries, v->m_iBackUps, v->m_iDir);
     out = line;
