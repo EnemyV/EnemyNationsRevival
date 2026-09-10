@@ -422,7 +422,9 @@ void CVehicle::ArrivedDest() {
         m_ptDest = m_ptHead;
         m_hexDest = m_ptHead.ToCoord();
     }
-    if ((bWasReversing || bWasForwardEscape) && bClear && m_bResume && (TrafficOpts() & 8))
+    // Preserve a pending give-up hold or the time left after a courtesy move.
+    if ((bWasReversing || bWasForwardEscape) && bClear && m_bResume &&
+        m_iHoldFrames <= 0 && (TrafficOpts() & 8))
         m_iHoldFrames = HOLD_FRAMES + (int) (GetID() % 4) * 24;
 
     // Park for whatever is LEFT of the hold - whether we just armed it, or a courtesy
