@@ -1279,9 +1279,9 @@ BOOL CVehicle::GetNextHex(BOOL bNew) {
                 BOOL bEscape = m_bResume && (m_bReversing || m_bForwardEscape || m_iHoldFrames > 0) && JamEligible();
                 if ((iOld <= iNew) && (iNew != 0) && bEscape)
                     WaitLog("[ESCAPE-STEP] veh %d source next head %d,%d tail %d,%d next %d,%d "
-                            "hexnext %d,%d distance %d to %d times %d",
+                            "hexnext %d,%d distance %d to %d times %d reverse %d forward %d hold %d",
                             GetID(), m_ptHead.x, m_ptHead.y, m_ptTail.x, m_ptTail.y,
-                            m_ptNext.x, m_ptNext.y, m_hexNext.X(), m_hexNext.Y(), iOld, iNew, m_iTimesOn);
+                            m_ptNext.x, m_ptNext.y, m_hexNext.X(), m_hexNext.Y(), iOld, iNew, m_iTimesOn, (int)m_bReversing, (int)m_bForwardEscape, m_iHoldFrames);
                 if ((iOld <= iNew) && (iNew != 0) && !bEscape) {
                     m_ptNext = m_ptHead;
                     if (!FindSub(TRUE)) {
@@ -3344,9 +3344,9 @@ BOOL CVehicle::TryNewSub(BOOL bNoNewPath) {
         BOOL bEscape = m_bResume && (m_bReversing || m_bForwardEscape || m_iHoldFrames > 0) && JamEligible();
         if ((iOld <= iNew) && (iNew != 0) && bEscape)
             WaitLog("[ESCAPE-STEP] veh %d source retry head %d,%d tail %d,%d next %d,%d "
-                    "hexnext %d,%d distance %d to %d times %d",
+                    "hexnext %d,%d distance %d to %d times %d reverse %d forward %d hold %d",
                     GetID(), m_ptHead.x, m_ptHead.y, m_ptTail.x, m_ptTail.y,
-                    m_ptNext.x, m_ptNext.y, m_hexNext.X(), m_hexNext.Y(), iOld, iNew, m_iTimesOn);
+                    m_ptNext.x, m_ptNext.y, m_hexNext.X(), m_hexNext.Y(), iOld, iNew, m_iTimesOn, (int)m_bReversing, (int)m_bForwardEscape, m_iHoldFrames);
         if ((iOld <= iNew) && (iNew != 0) && !bEscape)
             if (!FindSub(TRUE)) {
                 if (GetOwner()->IsMe() && m_bResume && m_iHoldFrames > 0)
@@ -4023,11 +4023,11 @@ void CVehicle::HandleBlocked() {
         if (GetOwner()->IsMe() && theGame.GettimeGetTime() - m_dwBlockLog > 5000) {
             m_dwBlockLog = theGame.GettimeGetTime();
             WaitLog("[RETRY-WAIT] veh %d head %d,%d tail %d,%d next %d,%d retry %d count %ld "
-                    "speed %d elapsed %lu threshold %lu reverse %d forward %d resume %d hold %d",
+                    "speed %d elapsed %lu threshold %lu reverse %d forward %d resume %d hold %d type %d eligible %d",
                     GetID(), m_ptHead.x, m_ptHead.y, m_ptTail.x, m_ptTail.y, m_ptNext.x, m_ptNext.y,
                     m_iNumRetries, (long)m_iBlockCount, m_iSpeed, (unsigned long)m_dwTimeBlocked,
                     (unsigned long)(3 * m_iBlockCount * m_iBlockCount * m_iBlockCount * m_iSpeed * STEPS_HEX),
-                    (int)m_bReversing, (int)m_bForwardEscape, (int)m_bResume, m_iHoldFrames);
+                    (int)m_bReversing, (int)m_bForwardEscape, (int)m_bResume, m_iHoldFrames, GetData()->GetType(), (int)JamEligible());
         }
         m_iBlockCount--;
         return;
@@ -4138,6 +4138,9 @@ void CVehicle::HandleBlocked() {
                         logPrintf(LOG_PRI_CRITICAL, LOG_VEH_MOVE, "Vehicle %d at sub (%d,%d) transport to sub (%d,%d)",
                                   GetID(), m_ptHead.x, m_ptHead.y, _head.x, _head.y);
 #endif
+                        WaitLog("[AI-RECOVERY-HOP] veh %d head %d,%d tail %d,%d to %d,%d/%d,%d reverse %d dir %d world %d,%d",
+                                GetID(), m_ptHead.x, m_ptHead.y, m_ptTail.x, m_ptTail.y,
+                                _head.x, _head.y, _tail.x, _tail.y, (int)m_bReversing, m_iDir, m_maploc.x, m_maploc.y);
                         ReleaseOwnership();
                         m_ptNext = m_ptHead = _head;
                         m_ptTail = _tail;
