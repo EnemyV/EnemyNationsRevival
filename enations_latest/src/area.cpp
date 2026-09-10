@@ -7782,6 +7782,35 @@ bool HarnessStopVehicle(unsigned long id)
     return true;
 }
 
+void HarnessMapRect(int x, int y, int width, int height, std::string& out)
+{
+    out.clear();
+    if (theAreaList.GetTop() == NULL || x < 0 || y < 0 || width < 1 || width > 32 || height < 1 || height > 32 ||
+        x >= theMap.Get_eX() || y >= theMap.Get_eY() || width > theMap.Get_eX() - x || height > theMap.Get_eY() - y) {
+        out = "err maprect outside loaded map\n";
+        return;
+    }
+    const CTransportData* truck = theTransports.GetData(CTransportData::heavy_truck);
+    char line[256];
+    for (int yy = y; yy < y + height; ++yy)
+        for (int xx = x; xx < x + width; ++xx) {
+            CHexCoord coord(xx, yy);
+            CHex* hex = theMap._GetHex(coord);
+            CBuilding* building = theBuildingHex._GetBuilding(CSubHex(coord));
+            unsigned long vehicles[4] = {};
+            for (int sub = 0; sub < 4; ++sub) {
+                CVehicle* vehicle = theVehicleHex._GetVehicle(CSubHex(xx * 2 + sub % 2, yy * 2 + sub / 2));
+                if (vehicle != NULL) vehicles[sub] = (unsigned long)vehicle->GetID();
+            }
+            snprintf(line, sizeof(line), "hex %d,%d terrain %d bridge %d building %lu travel %d cost %d vehicles %lu,%lu,%lu,%lu\n",
+                     xx, yy, hex->GetType(), (int)((hex->GetUnits() & CHex::bridge) != 0),
+                     building ? (unsigned long)building->GetID() : 0, (int)truck->CanTravelHex(hex),
+                     theMap.GetTerrainCost(hex, hex, 0, truck->GetWheelType()),
+                     vehicles[0], vehicles[1], vehicles[2], vehicles[3]);
+            out += line;
+        }
+}
+
 void HarnessVehicleState(unsigned long id, std::string& out)
 {
     CVehicle* v = NULL;

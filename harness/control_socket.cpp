@@ -209,6 +209,7 @@ std::atomic<int> g_moveVehX{0}, g_moveVehY{0};
 std::atomic<bool> g_moveVehPending{false}, g_moveVehDone{false}, g_moveVehOK{false};
 std::atomic<bool> g_stopVeh{false}; // shares the serialized vehicle-order handshake
 std::atomic<unsigned long> g_unitsStateId{0}; // 0: list; otherwise read one vehicle
+std::atomic<int> g_unitsMapX{0}, g_unitsMapY{0}, g_unitsMapWidth{0}, g_unitsMapHeight{0};
 
 // Pending `sel` request (HarnessDumpSelection) — same render-thread handshake.
 std::mutex              g_selMutex;
@@ -511,8 +512,18 @@ void handle_command(const std::string& line, en_socket_t conn) {
         // wait (up to ~2s) for the render thread to service it
         for (int i = 0; i < 400 && !g_shotDone.load(); ++i) { en_sleep_poll(); }
         snprintf(reply, sizeof(reply), g_shotOK.load() ? "ok %d %d %s\n" : "err shot failed\n", g_shotW.load(), g_shotH.load(), path);
-    } else if ((strcmp(cmd, "units") == 0) || (strcmp(cmd, "vehstate") == 0)) {
+    } else if ((strcmp(cmd, "units") == 0) || (strcmp(cmd, "vehstate") == 0) || (strcmp(cmd, "maprect") == 0)) {
         unsigned long id = 0;
+        int x = 0, y = 0, width = 0, height = 0;
+        if (strcmp(cmd, "maprect") == 0) {
+            char extra;
+            if (sscanf(line.c_str(), "%*s %d %d %d %d %c", &x, &y, &width, &height, &extra) != 4 ||
+                x < 0 || y < 0 || width < 1 || width > 32 || height < 1 || height > 32) {
+                const char* usage = "err usage: maprect <x> <y> <width 1..32> <height 1..32>\n";
+                en_send(conn, usage, strlen(usage));
+                return;
+            }
+        }
         if (strcmp(cmd, "vehstate") == 0) {
             char extra;
             if (sscanf(line.c_str(), "%*s %lu %c", &id, &extra) != 1 || id == 0) {
@@ -523,6 +534,8 @@ void handle_command(const std::string& line, en_socket_t conn) {
         }
         // Read game state on the render thread, using the existing units handshake.
         g_unitsStateId = id;
+        g_unitsMapX = x; g_unitsMapY = y;
+        g_unitsMapWidth = width; g_unitsMapHeight = height;
         g_unitsDone = false; g_unitsPending = true;
         for (int i = 0; i < 400 && !g_unitsDone.load(); ++i) { en_sleep_poll(); }
         std::string out;
@@ -1075,7 +1088,9 @@ void EnHarness_Service() {
     if (g_unitsPending.exchange(false)) {
         std::string out;
         unsigned long id = g_unitsStateId.load();
-        if (id != 0) HarnessVehicleState(id, out);
+        if (g_unitsMapWidth.load() > 0)
+            HarnessMapRect(g_unitsMapX.load(), g_unitsMapY.load(), g_unitsMapWidth.load(), g_unitsMapHeight.load(), out);
+        else if (id != 0) HarnessVehicleState(id, out);
         else HarnessDumpUnits(out);
         { std::lock_guard<std::mutex> lk(g_unitsMutex); g_unitsResult = out; }
         g_unitsDone = true;

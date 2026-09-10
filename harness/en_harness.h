@@ -60,6 +60,8 @@ void EnHarness_RegisterWindowSurface(unsigned int windowId, SDL_Surface* surface
 void HarnessDumpUnits(std::string& out);
 // Read-only, render-thread snapshot for a single vehicle and its occupied/goal subs.
 void HarnessVehicleState(unsigned long id, std::string& out);
+// Read-only bounded map rectangle for corridor test setup; never changes terrain.
+void HarnessMapRect(int x, int y, int width, int height, std::string& out);
 // Explicit operator move for one owned vehicle; replaces its order through normal APIs.
 // Acceptance means an order was issued, not that the vehicle arrived.
 bool HarnessMoveVehicle(unsigned long id, int hexX, int hexY);
