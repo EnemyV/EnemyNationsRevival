@@ -234,7 +234,10 @@ void CVehicle::Operate() {
     // stopped test on purpose: a truck the player parked stays parked.
     // Only while actually STOPPED. A hold armed at the moment a truck gives up must
     // start when it reaches its parking spot, not tick away during the drive there.
-    if ((m_iHoldFrames > 0) && (m_cMode == stop)) {
+    // A failed route can also stop on the roadway. That is still clearance,
+    // not the off-road hold; retain its full duration until the body is clear.
+    if ((m_iHoldFrames > 0) && (m_cMode == stop) && m_cOwn &&
+        ClearOfRoad(m_ptHead) && ClearOfRoad(m_ptTail)) {
         m_iHoldFrames -= theGame.GetFramesElapsed();
         if (m_iHoldFrames <= 0) {
             m_iHoldFrames = 0;
