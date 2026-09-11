@@ -18,6 +18,7 @@
 #include "bridge.h"
 #include "building.inl"
 #include "chproute.hpp"
+#include "cpathmgr.h"
 #include "creatmul.inl"
 // CDlgMsg calls replaced by EnMessageBoxOnce (Phase 2a).
 // Keep this include for CDlgModelessMsg which is still used.
@@ -2988,6 +2989,32 @@ static void UnitAttacked( CMsgUnitAttacked* pMsg )
                         _dest.Wrap( );
                         iNum--;
                     }
+
+                    // A random flee point is a proposal, not a drivable route.
+                    // Reject it without cancelling an existing recovery hold/job.
+                    if ( !pVeh->GetData()->IsBoat() ) {
+                        CHexCoord from(pVeh->GetPtHead()), to(_dest);
+                        CHex *hex = theMap._GetHex(to);
+                        BOOL usable = _dest != pVeh->GetPtHead() &&
+                            !(hex->GetUnits() & (CHex::bldg | CHex::bridge)) &&
+                            hex->GetType() != CHex::road && hex->GetType() != CHex::city &&
+                            theMap.GetTerrainCost(to, to, 0, pVeh->GetData()->GetWheelType()) != 0;
+                        if ( usable ) {
+                            int length = 0;
+                            CHexCoord *path = thePathMgr.GetPath(NULL, from, to, length,
+                                pVeh->GetData()->GetType(), FALSE, TRUE);
+                            usable = from == to || (path != NULL && length > 0 && path[length-1] == to);
+                            delete[] path;
+                        }
+                        if ( !usable ) {
+                            WaitLog("[FLEE-REJECT] veh %d attacker %d from %d,%d proposed %d,%d terrain %d",
+                                pVeh->GetID(), pAttacker->GetID(), pVeh->GetPtHead().x, pVeh->GetPtHead().y,
+                                _dest.x, _dest.y, hex->GetType());
+                            return;
+                        }
+                    }
+                    WaitLog("[FLEE-ORDER] veh %d attacker %d from %d,%d to %d,%d",
+                        pVeh->GetID(), pAttacker->GetID(), pVeh->GetPtHead().x, pVeh->GetPtHead().y, _dest.x, _dest.y);
 
                     // RUN AWAY!!
                     ( (CVehicle*)pTarget )->SetDest( _dest );
