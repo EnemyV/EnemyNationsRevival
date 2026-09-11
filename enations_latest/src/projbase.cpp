@@ -22,6 +22,7 @@
 #include "building.inl"
 #include "vehicle.inl"
 
+#include <SDL.h>
 #include "SDL2Sprites.h"   // GPU tracer streaks (CaptureTrail)
 #include "Perf.h"          // shoot.oor out-of-range-fire probe
 #include "enprobes.h"      // BLDGKILL/UNITKILL war-attribution probes
@@ -691,6 +692,23 @@ void CExplosion::EmitFlash ( const CPoint & ptCenter, int iSprW, int iSprH )
 
 void CUnit::DecDamagePoints (int iDamage, DWORD dwKiller)
 {
+
+    // Optional harness fixture isolation: combat killed staged traffic before
+    // the corridor test could begin. Default-off; never active in multiplayer.
+    // Unattributed/environmental damage and all non-traffic units are unchanged.
+    static const bool testTrafficNoCombat = []() {
+        const char *harness = SDL_getenv("EN_HARNESS");
+        const char *option = SDL_getenv("EN_TEST_TRAFFIC_NO_COMBAT");
+        return harness && option && strcmp(harness, "1") == 0 && strcmp(option, "1") == 0;
+    }();
+    if (testTrafficNoCombat && !theGame.IsNetGame() && iDamage > 0 && dwKiller != 0 &&
+        GetOwner()->IsMe() && GetUnitType() == CUnit::vehicle) {
+        const CTransportData *data = ((CVehicle *)this)->GetData();
+        if (!data->IsBoat() && (data->IsTransport() || data->IsCrane())) {
+            WaitLog("[TEST-COMBAT-SUPPRESSED] veh %d damage %d attacker %d", GetID(), iDamage, dwKiller);
+            return;
+        }
+    }
 
     // render-side hit flash (area map): timestamp the hit for ANY unit (mine or enemy)
     // so the sprite briefly tints red. DecDamagePoints runs on every client via the
