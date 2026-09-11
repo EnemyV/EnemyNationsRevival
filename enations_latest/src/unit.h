@@ -580,7 +580,6 @@ class CUnit : public CUnitTile
     int   GetLastShowDamagePer( ) const;
     float GetDamageMult( ) const;
     float GetDamPerfMult( ) const;
-    BOOL  IsTrafficTestProtected() const;
     void  DecDamagePoints( int iDamage, DWORD dwKiller = 0 );
     void  UpdateDamageLevel( );
     void  MsgSetFire( CMsgShootElem* pMsg );

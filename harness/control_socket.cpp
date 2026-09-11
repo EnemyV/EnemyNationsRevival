@@ -318,7 +318,6 @@ std::string            g_roadResult;
 std::atomic<int>       g_roadX1{0}, g_roadY1{0}, g_roadX2{0}, g_roadY2{0};
 std::atomic<bool>      g_roadPending{false};
 std::atomic<bool>      g_roadDone{false};
-std::atomic<bool>      g_testCorridor{false}; // same serialized terrain-command handshake
 
 // Pending `findbridge` request (HarnessFindBridge) — lists bridge hexes + fog state,
 // centers the view on the first never-seen one (BUGS #30 bridge-fog verify).
@@ -722,21 +721,6 @@ void handle_command(const std::string& line, en_socket_t conn) {
         if (!g_centerHexDone.load()) out = "err centerhex timeout (not in-game?)\n";
         en_send(conn, out.c_str(), out.size());
         return;
-    } else if (strcmp(cmd, "testcorridor") == 0 || strcmp(cmd, "testdogleg") == 0) {
-        int x = -1, y = -1, length = 0;
-        char extra;
-        if (sscanf(line.c_str(), "%*s %d %d %d %c", &x, &y, &length, &extra) != 3 ||
-            length < 41 || length > 80) {
-            const char* usage = "err usage: testcorridor/testdogleg <x> <y> <length 41..80>\n";
-            en_send(conn, usage, strlen(usage)); return;
-        }
-        g_roadX1=x; g_roadY1=y; g_roadX2=length; g_roadY2=(strcmp(cmd, "testdogleg") == 0);
-        g_testCorridor=true; g_roadDone=false; g_roadPending=true;
-        for (int i = 0; i < 2000 && !g_roadDone.load(); ++i) { en_sleep_poll(); }
-        std::string out;
-        { std::lock_guard<std::mutex> lk(g_roadMutex); out = g_roadResult; }
-        if (!g_roadDone.load()) out = "err testcorridor timeout\n";
-        en_send(conn, out.c_str(), out.size()); return;
     } else if (strcmp(cmd, "road") == 0) {
         // road <x1> <y1> <x2> <y2> — order the first owned crane to build a road
         // between hexes. Drives CVehicle::SetRoad directly (the road drag gesture
@@ -747,7 +731,6 @@ void handle_command(const std::string& line, en_socket_t conn) {
             en_send(conn, u, strlen(u)); return;
         }
         g_roadX1=x1; g_roadY1=y1; g_roadX2=x2; g_roadY2=y2;
-        g_testCorridor=false;
         g_roadDone=false; g_roadPending=true;
         for (int i = 0; i < 2000 && !g_roadDone.load(); ++i) { en_sleep_poll(); }
         std::string out;
@@ -1204,10 +1187,7 @@ void EnHarness_Service() {
     }
     if (g_roadPending.exchange(false)) {
         std::string out;
-        if (g_testCorridor.load())
-            HarnessTestCorridor(g_roadX1.load(), g_roadY1.load(), g_roadX2.load(), out, g_roadY2.load() != 0);
-        else
-            HarnessBuildRoad(g_roadX1.load(), g_roadY1.load(), g_roadX2.load(), g_roadY2.load(), out);
+        HarnessBuildRoad(g_roadX1.load(), g_roadY1.load(), g_roadX2.load(), g_roadY2.load(), out);
         { std::lock_guard<std::mutex> lk(g_roadMutex); g_roadResult = out; }
         g_roadDone = true;
         return;

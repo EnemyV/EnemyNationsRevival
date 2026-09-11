@@ -22,7 +22,6 @@
 #include "building.inl"
 #include "vehicle.inl"
 
-#include <SDL.h>
 #include "SDL2Sprites.h"   // GPU tracer streaks (CaptureTrail)
 #include "Perf.h"          // shoot.oor out-of-range-fire probe
 #include "enprobes.h"      // BLDGKILL/UNITKILL war-attribution probes
@@ -690,29 +689,8 @@ void CExplosion::EmitFlash ( const CPoint & ptCenter, int iSprW, int iSprH )
     SDL2Sprites::CaptureFlash ( cx, cy, radius, 255, 235, 190, aCenter );
 }
 
-BOOL CUnit::IsTrafficTestProtected() const
-{
-    // One opt-in gate for fixture damage and civilian flight. Never enabled in
-    // multiplayer or ordinary launches; no traffic movement rule depends on it.
-    static const bool enabled = []() {
-        const char *harness = SDL_getenv("EN_HARNESS");
-        const char *option = SDL_getenv("EN_TEST_TRAFFIC_NO_COMBAT");
-        return harness && option && strcmp(harness, "1") == 0 && strcmp(option, "1") == 0;
-    }();
-    if (!enabled || theGame.IsNetGame() || !GetOwner()->IsMe() || GetUnitType() != CUnit::vehicle)
-        return FALSE;
-    const CTransportData *data = ((const CVehicle *)this)->GetData();
-    return !data->IsBoat() && (data->IsTransport() || data->IsCrane());
-}
-
 void CUnit::DecDamagePoints (int iDamage, DWORD dwKiller)
 {
-    // Repairs and unattributed/environmental damage retain their normal behavior.
-    if (iDamage > 0 && dwKiller != 0 && IsTrafficTestProtected()) {
-        WaitLog("[TEST-COMBAT-SUPPRESSED] veh %d damage %d attacker %d", GetID(), iDamage, dwKiller);
-        return;
-    }
-
     // render-side hit flash (area map): timestamp the hit for ANY unit (mine or enemy)
     // so the sprite briefly tints red. DecDamagePoints runs on every client via the
     // network damage handlers, so this fires for whatever the viewer can see.

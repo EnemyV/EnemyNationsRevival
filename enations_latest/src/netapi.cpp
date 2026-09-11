@@ -2972,11 +2972,6 @@ static void UnitAttacked( CMsgUnitAttacked* pMsg )
                 // if we are a truck or crane and stopped - run away - HP only
                 if ( pVeh->GetData( )->GetVehFlags( ) & CTransportData::FLcivilian )
                 {
-                    if (pVeh->IsTrafficTestProtected()) {
-                        WaitLog("[TEST-FLEE-SUPPRESSED] veh %d attacker %d", pVeh->GetID(), pAttacker->GetID());
-                        return;
-                    }
-
                     int xDif = CMapLoc::Diff( pTarget->GetMapLoc( ).x - pAttacker->GetMapLoc( ).x );
                     xDif     = __minmax( -1, 1, xDif );
                     int yDif = CMapLoc::Diff( pTarget->GetMapLoc( ).y - pAttacker->GetMapLoc( ).y );
