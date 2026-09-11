@@ -158,7 +158,7 @@ void HarnessCenterHex(int x, int y, std::string& out);
 // state → serviced on the main/render thread like center/hexinfo.
 void HarnessBuildRoad(int x1, int y1, int x2, int y2, std::string& out);
 // Explicit artificial terrain fixture; empty region and single-player only.
-void HarnessTestCorridor(int x, int y, int length, std::string& out);
+void HarnessTestCorridor(int x, int y, int length, std::string& out, bool dogleg = false);
 
 // List every bridge hex (CHex::bridge unit bit) as `bridge <x> <y> vis <0|1>
 // seen <0|1>`, then center the focused area view on the first NEVER-SEEN one

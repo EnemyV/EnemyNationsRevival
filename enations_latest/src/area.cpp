@@ -7794,7 +7794,7 @@ bool HarnessStopVehicle(unsigned long id)
 // long road with water flanks wider than the ordinary parking search radius.
 // Every hex is checked before any mutation; no occupied body, bridge, building
 // or neighboring foundation is removed. Never usable in a multiplayer game.
-void HarnessTestCorridor(int x, int y, int length, std::string& out)
+void HarnessTestCorridor(int x, int y, int length, std::string& out, bool dogleg)
 {
     const int halfWidth = 17, pad = 3;
     if (theAreaList.GetTop() == NULL || theGame.IsNetGame()) {
@@ -7824,10 +7824,18 @@ void HarnessTestCorridor(int x, int y, int length, std::string& out)
                     return;
                 }
         }
+    // The dogleg variant shifts the road one hex east at its midpoint, adding
+    // two bends without changing the guarded footprint or its off-road pads.
+    const int middle = y + length / 2;
+    auto isRoad = [=](int xx, int yy) {
+        if (yy < y || yy >= y + length) return false;
+        if (!dogleg) return xx == x;
+        return xx == x + (yy > middle ? 1 : 0) || (yy == middle && xx == x + 1);
+    };
     // Establish all heights before SetType derives slope-dependent land types.
     for (int yy = y-pad; yy < y+length+pad; ++yy)
         for (int xx = x-halfWidth; xx <= x+halfWidth; ++xx) {
-            bool water = yy >= y && yy < y+length && xx != x;
+            bool water = yy >= y && yy < y+length && !isRoad(xx, yy);
             theMap._GetHex(CHexCoord(xx, yy))->SetAlt(water ? CHex::sea_level : CHex::sea_level+CHex::map_step);
         }
     for (int yy = y-pad; yy < y+length+pad; ++yy)
@@ -7835,16 +7843,18 @@ void HarnessTestCorridor(int x, int y, int length, std::string& out)
             bool corridor = yy >= y && yy < y+length;
             CHex* hex = theMap._GetHex(CHexCoord(xx, yy));
             hex->SetTree(0);
-            hex->SetType(corridor ? (xx == x ? CHex::road : CHex::lake) : CHex::plain);
+            hex->SetType(corridor ? (isRoad(xx, yy) ? CHex::road : CHex::lake) : CHex::plain);
         }
     theAreaList.GetTop()->InvalidateWindow();
-    for (int yy = y; yy < y+length; ++yy) {
-        CHexCoord road(x, yy);
-        theMap._GetHex(road)->ChangeToRoad(road, FALSE, TRUE);
-    }
+    for (int yy = y; yy < y+length; ++yy)
+        for (int xx = x; xx <= x + (dogleg ? 1 : 0); ++xx)
+            if (isRoad(xx, yy)) {
+                CHexCoord road(xx, yy);
+                theMap._GetHex(road)->ChangeToRoad(road, FALSE, TRUE);
+            }
     extern unsigned g_enStaticDirtyGen;
     ++g_enStaticDirtyGen; // retyping the empty region also removed its trees
-    snprintf(line, sizeof(line), "ok testcorridor x %d y %d length %d halfwidth %d pad %d\n", x, y, length, halfWidth, pad);
+    snprintf(line, sizeof(line), "ok %s x %d y %d length %d halfwidth %d pad %d\n", dogleg ? "testdogleg" : "testcorridor", x, y, length, halfWidth, pad);
     out = line;
 }
 
