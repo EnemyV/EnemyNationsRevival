@@ -3127,12 +3127,11 @@ BOOL CVehicle::BackUp() {
                                        ((m_ptHead.x & 1) != (axisY > 0 ? 0 : 1));
         if (pIn == NULL || (blockedStep != pIn->m_ptHead && blockedStep != pIn->m_ptTail))
             return (FALSE);
-        // A stationary nonparticipant cannot honor the retreat direction.
-        // After the existing stuck window, use the other exit even when this
-        // reverses normal lane travel. Keeping the lane tie-break here strands
-        // a retreat behind an immovable body. Cooperating pairs below still
-        // use that tie-break; never change the fixed blocker's orders.
-        BOOL bFixed = m_iJamClear > 0 &&
+        // A stationary soldier or explicitly stopped unit cannot join our
+        // retreat. After the existing recovery ladder reaches this branch,
+        // escape nose-first in this lane's normal direction instead of backing
+        // into that same body forever. Never change the blocker's orders.
+        BOOL bFixed = m_iJamClear > 0 && bAgainstLane &&
             (pIn->m_cMode == stop || pIn->IsFlag(stopped)) &&
             (pIn->GetOwner() != GetOwner() || !pIn->JamEligible());
         BOOL bRetreat = pIn->GetOwner() == GetOwner() && pIn->JamEligible() &&
