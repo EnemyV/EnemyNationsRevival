@@ -12,6 +12,9 @@ int __roll(int low, int high, int value) {
 }
 struct Point { int x = 100, y = 100; };
 bool operator!=(Point a, Point b) { return a.x != b.x || a.y != b.y; }
+struct CSubHex { int x, y; CSubHex(int a, int b): x(a), y(b) {} };
+struct CHexCoord { int X() const { return 6; } int Y() const { return 9; } };
+struct CUnit { enum { stopped = 4 }; };
 struct CPlayer { bool local = false; BOOL IsLocal() const { return local; } };
 struct CTransportData {
     enum { FL1hex = 1 };
@@ -35,7 +38,7 @@ struct CMsgVehLoc {
 };
 class CVehicle {
 public:
-    enum VEH_MODE { stop = 0, moving = 1 };
+    enum VEH_MODE { stop = 0, moving = 1, blocked = 4, traffic = 7 };
     Point m_ptDest, m_ptNext, m_ptHead, m_ptTail, m_hexNext, m_hexDest, m_maploc;
     int m_iDir = 0, m_iXadd = 0, m_iYadd = 0, m_iDadd = 0, m_iTadd = 0;
     int m_cOwn = 0, m_iStepsLeft = 0, m_iSpeed = 0;
@@ -48,6 +51,9 @@ public:
     bool hasTurret = true, visible = true;
     int bodyDir = 32, nextDir = 48, wheelChanges = 0;
     bool wheelsMoving = false, water = false;
+    int unitFlags = 0;
+    BOOL IsFlag(int f) const { return unitFlags & f; }
+    BOOL IsOnTheMove() const { return m_cMode == moving || m_cMode == traffic; }
     CPlayer* GetOwner() { return &owner; }
     CTransportData* GetData() { return &data; }
     Turret* GetTurret() { return hasTurret ? &turret : nullptr; }
@@ -59,6 +65,11 @@ public:
     void SetLoc(BOOL);
     void SetFromMsg(CMsgVehLoc*, BOOL);
 };
+struct VehicleMap {
+    CVehicle* slots[4] = {};
+    CVehicle* _GetVehicle(CSubHex sub) { return slots[(sub.x - 12) * 2 + sub.y - 18]; }
+} theVehicleHex;
+struct CPathMgr { BOOL IsHexMovingVehicle(CHexCoord const&); };
 #include "remote_loc_actual.inc"
 
 int failures = 0, checks = 0;
@@ -106,6 +117,24 @@ int main() {
     msg.m_iDir = 96;
     remoteNoTurret.SetFromMsg(&msg, TRUE);
     check(remoteNoTurret.m_iDir == 96, "remote without turret preserves facing");
+    CPathMgr paths;
+    CHexCoord hex;
+    check(!paths.IsHexMovingVehicle(hex), "empty hex is not a moving occupant");
+    CVehicle occupants[4];
+    for (int slot = 0; slot < 4; ++slot) {
+        occupants[slot].m_cMode = CVehicle::moving;
+        theVehicleHex.slots[slot] = &occupants[slot];
+    }
+    check(paths.IsHexMovingVehicle(hex), "all moving occupants allow planned queueing");
+    occupants[3].m_cMode = CVehicle::traffic;
+    check(paths.IsHexMovingVehicle(hex), "temporary traffic wait remains a queue");
+    for (int slot = 0; slot < 4; ++slot) {
+        occupants[slot].unitFlags = CUnit::stopped;
+        check(!paths.IsHexMovingVehicle(hex), "explicit Stop in any corner is a fixed obstacle");
+        occupants[slot].unitFlags = 0;
+    }
+    occupants[2].m_cMode = CVehicle::stop;
+    check(!paths.IsHexMovingVehicle(hex), "parked occupant prevents moving-only classification");
     std::printf("%d checks, %d failures\n", checks, failures);
     return failures ? EXIT_FAILURE : EXIT_SUCCESS;
 }

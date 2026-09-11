@@ -21,7 +21,7 @@ source = (subprocess.check_output(['git', '-C', str(ROOT), 'show', args.baseline
           if args.baseline_ref else (ROOT / path).read_text(encoding='utf-8'))
 
 
-def method(signature):
+def method(signature, source=source):
     start = source.index(signature)
     opening = source.index('{', start)
     depth = 1
@@ -36,6 +36,10 @@ def method(signature):
 
 
 actual = method('void CVehicle::SetLoc(BOOL)') + '\n' + method('void CVehicle::SetFromMsg(')
+path_source = (subprocess.check_output(['git', '-C', str(ROOT), 'show',
+                                      args.baseline_ref + ':enations_latest/src/cpathmgr.cpp']).decode()
+               if args.baseline_ref else (ROOT / 'enations_latest/src/cpathmgr.cpp').read_text(encoding='utf-8'))
+actual += '\n' + method('BOOL CPathMgr::IsHexMovingVehicle(', path_source)
 (out / 'remote_loc_actual.inc').write_text(actual, encoding='utf-8')
 print('Production methods SHA256:', hashlib.sha256(actual.encode()).hexdigest(), flush=True)
 vs = Path('C:/Program Files/Microsoft Visual Studio/2022/Community/VC/Auxiliary/Build/vcvars64.bat')

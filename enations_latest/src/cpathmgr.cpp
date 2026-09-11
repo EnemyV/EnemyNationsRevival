@@ -105,7 +105,7 @@ BOOL CPathMgr::IsHexMovingVehicle( CHexCoord const & hex )
             if ( pVeh == NULL )
                 continue;
 
-            if ( !pVeh->IsOnTheMove( ) )
+            if ( pVeh->IsFlag( CUnit::stopped ) || !pVeh->IsOnTheMove( ) )
                 return ( FALSE );  // something is parked here - a real obstacle
             bAny = TRUE;
         }
