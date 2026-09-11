@@ -1804,14 +1804,19 @@ void CVehicle::SetLoc(BOOL)
             m_maploc.y -= theMap.Get_eY() * MAX_HEX_HT;
     }
 
-    // Reverse swaps the movement head/tail, so the nose is half a turn from
-    // that axis. Derive it each step: pinning an old bearing made a truck slide
-    // sideways when its route curved. Straight backing keeps the same facing.
-    if (GetData()->GetVehFlags() & CTransportData::FL1hex) {
-        if (m_ptNext != m_ptHead)
-            m_iDir = CalcNextDir();
-    } else
-        m_iDir = __roll(0, FULL_ROT, CalcDir() + (m_bReversing ? FULL_ROT / 2 : 0));
+    // Remote facing comes from its owner in CMsgVehLoc. Its endpoint labels
+    // describe movement, not which end is the nose during a reverse. Preserve
+    // that facing on packet apply and later endpoint refreshes.
+    if (GetOwner() == NULL || GetOwner()->IsLocal()) {
+        // Reverse swaps the movement head/tail, so the nose is half a turn from
+        // that axis. Derive it each step: pinning an old bearing made a truck slide
+        // sideways when its route curved. Straight backing keeps the same facing.
+        if (GetData()->GetVehFlags() & CTransportData::FL1hex) {
+            if (m_ptNext != m_ptHead)
+                m_iDir = CalcNextDir();
+        } else
+            m_iDir = __roll(0, FULL_ROT, CalcDir() + (m_bReversing ? FULL_ROT / 2 : 0));
+    }
 
     // turret - on target if shooting, else with tank
     if (GetTurret()) {
