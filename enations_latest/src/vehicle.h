@@ -573,6 +573,7 @@ protected:
 		BOOL					TestStuck ();
 		void					HandleBlocked ();
 		BOOL					BlockedLaneStep (CSubHex &blockedStep);
+		BOOL					MustKeepLane (CSubHex &blockedStep);
 		BOOL					WaitForMover ();
 		BOOL					ResumeWaitedStep ();
 		BOOL					AskToMove (CVehicle *pAsker);

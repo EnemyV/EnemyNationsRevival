@@ -1469,7 +1469,7 @@ BOOL CVehicle::FindSub(BOOL bCloser) {
     // Refusing to overtake must retain the real blocked step for waiting and
     // clearance requests, rather than leave a rejected free side-step or self.
     CSubHex blockedStep;
-    if (BlockedLaneStep(blockedStep)) {
+    if (MustKeepLane(blockedStep)) {
         m_ptNext = blockedStep;
         return (FALSE);
     }
@@ -1739,6 +1739,22 @@ BOOL CVehicle::BlockedLaneStep(CSubHex &blockedStep) {
     return (TRUE);
 }
 
+// Candidate selection, waiting and movement must agree on the lane rule.
+// Recovery still uses BlockedLaneStep to identify the actual obstruction.
+BOOL CVehicle::MustKeepLane(CSubHex &blockedStep) {
+    if (!BlockedLaneStep(blockedStep))
+        return (FALSE);
+    if (m_bReversing || m_iNumRetries < 13 || m_iNumRetries >= MAX_NUM_RETRIES)
+        return (TRUE);
+
+    CVehicle *pBlocker = theVehicleHex._GetVehicle(blockedStep);
+    BOOL bFixed = pBlocker != NULL &&
+        (blockedStep == pBlocker->m_ptHead || blockedStep == pBlocker->m_ptTail) &&
+        (pBlocker->m_cMode == stop || pBlocker->IsFlag(stopped)) &&
+        (pBlocker->GetOwner() != GetOwner() || !pBlocker->JamEligible());
+    return (!bFixed);
+}
+
 // return TRUE if can enter sub-hex
 BOOL CVehicle::CanEnter(CSubHex const &_sub, BOOL bStrict) {
     if (theVehicleHex._GetVehicle(_sub) != NULL)
@@ -1749,19 +1765,8 @@ BOOL CVehicle::CanEnter(CSubHex const &_sub, BOOL bStrict) {
     int sx = CSubHex::Diff(_sub.x - m_ptHead.x);
     int sy = CSubHex::Diff(_sub.y - m_ptHead.y);
     CSubHex blockedStep;
-    if (sx * dy != sy * dx && BlockedLaneStep(blockedStep)) {
-        // Keep queues and reversing bodies in lane. After the ordinary retries,
-        // a stationary nonparticipant is a fixed obstacle, not a moving queue.
-        // Let existing forward avoidance try a legal gap instead of repeatedly
-        // retreating and returning to the same obstruction. Never move it for us.
-        CVehicle *pBlocker = theVehicleHex._GetVehicle(blockedStep);
-        BOOL bPassFixed = !m_bReversing && m_iNumRetries >= 13 && m_iNumRetries < MAX_NUM_RETRIES &&
-            pBlocker != NULL && (blockedStep == pBlocker->m_ptHead || blockedStep == pBlocker->m_ptTail) &&
-            (pBlocker->m_cMode == stop || pBlocker->IsFlag(stopped)) &&
-            (pBlocker->GetOwner() != GetOwner() || !pBlocker->JamEligible());
-        if (!bPassFixed)
-            return (FALSE);
-    }
+    if (sx * dy != sy * dx && MustKeepLane(blockedStep))
+        return (FALSE);
     return (IsPassable(_sub, bStrict));
 }
 
@@ -2397,7 +2402,7 @@ BOOL CVehicle::WaitForMover() {
         return (FALSE);
 
     CSubHex blockedStep;
-    if (BlockedLaneStep(blockedStep))
+    if (MustKeepLane(blockedStep))
         m_ptNext = blockedStep;
     CVehicle *pVehInWay = theVehicleHex._GetVehicle(m_ptNext);
     if ((pVehInWay == NULL) || (pVehInWay == this))
@@ -3548,6 +3553,20 @@ void CVehicle::HandleBlocked() {
     m_bConfined = bConfined;     // cached for FindSubEx, which must not re-walk per step
     m_iCorrLen  = iCorrLen;      // ...and HOW FAR it ran along our own axis - see FindSubEx
 
+    // The ordinary retries have already waited for this fixed obstacle. Try
+    // the permitted passing step before a clearance request sends us backwards
+    // again. Commit it here; retaining only m_ptNext let later retries erase it.
+    CSubHex passBlock;
+    if (BlockedLaneStep(passBlock) && !MustKeepLane(passBlock)) {
+        DWORD blockerID = theVehicleHex._GetVehicle(passBlock)->GetID();
+        if (FindSub(FALSE) && TryNextHex()) {
+            WaitLog("[FIXED-BLOCKER-PASS] veh %d blocker %lu head %d,%d tail %d,%d next %d,%d",
+                    GetID(), (unsigned long)blockerID, m_ptHead.x, m_ptHead.y,
+                    m_ptTail.x, m_ptTail.y, m_ptNext.x, m_ptNext.y);
+            return;
+        }
+    }
+
     // A truck can be trapped facing into a building doorway even with no
     // vehicle ahead. Once its existing stagnation watch expires, try the same
     // legal reverse used for traffic. Do not interrupt a visit to this building.
@@ -3775,7 +3794,7 @@ void CVehicle::HandleBlocked() {
     }
 
     CSubHex blockedStep;
-    if (BlockedLaneStep(blockedStep))
+    if (MustKeepLane(blockedStep))
         m_ptNext = blockedStep;
     CVehicle *pVehInWay = theVehicleHex._GetVehicle(m_ptNext);
 
