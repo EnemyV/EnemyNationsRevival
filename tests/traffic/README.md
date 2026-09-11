@@ -15,6 +15,8 @@ suite checks eligibility, physical contact, ownership boundaries, retained wait
 targets, and expiry of cyclic requests. Its timer constants come from vehicle.h.
 The parking suite checks bounded path searches and continuation, failed-request
 throttling, remote blocker classification, and the civilian flee target guard.
+It also checks that saved recovery cannot run on remote copies, that ownerless
+blockers are safe, and that local arrival/hold behavior remains enabled.
 
 Use `--baseline-ref <commit>` to run the same assertions against older source.
 For example, bfad1d28 fails four explicit-Stop checks that bd62368e fixes.

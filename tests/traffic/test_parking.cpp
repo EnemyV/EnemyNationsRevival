@@ -69,12 +69,14 @@ struct Game {
 struct CVehicle {
     enum { stop=0,moving=1,blocked=4,none=0,route=1,build=2,stopped=4,dying=8,told_ai_stop=16 };
     CSubHex m_ptHead{100,100},m_ptTail{99,100},m_ptNext{101,100},m_ptDest{120,100};
+    CSubHex m_subResume{120,100};CHexCoord m_hexDest;
     bool m_bReversing=false,m_bForwardEscape=false,m_bConfined=false,m_bResume=false;
     int m_iHoldFrames=0,m_iParkSkip=0,m_iNumRetries=13,m_cMode=stop,m_iEvent=none;
-    int flags=0,id=1,orders=0;
+    int flags=0,id=1,orders=0,endReverseCalls=0,m_iJamClear=1;
     int m_unitFlags=0,m_bFlags=told_ai_stop,resumes=0;
     BOOL m_cOwn=TRUE,clearHead=TRUE,clearTail=TRUE,hasJob=TRUE;
     DWORD m_dwAskedToMove=0;
+    DWORD m_dwLeftRoad=0;
     void* m_pBldg=nullptr;
     Owner* owner=nullptr; Data data;
     BOOL manual=false,eligible=true,laneBlocked=true;
@@ -96,6 +98,13 @@ struct CVehicle {
     BOOL ClearOfRoad(CSubHex p) { return p==m_ptHead?clearHead:clearTail; }
     BOOL ResumeJob() { ++resumes;return hasJob; }
     void TickHold();
+    void TestArrivalRecovery();
+    BOOL TestFixedBlocker(CVehicle*,BOOL);
+    void EndReverse() { ++endReverseCalls;m_bReversing=FALSE; }
+    void _SetRouteMode(int mode) { m_cMode=mode; }
+    void SetMoveParams(BOOL) {}
+    void ZeroMoveParams() {}
+    void DeletePath() {}
 };
 struct VehicleMap {
     CVehicle* blocker=nullptr;
@@ -153,5 +162,24 @@ int main() {
     check(h.m_iHoldFrames==239&&h.resumes==0,"explicit Stop prevents held-job revival");
     h.m_unitFlags=0;h.m_cOwn=FALSE;h.TickHold();
     check(h.m_iHoldFrames==239&&h.resumes==0,"unowned carried/interior pose does not resume on a hold tick");
+    CVehicle remoteHold;remoteHold.owner=&remote;remoteHold.m_iHoldFrames=1;
+    remoteHold.TickHold();
+    check(remoteHold.resumes==0&&remoteHold.m_iHoldFrames==1,"remote saved hold never resumes or counts down locally");
+    remoteHold.resumes=0;remoteHold.m_iHoldFrames=240;remoteHold.clearTail=FALSE;
+    remoteHold.TickHold();
+    check(remoteHold.resumes==0&&remoteHold.m_iHoldFrames==240,"remote failed parking never rejoins locally");
+    remoteHold.m_bReversing=TRUE;remoteHold.m_bResume=TRUE;remoteHold.clearTail=TRUE;
+    remoteHold.TestArrivalRecovery();
+    check(remoteHold.endReverseCalls==0&&remoteHold.resumes==0&&remoteHold.m_iHoldFrames==240,
+          "remote arrival never relabels or runs saved recovery");
+    CVehicle localArrival;localArrival.owner=&own;localArrival.m_bResume=TRUE;localArrival.m_bReversing=TRUE;
+    localArrival.TestArrivalRecovery();
+    check(localArrival.endReverseCalls==1&&localArrival.m_iHoldFrames>0&&localArrival.resumes==0,
+          "local reverse arrival still arms safe hold");
+    CVehicle idleArrival;idleArrival.owner=&own;idleArrival.TestArrivalRecovery();
+    check(idleArrival.resumes==1&&idleArrival.m_iHoldFrames==0,"local ordinary arrival retains existing resume attempt");
+    b.owner=nullptr;theVehicleHex.blocker=&b;
+    check(a.MustKeepLane(step),"ownerless blocker does not permit passing or dereference null");
+    check(!a.TestFixedBlocker(&b,TRUE),"reverse recovery does not dereference an ownerless blocker");
     std::printf("%d checks, %d failures\n",checks,failures);return failures?EXIT_FAILURE:EXIT_SUCCESS;
 }

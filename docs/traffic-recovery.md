@@ -30,6 +30,8 @@ accepted, and there is no shared manager, reservation allocator or map sweeper.
 
 A remote vehicle's interpolation can stop while awaiting another location packet.
 That transient mode does not qualify it for the fixed-blocker passing exception.
+Only the locally authoritative owner runs arrival recovery and hold/resume logic;
+physical map occupancy alone is not authority, including after loading a save.
 Full two-peer behavior still needs runtime verification.
 
 Save format8 stores the interrupted job, movement sense and recovery budgets.

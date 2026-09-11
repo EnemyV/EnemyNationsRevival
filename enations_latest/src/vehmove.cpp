@@ -355,116 +355,121 @@ void CVehicle::ArrivedDest() {
     ASSERT ((m_cMode != moving) || (theVehicleHex.GetVehicle(m_ptNext) == this));
 #endif
 
-    // Keep reverse geometry until any tail-clear step has finished. The final
-    // arrival restores forward endpoint labels before holding or resuming.
-    BOOL bWasReversing = m_bReversing;
-    BOOL bWasForwardEscape = m_bForwardEscape;
-    m_bForwardEscape = FALSE;
-
-    // A RETREAT has ended. Hold here before rejoining the haul: the whole point of
-    // backing off is to give the trucks in front somewhere to go, and one that
-    // arrives and drives straight back in has given them nothing. Park quietly -
-    // no PostArrivedOrBlocked, so the router does not re-task us mid-hold - and let
-    // Operate() put us back on the job when the clock runs out. The per-truck offset
-    // stops a queue that retreated together from re-entering together.
-    //
-    // Only where we are ACTUALLY out of the way. A partial retreat ends on the deck,
-    // and holding there would free the truck in front at the price of parking on the
-    // span in front of everyone behind us. Try to finish clearing below; only a
-    // full retreat, off the span and off the pavement, earns the hold.
-    // THE WHOLE BODY has to be clear, not just the head. Testing the head alone let a
-    // truck hold with its tail still lying across the roadway, which is the one thing
-    // the hold exists to stop.
-    BOOL bClear = ClearOfRoad(m_ptHead) && ClearOfRoad(m_ptTail);
-    // Successful clearance ends this parking attempt. A later trip must not
-    // inherit its retry delay and wait on the road until the old timer expires.
-    if (bClear)
-        m_dwLeftRoad = 0;
-    // A safe destination for the head may leave the tail across the road.
-    // Finish with one legal local step: its tail will occupy our current safe
-    // head square. Keep the saved job and start/continue the hold only once clear.
-    if ((TrafficOpts() & 8) && !bClear && ClearOfRoad(m_ptHead) &&
-        (((bWasReversing || bWasForwardEscape) && m_bResume) || m_iHoldFrames > 0)) {
-        const int turns[] = { 0, -1, 1, -2, 2, -3, 3 };
-        for (int i = 0; i < 7; ++i) {
-            CSubHex next = Rotate(turns[i]);
-            if (next == m_ptHead || !ClearOfRoad(next) ||
-                (theMap._GetHex(next)->GetUnits() & CHex::bldg) || !CanEnter(next))
-                continue;
-            if (m_iHoldFrames <= 0)
-                m_iHoldFrames = HOLD_FRAMES + (int) (GetID() % 4) * 24;
-            WaitLog("[TAIL-CLEAR] veh %d head %d,%d tail %d,%d taking sub %d,%d, hold %d",
-                    GetID(), m_ptHead.x, m_ptHead.y, m_ptTail.x, m_ptTail.y,
-                    next.x, next.y, m_iHoldFrames);
-            m_bReversing = bWasReversing;
-            m_bForwardEscape = bWasForwardEscape;
-            DetourTo(next, FALSE);
-            return;
-        }
-    }
-    // Reaching a straight retreat endpoint is not clearance if the body is
-    // still on the road. Continue toward an existing off-road parking candidate
-    // before rejoining the queue we just backed out of. Keep the movement ends
-    // and escape direction intact; ordinary movement checks the route.
-    if (!bClear && (bWasReversing || bWasForwardEscape) && m_bResume && JamEligible()) {
-        m_bForwardEscape = bWasForwardEscape;
-        CSubHex spot;
-        if (FindOffRoadSpot(spot, NULL) && spot != m_ptHead) {
-            if (m_iHoldFrames <= 0)
-                m_iHoldFrames = HOLD_FRAMES + (int) (GetID() % 4) * 24;
-            WaitLog("[RETREAT-CLEAR] veh %d head %d,%d tail %d,%d to %d,%d reverse %d forward %d hold %d",
-                    GetID(), m_ptHead.x, m_ptHead.y, m_ptTail.x, m_ptTail.y,
-                    spot.x, spot.y, (int)bWasReversing, (int)bWasForwardEscape, m_iHoldFrames);
-            DetourTo(spot, FALSE);
-            return;
-        }
+    // Saved recovery metadata can exist on remote copies. Only the owner may
+    // change a detour, relabel its movement ends, hold or resume the saved job.
+    if (GetOwner()->IsLocal()) {
+        // Keep reverse geometry until any tail-clear step has finished. The final
+        // arrival restores forward endpoint labels before holding or resuming.
+        BOOL bWasReversing = m_bReversing;
+        BOOL bWasForwardEscape = m_bForwardEscape;
         m_bForwardEscape = FALSE;
+
+        // A RETREAT has ended. Hold here before rejoining the haul: the whole point of
+        // backing off is to give the trucks in front somewhere to go, and one that
+        // arrives and drives straight back in has given them nothing. Park quietly -
+        // no PostArrivedOrBlocked, so the router does not re-task us mid-hold - and let
+        // Operate() put us back on the job when the clock runs out. The per-truck offset
+        // stops a queue that retreated together from re-entering together.
+        //
+        // Only where we are ACTUALLY out of the way. A partial retreat ends on the deck,
+        // and holding there would free the truck in front at the price of parking on the
+        // span in front of everyone behind us. Try to finish clearing below; only a
+        // full retreat, off the span and off the pavement, earns the hold.
+        // THE WHOLE BODY has to be clear, not just the head. Testing the head alone let a
+        // truck hold with its tail still lying across the roadway, which is the one thing
+        // the hold exists to stop.
+        BOOL bClear = ClearOfRoad(m_ptHead) && ClearOfRoad(m_ptTail);
+        // Successful clearance ends this parking attempt. A later trip must not
+        // inherit its retry delay and wait on the road until the old timer expires.
+        if (bClear)
+            m_dwLeftRoad = 0;
+        // A safe destination for the head may leave the tail across the road.
+        // Finish with one legal local step: its tail will occupy our current safe
+        // head square. Keep the saved job and start/continue the hold only once clear.
+        if ((TrafficOpts() & 8) && !bClear && ClearOfRoad(m_ptHead) &&
+            (((bWasReversing || bWasForwardEscape) && m_bResume) || m_iHoldFrames > 0)) {
+            const int turns[] = { 0, -1, 1, -2, 2, -3, 3 };
+            for (int i = 0; i < 7; ++i) {
+                CSubHex next = Rotate(turns[i]);
+                if (next == m_ptHead || !ClearOfRoad(next) ||
+                    (theMap._GetHex(next)->GetUnits() & CHex::bldg) || !CanEnter(next))
+                    continue;
+                if (m_iHoldFrames <= 0)
+                    m_iHoldFrames = HOLD_FRAMES + (int) (GetID() % 4) * 24;
+                WaitLog("[TAIL-CLEAR] veh %d head %d,%d tail %d,%d taking sub %d,%d, hold %d",
+                        GetID(), m_ptHead.x, m_ptHead.y, m_ptTail.x, m_ptTail.y,
+                        next.x, next.y, m_iHoldFrames);
+                m_bReversing = bWasReversing;
+                m_bForwardEscape = bWasForwardEscape;
+                DetourTo(next, FALSE);
+                return;
+            }
+        }
+        // Reaching a straight retreat endpoint is not clearance if the body is
+        // still on the road. Continue toward an existing off-road parking candidate
+        // before rejoining the queue we just backed out of. Keep the movement ends
+        // and escape direction intact; ordinary movement checks the route.
+        if (!bClear && (bWasReversing || bWasForwardEscape) && m_bResume && JamEligible()) {
+            m_bForwardEscape = bWasForwardEscape;
+            CSubHex spot;
+            if (FindOffRoadSpot(spot, NULL) && spot != m_ptHead) {
+                if (m_iHoldFrames <= 0)
+                    m_iHoldFrames = HOLD_FRAMES + (int) (GetID() % 4) * 24;
+                WaitLog("[RETREAT-CLEAR] veh %d head %d,%d tail %d,%d to %d,%d reverse %d forward %d hold %d",
+                        GetID(), m_ptHead.x, m_ptHead.y, m_ptTail.x, m_ptTail.y,
+                        spot.x, spot.y, (int)bWasReversing, (int)bWasForwardEscape, m_iHoldFrames);
+                DetourTo(spot, FALSE);
+                return;
+            }
+            m_bForwardEscape = FALSE;
+        }
+        if (bWasReversing) {
+            EndReverse();
+            // This temporary detour has arrived; the saved job still names its
+            // original destination. Its arrival point follows the relabelled head.
+            m_ptDest = m_ptHead;
+            m_hexDest = m_ptHead.ToCoord();
+        }
+        // Preserve a pending give-up hold or the time left after a courtesy move.
+        if ((bWasReversing || bWasForwardEscape) && bClear && m_bResume &&
+            m_iHoldFrames <= 0 && (TrafficOpts() & 8))
+            m_iHoldFrames = HOLD_FRAMES + (int) (GetID() % 4) * 24;
+
+        // Park for whatever is LEFT of the hold - whether we just armed it, or a courtesy
+        // request moved us part way through one and this is where we ended up.
+        //
+        // BUT ONLY IF THIS POSE IS ACTUALLY CLEAR. bClear used to gate only the arming of
+        // a NEW hold, so a courtesy step taken part way through an existing one could set
+        // the truck down again across the roadway and leave it there for the rest of the
+        // deadline - a truck parked on the bridge, which is the one thing the hold exists
+        // to prevent. WinAstra's review48 defect. If we are not clear we do not park:
+        // fall through to the ordinary arrival path, which includes the on-stop check
+        // that moves an idle truck off the road.
+        if ((m_iHoldFrames > 0) && (!bClear))
+            m_iHoldFrames = 0;
+
+        if (m_iHoldFrames > 0) {
+            WaitLog("[HOLD] veh %d holding at hex %d,%d head %d,%d tail %d,%d for %d frames, then dest sub %d,%d",
+                    GetID(), GetHexHead().X(), GetHexHead().Y(), m_ptHead.x, m_ptHead.y,
+                    m_ptTail.x, m_ptTail.y, m_iHoldFrames, m_subResume.x, m_subResume.y);
+            _SetRouteMode(stop);
+
+            // Suppress the ordinary stop notification too: otherwise the router can
+            // replace this hold on the next update. Set after _SetRouteMode clears it.
+            m_bFlags |= told_ai_stop;
+
+            SetMoveParams(FALSE);
+            ZeroMoveParams();
+            DeletePath();
+            return;
+        }
+
+        // A traffic detour has finished. Put the vehicle back on the job it was doing
+        // before we moved it out of the way, instead of leaving it parked here.
+        if (ResumeJob())
+            return;
+
     }
-    if (bWasReversing) {
-        EndReverse();
-        // This temporary detour has arrived; the saved job still names its
-        // original destination. Its arrival point follows the relabelled head.
-        m_ptDest = m_ptHead;
-        m_hexDest = m_ptHead.ToCoord();
-    }
-    // Preserve a pending give-up hold or the time left after a courtesy move.
-    if ((bWasReversing || bWasForwardEscape) && bClear && m_bResume &&
-        m_iHoldFrames <= 0 && (TrafficOpts() & 8))
-        m_iHoldFrames = HOLD_FRAMES + (int) (GetID() % 4) * 24;
-
-    // Park for whatever is LEFT of the hold - whether we just armed it, or a courtesy
-    // request moved us part way through one and this is where we ended up.
-    //
-    // BUT ONLY IF THIS POSE IS ACTUALLY CLEAR. bClear used to gate only the arming of
-    // a NEW hold, so a courtesy step taken part way through an existing one could set
-    // the truck down again across the roadway and leave it there for the rest of the
-    // deadline - a truck parked on the bridge, which is the one thing the hold exists
-    // to prevent. WinAstra's review48 defect. If we are not clear we do not park:
-    // fall through to the ordinary arrival path, which includes the on-stop check
-    // that moves an idle truck off the road.
-    if ((m_iHoldFrames > 0) && (!bClear))
-        m_iHoldFrames = 0;
-
-    if (m_iHoldFrames > 0) {
-        WaitLog("[HOLD] veh %d holding at hex %d,%d head %d,%d tail %d,%d for %d frames, then dest sub %d,%d",
-                GetID(), GetHexHead().X(), GetHexHead().Y(), m_ptHead.x, m_ptHead.y,
-                m_ptTail.x, m_ptTail.y, m_iHoldFrames, m_subResume.x, m_subResume.y);
-        _SetRouteMode(stop);
-
-        // Suppress the ordinary stop notification too: otherwise the router can
-        // replace this hold on the next update. Set after _SetRouteMode clears it.
-        m_bFlags |= told_ai_stop;
-
-        SetMoveParams(FALSE);
-        ZeroMoveParams();
-        DeletePath();
-        return;
-    }
-
-    // A traffic detour has finished. Put the vehicle back on the job it was doing
-    // before we moved it out of the way, instead of leaving it parked here.
-    if (ResumeJob())
-        return;
 
     // we're stopped
     _SetRouteMode(stop);
@@ -1745,7 +1750,7 @@ BOOL CVehicle::MustKeepLane(CSubHex &blockedStep) {
         return (TRUE);
 
     CVehicle *pBlocker = theVehicleHex._GetVehicle(blockedStep);
-    BOOL bFixed = pBlocker != NULL &&
+    BOOL bFixed = pBlocker != NULL && pBlocker->GetOwner() != NULL &&
         pBlocker->GetOwner()->IsLocal() && // remote stop may only mean waiting for a packet
         (blockedStep == pBlocker->m_ptHead || blockedStep == pBlocker->m_ptTail) &&
         (pBlocker->m_cMode == stop || pBlocker->IsFlag(stopped)) &&
@@ -3120,7 +3125,7 @@ BOOL CVehicle::BackUp() {
         // escape nose-first in this lane's normal direction instead of backing
         // into that same body forever. Never change the blocker's orders.
         BOOL bFixed = m_iJamClear > 0 && bAgainstLane &&
-            pIn->GetOwner()->IsLocal() && // a remote endpoint wait is not a fixed obstruction
+            pIn->GetOwner() != NULL && pIn->GetOwner()->IsLocal() && // only authoritative blockers
             (pIn->m_cMode == stop || pIn->IsFlag(stopped)) &&
             (pIn->GetOwner() != GetOwner() || !pIn->JamEligible());
         BOOL bRetreat = pIn->GetOwner() == GetOwner() && pIn->JamEligible() &&

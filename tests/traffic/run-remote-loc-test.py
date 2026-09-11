@@ -56,6 +56,14 @@ if args.parking:
     start = operate.index('    if ((m_unitFlags & (dying | stopped))')
     end = operate.index('return;', start) + len('return;')
     actual += '\nvoid CVehicle::TickHold() {\n' + operate[start:end] + '\n' + hold + '\n}\n'
+    arrival = source[source.index('void CVehicle::ArrivedDest()'):]
+    start = arrival.index('    // Saved recovery metadata') if '    // Saved recovery metadata' in arrival else arrival.index('    // Keep reverse geometry')
+    end = arrival.index("    // we're stopped", start)
+    actual += '\nvoid CVehicle::TestArrivalRecovery() {\n' + arrival[start:end] + '\n}\n'
+    backup = source[source.index('BOOL CVehicle::BackUp()'):]
+    start = backup.index('BOOL bFixed = ') + len('BOOL bFixed = ')
+    end = backup.index(';', start)
+    actual += '\nBOOL CVehicle::TestFixedBlocker(CVehicle* pIn, BOOL bAgainstLane) { return ' + backup[start:end] + '; }\n'
     case, include = 'test_parking.cpp', 'parking_actual.inc'
 elif args.clearance:
     header_path = 'enations_latest/src/vehicle.h'

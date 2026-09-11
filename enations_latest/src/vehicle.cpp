@@ -237,7 +237,7 @@ void CVehicle::Operate() {
     // A failed route can stop on the roadway without arriving at its parking
     // target. Cancel that unusable hold and retry the saved job on this update.
     // A hold armed during movement still keeps its full duration until arrival.
-    if ((m_iHoldFrames > 0) && (m_cMode == stop) && m_cOwn) {
+    if ((m_iHoldFrames > 0) && (m_cMode == stop) && m_cOwn && GetOwner()->IsLocal()) {
         if (ClearOfRoad(m_ptHead) && ClearOfRoad(m_ptTail))
             m_iHoldFrames -= theGame.GetFramesElapsed();
         else
