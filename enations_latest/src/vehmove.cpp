@@ -3097,6 +3097,7 @@ BOOL CVehicle::BackUp() {
     // meeting that forward escape makes the same local choice on its own update.
     // The forward commitment lasts to arrival, so another request cannot undo it.
     BOOL bForwardYield = FALSE;
+    DWORD fixedBlocker = 0;
     int axisX = CSubHex::Diff(m_ptHead.x - m_ptTail.x);
     int axisY = CSubHex::Diff(m_ptHead.y - m_ptTail.y);
     if (m_bReversing) {
@@ -3108,13 +3109,24 @@ BOOL CVehicle::BackUp() {
         // the same direction, or their escaping groups meet head-on again.
         BOOL bAgainstLane = axisX != 0 ? ((m_ptHead.y & 1) != (axisX > 0 ? 1 : 0)) :
                                        ((m_ptHead.x & 1) != (axisY > 0 ? 0 : 1));
-        if (pIn == NULL || pIn->GetOwner() != GetOwner() || !pIn->JamEligible() ||
-            (blockedStep != pIn->m_ptHead && blockedStep != pIn->m_ptTail) ||
-            CSubHex::Diff(pIn->m_ptHead.x - pIn->m_ptTail.x) != -axisX ||
-            CSubHex::Diff(pIn->m_ptHead.y - pIn->m_ptTail.y) != -axisY ||
-            (!pIn->m_bForwardEscape &&
-             !(m_iJamClear > 0 && pIn->m_bReversing && bAgainstLane)))
+        if (pIn == NULL || (blockedStep != pIn->m_ptHead && blockedStep != pIn->m_ptTail))
             return (FALSE);
+        // A stationary soldier or explicitly stopped unit cannot join our
+        // retreat. After the existing recovery ladder reaches this branch,
+        // escape nose-first in this lane's normal direction instead of backing
+        // into that same body forever. Never change the blocker's orders.
+        BOOL bFixed = m_iJamClear > 0 && bAgainstLane &&
+            (pIn->m_cMode == stop || pIn->IsFlag(stopped)) &&
+            (pIn->GetOwner() != GetOwner() || !pIn->JamEligible());
+        BOOL bRetreat = pIn->GetOwner() == GetOwner() && pIn->JamEligible() &&
+            CSubHex::Diff(pIn->m_ptHead.x - pIn->m_ptTail.x) == -axisX &&
+            CSubHex::Diff(pIn->m_ptHead.y - pIn->m_ptTail.y) == -axisY &&
+            (pIn->m_bForwardEscape ||
+             (m_iJamClear > 0 && pIn->m_bReversing && bAgainstLane));
+        if (!bFixed && !bRetreat)
+            return (FALSE);
+        if (bFixed)
+            fixedBlocker = pIn->GetID();
         bForwardYield = TRUE;
     } else if (m_iJamClear > 0 && ((axisX == 0) != (axisY == 0))) {
         CSubHex behind(m_ptTail.x - axisX, m_ptTail.y - axisY);
@@ -3269,6 +3281,9 @@ BOOL CVehicle::BackUp() {
         WaitLog("[FORWARD-YIELD] veh %d head %d,%d tail %d,%d target %d,%d swapped %d",
                 GetID(), m_ptHead.x, m_ptHead.y, m_ptTail.x, m_ptTail.y,
                 _target.x, _target.y, (int) bSwapEnds);
+    if (fixedBlocker != 0)
+        WaitLog("[FORWARD-FIXED-BLOCKER] veh %d blocker %lu target %d,%d", GetID(),
+                (unsigned long)fixedBlocker, _target.x, _target.y);
     DetourTo(_target, TRUE);          // and carry on with the haul afterwards
     return (TRUE);
 }
