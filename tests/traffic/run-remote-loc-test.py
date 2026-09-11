@@ -5,6 +5,7 @@ transport or a two-peer game. Production method bodies are extracted verbatim.
 """
 import argparse
 import hashlib
+import re
 from pathlib import Path
 import subprocess
 import sys
@@ -13,8 +14,9 @@ HERE = Path(__file__).resolve().parent
 ROOT = HERE.parents[1]
 parser = argparse.ArgumentParser(description=__doc__)
 parser.add_argument('--baseline-ref', help='Read production methods from this Git revision')
+parser.add_argument('--clearance', action='store_true', help='Check eligibility, touching propagation and expiry instead')
 args = parser.parse_args()
-out = HERE / 'remote-loc-out' / ('baseline' if args.baseline_ref else 'candidate')
+out = HERE / 'remote-loc-out' / ('clearance-' if args.clearance else '') / ('baseline' if args.baseline_ref else 'candidate')
 out.mkdir(parents=True, exist_ok=True)
 path = 'enations_latest/src/vehmove.cpp'
 source = (subprocess.check_output(['git', '-C', str(ROOT), 'show', args.baseline_ref + ':' + path]).decode()
@@ -35,18 +37,28 @@ def method(signature, source=source):
     return header + '\n' + source[opening:end]
 
 
-actual = method('void CVehicle::SetLoc(BOOL)') + '\n' + method('void CVehicle::SetFromMsg(')
-path_source = (subprocess.check_output(['git', '-C', str(ROOT), 'show',
-                                      args.baseline_ref + ':enations_latest/src/cpathmgr.cpp']).decode()
-               if args.baseline_ref else (ROOT / 'enations_latest/src/cpathmgr.cpp').read_text(encoding='utf-8'))
-actual += '\n' + method('BOOL CPathMgr::IsHexMovingVehicle(', path_source)
-(out / 'remote_loc_actual.inc').write_text(actual, encoding='utf-8')
+if args.clearance:
+    header_path = 'enations_latest/src/vehicle.h'
+    header = (subprocess.check_output(['git', '-C', str(ROOT), 'show', args.baseline_ref + ':' + header_path]).decode()
+              if args.baseline_ref else (ROOT / header_path).read_text(encoding='utf-8'))
+    actual = '\n'.join(re.findall(r'^const int JAM_\w+\s*=.*?;', header, re.M))
+    actual += '\n' + '\n'.join(method(s) for s in (
+        'BOOL CVehicle::JamEligible() const', 'void CVehicle::JamForward()', 'void CVehicle::JamWatch()'))
+    case, include = 'test_clearance.cpp', 'clearance_actual.inc'
+else:
+    actual = method('void CVehicle::SetLoc(BOOL)') + '\n' + method('void CVehicle::SetFromMsg(')
+    path_source = (subprocess.check_output(['git', '-C', str(ROOT), 'show',
+                                          args.baseline_ref + ':enations_latest/src/cpathmgr.cpp']).decode()
+                   if args.baseline_ref else (ROOT / 'enations_latest/src/cpathmgr.cpp').read_text(encoding='utf-8'))
+    actual += '\n' + method('BOOL CPathMgr::IsHexMovingVehicle(', path_source)
+    case, include = 'test_remote_loc.cpp', 'remote_loc_actual.inc'
+(out / include).write_text(actual, encoding='utf-8')
 print('Production methods SHA256:', hashlib.sha256(actual.encode()).hexdigest(), flush=True)
 vs = Path('C:/Program Files/Microsoft Visual Studio/2022/Community/VC/Auxiliary/Build/vcvars64.bat')
 batch = out / 'compile.cmd'
 exe = out / 'remote_loc_test.exe'
 batch.write_text(f'@echo off\ncall "{vs}" >nul 2>&1\nif errorlevel 1 exit /b 2\n'
-                 f'cl /nologo /EHsc /std:c++17 /W4 /I"{out}" "{HERE / "test_remote_loc.cpp"}" '
+                 f'cl /nologo /EHsc /std:c++17 /W4 /I"{out}" "{HERE / case}" '
                  f'/Fo"{out / "remote_loc.obj"}" /Fe"{exe}"\nexit /b %errorlevel%\n', encoding='utf-8')
 compiled = subprocess.run(['cmd', '/c', str(batch)], cwd=out)
 if compiled.returncode:
