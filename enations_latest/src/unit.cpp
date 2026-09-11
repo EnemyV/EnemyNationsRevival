@@ -3103,6 +3103,7 @@ void CVehicle::SetDestAndMode( CSubHex sub, VEH_POS iMode, BOOL bTrafficDetour )
     m_iClosest      = INT_MAX;
     m_iNumClosest   = 0;
     m_iNumRetries   = 0;
+    m_iParkSkip     = 0;
     m_dwTimeBlocked = 0;
     m_iBlockCount   = 0;
     m_bWaitedForMover = FALSE; // a new destination starts a new bump/wait episode

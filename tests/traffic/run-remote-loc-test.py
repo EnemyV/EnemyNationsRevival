@@ -15,8 +15,10 @@ ROOT = HERE.parents[1]
 parser = argparse.ArgumentParser(description=__doc__)
 parser.add_argument('--baseline-ref', help='Read production methods from this Git revision')
 parser.add_argument('--clearance', action='store_true', help='Check eligibility, touching propagation and expiry instead')
+parser.add_argument('--parking', action='store_true', help='Check bounded parking, failed-request cooldown, lane authority and fleeing')
 args = parser.parse_args()
-out = HERE / 'remote-loc-out' / ('clearance-' if args.clearance else '') / ('baseline' if args.baseline_ref else 'candidate')
+suite = 'parking' if args.parking else ('clearance' if args.clearance else 'locations')
+out = HERE / 'remote-loc-out' / suite / ('baseline' if args.baseline_ref else 'candidate')
 out.mkdir(parents=True, exist_ok=True)
 path = 'enations_latest/src/vehmove.cpp'
 source = (subprocess.check_output(['git', '-C', str(ROOT), 'show', args.baseline_ref + ':' + path]).decode()
@@ -37,7 +39,25 @@ def method(signature, source=source):
     return header + '\n' + source[opening:end]
 
 
-if args.clearance:
+if args.parking:
+    actual = '\n'.join(method(s) for s in (
+        'BOOL CVehicle::FindOffRoadSpot(', 'BOOL CVehicle::AskToMove(', 'BOOL CVehicle::MustKeepLane('))
+    path = 'enations_latest/src/netapi.cpp'
+    net = (subprocess.check_output(['git', '-C', str(ROOT), 'show', args.baseline_ref + ':' + path]).decode()
+           if args.baseline_ref else (ROOT / path).read_text(encoding='utf-8'))
+    guard = method('if ( !pVeh->GetData()->IsBoat() )', net)
+    actual += '\nvoid ApplyFleeTarget(CVehicle* pVeh,CSubHex _dest,BOOL& accepted) {\n'
+    actual += 'CVehicle* pAttacker=pVeh; CVehicle* pTarget=pVeh;\n' + guard + '\naccepted=TRUE;\n}\n'
+    actual += 'bool TestFleeTarget(CVehicle* v,CSubHex p) { BOOL accepted=FALSE; ApplyFleeTarget(v,p,accepted); return accepted!=FALSE; }\n'
+    path = 'enations_latest/src/vehicle.cpp'
+    operate = (subprocess.check_output(['git', '-C', str(ROOT), 'show', args.baseline_ref + ':' + path]).decode()
+               if args.baseline_ref else (ROOT / path).read_text(encoding='utf-8'))
+    hold = method('if ((m_iHoldFrames > 0) && (m_cMode == stop)', operate)
+    start = operate.index('    if ((m_unitFlags & (dying | stopped))')
+    end = operate.index('return;', start) + len('return;')
+    actual += '\nvoid CVehicle::TickHold() {\n' + operate[start:end] + '\n' + hold + '\n}\n'
+    case, include = 'test_parking.cpp', 'parking_actual.inc'
+elif args.clearance:
     header_path = 'enations_latest/src/vehicle.h'
     header = (subprocess.check_output(['git', '-C', str(ROOT), 'show', args.baseline_ref + ':' + header_path]).decode()
               if args.baseline_ref else (ROOT / header_path).read_text(encoding='utf-8'))

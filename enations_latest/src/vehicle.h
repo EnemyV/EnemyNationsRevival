@@ -28,7 +28,14 @@ class CBridgeUnit;
 
 
 int  TrafficOpts ();   // EN_TRAFFIC bitmask: which traffic rules are live
+#ifndef EN_TRAFFIC_PROBES
+#define EN_TRAFFIC_PROBES 1
+#endif
+#if EN_TRAFFIC_PROBES
 void WaitLog (const char *fmt, ...);   // wait/resume probe, inert unless EN_WAIT_LOG is set
+#else
+#define WaitLog(...) ((void)0)
+#endif
 
 const int MAX_NUM_RETRIES = 25;
 const int MAX_BACK_UPS    = 2;      // per destination, so a stuck pair cannot ping-pong forever
@@ -634,6 +641,7 @@ protected:
 		BOOL					m_bWaitedForMover;			// TRUE once we have spent our wait on this block (one wait per bump)
 		CSubHex				m_subWaitNext;					// the step we are holding for while in traffic mode (x -1 = none)
 		int						m_iBackUps;							// back-ups taken for this destination (capped)
+		int                     m_iParkSkip; // transient continuation of bounded parking search
 		DWORD					m_dwAskedToMove;				// last time we were nudged out of the way (0 = never)
 		DWORD					m_dwLeftRoad;						// last time we pulled off the road on giving up (0 = never)
 		CSubHex				m_subResume;						// destination to go back to once a detour finishes.

@@ -4973,6 +4973,7 @@ void CVehicle::ctor( )
     m_bWaitedForMover  = FALSE;
     m_subWaitNext.x    = m_subWaitNext.y = -1;
     m_iBackUps         = 0;
+    m_iParkSkip        = 0;
     m_dwAskedToMove    = 0;
     m_dwLeftRoad       = 0;
     m_subResume        = CSubHex( 0, 0 );

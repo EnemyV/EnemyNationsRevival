@@ -3324,7 +3324,7 @@ int CWndArea::OnCreate( LPCREATESTRUCT lpCreateStruct )
                     if (sc == SDL_SCANCODE_LEFTBRACKET)  { pThis->RotateBuildDir(-1); return true; }
                     if (sc == SDL_SCANCODE_RIGHTBRACKET) { pThis->RotateBuildDir(+1); return true; }
 
-#ifdef _WIN32
+#if defined(_WIN32) && EN_BUILD_HARNESS
                     // Harness (Windows transport): F9 dumps the local player's units via
                     // HarnessDumpUnits (en_harness.h) to OutputDebugString, which dbgcatch
                     // captures — giving the PostMessage/.ps1 harness deterministic unit
@@ -7706,6 +7706,7 @@ int CWndArea::NumGiveable( ) const
 // WrapWorldToWindow(WorldToCenterWorld(GetWorldPixels())) path, which was offset
 // from the rendered sprite by ~the cluster spacing and made click-targeting miss.
 //---------------------------------------------------------------------------
+#if EN_BUILD_HARNESS
 static CPoint HarnessHexToWindow( CAnimAtr& aa, const CHexCoord& hex )
 {
     CPoint p[4];
@@ -8656,3 +8657,5 @@ void HarnessDumpGameState( std::string& out )
         st, theGame.HaveHP( ) ? 1 : 0, bh, vh, bd, vd, allc, aic, elapsed, verdict );
     out = buf;
 }
+
+#endif // EN_BUILD_HARNESS

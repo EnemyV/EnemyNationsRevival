@@ -2991,13 +2991,14 @@ static void UnitAttacked( CMsgUnitAttacked* pMsg )
                     }
 
                     // A random flee point is a proposal, not a drivable route.
-                    // Reject it without cancelling an existing recovery hold/job.
+                    // Pavement is a valid emergency waypoint. Once safe/stopped,
+                    // LeaveRoad handles parking; reject only unusable destinations.
                     if ( !pVeh->GetData()->IsBoat() ) {
                         CHexCoord from(pVeh->GetPtHead()), to(_dest);
                         CHex *hex = theMap._GetHex(to);
                         BOOL usable = _dest != pVeh->GetPtHead() &&
-                            !(hex->GetUnits() & (CHex::bldg | CHex::bridge)) &&
-                            hex->GetType() != CHex::road && hex->GetType() != CHex::city &&
+                            !(hex->GetUnits() & CHex::bldg) &&
+                            pVeh->GetData()->CanTravelHex(hex) &&
                             theMap.GetTerrainCost(to, to, 0, pVeh->GetData()->GetWheelType()) != 0;
                         if ( usable ) {
                             int length = 0;
@@ -3010,6 +3011,7 @@ static void UnitAttacked( CMsgUnitAttacked* pMsg )
                             WaitLog("[FLEE-REJECT] veh %d attacker %d from %d,%d proposed %d,%d terrain %d",
                                 pVeh->GetID(), pAttacker->GetID(), pVeh->GetPtHead().x, pVeh->GetPtHead().y,
                                 _dest.x, _dest.y, hex->GetType());
+                            theGame.Event( EVENT_CONST_UNDER_ATK, EVENT_WARN, pTarget );
                             return;
                         }
                     }

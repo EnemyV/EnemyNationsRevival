@@ -22,6 +22,18 @@ struct SDL_Window;
 struct SDL_Renderer;
 struct SDL_Surface;
 
+#ifndef EN_BUILD_HARNESS
+#define EN_BUILD_HARNESS 1
+#endif
+#if !EN_BUILD_HARNESS
+inline void EnHarness_Start(SDL_Window*, SDL_Renderer*) {}
+inline void EnHarness_Service() {}
+inline void EnHarness_ServiceMainLoop() {}
+inline void EnHarness_SetMainSurface(SDL_Surface*) {}
+inline void EnHarness_RegisterWindowSurface(unsigned int, SDL_Surface*) {}
+inline const char* HarnessPendingLoadPath(void) { return nullptr; }
+#else
+
 // Start the control server if the EN_HARNESS env var is set. Safe to call once
 // after the game window exists. Port comes from EN_HARNESS_PORT (default 7070).
 void EnHarness_Start(SDL_Window* window, SDL_Renderer* renderer);
@@ -227,4 +239,5 @@ bool HarnessNewGame(int ai, int pos, int size, int numai, int worldType = 0, int
 // Render/game thread only. Backs the `gamestate` cmd.
 void HarnessDumpGameState(std::string& out);
 
+#endif // EN_BUILD_HARNESS
 #endif // EN_HARNESS_H

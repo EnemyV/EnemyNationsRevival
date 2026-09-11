@@ -691,6 +691,7 @@ void CExplosion::EmitFlash ( const CPoint & ptCenter, int iSprW, int iSprH )
 
 void CUnit::DecDamagePoints (int iDamage, DWORD dwKiller)
 {
+
     // render-side hit flash (area map): timestamp the hit for ANY unit (mine or enemy)
     // so the sprite briefly tints red. DecDamagePoints runs on every client via the
     // network damage handlers, so this fires for whatever the viewer can see.
