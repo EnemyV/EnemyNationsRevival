@@ -1749,8 +1749,19 @@ BOOL CVehicle::CanEnter(CSubHex const &_sub, BOOL bStrict) {
     int sx = CSubHex::Diff(_sub.x - m_ptHead.x);
     int sy = CSubHex::Diff(_sub.y - m_ptHead.y);
     CSubHex blockedStep;
-    if (sx * dy != sy * dx && BlockedLaneStep(blockedStep))
-        return (FALSE);
+    if (sx * dy != sy * dx && BlockedLaneStep(blockedStep)) {
+        // Keep queues and reversing bodies in lane. After the ordinary retries,
+        // a stationary nonparticipant is a fixed obstacle, not a moving queue.
+        // Let existing forward avoidance try a legal gap instead of repeatedly
+        // retreating and returning to the same obstruction. Never move it for us.
+        CVehicle *pBlocker = theVehicleHex._GetVehicle(blockedStep);
+        BOOL bPassFixed = !m_bReversing && m_iNumRetries >= 13 && m_iNumRetries < MAX_NUM_RETRIES &&
+            pBlocker != NULL && (blockedStep == pBlocker->m_ptHead || blockedStep == pBlocker->m_ptTail) &&
+            (pBlocker->m_cMode == stop || pBlocker->IsFlag(stopped)) &&
+            (pBlocker->GetOwner() != GetOwner() || !pBlocker->JamEligible());
+        if (!bPassFixed)
+            return (FALSE);
+    }
     return (IsPassable(_sub, bStrict));
 }
 
