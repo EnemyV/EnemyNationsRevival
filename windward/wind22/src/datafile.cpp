@@ -371,7 +371,11 @@ void CDataFile::_Init(const char *pFilename, const char *pPatchDir, int iRifVer)
     if (pPatchDir) {
         // sPatchRoot == pPatchDir unless loose-only mode resolved a different root.
         m_pPatchDir = new CString(sPatchRoot);
-        m_pPatchDir->MakeLower();
+        // The ROOT keeps the case it was given. It used to be force-lower-cased
+        // here, a no-op on Windows but wrong on a case-sensitive volume: an exe-dir
+        // root such as "/opt/EN/Data" became "/opt/en/data" and every entry probe
+        // below missed. Case-folding belongs to the relative entry path we
+        // synthesise, not to a directory the user chose (015 plan phase 2c).
         if (m_pPatchDir == NULL)
             ThrowError(ERR_OUT_OF_MEMORY);
     }
@@ -443,17 +447,21 @@ CMmio *CDataFile::OpenAsMMIO(const char *pFilename, const char *pRif) {
         }
 
         // we now look in the patch dir (users version)
+        // Case-fold this probe as well, but the LEAF only. The nested probe above
+        // lower-cases its whole relative path (path.MakeLower() at the top of this
+        // function) and joins it onto the root as given; this one built its leaf
+        // from the original-case argument, so on a case-sensitive volume a
+        // lower-case loose set was found nested and missed flat (015 plan 3c,
+        // measured on mac). Folding the JOINED path would fold the patch ROOT too,
+        // which is the phase-2c defect: the root is the user's install path and its
+        // case is not ours to change. No-op on Windows either way.
+        CString leaf;
         if (pFilename == NULL)
-            patchPath.Format("%s\\%d.rif", (char const *) (*m_pPatchDir), m_countryCode);
+            leaf.Format("%d.rif", m_countryCode);
         else
-            patchPath = *m_pPatchDir + CString("\\") + file + ".rif";
-
-        // Case-fold this probe as well. The nested probe above lower-cases its
-        // whole relative path (see path.MakeLower() at the top of this function),
-        // but this one built its leaf from the original-case argument, so on a
-        // case-sensitive volume a lower-case loose set was found nested and missed
-        // flat (015 plan 3c, measured on mac). No-op on Windows.
-        patchPath.MakeLower();
+            leaf = file + ".rif";
+        leaf.MakeLower();
+        patchPath = *m_pPatchDir + CString("\\") + leaf;
 
         if (test.Open(patchPath, CFile::modeRead | CFile::shareDenyWrite | CFile::typeBinary) != FALSE) {
             //  Close the file so we can re-open it as an mmio file.
