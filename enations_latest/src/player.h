@@ -241,6 +241,14 @@ class CPlayer : public CObject
         ASSERT_STRICT_VALID( this );
         m_iPplNeedBldg += iAdd;
     }
+    // Desperate Measures: the worker draft this tick, and the running total of what the edict
+    // actually drew (recorded by the rocket so next tick can add it back — see GetDesperateDraft).
+    int  GetDesperateDraft( ) const;
+    void AddDesperateDraft( int iAdd )
+    {
+        ASSERT_STRICT_VALID( this );
+        m_iDespDraftTick += iAdd;
+    }
     void AddPplBldg( int iAdd )
     {
         ASSERT_STRICT_VALID( this );
@@ -816,6 +824,14 @@ class CPlayer : public CObject
     LONG  m_iPwrNeed;      // power needed by all buildings
     LONG  m_iPwrHave;      // power presently generated
     LONG  m_iPplNeedBldg;  // people needed by all buildings
+    // Desperate Measures needs to know the SPARE workforce, which the live m_iPplNeedBldg above
+    // cannot answer: mid-tick it is a partial sum (its value depends on where the rocket falls in
+    // the building iteration order), and it already contains the edict's own draft, so a
+    // percentage of it would feed back on itself. Both are runtime-only, snapshotted in StartLoop
+    // where the tick's total is final; -1 = no finished total yet (fresh game / just-loaded save).
+    LONG  m_iPplNeedLast;   // last tick's FINISHED m_iPplNeedBldg (-1 = none yet)
+    LONG  m_iDespDraftLast; // workers Desperate Measures drafted last tick (added back as spare)
+    LONG  m_iDespDraftTick; // accumulating this tick (N rockets each add their draft)
     LONG  m_iPplBldg;      // people presently have EXCEPT in vehicles
     LONG  m_iPplVeh;       // people in vehicles (Have+Veh == Total)
     LONG  m_iFood;         // food on hand

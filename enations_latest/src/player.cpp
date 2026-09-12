@@ -95,6 +95,9 @@ void CPlayer::ctor( )
     m_iPwrNeed        = 1;
     m_iPwrHave        = 0;
     m_iPplNeedBldg    = 1;
+    m_iPplNeedLast    = -1;   // no finished tick yet -- Desperate Measures drafts the flat base
+    m_iDespDraftLast  = 0;
+    m_iDespDraftTick  = 0;
     m_iPplBldg        = 0;
     m_iPplVeh         = 0;
     m_fPplMult        = 1.0;
@@ -606,6 +609,50 @@ void CPlayer::AddGas( int iNum )
     m_iGas += iNum;
 
     m_aiMade[CMaterialTypes::gas] += iNum;
+}
+
+// Desperate Measures (EDICT_DESPERATE_MEASURES): how many workers the rocket conscripts this
+// tick. The edict's scrounge rate scales with this, so an empire with idle population gets more
+// out of it -- at the same resources-per-worker rate, it just runs bigger.
+//
+//   draft = DESPERATE_BASE_DRAFT + DESPERATE_EXCESS_PCT% of the spare workforce left after it
+//
+// The whole difficulty is making that percentage HOLD STILL. The draft is itself part of the
+// workforce need, so a naive pct of "spare = have - need" chases its own tail: draft up -> spare
+// down -> draft down -> spare up, oscillating every tick and flickering the output with it. Two
+// things are required, and neither alone is enough:
+//
+//   1. Read LAST tick's FINISHED need. The live m_iPplNeedBldg is a partial sum while the
+//      buildings are still accumulating, so its mid-tick value depends on where the rocket
+//      happens to sit in the iteration order -- jitter even with no feedback at all.
+//   2. Add our own previous draft back before taking the cut. What is left is the spare
+//      workforce as it would be if this edict were not running -- a quantity the draft does not
+//      appear in. The draft therefore computes the same answer every tick while the rest of the
+//      economy holds, which is the fixed point we want, rather than orbiting one.
+//
+// The flat base comes out of the spare FIRST, so the scaling half can never by itself push the
+// colony into a workforce deficit. A colony with no slack pays exactly the flat base, i.e. what
+// this edict has always cost.
+int CPlayer::GetDesperateDraft( ) const
+{
+
+    ASSERT_STRICT_VALID( this );
+
+    // No finished tick to read yet (new game, or the first tick after a load -- these are
+    // runtime-only). Reading a zeroed need here would score the ENTIRE workforce as spare and
+    // spike the draft for one tick.
+    if ( m_iPplNeedLast < 0 )
+        return ( DESPERATE_BASE_DRAFT );
+
+    // spare workforce as if this edict were not drafting (point 2 above)
+    LONG lSpare = m_iPplBldg - ( m_iPplNeedLast - m_iDespDraftLast );
+
+    // the flat base is taken out of the spare before the percentage
+    lSpare -= DESPERATE_BASE_DRAFT;
+    if ( lSpare <= 0 )
+        return ( DESPERATE_BASE_DRAFT );
+
+    return ( DESPERATE_BASE_DRAFT + (int)( ( lSpare * DESPERATE_EXCESS_PCT ) / 100 ) );
 }
 
 void CPlayer::StartLoop( )
