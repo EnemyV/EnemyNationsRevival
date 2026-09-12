@@ -288,6 +288,30 @@ BOOL CVehicle::ClearOfRoad(CSubHex const &_sub) {
     return (!OnPavement(_sub));
 }
 
+// Failure to reach a temporary parking target is not failure of the saved haul.
+// At a settled, safe pose we can finish the detour and use the normal hold/rejoin.
+BOOL CVehicle::FinishClearDetour() {
+    if (!m_bResume || !(m_bReversing || m_bForwardEscape || m_iHoldFrames > 0) ||
+        !JamEligible() || GetTransport() != NULL || m_iStepsLeft != 0)
+        return (FALSE);
+    CHex *pHead = theMap._GetHex(m_ptHead);
+    CHex *pTail = theMap._GetHex(m_ptTail);
+    if (!ClearOfRoad(m_ptHead) || !ClearOfRoad(m_ptTail) ||
+        ((pHead->GetUnits() | pTail->GetUnits()) & CHex::bldg) ||
+        !GetData()->CanTravelHex(pHead) || !GetData()->CanTravelHex(pTail))
+        return (FALSE);
+    WaitLog("[PARK-HERE] veh %d failed parking %d,%d; clear at head %d,%d tail %d,%d, job %d,%d",
+            GetID(), m_ptDest.x, m_ptDest.y, m_ptHead.x, m_ptHead.y,
+            m_ptTail.x, m_ptTail.y, m_subResume.x, m_subResume.y);
+    if (m_ptNext != m_ptHead && m_ptNext != m_ptTail &&
+        theVehicleHex._GetVehicle(m_ptNext) == this)
+        theVehicleHex.ReleaseHex(m_ptNext, this);
+    m_ptNext = m_ptDest = m_ptHead;
+    m_hexDest = m_ptHead.ToCoord();
+    ArrivedDest();
+    return (TRUE);
+}
+
 BOOL CVehicle::ResumeJob() {
 
     if (!m_bResume)
@@ -331,67 +355,121 @@ void CVehicle::ArrivedDest() {
     ASSERT ((m_cMode != moving) || (theVehicleHex.GetVehicle(m_ptNext) == this));
 #endif
 
-    // We have stopped, so we are no longer backing up. Releasing the facing here
-    // means the next forward step turns the hull the normal way - by then we are off
-    // the span, where there is room for it.
-    BOOL bWasReversing = m_bReversing;
-    m_bReversing = FALSE;
+    // Saved recovery metadata can exist on remote copies. Only the owner may
+    // change a detour, relabel its movement ends, hold or resume the saved job.
+    if (GetOwner()->IsLocal()) {
+        // Keep reverse geometry until any tail-clear step has finished. The final
+        // arrival restores forward endpoint labels before holding or resuming.
+        BOOL bWasReversing = m_bReversing;
+        BOOL bWasForwardEscape = m_bForwardEscape;
+        m_bForwardEscape = FALSE;
 
-    // A RETREAT has ended. Hold here before rejoining the haul: the whole point of
-    // backing off is to give the trucks in front somewhere to go, and one that
-    // arrives and drives straight back in has given them nothing. Park quietly -
-    // no PostArrivedOrBlocked, so the router does not re-task us mid-hold - and let
-    // Operate() put us back on the job when the clock runs out. The per-truck offset
-    // stops a queue that retreated together from re-entering together.
-    //
-    // Only where we are ACTUALLY out of the way. A partial retreat ends on the deck,
-    // and holding there would free the truck in front at the price of parking on the
-    // span in front of everyone behind us - so a partial retreat rejoins at once and
-    // only a full one, off the span and off the pavement, earns the hold.
-    // THE WHOLE BODY has to be clear, not just the head. Testing the head alone let a
-    // truck hold with its tail still lying across the roadway, which is the one thing
-    // the hold exists to stop.
-    BOOL bClear = ClearOfRoad(m_ptHead) && ClearOfRoad(m_ptTail);
-    if (bWasReversing && bClear && m_bResume && (TrafficOpts() & 8))
-        m_iHoldFrames = HOLD_FRAMES + (int) (GetID() % 4) * 24;
+        // A RETREAT has ended. Hold here before rejoining the haul: the whole point of
+        // backing off is to give the trucks in front somewhere to go, and one that
+        // arrives and drives straight back in has given them nothing. Park quietly -
+        // no PostArrivedOrBlocked, so the router does not re-task us mid-hold - and let
+        // Operate() put us back on the job when the clock runs out. The per-truck offset
+        // stops a queue that retreated together from re-entering together.
+        //
+        // Only where we are ACTUALLY out of the way. A partial retreat ends on the deck,
+        // and holding there would free the truck in front at the price of parking on the
+        // span in front of everyone behind us. Try to finish clearing below; only a
+        // full retreat, off the span and off the pavement, earns the hold.
+        // THE WHOLE BODY has to be clear, not just the head. Testing the head alone let a
+        // truck hold with its tail still lying across the roadway, which is the one thing
+        // the hold exists to stop.
+        BOOL bClear = ClearOfRoad(m_ptHead) && ClearOfRoad(m_ptTail);
+        // Successful clearance ends this parking attempt. A later trip must not
+        // inherit its retry delay and wait on the road until the old timer expires.
+        if (bClear)
+            m_dwLeftRoad = 0;
+        // A safe destination for the head may leave the tail across the road.
+        // Finish with one legal local step: its tail will occupy our current safe
+        // head square. Keep the saved job and start/continue the hold only once clear.
+        if ((TrafficOpts() & 8) && !bClear && ClearOfRoad(m_ptHead) &&
+            (((bWasReversing || bWasForwardEscape) && m_bResume) || m_iHoldFrames > 0)) {
+            const int turns[] = { 0, -1, 1, -2, 2, -3, 3 };
+            for (int i = 0; i < 7; ++i) {
+                CSubHex next = Rotate(turns[i]);
+                if (next == m_ptHead || !ClearOfRoad(next) ||
+                    (theMap._GetHex(next)->GetUnits() & CHex::bldg) || !CanEnter(next))
+                    continue;
+                if (m_iHoldFrames <= 0)
+                    m_iHoldFrames = HOLD_FRAMES + (int) (GetID() % 4) * 24;
+                WaitLog("[TAIL-CLEAR] veh %d head %d,%d tail %d,%d taking sub %d,%d, hold %d",
+                        GetID(), m_ptHead.x, m_ptHead.y, m_ptTail.x, m_ptTail.y,
+                        next.x, next.y, m_iHoldFrames);
+                m_bReversing = bWasReversing;
+                m_bForwardEscape = bWasForwardEscape;
+                DetourTo(next, FALSE);
+                return;
+            }
+        }
+        // Reaching a straight retreat endpoint is not clearance if the body is
+        // still on the road. Continue toward an existing off-road parking candidate
+        // before rejoining the queue we just backed out of. Keep the movement ends
+        // and escape direction intact; ordinary movement checks the route.
+        if (!bClear && (bWasReversing || bWasForwardEscape) && m_bResume && JamEligible()) {
+            m_bForwardEscape = bWasForwardEscape;
+            CSubHex spot;
+            if (FindOffRoadSpot(spot, NULL) && spot != m_ptHead) {
+                if (m_iHoldFrames <= 0)
+                    m_iHoldFrames = HOLD_FRAMES + (int) (GetID() % 4) * 24;
+                WaitLog("[RETREAT-CLEAR] veh %d head %d,%d tail %d,%d to %d,%d reverse %d forward %d hold %d",
+                        GetID(), m_ptHead.x, m_ptHead.y, m_ptTail.x, m_ptTail.y,
+                        spot.x, spot.y, (int)bWasReversing, (int)bWasForwardEscape, m_iHoldFrames);
+                DetourTo(spot, FALSE);
+                return;
+            }
+            m_bForwardEscape = FALSE;
+        }
+        if (bWasReversing) {
+            EndReverse();
+            // This temporary detour has arrived; the saved job still names its
+            // original destination. Its arrival point follows the relabelled head.
+            m_ptDest = m_ptHead;
+            m_hexDest = m_ptHead.ToCoord();
+        }
+        // Preserve a pending give-up hold or the time left after a courtesy move.
+        if ((bWasReversing || bWasForwardEscape) && bClear && m_bResume &&
+            m_iHoldFrames <= 0 && (TrafficOpts() & 8))
+            m_iHoldFrames = HOLD_FRAMES + (int) (GetID() % 4) * 24;
 
-    // Park for whatever is LEFT of the hold - whether we just armed it, or a courtesy
-    // request moved us part way through one and this is where we ended up.
-    //
-    // BUT ONLY IF THIS POSE IS ACTUALLY CLEAR. bClear used to gate only the arming of
-    // a NEW hold, so a courtesy step taken part way through an existing one could set
-    // the truck down again across the roadway and leave it there for the rest of the
-    // deadline - a truck parked on the bridge, which is the one thing the hold exists
-    // to prevent. WinAstra's review48 defect. If we are not clear we do not park:
-    // fall through to the ordinary arrival path, which includes the on-stop check
-    // that moves an idle truck off the road.
-    if ((m_iHoldFrames > 0) && (!bClear))
-        m_iHoldFrames = 0;
+        // Park for whatever is LEFT of the hold - whether we just armed it, or a courtesy
+        // request moved us part way through one and this is where we ended up.
+        //
+        // BUT ONLY IF THIS POSE IS ACTUALLY CLEAR. bClear used to gate only the arming of
+        // a NEW hold, so a courtesy step taken part way through an existing one could set
+        // the truck down again across the roadway and leave it there for the rest of the
+        // deadline - a truck parked on the bridge, which is the one thing the hold exists
+        // to prevent. WinAstra's review48 defect. If we are not clear we do not park:
+        // fall through to the ordinary arrival path, which includes the on-stop check
+        // that moves an idle truck off the road.
+        if ((m_iHoldFrames > 0) && (!bClear))
+            m_iHoldFrames = 0;
 
-    if (m_iHoldFrames > 0) {
-        WaitLog("[HOLD] veh %d holding at hex %d,%d head %d,%d tail %d,%d for %d frames, then dest sub %d,%d",
-                GetID(), GetHexHead().X(), GetHexHead().Y(), m_ptHead.x, m_ptHead.y,
-                m_ptTail.x, m_ptTail.y, m_iHoldFrames, m_subResume.x, m_subResume.y);
-        _SetRouteMode(stop);
+        if (m_iHoldFrames > 0) {
+            WaitLog("[HOLD] veh %d holding at hex %d,%d head %d,%d tail %d,%d for %d frames, then dest sub %d,%d",
+                    GetID(), GetHexHead().X(), GetHexHead().Y(), m_ptHead.x, m_ptHead.y,
+                    m_ptTail.x, m_ptTail.y, m_iHoldFrames, m_subResume.x, m_subResume.y);
+            _SetRouteMode(stop);
 
-        // AND STAY SILENT. Leaving PostArrivedOrBlocked out of this function was not
-        // enough: _SetRouteMode(stop) CLEARS told_ai_stop (unit.cpp:3612), and the
-        // next Operate's ordinary stop branch then posts the arrival itself
-        // (vehicle.cpp:246, commented "backup method"). The router re-tasked the truck
-        // within a frame - WinAstra measured the rejoin 43ms into a 10s hold. Setting
-        // the flag AFTER _SetRouteMode is what actually suppresses the notification.
-        m_bFlags |= told_ai_stop;
+            // Suppress the ordinary stop notification too: otherwise the router can
+            // replace this hold on the next update. Set after _SetRouteMode clears it.
+            m_bFlags |= told_ai_stop;
 
-        SetMoveParams(FALSE);
-        ZeroMoveParams();
-        DeletePath();
-        return;
+            SetMoveParams(FALSE);
+            ZeroMoveParams();
+            DeletePath();
+            return;
+        }
+
+        // A traffic detour has finished. Put the vehicle back on the job it was doing
+        // before we moved it out of the way, instead of leaving it parked here.
+        if (ResumeJob())
+            return;
+
     }
-
-    // A traffic detour has finished. Put the vehicle back on the job it was doing
-    // before we moved it out of the way, instead of leaving it parked here.
-    if (ResumeJob())
-        return;
 
     // we're stopped
     _SetRouteMode(stop);
@@ -764,6 +842,20 @@ void CVehicle::MoveCargo(BOOL bCarried) {
             CVehicle *pVeh = m_lstCargo.GetNext(pos);
             if (pVeh == this)
                 continue;
+
+            // A carried unit should own no road squares. Bound this diagnostic
+            // across all carriers; it must not turn a bad cargo state into log spam.
+            if (pVeh->m_cOwn) {
+                static DWORD lastCargoOwnedLog = 0;
+                DWORD now = theGame.GettimeGetTime();
+                if (now - lastCargoOwnedLog >= 1000) {
+                    lastCargoOwnedLog = now;
+                    WaitLog("[CARGO-OWNED] carrier %d cargo %d transport %d mode %d head %d,%d next %d,%d resume %d hold %d",
+                            GetID(), pVeh->GetID(), pVeh->GetTransport() ? pVeh->GetTransport()->GetID() : 0,
+                            (int)pVeh->m_cMode, pVeh->m_ptHead.x, pVeh->m_ptHead.y,
+                            pVeh->m_ptNext.x, pVeh->m_ptNext.y, (int)pVeh->m_bResume, pVeh->m_iHoldFrames);
+                }
+            }
 
             pVeh->m_hexDest = pVeh->m_ptDest = pVeh->m_ptHead = m_ptHead;
             if (pVeh->GetData()->GetVehFlags() & CTransportData::FL1hex)
@@ -2526,8 +2618,10 @@ int CVehicle::CorridorAhead(int &iVehs) {
         if ((_on.Y() < 0) || (_on.Y() >= theMap.Get_eY()))
             break;
 
-        // can we stand here at all? if not we are looking past the corridor's end
-        if (theMap.GetTerrainCost(_on, _on, 0, GetData()->GetWheelType()) == 0)
+        // Building ground has a travel cost too, but its footprint is not a
+        // corridor. Looking through it falsely restricts turns while exiting.
+        if ((theMap._GetHex(_on)->GetUnits() & CHex::bldg) ||
+            theMap.GetTerrainCost(_on, _on, 0, GetData()->GetWheelType()) == 0)
             break;
 
         // the two flanks, perpendicular to travel
@@ -2562,39 +2656,83 @@ int CVehicle::CorridorAhead(int &iVehs) {
 BOOL CVehicle::FindOffRoadSpot(CSubHex &_found, CVehicle *pAsker) {
 
     CHexCoord _hexOn(GetHexHead());
+    int iCandidate = 0, iPaths = 0;
+    const int maxPaths = 8;
 
-    // GET CLEAR OF THE JAM, not just off the tarmac. Parking at the first free spot
-    // puts the truck beside the mouth it just left, so the moment the router re-tasks
-    // it, it is back in the same queue - measured: 14 trucks leave the bridge region
-    // in 8 minutes and 13 of them come back. The escape distance is therefore derived
-    // from the corridor itself, which needs no per-truck retry counter to track: as
-    // far out as the span is long. Off the corridor SpanAhead is 0 and this is exactly
-    // the search it always was.
-    // ...and how far is "clear"? As far as the corridor is long - but only when this
-    // really is a long, narrow, CROWDED corridor. That is QA's rule: a truck that has
-    // exhausted the earlier rungs inside a packed corridor has to get right out,
-    // because parking at its mouth just puts it back in the same queue. Deriving the
-    // distance from the geometry means no per-truck retry counter has to be tracked;
-    // and reaching LeaveRoad at all already means wait, go-around and back-up failed.
-    // ...and ONLY when this is our own exhausted recovery. FindOffRoadSpot is shared
-    // with AskToMove, where pAsker is the truck politely asking us to shift: a
-    // courtesy step should move us aside, not send us fleeing the whole corridor.
-    // 137 of the 156 corridor fires had a NUDGE as their next event, 104 of them
-    // repeating inside 30s - WinAstra's scope defect.
+    // Exhausted recovery parks beyond a crowded corridor. Courtesy requests
+    // keep the ordinary nearby search so one nudge does not abandon a route.
     int iVehs = 0;
     int iCorr = (pAsker == NULL) ? CorridorAhead(iVehs) : 0;
+    // A parking retry must not turn a committed reverse back into the queue.
+    // BackUp already swapped the movement endpoints: head-tail now points OUT.
+    // Keep that exit side until the body is off the road as well. At an angled
+    // city corner the corridor walk can return zero while a tail still blocks it.
+    BOOL bKeepReverseExit = (m_bReversing || m_bForwardEscape) &&
+        (m_bConfined || OnPavement(m_ptHead) || OnPavement(m_ptTail) ||
+         iCorr >= CORRIDOR_MIN_HEXES);
     int iMin  = ((iCorr >= CORRIDOR_MIN_HEXES) && (iVehs >= CORRIDOR_MIN_VEHS)) ? (1 + iCorr) : 1;
     if (iMin > 1)
         WaitLog("[CORRIDOR] veh %d at hex %d,%d in a %d-hex corridor holding %d vehicles, "
                 "escaping to ring %d", GetID(), GetHexHead().X(), GetHexHead().Y(), iCorr, iVehs, iMin);
 
-    // SCATTER THE SEARCH. Checking occupancy is not enough on its own: every truck
-    // evaluates its target while the others are still driving to theirs, so they all
-    // see the same empty hex and all set off for it - hex 23,343 was issued 159 times
-    // in one 8-minute run against a capacity of two. Reserving spots would need a
-    // shared allocator; giving each truck a different starting angle costs nothing and
-    // breaks the convergence, because they no longer scan the ring in the same order.
+    // Different starting angles reduce convergence on the same empty target.
     int iSkew = (int) (GetID() % 8);
+
+    CHexCoord searchCenter(_hexOn);
+    for (int origin = 0; origin < 2; ++origin) {
+        // No nearby parking can exist in the middle of a long causeway. After
+        // the ordinary search fails, follow our current road direction to its
+        // end and reuse the same parking checks there. Vehicles remain temporary
+        // blockers; ordinary movement must negotiate the route to that exit.
+        if (origin != 0) {
+            int dx = CSubHex::Diff(m_ptHead.x - m_ptTail.x);
+            int dy = CSubHex::Diff(m_ptHead.y - m_ptTail.y);
+            if (GetData()->IsBoat() || (!GetData()->IsTransport() && !GetData()->IsCrane()) ||
+                !OnPavement(m_ptHead))
+                break;
+            // Arrival can leave the hull diagonal on a straight road. Follow the
+            // only paved axis, probing a whole hex so the other half of our own
+            // road hex cannot masquerade as an exit into the water.
+            if (dx != 0 && dy != 0) {
+                CSubHex across(m_ptHead.x + dx * 2, m_ptHead.y);
+                CSubHex along(m_ptHead.x, m_ptHead.y + dy * 2);
+                across.Wrap();
+                along.Wrap();
+                BOOL roadX = OnPavement(across) &&
+                    !(theMap._GetHex(across)->GetUnits() & CHex::bldg) &&
+                    GetData()->CanEnterHex(CHexCoord(m_ptHead), CHexCoord(across), FALSE, TRUE);
+                BOOL roadY = OnPavement(along) &&
+                    !(theMap._GetHex(along)->GetUnits() & CHex::bldg) &&
+                    GetData()->CanEnterHex(CHexCoord(m_ptHead), CHexCoord(along), FALSE, TRUE);
+                if (roadX == roadY)
+                    break; // no unique road axis; keep ordinary recovery
+                if (roadX) dy = 0;
+                else dx = 0;
+            }
+            if (dx == 0 && dy == 0)
+                break;
+            CSubHex ray(m_ptHead);
+            BOOL foundExit = FALSE;
+            for (int step = 0; step < 2 * __max(theMap.Get_eX(), theMap.Get_eY()); ++step) {
+                CSubHex next(ray.x + dx, ray.y + dy);
+                if (next.y < 0 || next.y >= theMap.Get_eY() * 2)
+                    break;
+                next.Wrap();
+                if (next == m_ptHead || (theMap._GetHex(next)->GetUnits() & CHex::bldg) ||
+                    !GetData()->CanEnterHex(CHexCoord(ray), CHexCoord(next), FALSE, TRUE))
+                    break;
+                ray = next;
+                if (!OnPavement(ray)) {
+                    searchCenter = CHexCoord(ray);
+                    foundExit = TRUE;
+                    break;
+                }
+            }
+            if (!foundExit)
+                break;
+            WaitLog("[PARK-DISTANT] veh %d from %d,%d searching at exit %d,%d",
+                    GetID(), _hexOn.X(), _hexOn.Y(), searchCenter.X(), searchCenter.Y());
+        }
 
     // Pass 0 keeps clear of the shoreline; pass 1 accepts it if nothing else exists.
     for (int iPass = 0; iPass < 2; iPass++)
@@ -2608,7 +2746,7 @@ BOOL CVehicle::FindOffRoadSpot(CSubHex &_found, CVehicle *pAsker) {
                 if ((abs(xOff) != iRing) && (abs(yOff) != iRing))
                     continue;
 
-                CSubHex _cand((_hexOn.X() + xOff) * 2, (_hexOn.Y() + yOff) * 2);
+                CSubHex _cand((searchCenter.X() + xOff) * 2, (searchCenter.Y() + yOff) * 2);
                 _cand.Wrap();
 
                 if (OnPavement(_cand))
@@ -2623,43 +2761,78 @@ BOOL CVehicle::FindOffRoadSpot(CSubHex &_found, CVehicle *pAsker) {
                 if (theMap.GetTerrainCost(CHexCoord(_cand.ToCoord()), CHexCoord(_cand.ToCoord()), 0,
                                           GetData()->GetWheelType()) == 0)
                     continue;
-                if (pAsker != NULL)
-                    if ((_cand == pAsker->m_ptNext) || (_cand == pAsker->m_ptHead))
-                        continue;
 
                 if ((iPass == 0) && IsShoreline(CHexCoord(_cand.ToCoord())))
                     continue;
 
-                // IS ANYONE ALREADY THERE? This loop checked pavement, terrain,
-                // shoreline, buildings and bridge - and never occupancy. So it handed
-                // every asking truck the SAME square: measured in v18, hex 23,343 was
-                // issued 104 times, 22,339 78 times, 36,345 70 times, against a hex
-                // that holds four vehicles. That is not a parking allocator, and it
-                // is why giving up made the jam worse - 290 trucks left the queue for
-                // a space that did not exist, failed to park, and retried, while the
-                // queue that was pushing traffic across the bridge came apart.
-                //
-                // The whole body has to fit, so check the hex's four subs and require
-                // a free pair for head and tail rather than a single free corner.
+                // Require space for the whole body, not just its first corner.
                 {
                     int iFree = 0;
+                    CSubHex firstFree(_cand);
                     for (int iSx = 0; iSx < 2; iSx++)
                         for (int iSy = 0; iSy < 2; iSy++) {
                             CSubHex _s(CHexCoord(_cand.ToCoord()).X() * 2 + iSx,
                                        CHexCoord(_cand.ToCoord()).Y() * 2 + iSy);
                             _s.Wrap();
                             CVehicle *pOn = theVehicleHex._GetVehicle(_s);
-                            if ((pOn == NULL) || (pOn == this))
+                            if (pAsker != NULL &&
+                                (_s == pAsker->m_ptNext || _s == pAsker->m_ptHead))
+                                continue;
+                            if ((pOn == NULL) || (pOn == this)) {
+                                if (iFree == 0)
+                                    firstFree = _s;
                                 iFree++;
+                            }
                         }
                     if (iFree < 2)
                         continue;
+                    _cand = firstFree; // return a free corner, not always even/even
                 }
 
+                if (bKeepReverseExit &&
+                    CSubHex::Diff(_cand.x - m_ptHead.x) * CSubHex::Diff(m_ptHead.x - m_ptTail.x) +
+                    CSubHex::Diff(_cand.y - m_ptHead.y) * CSubHex::Diff(m_ptHead.y - m_ptTail.y) < 0)
+                    continue;
+
+                // This clearance rule belongs to ground hauling and cranes.
+                if (!GetData()->IsBoat() && (GetData()->IsTransport() || GetData()->IsCrane())) {
+                    // Bound expensive work without repeatedly starving candidates
+                    // beyond the first batch. The next attempt resumes this scan;
+                    // movement/new orders reset it. Never accept an unchecked spot.
+                    if (iCandidate++ < m_iParkSkip)
+                        continue;
+                    if (iPaths == maxPaths) {
+                        m_iParkSkip = iCandidate - 1;
+                        WaitLog("[PARK-BUDGET] veh %d paths %d resume_candidate %d", GetID(), iPaths, m_iParkSkip);
+                        return (FALSE);
+                    }
+                    ++iPaths;
+                    // Empty ground can be a sealed courtyard. Accept a parking
+                    // target only if the existing terrain pathfinder reaches it;
+                    // temporary vehicles must not make a usable exit disappear.
+                    CHexCoord from(_hexOn), to(_cand);
+                    int pathLength = 0;
+                    CHexCoord *path = thePathMgr.GetPath(NULL, from, to, pathLength, GetData()->GetType(), FALSE, TRUE);
+                    BOOL reachable = from == to || (path != NULL && pathLength > 0 && path[pathLength - 1] == to);
+                    delete[] path;
+                    if (!reachable) {
+                        WaitLog("[PARK-UNREACHABLE] veh %d from %d,%d rejected %d,%d",
+                                GetID(), from.X(), from.Y(), to.X(), to.Y());
+                        continue;
+                    }
+                }
+
+                CVehicle *pTarget = theVehicleHex._GetVehicle(_cand);
+                if (pTarget != NULL && pTarget != this)
+                    WaitLog("[PARK-OCCUPIED] veh %d selected sub %d,%d occupied by %d",
+                            GetID(), _cand.x, _cand.y, pTarget->GetID());
                 _found = _cand;
+                m_iParkSkip = 0;
                 return (TRUE);
             }
 
+    }
+    m_iParkSkip = 0; // exhausted this scan; retry against fresh occupancy later
     return (FALSE);
 }
 
@@ -2692,24 +2865,33 @@ BOOL CVehicle::AskToMove(CVehicle *pAsker) {
 
     // A HAULING truck (m_iEvent == route) is exactly the case we care about - those
     // are what park on the bridge. Only genuinely busy jobs are off limits.
-    if ((m_iEvent != none) && (m_iEvent != route))
+    if ((m_iEvent != none) && (m_iEvent != route) &&
+        !(GetData()->IsCrane() && m_iEvent == build))
         return (FALSE);
     if (m_pBldg != NULL)
         return (FALSE);
+
+    // A blocked detour is already answering an earlier move request. Do not
+    // replace its destination or reset its wait/retry state with the same request.
+    if (m_bResume && m_cMode == blocked)
+        return (TRUE);
 
     // do not nudge the same vehicle over and over
     if ((m_dwAskedToMove != 0) &&
         (theGame.GettimeGetTime() - m_dwAskedToMove < 5000))
         return (FALSE);
+    m_dwAskedToMove = theGame.GettimeGetTime(); // failed searches also consume the cooldown
 
     // Go and PARK somewhere that is not a road. A one-hex sideways shuffle on a
     // bridge deck leaves us just as much in the way as we were.
     CSubHex _spot;
     if (FindOffRoadSpot(_spot, pAsker)) {
-        m_dwAskedToMove = theGame.GettimeGetTime();
         WaitLog("[NUDGE] veh %d hex %d,%d asked by veh %d, parking off-road at hex %d,%d", GetID(),
                 GetHexHead().X(), GetHexHead().Y(), pAsker->GetID(), CHexCoord(_spot.ToCoord()).X(),
                 CHexCoord(_spot.ToCoord()).Y());
+        // Give the requester time to use the space we clear.
+        if (m_iHoldFrames <= 0 && (OnPavement(m_ptHead) || OnPavement(m_ptTail)))
+            m_iHoldFrames = HOLD_FRAMES + (int) (GetID() % 4) * 24;
         // a vehicle that has ALREADY arrived is simply parked in a bad place, so the
         // new spot becomes its home. One that still has somewhere to be resumes.
         DetourTo(_spot, (m_ptHead == m_ptDest) ? FALSE : TRUE);
@@ -2736,7 +2918,6 @@ BOOL CVehicle::AskToMove(CVehicle *pAsker) {
         if (!CanEnter(_next))
             continue;
 
-        m_dwAskedToMove = theGame.GettimeGetTime();
         WaitLog("[NUDGE] veh %d hex %d,%d asked by veh %d, stepping aside to sub %d,%d", GetID(),
                 GetHexHead().X(), GetHexHead().Y(), pAsker->GetID(), _next.x, _next.y);
         DetourTo(_next, (m_ptHead == m_ptDest) ? FALSE : TRUE);
@@ -2759,7 +2940,7 @@ BOOL CVehicle::AskToMove(CVehicle *pAsker) {
 //
 // Deliberately NOT a manager: nothing owns the group, nothing scans the map, and no
 // truck is told which way to move. A request only ever passes between trucks that are
-// physically touching, each recipient forwards it ONCE on its own update, and the
+// physically touching, each recipient re-offers it on its own timer, and the
 // REMAINING window is carried rather than refreshed - so a ring of trucks cannot keep
 // handing the same request round in circles.
 
@@ -2773,9 +2954,16 @@ BOOL CVehicle::JamEligible() const {
         return (FALSE);
     if (m_unitFlags & (dying | stopped))
         return (FALSE);
+    if (!m_cOwn)                            // no physical road occupancy to clear
+        return (FALSE);
     if (IsHpControl())                       // the player is driving this one
         return (FALSE);
-    if (!GetData()->IsTransport())           // trucks only, not military
+    if (GetData()->IsBoat())
+        return (FALSE);
+    // An inactive crane clearing the road needs to request space too. Active
+    // construction remains excluded by m_pBldg below; preserve its build order.
+    if (!GetData()->IsTransport() &&
+        !(GetData()->IsCrane() && (m_iEvent == none || m_iEvent == build)))
         return (FALSE);
     if (GetData()->GetVehFlags() & CTransportData::FL1hex)
         return (FALSE);
@@ -2788,32 +2976,33 @@ BOOL CVehicle::JamEligible() const {
 // own two ends, nothing radial, nothing distant.
 void CVehicle::JamForward() {
 
-    // A JAM IS NOT A CHAIN OF TOUCHING TRUCKS. It has gaps - a free sub here and there -
-    // and strict adjacency stopped the request dead at the first one, which is why the
-    // panic reached a couple of trucks instead of the cluster. Sweep a small box instead:
-    // every eligible truck within JAM_FWD_HEXES gets the request, and since each of them
-    // sweeps its own box in turn, the wave crosses gaps and covers the whole knot without
-    // anyone building a group or scanning the map.
-    CHexCoord _c(GetHexHead());
+    // Only occupied body squares touching either end participate. A reservation
+    // for a future step is not physical contact, and a nearby queue is not ours.
     int iSent = 0;
-    for (int dx = -JAM_FWD_HEXES; dx <= JAM_FWD_HEXES; dx++)
-        for (int dy = -JAM_FWD_HEXES; dy <= JAM_FWD_HEXES; dy++)
-            for (int iSx = 0; iSx < 2; iSx++)
-                for (int iSy = 0; iSy < 2; iSy++) {
-                    CSubHex _n((_c.X() + dx) * 2 + iSx, (_c.Y() + dy) * 2 + iSy);
-                    _n.Wrap();
-                    CVehicle *pOn = theVehicleHex._GetVehicle(_n);
-                    if ((pOn == NULL) || (pOn == this))
-                        continue;
-                    if (!pOn->JamEligible())
-                        continue;
-                    // cooling blocks RAISING a wave, not joining one
-                    if (pOn->m_iJamClear > 0)
-                        continue;              // already in, keep its own deadline
-                    pOn->m_iJamClear = m_iJamClear;   // carry what is LEFT, never a fresh window
-                    pOn->m_iJamFwd   = 0;             // pass it on at its next update
-                    iSent++;
-                }
+    for (int iEnd = 0; iEnd < 2; iEnd++)
+        for (int dx = -1; dx <= 1; dx++)
+            for (int dy = -1; dy <= 1; dy++) {
+                CSubHex _n(iEnd == 0 ? m_ptHead : m_ptTail);
+                _n.x += dx;
+                _n.y += dy;
+                _n.Wrap();
+                CVehicle *pOn = theVehicleHex._GetVehicle(_n);
+                if ((pOn == NULL) || (pOn == this))
+                    continue;
+                if (pOn->GetOwner() != GetOwner() ||
+                    (_n != pOn->m_ptHead && _n != pOn->m_ptTail))
+                    continue;
+                if (!pOn->JamEligible())
+                    continue;
+                // Cooling blocks raising a request, not joining one.
+                if (pOn->m_iJamClear > 0)
+                    continue;                    // already in, keep its deadline
+                pOn->m_iJamClear = m_iJamClear;    // carry only what is left
+                pOn->m_iJamFwd = 0;
+                iSent++;
+                WaitLog("[CLEAR-CONTACT] from %d to %d sub %d,%d frames %d", GetID(),
+                        pOn->GetID(), _n.x, _n.y, m_iJamClear);
+            }
 
     if (iSent > 0)
         WaitLog("[JAM] veh %d at hex %d,%d passed clearance to %d trucks, %d frames left",
@@ -2830,24 +3019,39 @@ void CVehicle::JamWatch() {
     if (m_iJamCool > 0)
         m_iJamCool -= iFr;
 
+    // Eligibility can change during a request (building entry, player Stop,
+    // manual control, death). Never relay from a stale, unoccupied footprint.
+    if (!JamEligible()) {
+        m_iJamClear = m_iJamFwd = m_iJamWatch = 0;
+        return;
+    }
+
     // taking part in someone's request
     if (m_iJamClear > 0) {
-        m_iJamFwd -= iFr;
-        if (m_iJamFwd <= 0) {
-            m_iJamFwd = JAM_FWD_EVERY;       // re-offer periodically, on our OWN update,
-            JamForward();                    // never as a recursive call into movement
-        }
+        // Expire before forwarding. Otherwise a one-frame request can pass to
+        // a neighbour, expire here, and be passed back later in the same update.
+        // Each recipient must spend elapsed time before it can relay the request.
         m_iJamClear -= iFr;
         if (m_iJamClear <= 0) {
             m_iJamClear = 0;
             m_iJamFwd   = 0;
             m_iJamCool  = JAM_COOL_FRAMES;   // participation costs the right to start one
+        } else {
+            m_iJamFwd -= iFr;
+            if (m_iJamFwd <= 0) {
+                m_iJamFwd = JAM_FWD_EVERY;
+                JamForward();
+            }
         }
         return;
     }
 
-    if (!JamEligible())
+    // Idle parking and recovery holds are not failed travel. Start a fresh
+    // watch on departure; active clearance requests above still expire/relay.
+    if (m_cMode == stop) {
+        m_iJamWatch = 0;
         return;
+    }
 
     int cx = m_ptHead.x + m_ptTail.x;        // doubled centre
     int cy = m_ptHead.y + m_ptTail.y;
@@ -2871,11 +3075,14 @@ void CVehicle::JamWatch() {
         return;
     if (m_iJamCool > 0)
         return;
-    if (m_cMode == stop)                     // parked, not jammed
-        return;
-
     // only while a truck is actually in our way - a slow queue is not a jam
-    CVehicle *pIn = theVehicleHex._GetVehicle(m_ptNext);
+    // Traffic waiting parks m_ptNext on our own head. The actual blocked step
+    // remains in m_subWaitNext; testing our head mistakes a stuck queue for no blocker.
+    CSubHex blockedStep = (m_cMode == traffic) ? m_subWaitNext : m_ptNext;
+    BlockedLaneStep(blockedStep);
+    if (blockedStep.x < 0 || blockedStep.y < 0)
+        return;
+    CVehicle *pIn = theVehicleHex._GetVehicle(blockedStep);
     if ((pIn == NULL) || (pIn == this))
         return;
 
@@ -2883,11 +3090,62 @@ void CVehicle::JamWatch() {
     // stagger the expiry per truck so the cluster does not resume all at once
     m_iJamClear = JAM_WINDOW_FRAMES + (int) (GetID() % 8) * (JAM_STAGGER_FRAMES / 8);
     m_iJamFwd   = 0;
-    WaitLog("[JAM] veh %d at hex %d,%d STUCK, raising clearance request for %d frames",
-            GetID(), GetHexHead().X(), GetHexHead().Y(), m_iJamClear);
+    WaitLog("[JAM] veh %d at hex %d,%d STUCK, raising clearance request for %d frames, blocker %d traffic %d",
+            GetID(), GetHexHead().X(), GetHexHead().Y(), m_iJamClear, pIn->GetID(), (int) (m_cMode == traffic));
 }
 
 BOOL CVehicle::BackUp() {
+
+    if (m_bForwardEscape)
+        return (FALSE);
+
+    // Two retreats can meet rear-to-rear in the same lane. Keep that lane's
+    // ordinary travel direction; the other drives nose-first until clear. A vehicle
+    // meeting that forward escape makes the same local choice on its own update.
+    // The forward commitment lasts to arrival, so another request cannot undo it.
+    BOOL bForwardYield = FALSE;
+    DWORD fixedBlocker = 0;
+    int axisX = CSubHex::Diff(m_ptHead.x - m_ptTail.x);
+    int axisY = CSubHex::Diff(m_ptHead.y - m_ptTail.y);
+    if (m_bReversing) {
+        CSubHex blockedStep;
+        if (!BlockedLaneStep(blockedStep))
+            return (FALSE);
+        CVehicle *pIn = theVehicleHex._GetVehicle(blockedStep);
+        // Match InLane's convention. Independent pairs in one lane must choose
+        // the same direction, or their escaping groups meet head-on again.
+        BOOL bAgainstLane = axisX != 0 ? ((m_ptHead.y & 1) != (axisX > 0 ? 1 : 0)) :
+                                       ((m_ptHead.x & 1) != (axisY > 0 ? 0 : 1));
+        if (pIn == NULL || (blockedStep != pIn->m_ptHead && blockedStep != pIn->m_ptTail))
+            return (FALSE);
+        // A stationary soldier or explicitly stopped unit cannot join our
+        // retreat. After the existing recovery ladder reaches this branch,
+        // escape nose-first in this lane's normal direction instead of backing
+        // into that same body forever. Never change the blocker's orders.
+        BOOL bFixed = m_iJamClear > 0 && bAgainstLane &&
+            pIn->GetOwner() != NULL && pIn->GetOwner()->IsLocal() && // only authoritative blockers
+            (pIn->m_cMode == stop || pIn->IsFlag(stopped)) &&
+            (pIn->GetOwner() != GetOwner() || !pIn->JamEligible());
+        BOOL bRetreat = pIn->GetOwner() == GetOwner() && pIn->JamEligible() &&
+            CSubHex::Diff(pIn->m_ptHead.x - pIn->m_ptTail.x) == -axisX &&
+            CSubHex::Diff(pIn->m_ptHead.y - pIn->m_ptTail.y) == -axisY &&
+            (pIn->m_bForwardEscape ||
+             (m_iJamClear > 0 && pIn->m_bReversing && bAgainstLane));
+        if (!bFixed && !bRetreat)
+            return (FALSE);
+        if (bFixed)
+            fixedBlocker = pIn->GetID();
+        bForwardYield = TRUE;
+    } else if (m_iJamClear > 0 && ((axisX == 0) != (axisY == 0))) {
+        CSubHex behind(m_ptTail.x - axisX, m_ptTail.y - axisY);
+        behind.Wrap();
+        CVehicle *pBehind = theVehicleHex._GetVehicle(behind);
+        bForwardYield = pBehind != NULL && pBehind != this &&
+            pBehind->GetOwner() == GetOwner() && pBehind->JamEligible() &&
+            pBehind->m_bForwardEscape && pBehind->m_ptHead == behind &&
+            CSubHex::Diff(pBehind->m_ptHead.x - pBehind->m_ptTail.x) == axisX &&
+            CSubHex::Diff(pBehind->m_ptHead.y - pBehind->m_ptTail.y) == axisY;
+    }
 
     if (!(TrafficOpts() & 8))
         return (FALSE);
@@ -2901,27 +3159,19 @@ BOOL CVehicle::BackUp() {
     int iCorrLen  = CorridorAhead(iCorrVehs);
     BOOL bCluster = (iCorrLen >= CORRIDOR_MIN_HEXES) && (iCorrVehs >= CORRIDOR_MIN_VEHS);
 
-    // THE TWO-ATTEMPT CAP IS WRONG INSIDE A CLUSTER. It exists so a stuck PAIR cannot
-    // ping-pong forever, which is right in the open. In a packed corridor it strands
-    // exactly the trucks that have to leave: the ones walled in at the front spend
-    // both attempts failing while the rear is still full, and are then permanently
-    // out of options even after the space behind them clears.
-    //
-    // Letting them keep trying is what makes a cluster drain WITHOUT any coordination.
-    // Each truck independently commits to backing out; only those with clear space
-    // behind can actually execute, which is the rearmost; when they go, the next
-    // inherit clear space and succeed in turn. The evacuation orders itself, and no
-    // truck ever instructs another - the post-retreat hold rate-limits the retries.
-    if (m_iBackUps >= (bCluster ? MAX_BACK_UPS_JAM : MAX_BACK_UPS))
+    // A packed queue may need several attempts before space reaches its front.
+    // An active clearance request can retry after the ordinary budget is spent.
+    if (!bForwardYield && m_iJamClear <= 0 &&
+        m_iBackUps >= (bCluster ? MAX_BACK_UPS_JAM : MAX_BACK_UPS))
         return (FALSE);
 
-    // How FAR back? Far enough to actually be out of the way. Reversing a single
-    // hex on a long bridge just moves the wedge one hex along the span, so walk
-    // back down our own axis until we are off the bridge (or off the pavement),
-    // and make THAT the destination. Normal movement takes us there, so the wait
-    // and nudge rules still apply on the way out.
+    // Find a legal rearward destination; ordinary movement negotiates occupants.
     int xBack = CSubHex::Diff(m_ptTail.x - m_ptHead.x);
     int yBack = CSubHex::Diff(m_ptTail.y - m_ptHead.y);
+    if (bForwardYield && !m_bReversing) {
+        xBack = -xBack;
+        yBack = -yBack;
+    }
     if ((xBack == 0) && (yBack == 0))
         return (FALSE);
 
@@ -2930,19 +3180,10 @@ BOOL CVehicle::BackUp() {
     BOOL bFound = FALSE;
     BOOL bWasBridge = (theMap._GetHex(m_ptHead)->GetUnits() & CHex::bridge) ? TRUE : FALSE;
 
-    // HOW FAR BACK IS FAR ENOUGH? As far as the confined stretch is long.
-    //
-    // Measured, the median retreat was SIX SUB-HEXES - three hexes, about one and a
-    // half truck lengths - because the walk stopped at the first candidate that was
-    // off the bridge and off the pavement. Near a mouth that is a patch of dirt right
-    // beside the jam, so the truck reversed one length, parked, and was back in the
-    // queue as soon as it was re-tasked. That is "get off the road", not "get out of
-    // the corridor", and only the top 10%% ever reached the 40-sub cap.
-    //
-    // Taking the distance from the corridor's own geometry needs no per-truck retry
-    // counter: a longer corridor produces a longer retreat by construction.
+    // A crowded corridor needs more separation than its nearest patch of dirt.
     int iMinBack  = bCluster ? (iCorrLen * 2) : 0;      // hexes -> subs
 
+    BOOL bOnWater = IsOnWater() || (GetData()->GetWheelType() == CWheelTypes::water);
     for (int iStep = 0; iStep < BACK_UP_SUBS; iStep++) {
         // FOLLOW THE ROAD BACK, not the hull's exact diagonal. A truck sitting at an
         // angle has a body vector like (+1,+1), and stepping strictly along it walks
@@ -2963,8 +3204,11 @@ BOOL CVehicle::BackUp() {
         for (int iT = 0; iT < iTries; iT++) {
             CSubHex _c(_alt[iT]);
             _c.Wrap();
-            if (theMap.GetTerrainCost(CHexCoord(_c.ToCoord()), CHexCoord(_c.ToCoord()), 0,
-                                      GetData()->GetWheelType()) == 0)
+            // Usable terrain beside a bridge is not necessarily a legal exit.
+            // Follow the same terrain transitions as movement, without treating
+            // queued vehicles as permanent obstacles or backing into buildings.
+            if ((theMap._GetHex(_c)->GetUnits() & CHex::bldg) ||
+                !GetData()->CanEnterHex(CHexCoord(_back), CHexCoord(_c), bOnWater, TRUE))
                 continue;
             _back = _c;
             bStep = TRUE;
@@ -3003,22 +3247,26 @@ BOOL CVehicle::BackUp() {
 
     m_iBackUps++;
     WaitLog("[BACKUP] veh %d hex %d,%d sub %d,%d reversing to hex %d,%d sub %d,%d "
-            "(%d sub-hexes back, backup %d, ondeck %d, partial %d)", GetID(),
+            "(%d sub-hexes back, backup %d, ondeck %d, partial %d, already_reversing %d, jam %d)", GetID(),
             GetHexHead().X(), GetHexHead().Y(), m_ptHead.x, m_ptHead.y,
             CHexCoord(_target.ToCoord()).X(), CHexCoord(_target.ToCoord()).Y(), _target.x, _target.y,
             abs(CSubHex::Diff(_target.x - m_ptHead.x)) + abs(CSubHex::Diff(_target.y - m_ptHead.y)),
-            m_iBackUps, (int) bWasBridge, (int) bPartial);
-    // REVERSE, do not turn around. The body ends up on the same squares either way -
-    // head and tail simply swap labels - so the only thing that made this a pivot was
-    // recomputing the facing from the new labels. Pin the facing and the identical
-    // motion reads as backing up, which is the only one of the two a truck wedged on
-    // a one-lane deck has room to do.
-    int iFacing  = m_iDir;
-    m_bReversing = TRUE;
-    Turn180();
+            m_iBackUps, (int) bWasBridge, (int) bPartial, (int) m_bReversing, m_iJamClear);
+    // Swap the movement endpoints without moving the body. SetLoc accounts for
+    // the reverse-facing offset, so the nose still points the original way.
+    BOOL bSwapEnds = !bForwardYield || m_bReversing;
+    m_bReversing = !bForwardYield;
+    m_bForwardEscape = bForwardYield;
+    if (bSwapEnds)
+        Turn180();
+    if (bForwardYield)
+        WaitLog("[FORWARD-YIELD] veh %d head %d,%d tail %d,%d target %d,%d swapped %d",
+                GetID(), m_ptHead.x, m_ptHead.y, m_ptTail.x, m_ptTail.y,
+                _target.x, _target.y, (int) bSwapEnds);
+    if (fixedBlocker != 0)
+        WaitLog("[FORWARD-FIXED-BLOCKER] veh %d blocker %lu target %d,%d", GetID(),
+                (unsigned long)fixedBlocker, _target.x, _target.y);
     DetourTo(_target, TRUE);          // and carry on with the haul afterwards
-    m_bReversing = TRUE;              // DetourTo -> SetDestAndMode clears it; re-arm
-    m_iDir       = iFacing;
     return (TRUE);
 }
 
@@ -3048,7 +3296,15 @@ BOOL CVehicle::LeaveRoad() {
 
     if (!GetOwner()->IsLocal())
         return (FALSE);
-    if (m_iEvent != none)
+    // A build order is not active construction while an idle/blocked crane has
+    // no building attached. Preserve that order through the parking detour.
+    if (m_iEvent != none && !(GetData()->IsCrane() && m_iEvent == build))
+        return (FALSE);
+    if (!m_cOwn || m_pBldg != NULL || IsFlag(stopped) || IsHpControl())
+        return (FALSE);
+    if (!OnPavement(m_ptHead) && !OnPavement(m_ptTail))
+        return (FALSE);
+    if (m_dwLeftRoad != 0 && theGame.GettimeGetTime() - m_dwLeftRoad < 30000)
         return (FALSE);
 
     // Ordinarily: NEVER GIVE UP INSIDE A CORRIDOR. Abandoning the haul to go and park
@@ -3059,37 +3315,39 @@ BOOL CVehicle::LeaveRoad() {
     // to GET OFF the corridor, and a truck that cannot reverse - nothing behind it, or
     // an angle that will not take it - has no other way out. Forbidding this during a
     // panic shut down half the escape routes of exactly the trucks being asked to leave.
-    if (m_iJamClear <= 0) {
+    // An already stopped unit cannot advance the queue; let it clear the road.
+    if (m_iJamClear <= 0 && m_cMode != stop) {
         int iVehsHere = 0;
         if ((theMap._GetHex(m_ptHead)->GetUnits() & CHex::bridge) ||
             (CorridorAhead(iVehsHere) >= CORRIDOR_MIN_HEXES))
             return (FALSE);
     }
-    // only ROAD OCCUPANCY matters. A vehicle inside a building has already released
-    // its hexes via EnterBuilding, so evicting it back out through ExitBuilding
-    // helps nobody and disturbs a vehicle that was not in the way.
-    if (!OnPavement(m_ptHead))
-        return (FALSE);          // already out of everyone's way
-    if (IsFlag(stopped))
-        return (FALSE);          // ordered to stand still
-
-    // one attempt per stagnation window, so this cannot become a shuffle loop
-    if ((m_dwLeftRoad != 0) && (theGame.GettimeGetTime() - m_dwLeftRoad < 30000))
-        return (FALSE);
+    // Rate-limit attempts, including a failed search. The stopped-state update
+    // may retry later without rescanning the parking rings every frame.
+    m_dwLeftRoad = theGame.GettimeGetTime();
 
     CSubHex _spot;
     if (FindOffRoadSpot(_spot, NULL)) {
-        m_dwLeftRoad = theGame.GettimeGetTime();
+        // An exit behind a confined hull needs reverse movement, not a forward
+        // route that tries to turn around on the deck. Reuse the bounded backup.
+        int dx = CSubHex::Diff(_spot.x - m_ptHead.x);
+        int dy = CSubHex::Diff(_spot.y - m_ptHead.y);
+        int iVehs = 0;
+        if (dx * CSubHex::Diff(m_ptHead.x - m_ptTail.x) +
+                dy * CSubHex::Diff(m_ptHead.y - m_ptTail.y) < 0 &&
+            ((theMap._GetHex(m_ptHead)->GetUnits() & CHex::bridge) ||
+             (theMap._GetHex(m_ptTail)->GetUnits() & CHex::bridge) ||
+             CorridorAhead(iVehs) >= CORRIDOR_MIN_HEXES) && BackUp()) {
+            WaitLog("[PARK-REVERSE] veh %d backing out for off-road exit %d,%d", GetID(), _spot.x, _spot.y);
+            return (TRUE);
+        }
         WaitLog("[OFFROAD] veh %d giving up at hex %d,%d, parking off-road at hex %d,%d", GetID(),
                 GetHexHead().X(), GetHexHead().Y(), CHexCoord(_spot.ToCoord()).X(),
                 CHexCoord(_spot.ToCoord()).Y());
-        // AND STAY GONE for a while. Parking with no job reports "stopped" to the
-        // router, which re-sends us to the same destination within the frame, so the
-        // corridor we just left is refilled by the truck that left it. DetourTo
-        // preserves this across SetDestAndMode; Operate only counts it down once we
-        // are actually stopped, so it starts when we arrive, not when we set off.
+        // Give the cleared traffic time to move before the saved job resumes.
+        // Operate starts this hold only after the whole body is off the road.
         m_iHoldFrames = GIVEUP_HOLD_FRAMES;
-        DetourTo(_spot, FALSE);
+        DetourTo(_spot, m_ptHead != m_ptDest);
         return (TRUE);
     }
 
@@ -3102,11 +3360,10 @@ BOOL CVehicle::LeaveRoad() {
         if (!CanEnter(_next))
             continue;
 
-        m_dwLeftRoad = theGame.GettimeGetTime();
         WaitLog("[OFFROAD] veh %d giving up at hex %d,%d, pulling off to sub %d,%d", GetID(),
                 GetHexHead().X(), GetHexHead().Y(), _next.x, _next.y);
         m_iHoldFrames = GIVEUP_HOLD_FRAMES;   // see above - a departure that returns at once drains nothing
-        DetourTo(_next, FALSE);       // we were giving up anyway - just do it off the road
+        DetourTo(_next, m_ptHead != m_ptDest);
         return (TRUE);
     }
 
@@ -3155,9 +3412,23 @@ BOOL CVehicle::TryNewSub(BOOL bNoNewPath) {
         xDif = CSubHex::Diff(m_hexNext.X() * 2 - m_ptHead.x);
         yDif = CSubHex::Diff(m_hexNext.Y() * 2 - m_ptHead.y);
         int iOld = ((xDif >= 0) ? xDif : -(xDif + 1)) + ((yDif >= 0) ? yDif : -(yDif + 1));
-        if ((iOld <= iNew) && (iNew != 0))
-            if (!FindSub(TRUE))
+        // Parking detours must finish clearing too; their hold starts only off-road.
+        // Apply the same escape exception as ordinary next-step selection.
+        BOOL bEscape = m_bResume && (m_bReversing || m_bForwardEscape || m_iHoldFrames > 0) && JamEligible();
+        if ((iOld <= iNew) && (iNew != 0) && bEscape)
+            WaitLog("[ESCAPE-STEP] veh %d source retry head %d,%d tail %d,%d next %d,%d "
+                    "hexnext %d,%d distance %d to %d times %d reverse %d forward %d hold %d",
+                    GetID(), m_ptHead.x, m_ptHead.y, m_ptTail.x, m_ptTail.y,
+                    m_ptNext.x, m_ptNext.y, m_hexNext.X(), m_hexNext.Y(), iOld, iNew, m_iTimesOn, (int)m_bReversing, (int)m_bForwardEscape, m_iHoldFrames);
+        if ((iOld <= iNew) && (iNew != 0) && !bEscape)
+            if (!FindSub(TRUE)) {
+                if (GetOwner()->IsMe() && m_bResume && m_iHoldFrames > 0)
+                    WaitLog("[PARK-CIRCLE] veh %d source retry head %d,%d tail %d,%d hexnext %d,%d "
+                            "retry %d visits %d hold %d",
+                            GetID(), m_ptHead.x, m_ptHead.y, m_ptTail.x, m_ptTail.y,
+                            m_hexNext.X(), m_hexNext.Y(), m_iNumRetries, m_iTimesOn, m_iHoldFrames);
                 return (FALSE);
+            }
     }
 
     // set it up to go
@@ -3224,13 +3495,14 @@ void CVehicle::HandleBlocked() {
         return;
     }
 
-    // ARE WE SOMEWHERE WITH NO ROOM TO MANOEUVRE? Computed ONCE per blocked call and
-    // reused by the rungs below, so a truck deep in the ladder does not pay for the
-    // corridor walk over and over. On a bridge or between building rows there is
-    // nowhere to swing out to, so the circling rungs - random re-route, rotate,
-    // turn-around - cannot succeed; they only spend retries, spin the hull on the
-    // spot and hand the truck to the oncoming lane. Skip them there and let the
-    // ladder fall through to the reverse, which is the only move that fits.
+    // The parking path failed, but we already made space. Complete this detour
+    // where we stand rather than spend minutes chasing an unreachable parking
+    // square. ArrivedDest supplies the usual hold and resumes the saved job.
+    if (m_iPathLen == 0 && m_iNumRetries == MAX_NUM_RETRIES && FinishClearDetour())
+        return;
+
+    // Compute confinement once for the existing recovery ladder. Circling in a
+    // narrow corridor cannot clear the obstruction and may enter the wrong lane.
     int  iCorrVehs  = 0;
     int  iCorrLen   = CorridorAhead(iCorrVehs);
     BOOL bConfined  = (TrafficOpts() & 8) &&
@@ -3832,8 +4104,25 @@ void CVehicle::HandleBlocked() {
         }
     }
 
-    // at this point we wait a little longer
-    if (m_dwTimeBlocked < (DWORD) (3 * m_iBlockCount * m_iBlockCount * m_iBlockCount * m_iSpeed * STEPS_HEX)) {
+    // Trucks/cranes that passed this wait must reach the remaining recovery
+    // steps instead of restarting it whenever block_count grows. MAX_NUM_RETRIES
+    // is also a direct no-path marker, not evidence that this wait was completed.
+    if (m_iNumRetries > 13 && m_iNumRetries < MAX_NUM_RETRIES && JamEligible() &&
+        m_dwTimeBlocked < (DWORD) (3 * m_iBlockCount * m_iBlockCount * m_iBlockCount * m_iSpeed * STEPS_HEX))
+        WaitLog("[RETRY-ADVANCE] veh %d head %d,%d tail %d,%d retry %d count %ld elapsed %lu",
+                GetID(), m_ptHead.x, m_ptHead.y, m_ptTail.x, m_ptTail.y,
+                m_iNumRetries, (long)m_iBlockCount, (unsigned long)m_dwTimeBlocked);
+    if ((m_iNumRetries <= 13 || m_iNumRetries >= MAX_NUM_RETRIES || !JamEligible()) &&
+        m_dwTimeBlocked < (DWORD) (3 * m_iBlockCount * m_iBlockCount * m_iBlockCount * m_iSpeed * STEPS_HEX)) {
+        if (GetOwner()->IsMe() && theGame.GettimeGetTime() - m_dwBlockLog > 5000) {
+            m_dwBlockLog = theGame.GettimeGetTime();
+            WaitLog("[RETRY-WAIT] veh %d head %d,%d tail %d,%d next %d,%d retry %d count %ld "
+                    "speed %d elapsed %lu threshold %lu reverse %d forward %d resume %d hold %d type %d eligible %d",
+                    GetID(), m_ptHead.x, m_ptHead.y, m_ptTail.x, m_ptTail.y, m_ptNext.x, m_ptNext.y,
+                    m_iNumRetries, (long)m_iBlockCount, m_iSpeed, (unsigned long)m_dwTimeBlocked,
+                    (unsigned long)(3 * m_iBlockCount * m_iBlockCount * m_iBlockCount * m_iSpeed * STEPS_HEX),
+                    (int)m_bReversing, (int)m_bForwardEscape, (int)m_bResume, m_iHoldFrames, GetData()->GetType(), (int)JamEligible());
+        }
         m_iBlockCount--;
         return;
     }
@@ -3857,9 +4146,16 @@ void CVehicle::HandleBlocked() {
         m_iNumRetries++;
 
         if (!(GetData()->GetVehFlags() & CTransportData::FL1hex)) {
-            for (int iDir = -3; iDir <= 3; iDir++) {
+            // Match FindSubEx: an aligned hull must not turn across a narrow
+            // corridor just because this later recovery rung was reached.
+            int iTurnLimit = (bConfined && iCorrLen >= 2) ? 1 : 3;
+            for (int iDir = -iTurnLimit; iDir <= iTurnLimit; iDir++) {
                 CSubHex _next = Rotate(iDir);
                 if (CanEnter(_next)) {
+                    if (bConfined && abs(iDir) > 1)
+                        WaitLog("[CONFINED-TURN] veh %d head %d,%d tail %d,%d turn %d next %d,%d reverse %d corridor %d",
+                                GetID(), m_ptHead.x, m_ptHead.y, m_ptTail.x, m_ptTail.y,
+                                iDir, _next.x, _next.y, (int) m_bReversing, iCorrLen);
                     m_ptNext = _next;
 #ifdef _LOGOUT
                     logPrintf(LOG_PRI_VERBOSE, LOG_VEH_MOVE, "Vehicle %d turn (-)3 try 2", GetID());
@@ -3936,6 +4232,9 @@ void CVehicle::HandleBlocked() {
                         logPrintf(LOG_PRI_CRITICAL, LOG_VEH_MOVE, "Vehicle %d at sub (%d,%d) transport to sub (%d,%d)",
                                   GetID(), m_ptHead.x, m_ptHead.y, _head.x, _head.y);
 #endif
+                        WaitLog("[AI-RECOVERY-HOP] veh %d head %d,%d tail %d,%d to %d,%d/%d,%d reverse %d dir %d world %d,%d",
+                                GetID(), m_ptHead.x, m_ptHead.y, m_ptTail.x, m_ptTail.y,
+                                _head.x, _head.y, _tail.x, _tail.y, (int)m_bReversing, m_iDir, m_maploc.x, m_maploc.y);
                         ReleaseOwnership();
                         m_ptNext = m_ptHead = _head;
                         m_ptTail = _tail;
@@ -4565,6 +4864,13 @@ void CVehicleHex::CheckHex(CSubHex const &_sub) {
 
 void CVehicle::PostArrivedOrBlocked() {
 
+    // FindNextHex can stop a failed parking path and notify directly, bypassing
+    // HandleBlocked. Preserve the haul instead of reporting this temporary target
+    // to the router and letting a replacement order cancel the retreat's hold.
+    if (FinishClearDetour()) {
+        WaitLog("[DETOUR-NOTIFY-HANDLED] veh %d", GetID());
+        return;
+    }
     m_bFlags |= told_ai_stop;
 
     // BUGS #100: a vehicle standing in its destination hex on ANOTHER sub-hex is

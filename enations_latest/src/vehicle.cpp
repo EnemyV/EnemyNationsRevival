@@ -226,8 +226,14 @@ void CVehicle::Operate() {
     // stopped test on purpose: a truck the player parked stays parked.
     // Only while actually STOPPED. A hold armed at the moment a truck gives up must
     // start when it reaches its parking spot, not tick away during the drive there.
-    if ((m_iHoldFrames > 0) && (m_cMode == stop)) {
-        m_iHoldFrames -= theGame.GetFramesElapsed();
+    // A failed route can stop on the roadway without arriving at its parking
+    // target. Cancel that unusable hold and retry the saved job on this update.
+    // A hold armed during movement still keeps its full duration until arrival.
+    if ((m_iHoldFrames > 0) && (m_cMode == stop) && m_cOwn && GetOwner()->IsLocal()) {
+        if (ClearOfRoad(m_ptHead) && ClearOfRoad(m_ptTail))
+            m_iHoldFrames -= theGame.GetFramesElapsed();
+        else
+            m_iHoldFrames = 0;
         if (m_iHoldFrames <= 0) {
             m_iHoldFrames = 0;
 
@@ -274,6 +280,12 @@ void CVehicle::Operate() {
                 return;
 
             if (TestStuck())
+                return;
+
+            // Also handle units loaded or left stopped on a through-route. The
+            // local method protects explicit Stop, active construction and units
+            // inside buildings, and throttles its own parking search.
+            if (!GetData()->IsBoat() && (GetData()->IsTransport() || GetData()->IsCrane()) && LeaveRoad())
                 return;
 
             xASSERT (ASSERT_PRI_ANAL, ASSERT_VEH_MOVE, (!m_cOwn) || (theBuildingHex.GetBuilding(m_ptHead) == NULL));

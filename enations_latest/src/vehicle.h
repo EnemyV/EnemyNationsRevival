@@ -43,8 +43,6 @@ const int JAM_WINDOW_FRAMES = 24 * 30;   // how long the shared make-space prior
                                     // need the ones BEHIND them to clear first, and the
                                     // window expired long before a vacancy could travel in.
                                     // The panic has to outlast the queue it is unwinding.
-const int JAM_FWD_HEXES     = 2;         // how far a clearance request reaches - a jam has GAPS,
-                                    // so strict touching breaks the chain at the first empty sub
 const int JAM_FWD_EVERY     = 24 * 2;    // ...and re-offer it, so trucks that drift into the
                                     // cluster later are recruited instead of being missed
 const int JAM_STAGGER_FRAMES = 24 * 8;   // spread of per-truck expiry, so a whole cluster
@@ -349,9 +347,10 @@ public:
 		void					ArrivedDest ();
 		BOOL					ResumeJob ();		// back onto the job a traffic detour interrupted
 		BOOL					ClearOfRoad (CSubHex const &_sub);	// off the span AND off the pavement
+		BOOL                    FinishClearDetour (); // failed parking reached a safe resting pose
 		int						CorridorAhead (int &iVehs);	// hexes of NARROW corridor ahead, 0 if none
 		void					JamWatch ();		// stagnation watch + raise a clearance request
-		void					JamForward ();		// pass the request to the trucks TOUCHING us, once
+		void					JamForward ();		// re-offer remaining request time to touching trucks
 		BOOL					JamEligible () const;
 		BOOL					FindNextHex ();
 		void					ArrivedNextHex ();
