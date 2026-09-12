@@ -4973,6 +4973,7 @@ void CVehicle::ctor( )
     m_bWaitedForMover  = FALSE;
     m_subWaitNext.x    = m_subWaitNext.y = -1;
     m_iBackUps         = 0;
+    m_iParkSkip        = 0;
     m_dwAskedToMove    = 0;
     m_dwLeftRoad       = 0;
     m_subResume        = CSubHex( 0, 0 );
@@ -4990,6 +4991,7 @@ void CVehicle::ctor( )
     m_iCorrLen         = 0;
     m_dwBlockLog       = 0;
     m_bReversing       = FALSE;
+    m_bForwardEscape   = FALSE;
     m_iHoldFrames      = 0;
 #if EN_PATH_PROBES
     m_hexLastClamp    = CHexCoord( -1, -1 );  // no prior clamp

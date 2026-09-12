@@ -100,7 +100,8 @@ void CVehicle::Move() {
     if (m_ptDest != m_ptHead) {
         // we've arrived at ptNext
         //   inside if for special case of already there
-        ArrivedNextHex();
+        if (m_ptNext != m_ptHead)
+            ArrivedNextHex();
 
         // We've made it to m_hexNext
         // if its not ours, we wait
@@ -197,17 +198,9 @@ BOOL CVehicle::MoveInHex() {
     m_maploc.x = __roll(0, MAX_HEX_HT * theMap.Get_eX(), m_maploc.x);
     m_maploc.y += iStep * m_iYadd;
     m_maploc.y = __roll(0, MAX_HEX_HT * theMap.Get_eY(), m_maploc.y);
-    // A REVERSING HULL NEVER ROTATES - guarded HERE, where the turn is actually
-    // applied, rather than only where m_iDadd is computed. m_iDadd is worked out once
-    // in SetMoveParams and then applied on every step, so any path that recomputed it
-    // while m_bReversing was momentarily clear - SetDestAndMode clears the flag, and
-    // CheckExit calls SetMoveParams (unit.cpp:3565) - baked a half turn in that the
-    // later restore could not undo. That is the truck seen backing up facing the wrong
-    // way. Guarding the application closes every such path at once.
-    if (!m_bReversing) {
-        m_iDir += iStep * m_iDadd;
-        m_iDir = __roll(0, FULL_ROT, m_iDir);
-    }
+    // A backing truck follows the body's turn too; only its nose is reversed.
+    m_iDir += iStep * m_iDadd;
+    m_iDir = __roll(0, FULL_ROT, m_iDir);
 
     if (GetTurret())
         GetTurret()->m_iDir = __roll(0, FULL_ROT, GetTurret()->m_iDir + iStep * m_iTadd);
@@ -220,6 +213,7 @@ void CVehicle::ArrivedNextHex() {
 
     // we moved, so we are entitled to wait again at the next bump
     m_bWaitedForMover = FALSE;
+    m_iParkSkip = 0; // a different position starts a fresh parking search
 
 #ifdef _LOGOUT
     logPrintf(LOG_PRI_VERBOSE, LOG_VEH_MOVE, "Vehicle %d arrived next sub (%d,%d)", GetID(), m_ptHead.x, m_ptHead.y);
@@ -821,13 +815,7 @@ void CVehicle::SetMoveParams(BOOL bFixTurret) {
         m_iXadd = CSubHex::Diff(m_ptNext.x - m_ptHead.x) * 2;
         m_iYadd = CSubHex::Diff(m_ptNext.y - m_ptHead.y) * 2;
     } else {
-        // A REVERSING vehicle DOES NOT TURN. m_iDadd is a per-step rotation the move
-        // loop applies every frame (m_iDir += iStep * m_iDadd, vehmove.cpp:200), so
-        // pinning m_iDir in SetLoc was never enough to stop a pivot: right after
-        // Turn180 the angle between the intended step and the body axis IS a half
-        // turn, and this line animated the hull through exactly the turn-around the
-        // pin was written to prevent. Backing up means the hull does not rotate.
-        m_iDadd = m_bReversing ? 0 : GetAngle(m_ptNext, m_ptHead, m_ptHead, m_ptTail);
+        m_iDadd = GetAngle(m_ptNext, m_ptHead, m_ptHead, m_ptTail);
         m_iXadd = CSubHex::Diff((m_ptNext.x + m_ptHead.x) - (m_ptHead.x + m_ptTail.x));
         m_iYadd = CSubHex::Diff((m_ptNext.y + m_ptHead.y) - (m_ptHead.y + m_ptTail.y));
     }
@@ -858,6 +846,11 @@ void CVehicle::SetMoveParams(BOOL bFixTurret) {
     }
 
     DetermineSpeed(FALSE);
+
+    // Arrival and blocked movement can leave next==head. There is no step to
+    // interpolate: animating it pulls the tail into the head and invents a turn.
+    if (m_ptNext == m_ptHead)
+        ZeroMoveParams();
 
     ASSERT_VALID_LOC (this);
     ASSERT ((!m_cOwn) || (theVehicleHex.GetVehicle(m_ptHead) == this));
@@ -1620,18 +1613,18 @@ void CVehicle::SetLoc(BOOL)
             m_maploc.y -= theMap.Get_eY() * MAX_HEX_HT;
     }
 
-    // A REVERSING vehicle KEEPS ITS FACING. Direction is normally derived from the
-    // body - head to tail - so swapping those labels to retreat spun the hull on the
-    // spot and drove it away nose-first. That is a turn-around, and on a one-lane
-    // bridge deck there is no room to turn around. Pinning the facing while the
-    // labels move makes the same motion a genuine backup: the hull slides back down
-    // its own axis, still pointing the way it came.
-    if (!m_bReversing) {
+    // Remote facing comes from its owner in CMsgVehLoc. Its endpoint labels
+    // describe movement, not which end is the nose during a reverse. Preserve
+    // that facing on packet apply and later endpoint refreshes.
+    if (GetOwner() == NULL || GetOwner()->IsLocal()) {
+        // Reverse swaps the movement head/tail, so the nose is half a turn from
+        // that axis. Derive it each step: pinning an old bearing made a truck slide
+        // sideways when its route curved. Straight backing keeps the same facing.
         if (GetData()->GetVehFlags() & CTransportData::FL1hex) {
             if (m_ptNext != m_ptHead)
                 m_iDir = CalcNextDir();
         } else
-            m_iDir = CalcDir();
+            m_iDir = __roll(0, FULL_ROT, CalcDir() + (m_bReversing ? FULL_ROT / 2 : 0));
     }
 
     // turret - on target if shooting, else with tank
@@ -3916,6 +3909,47 @@ BOOL CVehicle::TryNextHex() {
     ASSERT (m_ptNext != m_ptHead);
     ASSERT_VALID_LOC (this);
     return (TRUE);
+}
+
+void CVehicle::EndReverse() {
+    if (!m_bReversing)
+        return;
+
+    WaitLog("[END-REVERSE-START] veh %d mode %d owned %d head %d,%d tail %d,%d next %d,%d steps %d turn %d",
+            GetID(), (int)m_cMode, (int)m_cOwn, m_ptHead.x, m_ptHead.y,
+            m_ptTail.x, m_ptTail.y, m_ptNext.x, m_ptNext.y, m_iStepsLeft, m_iDadd);
+    int oldDir = m_iDir;
+    CMapLoc oldLoc(m_maploc);
+    m_bReversing = FALSE;
+    if (m_cMode == moving && m_cOwn && m_ptNext != m_ptHead &&
+        theVehicleHex._GetVehicle(m_ptNext) == this &&
+        m_iStepsLeft > 0 && m_iStepsLeft < STEPS_HEX) {
+        // A->B->C at fraction f is C->B->A at fraction 1-f. Keep all three
+        // reservations and the displayed pose; retrace the partial step nose-first.
+        CSubHex oldTail(m_ptTail);
+        m_ptTail = m_ptNext;
+        m_ptNext = oldTail;
+        m_iStepsLeft = STEPS_HEX - m_iStepsLeft;
+        m_iXadd = -m_iXadd;
+        m_iYadd = -m_iYadd;
+        m_iDadd = -m_iDadd;
+        m_iTadd = -m_iTadd;
+        WaitLog("[END-REVERSE] veh %d partial dir %d>%d world %d,%d>%d,%d",
+                GetID(), oldDir, m_iDir, oldLoc.x, oldLoc.y, m_maploc.x, m_maploc.y);
+        return;
+    }
+
+    // A completed interpolation may still await its endpoint update.
+    if (m_cMode == moving && m_cOwn && m_iStepsLeft == 0 &&
+        m_ptNext != m_ptHead && theVehicleHex._GetVehicle(m_ptNext) == this)
+        ArrivedNextHex();
+    if (m_ptNext != m_ptHead && m_ptNext != m_ptTail &&
+        theVehicleHex._GetVehicle(m_ptNext) == this)
+        theVehicleHex.ReleaseHex(m_ptNext, this);
+    ZeroMoveParams();
+    Turn180();
+    WaitLog("[END-REVERSE] veh %d settled dir %d>%d world %d,%d>%d,%d",
+            GetID(), oldDir, m_iDir, oldLoc.x, oldLoc.y, m_maploc.x, m_maploc.y);
 }
 
 void CVehicle::Turn180() {
