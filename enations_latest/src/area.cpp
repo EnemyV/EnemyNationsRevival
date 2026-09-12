@@ -2676,6 +2676,14 @@ void CWndArea::DrawRouteWaypoints( )
             // leg's end dot
             if ( pR->GetRouteType( ) == CRoute::build )
                 ghost( pR->GetCoord( ), pR->GetBldgType( ), pR->GetBldgDir( ), wp );
+            // #38: a queued ROAD order shows the segment it will lay
+            if ( pR->GetRouteType( ) == CRoute::build_road )
+            {
+                CPoint we = wrapNear( hexWin( pR->GetEndCoord( ) ), wp );
+                seg( wp, we );
+                plot( we.x, we.y, 3 );
+                wp = we;
+            }
             prev = wp;
         }
     }
@@ -4512,12 +4520,34 @@ void CWndArea::OnLButtonUp( UINT nFlags, CPoint point )
         if ( ( m_pUnit == NULL ) || ( m_pUnit->GetUnitType( ) != CUnit::vehicle ) )
             break;
 
-        SelectOff( );
+        // #38: Shift QUEUES this segment on the selected crane(s) and stays armed, so
+        // the next drag queues the next segment. (Shift used to CANCEL the drag here.)
         if ( nFlags & MK_SHIFT )
         {
+            CHexCoord hexQ = m_aa.WindowToHex( point );
+            hexQ.Wrap( );
+            CHexCoord hexStartQ( m_hexRoadStart );
+            hexStartQ.Wrap( );
+            for ( POSITION posQ = m_lstUnits.GetHeadPosition( ); posQ != NULL; )
+            {
+                CUnit* pUnitQ = m_lstUnits.GetNext( posQ );
+                ASSERT_STRICT_VALID( pUnitQ );
+                if ( pUnitQ->GetUnitType( ) != CUnit::vehicle )
+                    continue;
+                CVehicle* pVehQ = (CVehicle*)pUnitQ;
+                pVehQ->AddOrder( hexStartQ, CRoute::build_road, 0, 0, &hexQ );
+                pVehQ->NextOrder( );   // no-op unless the crane is idle
+                if ( pVehQ->m_pSdlRoute != NULL )
+                    pVehQ->m_pSdlRoute->RefreshRoute( );
+            }
+            ClrRoadIcons( );
+            m_iMode = road_begin;   // stay armed for the next segment
+            AreaApplyCursor( m_hCurRoadBgn[m_aa.m_iZoom] );
             SetButtonState( );
             return;
         }
+
+        SelectOff( );
 
         CHexCoord hex = m_aa.WindowToHex( point );
 
@@ -4526,6 +4556,7 @@ void CWndArea::OnLButtonUp( UINT nFlags, CPoint point )
         {
             CUnit* pUnit = m_lstUnits.GetNext( pos );
             ASSERT_STRICT_VALID( pUnit );
+            ( (CVehicle*)pUnit )->ClearOrders( );   // #38: a plain road REPLACES the queue
             SetDestAndSfx( (CVehicle*)pUnit, m_hexRoadStart );
             ( (CVehicle*)pUnit )->SetRoad( m_hexRoadStart, hex );
         }
@@ -4542,7 +4573,11 @@ void CWndArea::OnLButtonUp( UINT nFlags, CPoint point )
         if ( ( m_pUnit == NULL ) || ( m_pUnit->GetUnitType( ) != CUnit::vehicle ) )
             break;
 
-        SelectOff( );
+        // #38: Shift QUEUES the repair on the selected crane(s) and stays armed, so the
+        // next click queues the next repair.
+        const BOOL bQueueRepair = ( nFlags & MK_SHIFT ) != 0;
+        if ( !bQueueRepair )
+            SelectOff( );
 
         CHexCoord hex = m_aa.WindowToHex( point );
         hex.Wrap( );
@@ -4557,11 +4592,28 @@ void CWndArea::OnLButtonUp( UINT nFlags, CPoint point )
                 ASSERT_STRICT_VALID( pUnit );
                 if ( ( (CVehicle*)pUnit )->GetData( )->GetType( ) == CTransportData::construction )
                 {
+                    CVehicle* pVehR = (CVehicle*)pUnit;
+                    if ( bQueueRepair )
+                    {
+                        pVehR->AddOrder( hex, CRoute::repair, 0, 0 );
+                        pVehR->NextOrder( );   // no-op unless the crane is idle
+                        if ( pVehR->m_pSdlRoute != NULL )
+                            pVehR->m_pSdlRoute->RefreshRoute( );
+                        continue;
+                    }
+                    pVehR->ClearOrders( );   // #38: a plain repair REPLACES the queue
                     pUnit->ResumeUnit( );
-                    ( (CVehicle*)pUnit )->SetEvent( CVehicle::repair_bldg );
-                    SetDestAndSfx( (CVehicle*)pUnit, hex );
+                    pVehR->SetEvent( CVehicle::repair_bldg );
+                    SetDestAndSfx( pVehR, hex );
                 }
             }
+        }
+
+        if ( bQueueRepair )
+        {
+            m_iMode = repair_bldg;   // stay armed for the next repair
+            SetButtonState( );
+            return;
         }
 
         // deselect all

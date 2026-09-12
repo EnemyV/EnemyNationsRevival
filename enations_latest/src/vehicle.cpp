@@ -710,13 +710,17 @@ void CVehicle::Operate() {
 
 // Append an order at the tail. Queue-time only: no validation, no reservation, no
 // message on the wire.
-void CVehicle::AddOrder(CHexCoord const &hex, int iType, int iBldgType, int iDir) {
+void CVehicle::AddOrder(CHexCoord const &hex, int iType, int iBldgType, int iDir,
+                        CHexCoord const *pHexEnd) {
 
     ASSERT_VALID (this);
     ASSERT (CRoute::IsOrder(iType));
 
     BOOL bFresh = m_route.IsEmpty();
-    m_route.AddTail(new CRoute(hex, iType, iBldgType, iDir));
+    CRoute *pR = new CRoute(hex, iType, iBldgType, iDir);
+    if (pHexEnd != NULL)
+        pR->SetEndCoord(*pHexEnd);      // build_road: the far end of the segment
+    m_route.AddTail(pR);
 
     // an order queue is one-shot: each order is consumed when its job ends. Only on
     // a FRESH list, so queueing behind an existing loop route doesn't rewrite it.
@@ -785,6 +789,12 @@ BOOL CVehicle::NextOrder() {
 
     SetRoutePos(pos);
 
+    // The order is under way from here on, whatever kind it is. m_iEvent cannot carry
+    // this: every dispatch below ends with the vehicle clearing its event the moment it
+    // sends the request, and an idle-looking vehicle with a queue would be dispatched
+    // twice.
+    m_iOrderState = order_sent;
+
     // Remember WHICH order went out. The route window can delete entries or move the
     // cursor while the job runs, and a rejection can come back a tick or more later,
     // so completion and failure both match against this rather than trusting the cursor.
@@ -803,12 +813,39 @@ BOOL CVehicle::NextOrder() {
             break;
         }
 
+        case CRoute::build_road: {
+            // the same commit the road drag makes: drive to the start hex, then lay
+            // toward the far end (SetRoad does the event + dest itself)
+            ResumeUnit();
+            SetRoad(pR->GetCoord(), pR->GetEndCoord());
+            break;
+        }
+
+        case CRoute::repair: {
+            // the same commit the Repair click makes
+            ResumeUnit();
+            SetEvent(repair_bldg);
+            SetDest(pR->GetCoord());
+            break;
+        }
+
         default:
             TRAP();     // an order kind with no dispatch - add it to this switch
+            m_iOrderState = order_none;
             return (FALSE);
     }
 
     return (TRUE);
+}
+
+// The order the vehicle was running has ENDED - finished, halted or given up on. Used
+// by the road paths, which have their own end conditions and no site to watch: a road
+// run ends inside NextRoadHex / ConstructRoad rather than by detaching from a building.
+// A no-op when nothing was under way, so the plain (unqueued) road commit is unaffected.
+void CVehicle::OrderEnded() {
+
+    if (m_iOrderState != order_none)
+        m_iOrderState = order_done;
 }
 
 // THIS vehicle's job at the site has ended. Consume the order it was running so the
@@ -961,12 +998,14 @@ void CVehicle::BuildRoad() {
     if (!GetOwner()->CanBridge()) {
         if (GetOwner()->IsMe())
             theGame.Event(EVENT_CANT_BRIDGE, EVENT_NOTIFY);
+        OrderEnded();   // #38: no bridging tech - the run stops here, drop the order
         return;
     }
 
     // done?
     if (m_hexEnd == _hex) {
         TRAP();
+        OrderEnded();   // #38: nothing left to lay
         return;
     }
 
@@ -1352,6 +1391,12 @@ void CVehicle::ConstructRoad() {
 
     ASSERT_STRICT_VALID (this);
 
+    // #38: a road run is under way. Its OWN work state, not order_work: a road has no
+    // building to watch, and it goes briefly idle (event none, stopped) between every
+    // hex while the server answers - which under order_work's "no site => done" rule
+    // would end the order on the first hex.
+    m_iOrderState = order_road;
+
     int iInc = GetProd(GetOwner()->GetConstProd());
     if (iInc <= 0)
         return;
@@ -1379,6 +1424,7 @@ void CVehicle::ConstructRoad() {
                 theGame.PostToClient(GetOwner(), &msg, sizeof(msg));
             }
             SetEventAndRoute(none, stop);
+            OrderEnded();   // #38: out of gas ends the run - drop it, don't stall the queue
             return;
         }
 
@@ -1492,6 +1538,7 @@ BOOL CVehicle::NextRoadHex() {
         if (m_ptHead.SameHex(m_hexEnd) || (--iStepsLeft < 0)) {
             _SetEventAndRoute(none, stop);
             theGame.Event(EVENT_ROAD_DONE, EVENT_NOTIFY, this);
+            OrderEnded();   // #38: THIS is a road run's completion point, per vehicle
             return (FALSE);
         }
 

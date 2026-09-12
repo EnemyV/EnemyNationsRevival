@@ -253,6 +253,16 @@ void SDL2RouteWindow::RebuildList() {
                 loc = std::to_string(pR->GetCoord().X()) + "," + std::to_string(pR->GetCoord().Y());
                 break;
             }
+
+            case CRoute::build_road:
+                typeStr = "Road to " + std::to_string(pR->GetEndCoord().X()) + "," +
+                          std::to_string(pR->GetEndCoord().Y());
+                loc = std::to_string(pR->GetCoord().X()) + "," + std::to_string(pR->GetCoord().Y());
+                break;
+
+            case CRoute::repair:
+                typeStr = "Repair";
+                break;
         }
 
         entry.text = loc + " - " + typeStr;

@@ -6497,16 +6497,19 @@ void CRoute::Serialize( CArchive& ar )
         // what it is today. When the counter moves to 8 this starts writing and
         // reading the payload with no further change here.
         if ( theGame.m_dwVer >= 8 )
-            ar << m_iBldgType << m_iDir;
+            ar << m_iBldgType << m_iDir << m_hexEnd;
     }
 
     else
     {
         ar >> m_hex >> m_iType;
         if ( theGame.m_dwVer >= 8 )
-            ar >> m_iBldgType >> m_iDir;
+            ar >> m_iBldgType >> m_iDir >> m_hexEnd;
         else
+        {
             m_iBldgType = m_iDir = 0;   // pre-8 saves hold movement stops only
+            m_hexEnd    = m_hex;
+        }
     }
 }
 
