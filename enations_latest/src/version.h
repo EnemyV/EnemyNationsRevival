@@ -40,11 +40,13 @@ const char GameLogFile[] = "ENations.log";
 // (was runtime-only + backfilled flat on load, so the workforce graph didn't restore).
 // Release 7: CVehicleBuilding::m_iNum (the vehicle-build queue count) is now serialized,
 // so a factory's remaining build queue survives save/load (was lost -> queue truncated).
-#define         VER_RELEASE     7
+// Release 8: vehicle traffic detours retain their original job, movement sense,
+// hold and remaining recovery budgets across save/load.
+#define         VER_RELEASE     8
 
-// 3.1.001: display version only. No save-format and no header change -
-// VER_MAJOR/VER_MINOR stay 3/0 and VER_RELEASE stays 7, so every 3.00.x save
-// still loads. Bumping VER_MINOR would refuse them all (CGame::Serialize).
+// Display version is independent of the save-format counter above.
+// VER_MAJOR/VER_MINOR stay 3/0, so older 3.00.x saves still load.
+// Bumping VER_MINOR would refuse them all (CGame::Serialize).
 #define         VER_STRING                              "3.1.001"
 #define         RES_VER_STRING                          "3.1.001\0"
 

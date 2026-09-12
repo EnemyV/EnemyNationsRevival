@@ -3745,6 +3745,15 @@ void CVehicle::TakeOwnership( )
     if ( !m_cOwn )
     {
         ASSERT_VALID( this );
+#ifdef _WIN32
+        // Identify who reclaims ground squares for a carried unit. This is a
+        // diagnostic only: keep the behavior unchanged until its caller is known.
+        if ( m_pTransport != NULL )
+            WaitLog( "[CARGO-CLAIM] veh %lu carrier %lu mode %d head %d,%d next %d,%d caller_rva %llx",
+                     (unsigned long)GetID( ), (unsigned long)m_pTransport->GetID( ), (int)m_cMode,
+                     m_ptHead.x, m_ptHead.y, m_ptNext.x, m_ptNext.y,
+                     (unsigned long long)((ULONG_PTR)_ReturnAddress( ) - (ULONG_PTR)GetModuleHandleW( NULL )) );
+#endif
         m_cOwn = TRUE;
         ASSERT( theVehicleHex.GetVehicle( m_ptHead ) == NULL );
         ASSERT( theVehicleHex.GetVehicle( m_ptTail ) == NULL );

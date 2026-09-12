@@ -6271,6 +6271,16 @@ void CVehicle::Serialize( CArchive& ar )
         ar << (LONG)m_iPathLen;
         ar << m_iPathOff;
         for ( int iInd = 0; iInd < m_iPathLen; iInd++ ) ar << *( m_phexPath + iInd );
+
+        // The current destination can be a temporary parking spot. Preserve the
+        // original job and movement sense as well as the already-saved geometry.
+        ar << (BYTE)m_bResume << m_subResume << (BYTE)m_iResumeMode;
+        ar << (BYTE)m_bReversing << (BYTE)m_bForwardEscape;
+        ar << m_iHoldFrames << m_iBackUps << m_iJamClear << m_iJamCool;
+        if ( m_bResume || m_bReversing || m_bForwardEscape || m_iHoldFrames > 0 )
+            WaitLog("[RECOVERY-SAVE] veh %d resume %d job %d,%d mode %d reverse %d forward %d hold %d backups %d clear %d cool %d",
+                    GetID(), (int)m_bResume, m_subResume.x, m_subResume.y, m_iResumeMode,
+                    (int)m_bReversing, (int)m_bForwardEscape, m_iHoldFrames, m_iBackUps, m_iJamClear, m_iJamCool);
     }
 
     else
@@ -6373,6 +6383,28 @@ void CVehicle::Serialize( CArchive& ar )
         {
             m_phexPath = new CHexCoord[m_iPathLen];
             for ( int iInd = 0; iInd < m_iPathLen; iInd++ ) ar >> *( m_phexPath + iInd );
+        }
+
+        if ( theGame.m_dwVer >= 8 )
+        {
+            ar >> b;
+            m_bResume = b != 0;
+            ar >> m_subResume >> b;
+            m_iResumeMode = b;
+            ar >> b;
+            m_bReversing = b != 0;
+            ar >> b;
+            m_bForwardEscape = b != 0;
+            ar >> m_iHoldFrames >> m_iBackUps >> m_iJamClear >> m_iJamCool;
+            m_subResume.Wrap( );
+            // The ordinary load path clears m_bFlags. A restored hold must stay
+            // silent until it expires, just like ArrivedDest's live hold.
+            if ( m_iHoldFrames > 0 && m_cMode == stop )
+                m_bFlags |= told_ai_stop;
+            if ( m_bResume || m_bReversing || m_bForwardEscape || m_iHoldFrames > 0 )
+                WaitLog("[RECOVERY-LOAD] veh %d resume %d job %d,%d mode %d reverse %d forward %d hold %d backups %d clear %d cool %d",
+                        GetID(), (int)m_bResume, m_subResume.x, m_subResume.y, m_iResumeMode,
+                        (int)m_bReversing, (int)m_bForwardEscape, m_iHoldFrames, m_iBackUps, m_iJamClear, m_iJamCool);
         }
 
         m_ptDest.Wrap( );
