@@ -101,6 +101,15 @@ CCreateBase::CCreateBase(int iTyp) {
     m_iWorldType = 0;  // WORLD_DEFAULT (EWorldType in terrain.h)
     m_iRivers = 60;    // river density slider baseline
     m_iOcean  = 50;    // ocean size slider baseline (~= current average)
+    // The Create Network Game dialog fills these four in before a publish ever
+    // reads them (SDL2Dialogs.cpp), but the Load Network Game flow does not -
+    // leaving them uninitialised put garbage on the wire (CNetPublish::Alloc,
+    // netapi.cpp) that a joining client's browser showed as "Opp: 6357108" and
+    // that CInitData::Set (racedata.cpp) used as an unchecked array index.
+    m_iAi = 0;      // AI intelligence
+    m_iNumAi = 0;   // num AI players
+    m_iSize = 0;    // world size
+    m_iPos = 0;     // initial position
     m_pAdvNet = NULL;
 
     memset(&m_ID, 0, sizeof(m_ID));
