@@ -51,6 +51,39 @@ static CString DataFileBesideExe( const char* pszLeaf ) {
     return CString( exePath ) + pszLeaf;
 }
 
+// The loose data set's marker file: <patch dir>\manifest.txt, written next to the
+// extracted entries by tools/data/dat_extract.py in the discussion repo. Returns the
+// data ROOT that holds the marker - the DIRECTORY, not the marker path - or "" when
+// there is none. Probed cwd-relative first (that is how the entry lookups themselves
+// resolve the patch dir) and then beside the exe, because the run directory and the exe
+// directory are not always the same folder. Opened with CFile, not the raw fopen of
+// DataFileExists: on POSIX CFile::Open normalises the backslash, fopen does not.
+//
+// It returns the ROOT because the caller has to be able to USE it. This helper used to
+// return the marker PATH, which _Init only logged - m_pPatchDir stayed set from the
+// original relative pPatchDir, so a marker accepted beside the exe was followed by entry
+// opens under the CWD and every entry missed. The beside-the-exe fallback the helper
+// advertised could therefore never work (WinAstra review 16). One root is selected here
+// and _Init uses that same one for the entry probes.
+static CString LooseDataManifest( const char* pPatchDir ) {
+    if ( !pPatchDir || !*pPatchDir ) return CString( "" );
+
+    CString aRoot[ 2 ];
+    aRoot[ 0 ] = CString( pPatchDir );             // as configured: resolved against the cwd
+    aRoot[ 1 ] = DataFileBesideExe( pPatchDir );   // <exe dir>\<patch dir>, absolute
+
+    for ( int iOn = 0; iOn < 2; iOn++ ) {
+        if ( aRoot[ iOn ].IsEmpty() ) continue;
+        CFile test;
+        if ( test.Open( aRoot[ iOn ] + "\\manifest.txt",
+                        CFile::modeRead | CFile::shareDenyWrite | CFile::typeBinary ) != FALSE ) {
+            test.Close();
+            return aRoot[ iOn ];
+        }
+    }
+    return CString( "" );
+}
+
 static void LogDataFileProblem( const char* pszMsg ) {
     OutputDebugString( pszMsg );
     OutputDebugString( "\n" );
@@ -195,17 +228,21 @@ BOOL CDataFile::Init(const char *pFilename, int iRifVer, BOOL bErr) {
     for (; TRUE;) {
         try {
             theDataFile._Init(strFileName, sPatch, iRifVer);
-            w22::WriteProfileString("Game", "DataFile", strFileName);
-            // Report opened vs NOT opened. _Init does not throw on a missing
-            // master (it falls back to patch-dir-only), so this ran on the success
-            // path and logged "using <path>" for a file that was never opened,
-            // which is worse than silence. Say which actually happened. GH #8.
+            // Pin only a path that really opened. Since 015 phase 2 _Init can
+            // return without a container (loose-only), and writing back the name
+            // of a file we could not open would pin a dead path for the next run.
+            // The pin itself is unchanged - QA is keeping it for now.
+            if (m_pDataFile)
+                w22::WriteProfileString("Game", "DataFile", strFileName);
+            // Report opened vs NOT opened. This used to log "using <path>" on the
+            // success path for a file that was never opened, which is worse than
+            // silence. Say which actually happened. GH #8.
             {
                 CString sMsg;
                 if (m_pDataFile)
                     sMsg.Format("opened '%s'", (const char*)strFileName);
                 else
-                    sMsg.Format("NOT OPENED '%s' (no master; patch-dir-only)",
+                    sMsg.Format("NOT OPENED '%s' (loose-only; entries from the patch dir)",
                                 (const char*)strFileName);
                 LogDataFileProblem(sMsg);
             }
@@ -227,6 +264,10 @@ void CDataFile::_Init(const char *pFilename, const char *pPatchDir, int iRifVer)
 
     m_iRifVer = iRifVer;
 
+    // The root every entry probe below resolves against. It is the caller's pPatchDir
+    // unless loose-only mode selects a different one (see LooseDataManifest).
+    CString sPatchRoot( pPatchDir != NULL ? pPatchDir : "" );
+
     if (pFilename) {
         m_pDataFile = new CStdioFile;
 
@@ -234,14 +275,17 @@ void CDataFile::_Init(const char *pFilename, const char *pPatchDir, int iRifVer)
             ThrowError(ERR_OUT_OF_MEMORY);
         }
         if (m_pDataFile->Open(pFilename, CFile::modeRead | CFile::shareDenyWrite | CFile::typeBinary) == FALSE) {
-            // Throw so Init's catch runs GetFileName and the user gets the picker.
-            // @d3724edb (macOS port) swallowed this into "patch-dir-only" mode on
-            // the premise that cross-platform builds ship only a loose data/ tree.
-            // That premise is dead: all three platforms bundle ENations.dat, and
-            // the shipped data/ holds 2124 terrain_gpu PNGs and ZERO .rif files,
-            // so patch-dir-only cannot serve game content anyway - it only pushed
-            // the failure later, into an uncaught ERR_DATAFILE_NO_ENTRY with no
-            // window and no message. GH #8.
+            // Historically this swallowed the failure into "patch-dir-only" mode
+            // (@d3724edb, macOS port) on the premise that cross-platform builds ship
+            // only a loose data/ tree; that was false at the time - the shipped data/
+            // held terrain PNGs and ZERO .rif files - so it only pushed the failure
+            // into an uncaught ERR_DATAFILE_NO_ENTRY with no window and no message,
+            // and GH #8 made it throw again so Init's catch runs the picker.
+            // 015 phase 2 makes the original premise true, but only when it IS true:
+            // a complete extracted data set (tools/data/dat_extract.py) leaves a
+            // manifest.txt beside the entries, and that file is the marker that says
+            // "loose-only is intended here". With it, run loose-only; without it,
+            // still throw so the user gets the picker and the GH #8 message.
             delete m_pDataFile;
             m_pDataFile = NULL;
             {
@@ -249,7 +293,21 @@ void CDataFile::_Init(const char *pFilename, const char *pPatchDir, int iRifVer)
                 sMsg.Format("could not open '%s'", pFilename);
                 LogDataFileProblem(sMsg);
             }
-            ThrowError(ERR_DATAFILE_OPEN);
+            CString sLooseRoot = LooseDataManifest(pPatchDir);
+            if (sLooseRoot.IsEmpty())
+                ThrowError(ERR_DATAFILE_OPEN);
+            // Probe entries under the root the marker was ACTUALLY found in. Found
+            // cwd-relative, this is the caller's pPatchDir unchanged and nothing moves;
+            // found beside the exe, it is that absolute directory - and without this
+            // line OpenAsMMIO/OpenAsFile would keep probing <cwd>\<patch dir> and miss
+            // every entry we just accepted the marker for.
+            sPatchRoot = sLooseRoot;
+            {
+                CString sMsg;
+                sMsg.Format("loose-only mode: entries come from the patch dir ('%s')",
+                            (const char*)sPatchRoot);
+                LogDataFileProblem(sMsg);
+            }
         } else {
         m_sFileName = pFilename;
 
@@ -311,8 +369,13 @@ void CDataFile::_Init(const char *pFilename, const char *pPatchDir, int iRifVer)
     }
 
     if (pPatchDir) {
-        m_pPatchDir = new CString(pPatchDir);
-        m_pPatchDir->MakeLower();
+        // sPatchRoot == pPatchDir unless loose-only mode resolved a different root.
+        m_pPatchDir = new CString(sPatchRoot);
+        // The ROOT keeps the case it was given. It used to be force-lower-cased
+        // here, a no-op on Windows but wrong on a case-sensitive volume: an exe-dir
+        // root such as "/opt/EN/Data" became "/opt/en/data" and every entry probe
+        // below missed. Case-folding belongs to the relative entry path we
+        // synthesise, not to a directory the user chose (015 plan phase 2c).
         if (m_pPatchDir == NULL)
             ThrowError(ERR_OUT_OF_MEMORY);
     }
@@ -384,10 +447,21 @@ CMmio *CDataFile::OpenAsMMIO(const char *pFilename, const char *pRif) {
         }
 
         // we now look in the patch dir (users version)
+        // Case-fold this probe as well, but the LEAF only. The nested probe above
+        // lower-cases its whole relative path (path.MakeLower() at the top of this
+        // function) and joins it onto the root as given; this one built its leaf
+        // from the original-case argument, so on a case-sensitive volume a
+        // lower-case loose set was found nested and missed flat (015 plan 3c,
+        // measured on mac). Folding the JOINED path would fold the patch ROOT too,
+        // which is the phase-2c defect: the root is the user's install path and its
+        // case is not ours to change. No-op on Windows either way.
+        CString leaf;
         if (pFilename == NULL)
-            patchPath.Format("%s\\%d.rif", (char const *) (*m_pPatchDir), m_countryCode);
+            leaf.Format("%d.rif", m_countryCode);
         else
-            patchPath = *m_pPatchDir + CString("\\") + file + ".rif";
+            leaf = file + ".rif";
+        leaf.MakeLower();
+        patchPath = *m_pPatchDir + CString("\\") + leaf;
 
         if (test.Open(patchPath, CFile::modeRead | CFile::shareDenyWrite | CFile::typeBinary) != FALSE) {
             //  Close the file so we can re-open it as an mmio file.
@@ -497,24 +571,29 @@ CMmio *CDataFile::OpenAsMMIO(const char *pFilename, const char *pRif) {
     //  If here, file was not found in patch dir ( or
     //  no patch dir was given ), and no datafile was
     //  opened, so return NULL ( no file found ).
-    // No datafile open at all. This is the GH #8 case: ENations.dat was never
-    // found. Fatal and unrecoverable, so tell the user once instead of vanishing.
+    // No container open. Since 015 phase 2 that is the loose-only install: _Init
+    // only returns without a container when the patch dir carries a manifest.txt,
+    // so getting here means a LOOSE ENTRY is missing, of the wrong FVER, or
+    // malformed - not that ENations.dat is missing. Name the entry; the old text
+    // sent players hunting for a file the install does not use. Fatal and
+    // unrecoverable (nothing catches this), so say it once.
     {
         char cwd[MAX_PATH] = { 0 };
         ::GetCurrentDirectoryA(sizeof(cwd), cwd);
+        CString sPatch = m_pPatchDir ? *m_pPatchDir : CString("(none)");
         CString sMsg;
-        sMsg.Format("ENations.dat not open, wanted '%s'. cwd='%s'", (const char*)path, cwd);
+        sMsg.Format("loose entry '%s' not usable under '%s'. cwd='%s'", (const char*)path,
+                    (const char*)sPatch, cwd);
         LogDataFileProblem(sMsg);
 
         static bool bTold = false;
         if (!bTold) {
             bTold = true;
             CString sBox;
-            sBox.Format("ENations.dat could not be found.\n\n"
-                        "It must sit next to enations.exe.\n\n"
-                        "Looked in:\n%s\n\n"
-                        "If you built from source, copy ENations.dat into the build "
-                        "output folder, or run the game from a folder that has it.", cwd);
+            sBox.Format("A game data file is missing or unusable.\n\n"
+                        "Entry: %s\n\nLooked under: %s\n\nIn: %s\n\n"
+                        "Re-extract the game data set, or put ENations.dat next to "
+                        "enations.exe.", (const char*)path, (const char*)sPatch, cwd);
             ::MessageBoxA(NULL, sBox, "Enemy Nations", MB_OK | MB_ICONERROR);
         }
     }
@@ -524,14 +603,18 @@ CMmio *CDataFile::OpenAsMMIO(const char *pFilename, const char *pRif) {
 
 CFile *CDataFile::OpenAsFile(const char *pFilename) {
 
-    // if fully qualified just try it
+    // Try the name exactly as given first.
     // POSIX: an absolute path starts with '/'. GetFileName() of an embedded MMIO is the
-    // .dat's OWN full path (OpenAsMMIO:487) — music.cpp re-opens the container through
-    // here so the payload offsets line up. The X:/UNC tests never match on mac/linux,
-    // so the open fell through to the files\ map and threw ERR_DATAFILE_NO_ENTRY =
-    // no music/voice handles on POSIX from a byte-identical .dat.
-    if ((pFilename != NULL) &&
-        ((*(pFilename + 1) == ':') || (*(pFilename + 1) == '\\') || (*pFilename == '/'))) {
+    // .dat's OWN full path (OpenAsMMIO:487) - music.cpp re-opens the container through
+    // here so the payload offsets line up. The old qualified-path test (X:, UNC, leading
+    // '/') never matched on mac/linux, so the open fell through to the files\ map and
+    // threw ERR_DATAFILE_NO_ENTRY = no music/voice handles on POSIX from a byte-identical
+    // .dat. 015 phase 2 broke it the other way too: with no container, GetFileName() is
+    // the loose entry's patch-dir path ("data\music\music.rif"), which is RELATIVE, so
+    // the same test missed and the name was mangled into "files\data\music\music.rif".
+    // Trying the name as given covers both, and still only succeeds for a name that opens
+    // as a real file on disk.
+    if (pFilename != NULL) {
         CFile test;
         if (test.Open(pFilename, CFile::modeRead | CFile::shareDenyWrite | CFile::typeBinary) != FALSE) {
             //  Close the file so we can allocate a new CFile object to
@@ -573,6 +656,14 @@ CFile *CDataFile::OpenAsFile(const char *pFilename) {
     if ((pRtn = _OpenAsFile(path)) != NULL)
         return (pRtn);
 
+    // 015 phase 2: name the entry. In a loose-only install this is a missing
+    // loose file, not a missing container, and the caller (music.cpp) swallows
+    // the throw - without this line the failure left no trace at all.
+    {
+        CString sMiss;
+        sMiss.Format("no file entry for '%s'", pFilename ? pFilename : "(language)");
+        LogDataFileProblem(sMiss);
+    }
     ThrowError(ERR_DATAFILE_NO_ENTRY);
     return NULL;
 }
