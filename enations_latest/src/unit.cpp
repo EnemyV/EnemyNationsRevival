@@ -3505,6 +3505,15 @@ void CVehicle::SetLocation( CHexCoord& hex, POSITION pos, int iType )
 
     ASSERT_VALID( this );
 
+    // #38: a movement route and an ORDER queue must never share one list. ArrivedDest
+    // advances to whatever entry is at the head and drives to it as a STOP, then
+    // consumes it - so an order left on a list a movement command has taken over is
+    // driven to, trips the Debug TRAP in ArrivedDest's default branch, and is deleted
+    // unexecuted. This is THE movement-append entry point, so dropping the orders here
+    // covers Shift-queued moves, the route window and the #42 in-flight-dest seed.
+    if ( !CRoute::IsOrder( iType ) )
+        ClearOrders( );
+
     // if its a building get it's entrance
     hex.Wrap( );
     CBuilding* pBldg = theBuildingHex._GetBuilding( hex );

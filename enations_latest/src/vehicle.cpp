@@ -788,6 +788,24 @@ void CVehicle::ClearOrders() {
     m_iOrderState = order_none;
 }
 
+// Is there still something at this hex for a repair order to work on? The same two
+// things CVehicle::ArrivedDest's repair_bldg case looks for: a building, or a bridge
+// that is not finished. Read at DISPATCH, not at queue time - a target can die while
+// the order waits its turn.
+BOOL CVehicle::RepairTargetLives(CHexCoord const &hex) const {
+
+    if (theBuildingHex._GetBuilding(hex) != NULL)
+        return (TRUE);
+
+    CBridgeUnit *pBu = theBridgeHex.GetBridge(hex);
+    if (pBu != NULL) {
+        CBridge *pBridge = pBu->GetParent();
+        if ((pBridge != NULL) && (!pBridge->IsBuilt()))
+            return (TRUE);
+    }
+    return (FALSE);
+}
+
 // Start the order at the cursor, if there is one and this vehicle is free to take
 // it. Returns TRUE if an order was dispatched.
 BOOL CVehicle::NextOrder() {
@@ -806,17 +824,39 @@ BOOL CVehicle::NextOrder() {
         (m_iEvent != none) || (m_cMode != stop))
         return (FALSE);
 
-    POSITION pos = (m_pos != NULL) ? m_pos : m_route.GetHeadPosition();
-    if (pos == NULL)
-        return (FALSE);
-    CRoute *pR = m_route.GetAt(pos);
-    if (pR == NULL)
-        return (FALSE);
+    // Loop, so an order that can never run is dropped and the NEXT one starts in this
+    // same call rather than costing a tick each. The list only ever shrinks here.
+    POSITION pos;
+    CRoute  *pR;
+    while (TRUE) {
+        pos = (m_pos != NULL) ? m_pos : m_route.GetHeadPosition();
+        if (pos == NULL)
+            return (FALSE);
+        pR = m_route.GetAt(pos);
+        if (pR == NULL)
+            return (FALSE);
 
-    // A movement STOP at the cursor belongs to ArrivedDest's route machinery. Leaving
-    // it alone is what keeps a stopped waypoint route stopped instead of restarting it.
-    if (!CRoute::IsOrder(pR->GetRouteType()))
-        return (FALSE);
+        // A movement STOP at the cursor belongs to ArrivedDest's route machinery. Leaving
+        // it alone is what keeps a stopped waypoint route stopped instead of restarting it.
+        if (!CRoute::IsOrder(pR->GetRouteType()))
+            return (FALSE);
+
+        // A repair order whose target is GONE can never finish and would wedge the queue:
+        // ArrivedDest's repair_bldg case finds neither a building nor an unbuilt bridge,
+        // does nothing, and leaves m_iEvent == repair_bldg - which the busy test above
+        // then refuses on for ever. Check the same two things ArrivedDest checks, here,
+        // before anything is dispatched, and drop the order if neither is there.
+        if ((pR->GetRouteType() == CRoute::repair) && (!RepairTargetLives(pR->GetCoord())))
+        {
+            m_route.RemoveAt(pos);
+            delete pR;
+            SetRoutePos(m_route.GetHeadPosition());
+            if (m_pSdlRoute != NULL)
+                m_pSdlRoute->RefreshRoute();
+            continue;
+        }
+        break;
+    }
 
     SetRoutePos(pos);
 

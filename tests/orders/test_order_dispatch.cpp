@@ -322,6 +322,7 @@ static void test_unqueued_build_leaves_waypoints_alone() {
 // ---------------------------------------------------------------------------
 static void test_repair_and_road_dispatch_their_own_way() {
     Veh v;
+    v.repairTargets.push_back(Hex(60, 60));   // the repair target is still standing
     Hex end(50, 50);
     v.AddOrder(Hex(40, 40), build_road, 0, 0, &end);
     v.AddOrder(Hex(60, 60), repair);
@@ -347,6 +348,86 @@ static void test_repair_and_road_dispatch_their_own_way() {
     CHECK_EQ((int)v.route.size(), 0);
 }
 
+// ---------------------------------------------------------------------------
+// one list, one meaning: a movement command takes the list over from the orders
+// ---------------------------------------------------------------------------
+static void test_move_command_clears_the_order_queue() {
+    Veh v;
+    v.AddOrder(Hex(10, 10), build, 4, 0);
+    v.AddOrder(Hex(20, 20), build, 5, 0);
+    CHECK_EQ((int)v.route.size(), 2);
+
+    // a Shift+move on the same crane -- SetLocation is THE movement-append entry point
+    v.AddMoveStop(Hex(77, 77), waypoint);
+
+    CHECK_EQ((int)v.route.size(), 1);            // zero orders left...
+    CHECK_EQ(v.route[0].type, waypoint);         // ...and one waypoint
+    CHECK(v.route[0].hex == Hex(77, 77));
+    CHECK_EQ(v.cursor, 0);
+    CHECK_EQ(v.state, order_none);               // and the crane is free again
+
+    // the list can never hold both kinds at once
+    for (std::size_t i = 0; i < v.route.size(); ++i)
+        CHECK(!IsOrder(v.route[i].type));
+}
+
+// ... and an order appended onto a running movement route must not be driven to as if
+// it were a stop either. The input layer hands the list over (HasMoveStops ->
+// CWndArea::StopRoute) before the append, so the vehicle ends up holding orders only.
+static void test_order_takes_the_list_over_from_a_route() {
+    Veh v;
+    v.AddMoveStop(Hex(1, 1), waypoint);
+    v.AddMoveStop(Hex(2, 2), waypoint);
+    CHECK_EQ((int)v.route.size(), 2);
+
+    v.route.clear();                             // what StopRoute does to the list
+    v.cursor = CUR_NULL;
+    v.ClearOrders();
+    v.AddOrder(Hex(9, 9), build, 3, 0);
+
+    CHECK_EQ((int)v.route.size(), 1);
+    for (std::size_t i = 0; i < v.route.size(); ++i)
+        CHECK(IsOrder(v.route[i].type));
+    CHECK(v.NextOrder());
+}
+
+// ---------------------------------------------------------------------------
+// a repair order whose target is gone is dropped at dispatch, not waited on
+// ---------------------------------------------------------------------------
+static void test_dead_repair_target_is_skipped() {
+    Veh v;
+    v.AddOrder(Hex(50, 50), repair);             // nothing at this hex any more
+    v.AddOrder(Hex(60, 60), build, 4, 0);
+
+    CHECK(v.NextOrder());                        // drops the repair, starts the build
+    CHECK_EQ((int)v.route.size(), 1);
+    CHECK_EQ(v.route[0].type, build);
+    CHECK_EQ(v.event, ev_build);
+    CHECK(v.orderHex == Hex(60, 60));
+
+    // a repair whose target IS still there dispatches normally
+    Veh w;
+    w.repairTargets.push_back(Hex(50, 50));
+    w.AddOrder(Hex(50, 50), repair);
+    CHECK(w.NextOrder());
+    CHECK_EQ(w.event, ev_repair_bldg);
+    CHECK_EQ((int)w.route.size(), 1);
+}
+
+// A queue of nothing but dead repairs empties itself instead of wedging.
+static void test_all_dead_repairs_empty_the_queue() {
+    Veh v;
+    v.AddOrder(Hex(1, 1), repair);
+    v.AddOrder(Hex(2, 2), repair);
+    v.AddOrder(Hex(3, 3), repair);
+
+    CHECK(!v.NextOrder());
+    CHECK_EQ((int)v.route.size(), 0);
+    CHECK_EQ(v.cursor, CUR_NULL);
+    CHECK_EQ(v.state, order_none);
+    CHECK_EQ(v.dispatches, 0);
+}
+
 int main() {
     std::printf("[orders] dispatch suite\n");
 
@@ -365,6 +446,11 @@ int main() {
     test_movement_stop_at_the_cursor_is_not_dispatched();
     test_unqueued_build_leaves_waypoints_alone();
     test_repair_and_road_dispatch_their_own_way();
+
+    test_move_command_clears_the_order_queue();
+    test_order_takes_the_list_over_from_a_route();
+    test_dead_repair_target_is_skipped();
+    test_all_dead_repairs_empty_the_queue();
 
     return microtest::Summary();
 }

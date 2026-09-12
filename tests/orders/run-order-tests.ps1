@@ -35,6 +35,9 @@ $srcRoot  = Join-Path $here '..\..\enations_latest\src'
 $newUnit  = Join-Path $srcRoot 'new_unit.cpp'
 $vehicleH = Join-Path $srcRoot 'vehicle.h'
 $versionH = Join-Path $srcRoot 'version.h'
+$unitCpp  = Join-Path $srcRoot 'unit.cpp'
+$vehCpp   = Join-Path $srcRoot 'vehicle.cpp'
+$areaCpp  = Join-Path $srcRoot 'area.cpp'
 
 $suites = @(
     @{ name = 'serialize'; src = (Join-Path $here 'test_order_serialize.cpp') },
@@ -53,7 +56,7 @@ foreach ($opt in @('/Od', '/O2')) {
 
         Write-Host "--- $($s.name) $opt ---"
         if ($s.name -eq 'serialize') {
-            & $exe $newUnit $vehicleH $versionH
+            & $exe $newUnit $vehicleH $versionH $unitCpp $vehCpp $areaCpp
         } else {
             & $exe
         }
