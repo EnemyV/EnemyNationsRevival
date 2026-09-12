@@ -339,9 +339,13 @@ void CVehicle::Operate() {
                     return;
 
                 // the wait did not pay off - fall through to the existing recovery
-                if (m_subWaitNext.x >= 0)
+                if (m_subWaitNext.x >= 0 && m_subWaitNext.y >= 0) {
                     WaitLog("[WAITFAIL] veh %d hex %d,%d gave up on sub %d,%d", GetID(),
                             GetHexHead().X(), GetHexHead().Y(), m_subWaitNext.x, m_subWaitNext.y);
+                    // The recovery ladder must retry the actual blocked step,
+                    // not the head square used to park the traffic-wait state.
+                    m_ptNext = m_subWaitNext;
+                }
                 m_subWaitNext.x = m_subWaitNext.y = -1;
                 _SetRouteMode(blocked);
                 m_dwTimeBlocked = 0;
