@@ -1186,6 +1186,99 @@ BOOL CVehicle::GetNextHex(BOOL bNew) {
     yStep = (yStep < -1) ? -1 : (yStep > 1 ? 1 : yStep);
     ASSERT ((bAtDest) || (xStep != 0) || (yStep != 0));
 
+    // A ROAD TURN BELONGS AT THE JUNCTION, NOT ONE HEX EARLY. Nothing above keeps
+    // a TURNING truck in lane: the parity fix corrects only an axis-aligned step,
+    // so a diagonal request passes untouched; the farther-hex and near-destination
+    // branches switch lane checking off altogether; and the old cornering block is
+    // behind BUGBUG. A truck one sub-hex short of an open junction whose route hex
+    // is diagonally adjacent therefore cuts the corner and lands in the OPPOSING
+    // lane of the arm it turns into - which is exactly where the truck coming the
+    // other way is, so both ask for the same sub-hex and bump.
+    // Two local corrections, from the incoming heading and the OUTGOING ROUTE
+    // direction only (the destination direction is not the turn direction):
+    //   1. while the route hex is only diagonally adjacent, do not leave the
+    //      incoming lane - carry it straight into the junction first;
+    //   2. having turned, take the OUTGOING arm's lane even where the branches
+    //      above turned lane checking off.
+    // Off pavement, on a bridge, where MustKeepLane already governs, near the
+    // destination, when reversing and for any step that stays on the same arm this
+    // is a no-op. Routes that genuinely cross still meet the usual occupancy/wait
+    // handling: a suppressed step that is occupied falls through to CanEnter.
+    // This is lane policy, so it lives behind the same EN_TRAFFIC bit 16 as InLane
+    // and BlockedLaneStep and goes away with them.
+    if ((!bAtDest) && (TrafficOpts() & 16) && (!m_bReversing) && m_cOwn && (!IsHpControl()) &&
+        (GetData()->IsTransport() || GetData()->IsCrane()) && (!GetData()->IsBoat()) &&
+        ((abs(xDest) > 3) || (abs(yDest) > 3))) {
+        int hx = CSubHex::Diff(m_ptHead.x - m_ptTail.x);
+        int hy = CSubHex::Diff(m_ptHead.y - m_ptTail.y);
+        CSubHex blockedStep;
+        // an angled hull has no lane to carry, and must be left free to straighten
+        if (((hx == 0) != (hy == 0)) && (!MustKeepLane(blockedStep))) {
+            CSubHex _ahead(m_ptHead.x + hx, m_ptHead.y + hy);
+            CSubHex _turn(m_ptHead.x + xStep, m_ptHead.y + yStep);
+            _ahead.Wrap();
+            _turn.Wrap();
+            CHexCoord _hexHere(m_ptHead);
+            if (OnPavement(m_ptHead) && OnPavement(_ahead) &&
+                (!(theMap._GetHex(m_ptHead)->GetUnits() & CHex::bridge)) &&
+                (!(theMap._GetHex(_ahead)->GetUnits() & CHex::bridge))) {
+                int oldX = xStep, oldY = yStep;
+                int rx = CHexCoord::Diff(m_hexNext.X() - _hexHere.X());
+                int ry = CHexCoord::Diff(m_hexNext.Y() - _hexHere.Y());
+                rx = (rx > 0) ? 1 : ((rx < 0) ? -1 : 0);
+                ry = (ry > 0) ? 1 : ((ry < 0) ? -1 : 0);
+
+                // which sub-row/column is the lane for the way we are actually
+                // pointing - the same convention the parity fix above uses
+                BOOL bInLane = (hx != 0) ? ((m_ptHead.y & 1) == ((hx > 0) ? 1 : 0))
+                                         : ((m_ptHead.x & 1) == ((hy > 0) ? 0 : 1));
+                int iCross = (hx != 0) ? yStep : xStep;
+
+                // 1. in lane, stepping out of it, and the route hex is DIAGONALLY
+                //    adjacent - the corner. The turn cannot be taken from this hex
+                //    at all, so the step can only be cutting across the arm. An arm
+                //    that is squarely adjacent IS turnable from here and is left
+                //    alone. Requiring the hex ahead to be a different one keeps the
+                //    deferral to a single sub-hex and cannot loop.
+                if (bInLane && (iCross != 0) && (rx != 0) && (ry != 0) &&
+                    (!_ahead.SameHex(m_ptHead)) && OnPavement(_turn)) {
+                    xStep = hx;
+                    yStep = hy;
+                }
+
+                // 2. the turn itself: put it in the outgoing arm's lane. Only a
+                //    single-axis outgoing arm has a lane, and only a missing cross
+                //    component is filled in - an existing one is already a turn.
+                else if (((rx == 0) != (ry == 0)) && ((rx != hx) || (ry != hy)) &&
+                         ((rx != 0) ? ((xStep == rx) && (yStep == 0))
+                                    : ((yStep == ry) && (xStep == 0)))) {
+                    int nx = xStep, ny = yStep;
+                    if (rx != 0) {
+                        if ((m_ptHead.y & 1) && (rx < 0))
+                            ny = -1;
+                        else if ((!(m_ptHead.y & 1)) && (rx > 0))
+                            ny = 1;
+                    } else {
+                        if ((m_ptHead.x & 1) && (ry > 0))
+                            nx = -1;
+                        else if ((!(m_ptHead.x & 1)) && (ry < 0))
+                            nx = 1;
+                    }
+                    CSubHex _lane(m_ptHead.x + nx, m_ptHead.y + ny);
+                    _lane.Wrap();
+                    if (OnPavement(_lane)) {
+                        xStep = nx;
+                        yStep = ny;
+                    }
+                }
+
+                if ((oldX != xStep) || (oldY != yStep))
+                    WaitLog("[ROAD-TURN] veh %d head %d,%d heading %d,%d out %d,%d step %d,%d to %d,%d",
+                            GetID(), m_ptHead.x, m_ptHead.y, hx, hy, rx, ry, oldX, oldY, xStep, yStep);
+            }
+        }
+    }
+
     // figure out the next pt
     m_ptNext.x = m_ptHead.x + xStep;
     m_ptNext.y = m_ptHead.y + yStep;
