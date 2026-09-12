@@ -1613,7 +1613,7 @@ BEGIN
     IDS_UNLOAD              "unload"
     IDS_EVENT_ROCKET_CANT_LAND "Your rocket cannot land here"
     IDS_EVENT_BRIDGE_HALTED "Bridge construction halted - ground unsuitable"
-    IDS_DATA_MISMATCH       "Game data differs from the host (gameplay files edited or a different version).\n\n%1 was not let in: their data is %2, this game is %3.\n\nArt, sound and music may differ freely; the unit, research and text tables may not."
+    IDS_DATA_MISMATCH       "Game data differs.\n\n%1 is running gameplay data %2; this machine has %3.\n\nThe unit, research and text tables must match to play together. Art, sound and music may differ freely."
     IDS_LOAD_MUSIC          "Arranging Music"
     IDS_JOIN_LOAD_FILE      "Receiving game..."
     IDS_JOIN_FILE_ERROR     "Could not receive game from server"

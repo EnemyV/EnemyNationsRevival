@@ -15,6 +15,7 @@
 // pre-015 one.
 
 #include "../ai/microtest.h"
+#include "../../enations_latest/src/datahashguard.h"
 
 #include <stddef.h>
 #include <stdio.h>
@@ -190,6 +191,103 @@ void TestPre015RecordIsRefusedByTheHashCompare( )
     CHECK( dwAsRead != dwHostHash );
 }
 
+//---------------------------------------------------------------------------
+//  The two guard decisions, compiled from the SHIPPED
+//  enations_latest/src/datahashguard.h. Neither side of the handshake is
+//  mirrored here: these are the functions SDL2Dialogs.cpp and netapi.cpp call.
+//---------------------------------------------------------------------------
+
+// Stands in for SDL2_RunJoinNetworkFlow's browser-pick step: returns true when
+// the joiner would proceed to theNet.Join, counting the wire calls it makes.
+struct JoinAttempt
+{
+    bool bDialed;
+    bool bTold;
+};
+
+JoinAttempt TryJoin( DWORD dwPublished, DWORD dwMine )
+{
+    JoinAttempt a;
+    a.bDialed = false;
+    a.bTold   = false;
+
+    if ( !endataguard::JoinAllowed( dwPublished, dwMine ) )
+    {
+        a.bTold = true;   // IDS_DATA_MISMATCH, with both numbers
+        return a;         // ...and NOT a single wire call
+    }
+    a.bDialed = true;
+    return a;
+}
+
+void TestJoinerRefusesBeforeAnyWireCall( )
+{
+    const DWORD dwMine = 0x1234abcdUL;
+
+    // Equal hashes: the join proceeds and the player is told nothing.
+    JoinAttempt ok = TryJoin( dwMine, dwMine );
+    CHECK( ok.bDialed );
+    CHECK( !ok.bTold );
+
+    // Different hashes: the player is told, and nothing is dialed. This is the
+    // point of doing it here - the host's refusal reaches the joiner as a
+    // silent timeout, so the reason has to be given on this side.
+    JoinAttempt bad = TryJoin( 0xdeadbeefUL, dwMine );
+    CHECK( !bad.bDialed );
+    CHECK( bad.bTold );
+
+    // A one-bit difference is still a difference.
+    JoinAttempt nearly = TryJoin( dwMine ^ 1UL, dwMine );
+    CHECK( !nearly.bDialed );
+    CHECK( nearly.bTold );
+
+    // A host that never set the field (pre-015, zeroed buffer) is refused with
+    // a reason rather than silently vanishing from the browser.
+    JoinAttempt old = TryJoin( 0UL, dwMine );
+    CHECK( !old.bDialed );
+    CHECK( old.bTold );
+
+    // ...unless our own hash really is 0, which only happens when this install
+    // could not read its own gameplay set; then the guard cannot discriminate
+    // and the host's copy is the one that decides.
+    JoinAttempt bothBroken = TryJoin( 0UL, 0UL );
+    CHECK( bothBroken.bDialed );
+}
+
+void TestHostPredicate( )
+{
+    const DWORD dwMine  = 0x1234abcdUL;
+    const int   kMinLen = (int)sizeof( NewNetJoin );
+
+    // A record from this build with a matching set is admitted.
+    CHECK( endataguard::AcceptJoin( AllocLen( "Joiner" ), kMinLen, dwMine, dwMine ) );
+
+    // A differing set is refused however long the record is.
+    CHECK( !endataguard::AcceptJoin( AllocLen( "Joiner" ), kMinLen, 0xdeadbeefUL, dwMine ) );
+
+    // Length is checked FIRST, so a short record is refused without its
+    // m_dwDataHash ever being believed - even one whose bytes happen to match.
+    CHECK( !endataguard::AcceptJoin( OldAllocLen( "" ), kMinLen, dwMine, dwMine ) );
+    CHECK( !endataguard::AcceptJoin( 0, kMinLen, dwMine, dwMine ) );
+    CHECK( !endataguard::AcceptJoin( -1, kMinLen, dwMine, dwMine ) );
+
+    // Exactly the minimum is acceptable.
+    CHECK( endataguard::AcceptJoin( kMinLen, kMinLen, dwMine, dwMine ) );
+
+    // The host and the joiner agree on what "same" means: whenever the joiner
+    // would dial, a well-formed record from it is admitted, and whenever it
+    // would not, the host refuses. The joiner's check is a courtesy; the host's
+    // is the authority, and they must never disagree in the permissive
+    // direction.
+    const DWORD adw[] = { 0UL, 1UL, dwMine, 0xdeadbeefUL, 0xffffffffUL };
+    for ( int i = 0; i < (int)( sizeof( adw ) / sizeof( adw[0] ) ); i++ )
+    {
+        const bool bJoinerWouldDial = TryJoin( adw[i], dwMine ).bDialed;
+        const bool bHostAdmits      = endataguard::AcceptJoin( AllocLen( "P" ), kMinLen, adw[i], dwMine );
+        CHECK( bJoinerWouldDial == bHostAdmits );
+    }
+}
+
 }  // namespace
 
 int main( )
@@ -199,5 +297,7 @@ int main( )
     TestHashSitsBeforeTheVariableTail( );
     TestMinLenRule( );
     TestPre015RecordIsRefusedByTheHashCompare( );
+    TestJoinerRefusesBeforeAnyWireCall( );
+    TestHostPredicate( );
     return microtest::Summary( );
 }

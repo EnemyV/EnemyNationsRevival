@@ -79,6 +79,7 @@ public:
 			int          worldSize;
 			int          startPos;
 			char         cFlags;
+			DWORD        dataHash;   // the host's published gameplay hash (015 phase 3)
 		};
 		std::vector<SessionEntry> m_sessions;
 
