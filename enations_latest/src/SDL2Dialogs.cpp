@@ -1867,17 +1867,41 @@ bool SDL2_RunCreateNetworkFlow(GameWindow* gameWindow) {
 bool SDL2_RunJoinNetworkFlow(GameWindow* gameWindow) {
     ShowWallpaperBackground(gameWindow);
 
-    // Step 1: collect player name + server address
-    SDL2JoinNetDialog joinDlg(gameWindow);
-    if (joinDlg.DoModal() != 1) return false;
+    // Step 1: collect player name + server address. A bad address (Step 2)
+    // loops back here instead of exiting to the main menu, so a typo doesn't
+    // cost the player their name and force the whole join to be restarted.
+    std::string joinPlayerName, joinServerAddr;
+    int joinPort = 0;
+    for (;;) {
+        SDL2JoinNetDialog joinDlg(gameWindow);
+        if (joinDlg.DoModal() != 1) return false;
+
+        // Step 2: validate BEFORE persisting to vdmplay.ini -- a bad address
+        // (e.g. a stray colon, or a malformed dotted quad) must not get
+        // written, or every later launch pre-fills and re-tries the same
+        // poisoned value with no UI way to clear it. Parent the box to the
+        // game window, not nullptr: on Linux/XWayland/Mutter a parentless box
+        // opens undecorated and unfocusable BEHIND the fullscreen window (see
+        // the SDL2AdvOptionsDialog comment above, ~line 265) and the game
+        // looks hung.
+        if (!vpValidateAddressString(joinDlg.m_serverAddr.c_str())) {
+            SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, "Network Error",
+                "That server address is not valid.",
+                gameWindow ? gameWindow->GetWindow() : nullptr);
+            continue;   // back to the join dialog to correct it
+        }
+        joinPlayerName = joinDlg.m_playerName;
+        joinServerAddr = joinDlg.m_serverAddr;
+        joinPort = joinDlg.m_iPort;
+        break;
+    }
 
     // Fresh room -> fresh chat: drop any backlog from a previous session so the
     // joined lobby doesn't show stale history (operator: chat should clear on join).
     SDL2Chat_Clear();
 
-    // Step 2: write TCP config for VDMPLAY
-    WritePrivateProfileString("TCP", "ServerAddress", joinDlg.m_serverAddr.c_str(), ".\\vdmplay.ini");
-    std::string sPort = std::to_string(joinDlg.m_iPort);
+    WritePrivateProfileString("TCP", "ServerAddress", joinServerAddr.c_str(), ".\\vdmplay.ini");
+    std::string sPort = std::to_string(joinPort);
     WritePrivateProfileString("TCP", "WellKnownPort", sPort.c_str(), ".\\vdmplay.ini");
 
     // Step 3: create orchestrator + initialise game state for a joining client
@@ -1909,6 +1933,16 @@ bool SDL2_RunJoinNetworkFlow(GameWindow* gameWindow) {
         SDL2SessionBrowseDialog browseDlg(gameWindow, pJoin);
         int r = browseDlg.DoModal();
         if (r == 3) {
+            // Re-target: validate BEFORE persisting (same reasoning as Step 2
+            // above) — a bad re-search address must not overwrite the working
+            // ServerAddress in vdmplay.ini. Re-show the browser rather than
+            // aborting the whole join, since the existing session is still valid.
+            if (!vpValidateAddressString(browseDlg.m_searchAddr.c_str())) {
+                SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, "Network Error",
+                    "That server address is not valid.",
+                    gameWindow ? gameWindow->GetWindow() : nullptr);
+                continue;
+            }
             // Re-target: write the edited address/port and re-open the client.
             WritePrivateProfileString("TCP", "ServerAddress", browseDlg.m_searchAddr.c_str(), ".\\vdmplay.ini");
             WritePrivateProfileString("TCP", "WellKnownPort",
@@ -1998,7 +2032,7 @@ bool SDL2_RunJoinNetworkFlow(GameWindow* gameWindow) {
     theGame.m_iPos  = pJoin->m_iPos;
     theGame.m_sGameName = chosen.gameName;
 
-    theGame.GetMe()->SetName(joinDlg.m_playerName.c_str());
+    theGame.GetMe()->SetName(joinPlayerName.c_str());
     CNetJoin* pJn = CNetJoin::Alloc(theGame.GetMe(), FALSE);
     // theGame.ctor()/Open(TRUE) above re-default theNet's mode to closed; OpenClient had
     // set it to client. Re-assert client right before Join so netapi.cpp:178's

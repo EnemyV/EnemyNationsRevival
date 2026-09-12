@@ -483,7 +483,7 @@ BOOL CTcpNet::TCPAddress::extractHostPart(LPSTR hostPart, size_t len, LPCSTR add
   if (len >= (sLen+1))
   {
    strncpy(hostPart, addrString, sLen);
-   hostPart[len] = 0;
+   hostPart[sLen] = 0;
   }
   else
    return FALSE;
@@ -553,6 +553,13 @@ BOOL CTcpNet::TCPAddress::TranslateAddressString(tcpaddress_s &addr, LPCSTR addr
  if (validLen == strlen(addrString))
  {
   addr.m_stationAddress.s_addr = inet_addr(hostpart);
+  if (addr.m_stationAddress.s_addr == INADDR_NONE)
+   // Malformed dotted address (e.g. "54.219.190."): inet_addr's failure value is
+   // bit-identical to INADDR_BROADCAST, so an unchecked assignment here silently
+   // turned a typo into a LAN broadcast instead of a rejected address. A genuinely
+   // empty addrString still ends up broadcasting, via the caller's own "no server
+   // address configured" fallback -- unaffected by this check.
+   return FALSE;
  }
  else if (lstrcmpi(hostpart, "localhost") == 0)
  {
@@ -590,6 +597,16 @@ CNetAddress* CTcpNet::MakeAddressFromString(LPCSTR addrString)
   return NULL;
 
 
+}
+
+// Exported parse-only check (see vdmplay.h) — same TranslateAddressString the
+// TCP transport itself uses, exposed so a caller can validate a typed address
+// before persisting it, without needing an open session/handle. extern "C"
+// here to match the linkage of the vdmplay.h declaration (its extern "C" block).
+extern "C" BOOL VPAPI vpValidateAddressString(LPCSTR addrString)
+{
+ tcpaddress_s addr;
+ return addrString && CTcpNet::TCPAddress::TranslateAddressString(addr, addrString);
 }
 
 void CTcpNet::SetRegistrationAddress(LPCSTR addr)
@@ -1271,9 +1288,9 @@ void CTcpNet::CTCPLink::SendWaitingData()
   
   if (d->GetSeq() != m_nextDgramToSend)
   {
-   wsprintf(logBuf, 
+   wsprintf(logBuf,
     "CtcpLink::SendWaitingData(%d): Seq error: d->seq = %lu, expected=%lu",
-    d->GetSeq(), m_nextDgramToSend);
+    m_socket, d->GetSeq(), m_nextDgramToSend);
    Log(logBuf);
    closesocket(m_socket);
    m_socket = INVALID_SOCKET;
