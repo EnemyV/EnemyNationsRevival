@@ -6,6 +6,10 @@
 #include "terrain.h"   // CHex, theMap
 #include "terrain.inl"
 #include "player.h"    // theGame.GetFrame() — water wave animation clock
+#include "building.inl"   // theStructures / theBuildingHex - #38 queued-build ghosts
+#include "vehicle.h"      // theVehicleMap, CRoute - the order lists the ghosts come from
+#include "unit.inl"       // CUnitData::GetCX/GetCY, CUnit::GetOwner (inline bodies)
+#include "vehicle.inl"    // CVehicle::GetData, CTransportData::IsCrane
 #include "Perf.h"      // terrain sub-phase profiling counters
 
 #include <SDL.h>
@@ -999,6 +1003,149 @@ static void AppendHatchBands( const CPoint pts[4], SDL_Color col, int phase,
         emitSlab( (float)yTop, (float)__min( yTop + band, yBot ) );
 }
 
+// Shift a footprint anchored at `hexUL` onto the visible copy of the torus.
+//
+// Two failure modes, both handled here:
+//   (1) projecting a hex's CANONICAL (wrapped) coord throws a seam-crossing hex a full
+//       world-width away -> off-screen -> the footprint is cut along the seam. FIX: the
+//       CALLER projects the UN-wrapped coord (hexUL + i, hexUL + j). GetWorldHex extends
+//       LINEARLY for out-of-range coords (see BuildMapUnderlay's CHexCoord(eX,0) wrap-
+//       period probe), so a seam-crossing footprint stays contiguous.
+//   (2) when the anchor itself is only on screen via the wrapped (torus-tiled) copy, its
+//       canonical projection is a full map off-screen and the whole footprint vanishes.
+//       FIX: shift everything by an integer number of world-wrap PERIODS onto the visible
+//       copy. Away from the seam the anchor is on-screen -> shift == 0 -> byte-identical.
+//
+// bAlways: the placement cursor only needs the shift when its anchor projects far off
+// screen, because the cursor is always under the mouse - and it keeps that early-out so
+// its behaviour is unchanged. A QUEUED-BUILD GHOST is anywhere on the map, so it asks for
+// the period solve unconditionally: the solve rounds to zero periods for anything within
+// half a world-wrap of the window centre (a map period is hundreds of hexes, a window is
+// tens), so on an ordinary view it is the same answer with two extra projections.
+static CPoint FootprintSeamShift( const CAnimAtr& aa, CHexCoord hexUL, bool bAlways = false )
+{
+    const CSize wsz = aa.m_dibwnd.GetWinSize( );
+    CPoint      shift( 0, 0 );
+
+    CPoint pa[4];
+    aa.MapToWindowHex( hexUL, pa );
+    bool anchorOff = pa[0].x < -wsz.cx || pa[0].x > 2 * wsz.cx ||
+                     pa[0].y < -wsz.cy || pa[0].y > 2 * wsz.cy;
+    if ( ( !anchorOff ) && ( !bAlways ) )
+        return shift;
+
+    CPoint p0[4], pX[4], pY[4];
+    aa.MapToWindowHex( CHexCoord( 0, 0 ),                p0 );
+    aa.MapToWindowHex( CHexCoord( theMap.Get_eX( ), 0 ), pX );  // one full X-wrap
+    aa.MapToWindowHex( CHexCoord( 0, theMap.Get_eY( ) ), pY );  // one full Y-wrap
+    double ex = pX[0].x - p0[0].x, ey = pX[0].y - p0[0].y;
+    double fx = pY[0].x - p0[0].x, fy = pY[0].y - p0[0].y;
+    double det = ex * fy - ey * fx;
+    if ( det > 1e-6 || det < -1e-6 )
+    {
+        double dx = wsz.cx * 0.5 - pa[0].x;
+        double dy = wsz.cy * 0.5 - pa[0].y;
+        double a  = ( dx * fy - dy * fx ) / det;     // periods to shift in X / Y
+        double b  = ( ex * dy - ey * dx ) / det;
+        long   ai = (long)( a >= 0 ? a + 0.5 : a - 0.5 );
+        long   bi = (long)( b >= 0 ? b + 0.5 : b - 0.5 );
+        shift.x = (int)( ai * ex + bi * fx );
+        shift.y = (int)( ai * ey + bi * fy );
+    }
+    return shift;
+}
+
+// One whole footprint in ONE colour - the queued-build ghost. The placement cursor
+// keeps its own per-hex colouring (buildable / bad / exit) below; a PLANNED site has no
+// per-hex verdict to show, because nothing is validated until the order is dispatched.
+static void AppendFootprintHatch( const CAnimAtr& aa, CHexCoord hexUL, int cx, int cy,
+                                  SDL_Color col, int phase, std::vector<SDL_Vertex>& verts )
+{
+    const CPoint shift = FootprintSeamShift( aa, hexUL, true );
+
+    for ( int j = 0; j < cy; ++j )
+        for ( int i = 0; i < cx; ++i )
+        {
+            CHexCoord hcProj( hexUL.X( ) + i, hexUL.Y( ) + j );   // un-wrapped: seam-continuous
+            CHexCoord hcData = hcProj; hcData.Wrap( );            // wrapped: data lookup
+            if ( theMap.GetHex( hcData ) == NULL )
+                continue;
+            CPoint pts[4];
+            aa.MapToWindowHex( hcProj, pts );
+            for ( int k = 0; k < 4; ++k ) { pts[k].x += shift.x; pts[k].y += shift.y; }
+            AppendHatchBands( pts, col, phase, verts );
+        }
+}
+
+// A PLANNED site. Deliberately NOT the placement cursor's animated white: a queue and a
+// live placement are often on screen at the same moment, and they mean different things -
+// one is where the building goes when you click, the other is where a crane is going to
+// put one. Dimmer, cooler, and static (phase 0) so the eye reads it as background.
+static const SDL_Color kQueuedGhostCol = { 120, 190, 255, 120 };
+
+static void DrawPlacementCursor( const CAnimAtr& aa, int phase, std::vector<SDL_Vertex>& verts );
+
+// #38 QUEUED BUILD GHOSTS. Every build order on every crane I own draws its own
+// footprint, whether or not the crane is selected and whether or not Shift is held: a
+// planned site has to read as planned to the player looking at his base. The dotted route
+// legs in CWndArea::DrawRouteWaypoints are unchanged and still Shift-gated - they answer
+// a different question ("in what ORDER, and by which crane").
+//
+// Cost: one walk of theVehicleMap per rendered frame, then one CList walk per crane I
+// own. The GPU sprite discovery pass already walks every vehicle every frame
+// (terrain.cpp DiscoverSpritesGpu), so this is well inside the existing profile, and it
+// is correct BY CONSTRUCTION - there is no cached ghost list to invalidate when an order
+// is queued, dispatched, completed, dropped or lost with the crane. It allocates nothing:
+// the vertex buffer belongs to the caller and is reused frame to frame.
+static void AppendQueuedBuildGhosts( const CAnimAtr& aa, std::vector<SDL_Vertex>& verts )
+{
+    POSITION pos = theVehicleMap.GetStartPosition( );
+    while ( pos != NULL )
+    {
+        DWORD     dwID;
+        CVehicle* pVeh;
+        theVehicleMap.GetNextAssoc( pos, dwID, pVeh );
+        if ( pVeh == NULL )
+            continue;
+        if ( ( pVeh->GetOwner( ) == NULL ) || ( !pVeh->GetOwner( )->IsMe( ) ) )
+            continue;
+        if ( !pVeh->GetData( )->IsCrane( ) )
+            continue;
+
+        CList<CRoute*, CRoute*>& lst = pVeh->GetRouteList( );
+        for ( POSITION rp = lst.GetHeadPosition( ); rp != NULL; )
+        {
+            CRoute* pR = lst.GetNext( rp );
+            if ( ( pR == NULL ) || ( pR->GetRouteType( ) != CRoute::build ) )
+                continue;
+
+            // THE BUILD HAS STARTED, so the plan is now a building: the real site is
+            // standing on the order's hex and the ghost comes off. This is the test
+            // rather than "is this the order at the cursor", because it is also the
+            // right answer when the site was finished, destroyed, or put there by
+            // something else - a ghost is a picture of an EMPTY planned footprint.
+            if ( theBuildingHex._GetBuilding( pR->GetCoord( ) ) != NULL )
+                continue;
+
+            int iBldg = pR->GetBldgType( );
+            if ( ( iBldg <= 0 ) || ( iBldg > theStructures.GetNumBuildings( ) ) )
+                continue;
+            CStructureData const* pData = theStructures.GetData( iBldg );
+            if ( pData == NULL )
+                continue;
+
+            // the same dir swap CGameMap::SetBldgCur applies to the placement cursor
+            int iDir = pR->GetBldgDir( );
+            int cx   = ( iDir & 1 ) ? pData->GetCY( ) : pData->GetCX( );
+            int cy   = ( iDir & 1 ) ? pData->GetCX( ) : pData->GetCY( );
+            if ( ( cx <= 0 ) || ( cy <= 0 ) )
+                continue;
+
+            AppendFootprintHatch( aa, pR->GetCoord( ), cx, cy, kQueuedGhostCol, 0, verts );
+        }
+    }
+}
+
 // Draw the build/rocket placement footprint LIVE, every frame, in window space —
 // the original (1996) redrew the cursor area each frame, so the hatch animated for
 // free; our cached terrain texture is frozen between rebuilds, so the hatch must be
@@ -1007,11 +1154,12 @@ static void AppendHatchBands( const CPoint pts[4], SDL_Color col, int phase,
 // overlay (composited after Render returns), so it reads as on-the-ground.
 static void DrawBuildCursorOverlay( SDL_Renderer* r, const CAnimAtr& aa )
 {
-    if ( !theMap.HaveBldgCur( ) )
-        return;
-    CHexCoord hexUL; int cx = 0, cy = 0;
-    if ( !theMap.GetBldgCurRect( hexUL, cx, cy ) )
-        return;
+    // Reused frame to frame so the draw path allocates nothing after the first frames
+    // (EmitOrder's pattern, SDL2Sprites.cpp). Safe as a static across the per-renderer
+    // terrain contexts: panels are rendered one after another on the main thread, and
+    // this is cleared on entry.
+    static std::vector<SDL_Vertex> verts;
+    verts.clear( );
 
     // Hatch animation phase — the original formula (sprite.cpp): advance one step per
     // game frame so the stripe parity flips every 4 frames. (An earlier attempt to slow
@@ -1019,51 +1167,31 @@ static void DrawBuildCursorOverlay( SDL_Renderer* r, const CAnimAtr& aa )
     // or off-aligned hex stays INVISIBLE for longer instead of blinking imperceptibly.
     // AppendHatchBands now guarantees a visible band regardless of parity, so speed and
     // visibility are independent again.)
-    const int               phase = (int)theGame.GetFrame( );
-    std::vector<SDL_Vertex> verts;
+    const int phase = (int)theGame.GetFrame( );
 
-    // --- TORUS-SEAM wrap correction --------------------------------------------------
-    // The footprint can straddle the map's wrap seam (the SW-NE line where the world
-    // repeats). Two failure modes, both fixed here:
-    //   (1) projecting a hex's CANONICAL (wrapped) coord throws a seam-crossing hex a full
-    //       world-width away -> off-screen -> the hatch is cut along the seam. FIX: project
-    //       the UN-wrapped coord (hcProj below). GetWorldHex extends LINEARLY for out-of-
-    //       range coords (see BuildMapUnderlay's CHexCoord(eX,0) wrap-period probe), so a
-    //       seam-crossing footprint stays contiguous.
-    //   (2) when the mouse is over a hex shown via the wrapped (torus-tiled) copy, the
-    //       anchor's OWN canonical projection is a full map off-screen and the whole
-    //       footprint vanishes. FIX: if the anchor projects well outside the window, shift
-    //       the entire footprint by an integer number of world-wrap PERIODS onto the
-    //       visible copy. Away from the seam the anchor is on-screen -> shift == 0 ->
-    //       behaviour is byte-identical to before.
-    const CSize wsz = aa.m_dibwnd.GetWinSize( );
-    CPoint shift( 0, 0 );
-    {
-        CPoint pa[4]; aa.MapToWindowHex( hexUL, pa );
-        bool anchorOff = pa[0].x < -wsz.cx || pa[0].x > 2 * wsz.cx ||
-                         pa[0].y < -wsz.cy || pa[0].y > 2 * wsz.cy;
-        if ( anchorOff )
-        {
-            CPoint p0[4], pX[4], pY[4];
-            aa.MapToWindowHex( CHexCoord( 0, 0 ),                p0 );
-            aa.MapToWindowHex( CHexCoord( theMap.Get_eX( ), 0 ), pX );  // one full X-wrap (extends linearly)
-            aa.MapToWindowHex( CHexCoord( 0, theMap.Get_eY( ) ), pY );  // one full Y-wrap
-            double ex = pX[0].x - p0[0].x, ey = pX[0].y - p0[0].y;
-            double fx = pY[0].x - p0[0].x, fy = pY[0].y - p0[0].y;
-            double det = ex * fy - ey * fx;
-            if ( det > 1e-6 || det < -1e-6 )
-            {
-                double dx = wsz.cx * 0.5 - pa[0].x;
-                double dy = wsz.cy * 0.5 - pa[0].y;
-                double a  = ( dx * fy - dy * fx ) / det;     // periods to shift in X / Y
-                double b  = ( ex * dy - ey * dx ) / det;
-                long   ai = (long)( a >= 0 ? a + 0.5 : a - 0.5 );
-                long   bi = (long)( b >= 0 ? b + 0.5 : b - 0.5 );
-                shift.x = (int)( ai * ex + bi * fx );
-                shift.y = (int)( ai * ey + bi * fy );
-            }
-        }
-    }
+    // #38: the planned sites first, so a live placement cursor draws OVER them.
+    AppendQueuedBuildGhosts( aa, verts );
+
+    DrawPlacementCursor( aa, phase, verts );
+
+    if ( verts.empty( ) )
+        return;
+    SDL_SetRenderDrawBlendMode( r, SDL_BLENDMODE_BLEND );
+    SDL_RenderGeometry( r, nullptr, verts.data( ), (int)verts.size( ), nullptr, 0 );
+}
+
+// The placement cursor itself: one footprint, coloured PER HEX by the buildable /
+// unbuildable / exit verdict the hover computed. Unchanged behaviour; it lost only the
+// vertex buffer (now the caller's) and the seam block (now FootprintSeamShift).
+static void DrawPlacementCursor( const CAnimAtr& aa, int phase, std::vector<SDL_Vertex>& verts )
+{
+    if ( !theMap.HaveBldgCur( ) )
+        return;
+    CHexCoord hexUL; int cx = 0, cy = 0;
+    if ( !theMap.GetBldgCurRect( hexUL, cx, cy ) )
+        return;
+
+    const CPoint shift = FootprintSeamShift( aa, hexUL );
 
     // `hcProj` is the PROJECTION coord (NOT torus-wrapped, per the note above); `phex`
     // (the wrapped hex) supplies the terrain data / cursor mode.
@@ -1116,11 +1244,6 @@ static void DrawBuildCursorOverlay( SDL_Renderer* r, const CAnimAtr& aa )
     };
     if ( theMap.m_pLandExit ) addHex( theMap.m_pLandExit, exitProj( theMap.m_pLandExit ) );
     if ( theMap.m_pShipExit ) addHex( theMap.m_pShipExit, exitProj( theMap.m_pShipExit ) );
-
-    if ( verts.empty( ) )
-        return;
-    SDL_SetRenderDrawBlendMode( r, SDL_BLENDMODE_BLEND );
-    SDL_RenderGeometry( r, nullptr, verts.data( ), (int)verts.size( ), nullptr, 0 );
 }
 
 //==========================================================================
