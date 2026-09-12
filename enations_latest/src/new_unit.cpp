@@ -6192,7 +6192,12 @@ void CVehicle::Serialize( CArchive& ar )
         ar << (WORD)m_route.GetCount( );
         POSITION pos  = m_route.GetHeadPosition( );
         int      iPos = 0, iOn = 0;
-        TRAP( m_route.GetCount( ) > 0 );
+        // was TRAP( m_route.GetCount( ) > 0 ) - a pre-queue invariant ("a saved
+        // vehicle has no route"). 014 made queued waypoints a feature, so every
+        // Debug save of a routed vehicle broke into the debugger. The condition is
+        // now the NORMAL case; keep the signal, drop the halt.
+        if ( m_route.GetCount( ) > 0 )
+            EN_TRAP_REMOVED( "CVehicle::Serialize: saving a queued route - normal since 014" );
         while ( pos != NULL )
         {
             // BUGS #88: compare the cursor BEFORE GetNext advances pos. The shipped
@@ -6218,6 +6223,13 @@ void CVehicle::Serialize( CArchive& ar )
         if ( ( m_pos == NULL ) && ( iOn > 0 ) )
             iPos = iOn - 1;
         ar << (WORD)iPos;
+
+        // Save release 8+: the one-shot/loop flag (BUGS #95). Before it the flag was
+        // never written, so every loaded route came back LOOPING - the ctor default -
+        // and a one-shot Shift queue turned into a loop across a save. Same v8 gate
+        // as the order payload, for the same reason (VER_RELEASE is still 7).
+        if ( theGame.m_dwVer >= 8 )
+            ar << (BYTE)( m_bRouteLoop ? 1 : 0 );
 
         ar << m_ptDest;
         ar << m_hexDest;
@@ -6307,6 +6319,13 @@ void CVehicle::Serialize( CArchive& ar )
                 wNR--;
                 m_route.GetNext( pos );
             }
+        }
+
+        if ( theGame.m_dwVer >= 8 )
+        {
+            BYTE bLoop;
+            ar >> bLoop;
+            m_bRouteLoop = bLoop ? TRUE : FALSE;
         }
 
         ar >> m_ptDest;
@@ -6466,10 +6485,26 @@ void CRoute::Serialize( CArchive& ar )
     {
         ASSERT_STRICT_VALID( this );
         ar << m_hex << m_iType;
+
+        // Save release 8+ carries the ORDER PAYLOAD (building type + direction).
+        // Gated on the WRITER as well as the reader, which is not the house pattern
+        // (elsewhere the writer always writes the current format and only the reader
+        // gates): VER_RELEASE is still 7 and the bump is coordinated separately, so
+        // while it is 7 nothing extra is written and a v7 save stays byte-for-byte
+        // what it is today. When the counter moves to 8 this starts writing and
+        // reading the payload with no further change here.
+        if ( theGame.m_dwVer >= 8 )
+            ar << m_iBldgType << m_iDir;
     }
 
     else
+    {
         ar >> m_hex >> m_iType;
+        if ( theGame.m_dwVer >= 8 )
+            ar >> m_iBldgType >> m_iDir;
+        else
+            m_iBldgType = m_iDir = 0;   // pre-8 saves hold movement stops only
+    }
 }
 
 void SerializeElements( CArchive& ar, CBuilding** ppBldg, int iCount )

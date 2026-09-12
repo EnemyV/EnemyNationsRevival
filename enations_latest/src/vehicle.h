@@ -261,11 +261,20 @@ public:
 class CRoute : public CObject
 {
 public:
-		enum { waypoint, unload, load };
+		// waypoint/unload/load are the 1996 movement STOPS. build (and the kinds added
+		// after it) are ORDERS: the vehicle does a job at the hex instead of only
+		// stopping there. Both kinds live on the one list, CVehicle::m_route.
+		enum { waypoint, unload, load, build };
 
-		CRoute () {}
-		CRoute (CHexCoord & hex, int iType) { ASSERT ((0 <= iType) && (iType <= 2));
-											m_hex = hex; m_iType = (BYTE) iType; }
+		CRoute () : m_iType (waypoint), m_iBldgType (0), m_iDir (0) {}
+		CRoute (CHexCoord & hex, int iType) { ASSERT ((0 <= iType) && (iType <= load));
+													m_hex = hex; m_iType = (BYTE) iType;
+													m_iBldgType = 0; m_iDir = 0; }
+		// order form: the payload names WHICH building and which way round it faces
+		CRoute (CHexCoord const & hex, int iType, int iBldgType, int iDir)
+												{ ASSERT ((0 <= iType) && (iType <= build));
+													m_hex = hex; m_iType = (BYTE) iType;
+													m_iBldgType = (BYTE) iBldgType; m_iDir = (BYTE) iDir; }
 		~CRoute () {}
 
 		BOOL operator== (CRoute & src ) const
@@ -275,12 +284,20 @@ public:
 
 		CHexCoord const & GetCoord () const { return (m_hex); }
 		int				GetRouteType () const { return (m_iType); }
+		int				GetBldgType () const { return (m_iBldgType); }
+		int				GetBldgDir () const { return (m_iDir); }
+
+		// TRUE for the ORDER kinds (a job to do at the hex), FALSE for the 1996 stops.
+		// The order dispatcher owns the former; ArrivedDest still owns the latter.
+		static BOOL		IsOrder (int iType) { return (iType >= build); }
 
 		void 					Serialize (CArchive & ar);
 
 protected:
 		CHexCoord		m_hex;			// where to go
 		BYTE				m_iType;		// enum values above of what to do at this location
+		BYTE				m_iBldgType;	// order payload: building type (0 on a movement stop)
+		BYTE				m_iDir;			// order payload: build direction (0 on a movement stop)
 };
 
 
