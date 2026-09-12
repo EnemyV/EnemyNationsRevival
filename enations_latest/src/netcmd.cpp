@@ -857,8 +857,9 @@ CMsgVehLoc::CMsgVehLoc( CMsgVehCompLocElem const* pElem ): _CMsgVehGo( veh_loc )
     m_ptNext     = CSubHex( pElem->m_wNextX, pElem->m_wNextY );
     m_ptHead     = CSubHex( pElem->m_wHeadX, pElem->m_wHeadY );
     m_ptTail     = CSubHex( pElem->m_wTailX, pElem->m_wTailY );
-    m_hexNext    = CSubHex( pElem->m_wHexNextX, pElem->m_wHexNextY );
-    m_hexDest    = CSubHex( pElem->m_wHexDestX, pElem->m_wHexDestY );
+    // These fields were encoded in hex coordinates, not subhex coordinates.
+    m_hexNext    = CHexCoord( pElem->m_wHexNextX, pElem->m_wHexNextY );
+    m_hexDest    = CHexCoord( pElem->m_wHexDestX, pElem->m_wHexDestY );
     m_dwID       = pElem->m_dwID;
     m_iPlyrNum   = 0;
     m_iDir       = pElem->m_bDir;
