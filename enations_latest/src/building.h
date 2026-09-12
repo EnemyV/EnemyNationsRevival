@@ -1177,16 +1177,22 @@ public:
 		// the Scrounging toggle scales with one of them, so the SITE decides what it yields:
 		// woods give lumber, good soil gives food, rough country gives scrap iron and coal,
 		// and a warehouse paved into the city core gives nothing at all. Scanned on first use
-		// and cached (terrain never changes at runtime); see CWarehouseBuilding::UpdateScrounge.
+		// and cached; see CWarehouseBuilding::UpdateScrounge.
+		//
+		// Terrain DOES change at runtime -- Slash and Burn retypes forest -> plain -- so this
+		// cache is not write-once. CFarmBuilding::ApplySlash calls InvalidateScrounge on every
+		// warehouse whose scan ring covers the cut hex, and the next getter re-scans.
 		int				GetScroungeForestMult ();
 		int				GetScroungeSoilMult ();
 		int				GetScroungeIronMult ();
 		int				GetScroungeCoalMult ();
 		void			UpdateScrounge ();
+		void			InvalidateScrounge ();
 
 protected:
 
-		// -1 = not scanned yet (also the state after a load - these are runtime-only).
+		// -1 = not scanned yet (also the state after a load, and after InvalidateScrounge)
+		// - these are runtime-only.
 		// HUNDREDTHS of the 0..10 scale (so 0..1000; the two scrap ones reach 2000 because
 		// mountain counts double). MultiLinesFor does the single rounding - do NOT truncate
 		// these to whole multipliers on the way past, that bug shipped once already.
