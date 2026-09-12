@@ -486,7 +486,7 @@ public:
 		void					SetDestAndMode (CHexCoord const & hex, VEH_POS iMode)
 													{ CSubHex _sub (hex.X () * 2, hex.Y () * 2);
 														SetDestAndMode (_sub, iMode); }
-		void					SetDestAndMode (CSubHex sub, VEH_POS iMode);
+		void					SetDestAndMode (CSubHex sub, VEH_POS iMode, BOOL bTrafficDetour = FALSE);
 		void					KickStart ();
 
 		void					SetEventAndRoute (VEH_EVENT iEvent, VEH_MODE iMode) { SetEvent (iEvent); SetRouteMode (iMode); }
@@ -587,6 +587,7 @@ protected:
 		BOOL					InLane (CSubHex const &_next);
 		CSubHex				Rotate (int iDir);
 		void					Turn180 ();
+		void                    EndReverse ();
 		BOOL					IsPassable (CSubHex const & _sub, BOOL bStrict = TRUE);
 		BOOL					CanEnter (CSubHex const & _sub, BOOL bStrict = TRUE);
 		int		GetTiltIndex( BOOL bOnBridge ) 		const;
@@ -631,6 +632,7 @@ protected:
 		BOOL					m_bWaitedForMover;			// TRUE once we have spent our wait on this block (one wait per bump)
 		CSubHex				m_subWaitNext;					// the step we are holding for while in traffic mode (x -1 = none)
 		int						m_iBackUps;							// back-ups taken for this destination (capped)
+		int                     m_iParkSkip; // transient continuation of bounded parking search
 		DWORD					m_dwAskedToMove;				// last time we were nudged out of the way (0 = never)
 		DWORD					m_dwLeftRoad;						// last time we pulled off the road on giving up (0 = never)
 		CSubHex				m_subResume;						// destination to go back to once a detour finishes.
@@ -650,6 +652,7 @@ protected:
 		int						m_iCorrLen;							// ...and how far the corridor ran along OUR axis
 		DWORD					m_dwBlockLog;						// last blocked-step line (probe only)
 		BOOL					m_bReversing;						// backing up: hold the facing while the body moves
+		BOOL					m_bForwardEscape;                  // committed forward yield after opposing retreats meet
 		int						m_iHoldFrames;						// game frames left in the post-retreat hold; 0 = not holding
 		LONG					m_iBlockCount;					// number of consecutive times blocked
 		CHexCoord			m_hexStagnant;					// blocked-stagnation watch: last hex seen blocked at (transient, not saved)

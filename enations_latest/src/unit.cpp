@@ -3078,7 +3078,7 @@ void CVehicle::InvalidateStatus( ) const
     theApp.m_wndVehicles.m_ListBox.InvalidateRect( &rect, FALSE );
 }
 
-void CVehicle::SetDestAndMode( CSubHex sub, VEH_POS iMode )
+void CVehicle::SetDestAndMode( CSubHex sub, VEH_POS iMode, BOOL bTrafficDetour )
 {
     const int aiAdd[4][2] = { 0, 1, 0, 0, 1, 0, 1, 1 };
 
@@ -3091,6 +3091,8 @@ void CVehicle::SetDestAndMode( CSubHex sub, VEH_POS iMode )
                m_ptHead.y, sub.x, sub.y );
 #endif
     ASSERT_VALID( this );
+    if ( !bTrafficDetour )
+        EndReverse( );
     DeletePath( );
     m_hexLastDest = sub;
 
@@ -3101,23 +3103,21 @@ void CVehicle::SetDestAndMode( CSubHex sub, VEH_POS iMode )
     m_iClosest      = INT_MAX;
     m_iNumClosest   = 0;
     m_iNumRetries   = 0;
+    m_iParkSkip     = 0;
     m_dwTimeBlocked = 0;
     m_iBlockCount   = 0;
-    m_iBackUps      = 0;   // fresh destination, fresh back-up budget
+    m_bWaitedForMover = FALSE; // a new destination starts a new bump/wait episode
+    m_subWaitNext.x = m_subWaitNext.y = -1;
 
-    // ...and a genuinely new order CANCELS any pending traffic resume. Without
-    // this, order A -> detour D -> the player orders B ends with the vehicle
-    // driving itself back to A on arrival at B. DetourTo re-arms afterwards,
-    // so internal traffic moves still keep their job.
-    m_bResume       = FALSE;
-
-    // and a new order ends a reverse - whatever we are told to do next, we do it
-    // facing the way we drive.
-    m_bReversing    = FALSE;
-
-    // ...and it ends a post-retreat hold: we were waiting to go back to a job that
-    // has just been replaced, so there is nothing left to wait for.
-    m_iHoldFrames   = 0;
+    // A replacement order cancels recovery. An internal detour must keep its
+    // movement mode, saved job and hold active while the new route is chosen.
+    if ( !bTrafficDetour )
+    {
+        m_iBackUps       = 0;
+        m_bResume        = FALSE;
+        m_bForwardEscape = FALSE;
+        m_iHoldFrames    = 0;
+    }
     m_bFlags &= ~told_ai_stop;
 
     // for a building there is only one entrance
@@ -3205,7 +3205,10 @@ void CVehicle::SetDestAndMode( CSubHex sub, VEH_POS iMode )
 
     // if we're moving just change the path
     ASSERT( ( m_cMode != moving ) || ( m_iStepsLeft > 0 ) );
-    if ( ( m_cMode == moving ) && ( m_iStepsLeft > 0 ) )
+    // Arrival can leave freshly initialized interpolation with next==head.
+    // That is not an active step: a new detour must start travel, not shrink
+    // the body toward its own head while pretending to finish the old step.
+    if ( ( m_cMode == moving ) && ( m_iStepsLeft > 0 ) && ( m_ptNext != m_ptHead ) )
     {
         ASSERT( m_ptNext != m_ptHead );
         ASSERT( ( abs( CSubHex::Diff( m_ptNext.x - m_ptHead.x ) ) < 2 ) &&
@@ -3809,6 +3812,7 @@ void CVehicle::StopUnit( )
 
     CUnit::StopUnit( );
 
+    EndReverse( );
     SetEvent( CVehicle::none );
     SetDest( GetPtNext( ) );
 }
