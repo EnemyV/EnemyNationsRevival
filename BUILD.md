@@ -130,6 +130,34 @@ cd run && ../build/enations_latest/src/enations      # (build-mac/... on macOS)
 On Windows, run `enations.exe` from a directory that contains `ENations.dat`, `data/`, and the
 SDL2 DLLs (the Releases archive layout).
 
+### Running from a loose `data/` set instead of the container (GH #36)
+
+The container is not required any more. `tools/data/dat_extract.py` (discussion repo) splits an
+`ENATIONS.DAT` into one byte-identical file per entry under `data/`, in the nested lower-case
+layout the loader probes, plus a `data/manifest.txt`. That marker file is what tells the loader a
+loose-only install is intended: with it present the loader runs without a container instead of
+throwing and offering the "locate ENations.dat" prompt. A loose entry always wins over the
+container when both are there, so you can also override single entries.
+
+To make a build stage a loose set beside the binary, point the CMake cache entry at the directory
+that **contains** `data/`:
+
+```sh
+cmake -S . -B cmakeBuild-x64 -A x64 -DEN_LOOSE_DATA_DIR=/path/to/extract-out
+```
+
+Configure then FAILS if `<dir>/data/manifest.txt` is missing, counts the files it found, and prints
+the count; a POST_BUILD step copies `data/` next to `enations` and echoes the same count into the
+build log. Empty (the default) stages nothing and the build behaves exactly as before. The glob is
+**configure-time**, so re-run configure after a merge and verify by *counting staged files*, as the
+release rules require. There is no installer step: a release archive is the staged run directory.
+
+In multiplayer the host compares a hash of the GAMEPLAY files only — `units.rif`, `research.rif`,
+`version.rif`, `files/stdgta.dat`, `create.rif`'s RACE list and `9.rif`'s text lists — and refuses a
+joiner whose set differs. Sprites, bitmaps, music, SFX, fonts, cursors and videos are **not** hashed
+and may be replaced freely. The value is printed once at startup as `[DATAHASH] xxxxxxxx`, so two
+machines can be compared by eye.
+
 > **Trial-data note (Linux/macOS).** The 1997 CD `ENATIONS.DAT` is the 30-day-trial pressing,
 > so the engine checks for an installer-written registry value and tries to play the (VFW/Indeo)
 > intro movie. On POSIX the "registry" is a flat file at `~/.config/enations/registry.ini`; seed

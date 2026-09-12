@@ -900,7 +900,11 @@ class CExplosion : public CProjBase
     CRect Draw( const CHexCoord& );
     void  EmitFlash( const CPoint& ptCenter, int iSprW, int iSprH );  // additive impact pop
 
-    int m_iKillFrame;  // on or after this frame kill the building
+    int m_iKillFrame;  // on or after this frame of OUR OWN life, release the corpse
+                       // (enexpl::EXPL_KILLFRAME, or EXPL_NO_KILLFRAME = no corpse)
+    int m_iFrames;     // frames this explosion has lived. Counted here and not read
+                       // off the animation, so a replaced sprite cannot move a
+                       // simulation event (015 phase 3, explframe.h).
 };
 
 const int PROJ_BASE_ALLOC_SIZE = __max(sizeof(CProjectile), sizeof(CExplosion));

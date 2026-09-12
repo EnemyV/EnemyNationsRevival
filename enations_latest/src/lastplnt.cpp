@@ -27,6 +27,7 @@
 #include "bitmaps.h"
 #include "bmbutton.h"
 #include "chat.h"
+#include "datahash.h"
 #include "creatmul.inl"
 #include "creatsin.h"
 //#include "dlgflic.h"
@@ -1076,18 +1077,24 @@ BOOL CConquerApp::InitInstance( )
         }
     } while ( bErr );
 
-    // if .dat < 400M then it's shareware (anti-pirate) — Phase 5c: Win32 file-size check
+    // 015 phase 3: fingerprint the gameplay data now that the loader is up, so
+    // the join and publish messages can carry it. Printed once so QA can compare
+    // two machines by eye; art, sound and text outside the gameplay tables do not
+    // change it.
+    theGame.m_dwDataHash = EnComputeGameplayDataHash( );
     {
-        WIN32_FILE_ATTRIBUTE_DATA wfad;
-        if ( ::GetFileAttributesExA( theDataFile.GetName(), GetFileExInfoStandard, &wfad ) )
-        {
-            ULARGE_INTEGER size;
-            size.HighPart = wfad.nFileSizeHigh;
-            size.LowPart  = wfad.nFileSizeLow;
-            if ( size.QuadPart < 400000000ULL )
-                m_bShareware = TRUE;
-        }
+        char szHash[64];
+        sprintf( szHash, "[DATAHASH] %08lx", (unsigned long)theGame.m_dwDataHash );
+        Log( szHash );
+        OutputDebugStringA( szHash );
+        OutputDebugStringA( "\n" );
     }
+
+    // 015 phase 2: the "< 400 MB .dat means shareware" size check is gone. It read
+    // the size of the CONTAINER, and a loose-only install has no container at all
+    // (theDataFile.GetName() is empty), so the anti-pirate heuristic could only
+    // misfire there. m_bShareware still comes from version.rif above, which is the
+    // authoritative flag and travels with the data whether it is packed or loose.
 
     // warn on 16-bit
     if ( !m_bUse8Bit )

@@ -8,6 +8,12 @@ option(EN_TRAFFIC_PROBES "Compile traffic event probes (runtime EN_WAIT_LOG stil
 # spectator mode). See the _CHEAT note in target_compile_definitions below.
 option(EN_CHEAT "Compile the dev cheat surface (_CHEAT): map reveal, research grants, Max*, AI unit grants, End-key spectator, debug overlays" OFF)
 
+# 015 phase 2 (.dat cleanup): directory holding a loose data/ set to stage beside
+# the binary so the game can run with no ENations.dat. Empty = stage nothing, which
+# is the default. See the staging block further down for the layout and how to make
+# one. PATH, not a source path: it points OUTSIDE both repos.
+set(EN_LOOSE_DATA_DIR "" CACHE PATH "Directory containing a loose data/ set (extracted ENATIONS.DAT) to stage beside enations; empty = none")
+
 set(enations_sources
 #        advanced.cpp
         ai.cpp
@@ -47,6 +53,7 @@ set(enations_sources
         creatsin.cpp
         credits.cpp
         cutscene.cpp
+        datahash.cpp
         DlgMsg.cpp
         DlgReg.cpp  # holds the GetDefaultApp helper used by ExitInstance
         dxfer.cpp
@@ -574,6 +581,35 @@ else ()
             "${CMAKE_CURRENT_SOURCE_DIR}/../data/terrain_gpu"
             "$<TARGET_FILE_DIR:enations>/data/terrain_gpu"
         COMMENT "Staging baked terrain set (data/terrain_gpu) next to the binary"
+    )
+endif ()
+
+# 015 phase 2 (.dat cleanup): optional LOOSE data set staged next to the binary.
+# The extracted ENATIONS.DAT - one file per container entry under data/, in the
+# nested lower-case layout CDataFile::OpenAsMMIO probes, plus data/manifest.txt,
+# which is what tells the loader a loose-only install is intended. Produce it with
+# tools/data/dat_extract.py (discussion repo), then point this at the directory
+# that CONTAINS data/:
+#   cmake -DEN_LOOSE_DATA_DIR=<extract out dir> ...
+# Empty (the default) stages nothing and the build behaves exactly as before: the
+# release still ships the container. Deliberately NOT defaulted to any path in this
+# tree - the extracted set is ~516 MB of binaries and belongs in neither repo.
+# The glob is configure-time (release rules: re-run configure after a merge and
+# count the staged files), so the count below is what this build will copy.
+if (EN_LOOSE_DATA_DIR)
+    if (NOT EXISTS "${EN_LOOSE_DATA_DIR}/data/manifest.txt")
+        message(FATAL_ERROR "EN_LOOSE_DATA_DIR=${EN_LOOSE_DATA_DIR} has no data/manifest.txt - point it at the output directory of tools/data/dat_extract.py")
+    endif ()
+    file(GLOB_RECURSE EN_LOOSE_DATA_FILES "${EN_LOOSE_DATA_DIR}/data/*")
+    list(LENGTH EN_LOOSE_DATA_FILES EN_LOOSE_DATA_COUNT)
+    message(STATUS "Loose data set: ${EN_LOOSE_DATA_COUNT} files to stage from ${EN_LOOSE_DATA_DIR}/data")
+    add_custom_command(TARGET enations POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_directory_if_different
+            "${EN_LOOSE_DATA_DIR}/data"
+            "$<TARGET_FILE_DIR:enations>/data"
+        COMMAND ${CMAKE_COMMAND} -E echo
+            "Loose data set staged: ${EN_LOOSE_DATA_COUNT} files from ${EN_LOOSE_DATA_DIR}/data"
+        COMMENT "Staging loose data set (${EN_LOOSE_DATA_COUNT} files) next to the binary"
     )
 endif ()
 

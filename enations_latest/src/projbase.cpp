@@ -22,6 +22,7 @@
 #include "building.inl"
 #include "vehicle.inl"
 
+#include "explframe.h"     // EXPL_KILLFRAME - the corpse release point (015 phase 3)
 #include "SDL2Sprites.h"   // GPU tracer streaks (CaptureTrail)
 #include "Perf.h"          // shoot.oor out-of-range-fire probe
 #include "enprobes.h"      // BLDGKILL/UNITKILL war-attribution probes
@@ -532,7 +533,8 @@ CExplosion::CExplosion (CProjectile const * pProj, CUnit * pTarget) : CProjBase 
     m_maploc.Wrap ();
     m_dwIDTarget = pProj->m_dwIDTarget;
     m_dwIDShooter = pProj->m_dwIDShooter;
-    m_iKillFrame = 10000;
+    m_iKillFrame = enexpl::EXPL_NO_KILLFRAME;
+    m_iFrames = 0;
 
     m_fixAlt = m_maploc.CalcAltitude ();
 
@@ -586,8 +588,10 @@ CExplosion::CExplosion (CProjectile const * pProj, CUnit * pTarget) : CProjBase 
     m_psprite = pEd->m_pExpSprite;
 
     // only hide under if dest visible
+    // 015 phase 3: a SIMULATION constant, not half the sprite's frame count, and
+    // installed whether or not m_psprite loaded (explframe.h).
     if (theMap._GetHex ( CHexCoord (m_maploc) )->GetVisible ())
-        m_iKillFrame = AnimCount (CSpriteView::ANIM_FRONT_1) / 2;
+        m_iKillFrame = enexpl::EXPL_KILLFRAME;
 
     // turn on sound
     if (theMusicPlayer.SoundsPlaying ())
@@ -615,6 +619,10 @@ CExplosion::CExplosion (CUnit const * pTarget, CMapLoc const & ml, DWORD dwIDSho
     m_maploc.Wrap ();
     m_dwIDTarget = pTarget->GetID ();
     m_dwIDShooter = dwIDShooter;
+    // Both of these used to be left UNSET on the path where the test below is
+    // false, so the cleanup ran off whatever the pool block held.
+    m_iKillFrame = enexpl::EXPL_NO_KILLFRAME;
+    m_iFrames = 0;
 
     m_fixAlt = m_maploc.CalcAltitude ();
 
@@ -625,9 +633,11 @@ CExplosion::CExplosion (CUnit const * pTarget, CMapLoc const & ml, DWORD dwIDSho
     m_psprite = pEd->m_pExpSprite;
 
     // only hide under if dest visible
+    // 015 phase 3: a SIMULATION constant, not half the sprite's frame count, and
+    // installed whether or not m_psprite loaded (explframe.h).
     if ( (pTarget->GetUnitType () != CUnit::building) || (pTarget->GetOwner()->IsMe ()) ||
                                                                                                         (((CBuilding*)pTarget)->IsLive ()) )
-        m_iKillFrame = AnimCount (CSpriteView::ANIM_FRONT_1) / 2;
+        m_iKillFrame = enexpl::EXPL_KILLFRAME;
 }
 
 //---------------------------------------------------------------------------
@@ -985,35 +995,29 @@ void CExplosion::Operate ()
 {
     ASSERT_VALID (this);
 
-    // VTBUGBUG
-    // this shouldnt be nessasary:
-    // 
-    // --- Safety checks to avoid dereferencing NULL sprite/view/ambient ---
-    // Why was this added? Some explosions were crashing the game.
-    CSprite* pSprite = GetSprite( );
-    if ( pSprite == NULL )
-    {
-        // No sprite attached - remove and destroy this explosion to avoid repeated crashes
-        theProjMap.Remove( this );
-        delete this;
-        return;
-    }
+    // 015 phase 3: count OUR OWN frames. The release below used to key off the
+    // animation frame, which made a simulation event a function of the art; a
+    // player may replace sprites (they are not in the gameplay hash), so the
+    // count has to be ours. See explframe.h.
+    m_iFrames++;
 
-    CSpriteView* pView = GetView( );
-    if ( pView == NULL )
-    {
-        // No view available - remove and destroy
-        theProjMap.Remove( this );
-        delete this;
-        return;
-    }
+    // --- No sprite / no view is not fatal any more ---
+    // It used to delete the explosion on the spot, which SKIPPED the cleanup
+    // below: a dying unit whose explosion art was missing never released its hex
+    // or had its terrain rewritten. The explosion now lives out its count with
+    // nothing to draw (CExplosion::Draw already returns an empty rect without a
+    // sprite) and releases on the same frame as any other.
+    CSprite*     pSprite = GetSprite( );
+    CSpriteView* pView   = ( pSprite != NULL ) ? GetView( ) : NULL;
 
+    //  No art left to play reads as "finished": it cannot hold the explosion
+    //  alive, and it cannot end it early either (see MayDelete).
+    BOOL bFinished = TRUE;
+    if ( ( pSprite != NULL ) && ( pView != NULL ) )
+        bFinished = GetAmbient( CSpriteView::ANIM_FRONT_1 )->IsOneShotFinished( GetView() );
 
-    int iOn = GetFrame( CSpriteView::ANIM_FRONT_1 );
-    BOOL	bFinished = GetAmbient( CSpriteView::ANIM_FRONT_1 )->IsOneShotFinished( GetView() );
-
-    // step 1 - if over the half way mark we hide the underlying unit
-    if ( (iOn >= m_iKillFrame) || (bFinished && (m_iKillFrame < 256)) )
+    // step 1 - release the corpse on OUR frame, whatever the animation is doing
+    if ( enexpl::ShouldRelease( m_iFrames, m_iKillFrame ) )
         {
         CUnit * pTarget = ::_GetUnit (m_dwIDTarget);
         if ( (pTarget != NULL) && (pTarget->IsFlag (CUnit::dying)) )
@@ -1045,11 +1049,14 @@ void CExplosion::Operate ()
             }
         }
 
-    // step 2 - delete if on the last frame
+    // step 2 - delete once the animation is done AND our own count has run out.
+    // Waiting for the count is what stops art shorter than EXPL_KILLFRAME (or
+    // missing, which reads as finished) from destroying the explosion before
+    // step 1 ever fires.
 // GG: Ambient rewrite
 //	int iTotal = AnimCount (CSpriteView::ANIM_FRONT_1);
 //	if (iOn >= iTotal-1)
-    if ( bFinished )
+    if ( enexpl::MayDelete( bFinished != FALSE, m_iFrames, m_iKillFrame ) )
         {
         theProjMap.Remove (this);
         delete this;

@@ -1367,6 +1367,11 @@ class CGame : public CObject
     WORD  m_wDbg;
     WORD  m_wCht;
 
+    //  The gameplay data hash (015 phase 3, datahash.h). A RUNTIME value:
+    //  computed once at startup, carried in the join and publish messages, and
+    //  never serialised - the save format does not change for it.
+    DWORD m_dwDataHash;
+
     // for joining a game (load/in progress)
     CVPTransfer* m_pXferFromServer;  // from server to me
     void*        m_pGameFile;        // game file we are sending/receiving

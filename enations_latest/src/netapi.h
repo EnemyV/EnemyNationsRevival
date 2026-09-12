@@ -122,6 +122,8 @@ static	CNetPublish * Alloc (CGame * pG);
 		char			m_cFlags;
 							enum { fdebug = 0x01, fcheat = 0x02, fload = 0x04, finprogress = 0x08 };
 
+		DWORD			m_dwDataHash;		// gameplay data fingerprint (datahash.h), 015 phase 3
+
 		char			m_sPlyrName[1];	// server's player name
 		//char		m_sPw[];				// game password
 		//char		m_sGameName[];	// game name
@@ -140,8 +142,16 @@ static	CNetJoin * Alloc (CPlayer const *pPlyr, BOOL bSrvr);
 		int				m_iLen;								// how long this message is
 		int				m_iPlyrNum;
 		BOOL			m_bServer;
+		DWORD			m_dwDataHash;					// gameplay data fingerprint (datahash.h), 015 phase 3
 		char			m_sName[1];
 		// note - we actually have the full name
+
+		// Smallest m_iLen a record of THIS layout can carry (the header plus
+		// one NUL for the name). The server refuses anything shorter before it
+		// reads m_dwDataHash. It is a sanity bound, not a format discriminator:
+		// a pre-015 sender is caught by the hash compare itself, because its
+		// name bytes land where the hash belongs and will not match.
+		static int MinLen () { return (int)sizeof (CNetJoin); }
 };
 
 
