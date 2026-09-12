@@ -3493,9 +3493,20 @@ void CGame::Serialize( CArchive& ar )
         // it is deliberately a SEPARATE, self-describing key rather than widening
         // DiffVer again: it waives the forward-counter refusal and the whole header
         // check, it is named for exactly what it does, and it is off unless someone
-        // sets it. RELEASE GATE: must be absent from a shipping registry, same as
-        // DiffVer. Registry base is HKCU\Software\Second Chance\Second Chance.
+        // sets it. RELEASE GATE: compiled out of a shipping Release entirely (below)
+        // and must be absent from a shipping registry, same as DiffVer. Registry base
+        // is HKCU\Software\Second Chance\Second Chance.
+#if defined( _DEBUG ) || defined( _CHEAT )
         const BOOL bIgnoreSaveVer = EnGetProfileInt( "Cheat", "IgnoreSaveVersion", 0 ) ? TRUE : FALSE;
+#else
+        // BUGS #99 batch (save format Release 8): a shipped Release must not be able to
+        // honour a debug door that waives the save-header checks at all, so the registry
+        // read is compiled out and the waiver becomes a compile-time FALSE - the same
+        // principle #101 applied to the DiffVer door. Both predicates below are written
+        // against this one flag and are otherwise untouched, so with the key unset (the
+        // default, and the only shipped state) behaviour is identical in every config.
+        const BOOL bIgnoreSaveVer = FALSE;
+#endif
 
         if ( ( m_dwVer > (DWORD)VER_RELEASE ) && ( !bIgnoreSaveVer ) )
         {

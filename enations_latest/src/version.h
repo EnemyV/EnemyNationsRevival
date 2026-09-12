@@ -40,11 +40,17 @@ const char GameLogFile[] = "ENations.log";
 // (was runtime-only + backfilled flat on load, so the workforce graph didn't restore).
 // Release 7: CVehicleBuilding::m_iNum (the vehicle-build queue count) is now serialized,
 // so a factory's remaining build queue survives save/load (was lost -> queue truncated).
-#define         VER_RELEASE     7
+// Release 8: the vehicle route cursor's NO-CURSOR case now writes an out-of-range
+// SENTINEL (0xFFFF in the WORD index field) instead of the shipped N-1 (BUGS #99), and
+// it is read back as a NULL cursor only when the loaded save's release is >= 8. Older
+// saves keep the shipped N-1 rule exactly - a release-7 save storing N-1 still restores
+// the last route entry as the cursor.
+#define         VER_RELEASE     8
 
-// 3.1.001: display version only. No save-format and no header change -
-// VER_MAJOR/VER_MINOR stay 3/0 and VER_RELEASE stays 7, so every 3.00.x save
-// still loads. Bumping VER_MINOR would refuse them all (CGame::Serialize).
+// 3.1.001: display version only. No HEADER change - VER_MAJOR/VER_MINOR stay 3/0, so
+// every 3.00.x save still loads. (VER_RELEASE is bumped to 8 above by BUGS #99; the
+// release counter is not part of the load check.) Bumping VER_MINOR would refuse them
+// all (CGame::Serialize).
 #define         VER_STRING                              "3.1.001"
 #define         RES_VER_STRING                          "3.1.001\0"
 
