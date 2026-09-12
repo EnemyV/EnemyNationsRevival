@@ -553,6 +553,7 @@
 #define IDS_NEW_SERVER                  456
 #define IDS_EVENT_HPR_NOACCESS          456
 #define IDS_EVENT_BRIDGE_HALTED         512
+#define IDS_DATA_MISMATCH               513
 #define IDS_LOAD_SFX                    457
 #define IDH_AREA_COMBAT                 458
 #define IDS_UNKNOWN                     459

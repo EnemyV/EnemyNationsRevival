@@ -112,12 +112,18 @@ void CJoinMulti::OnSessionEnum( LPCVPSESSIONINFO pSi )
                  (int)pPub->m_cVerMajor, (int)pPub->m_cVerMinor, (int)VER_MAJOR, (int)VER_MINOR,
                  (unsigned)pPub->m_cFlags, (unsigned)wTst );
 
+    // 015 phase 3: the gameplay data hash joins the same test, so a game whose
+    // unit/research/text tables differ from ours is not offered in the browser.
+    // Enforcement is server-side (netapi.cpp OnMsgJoin); this half only saves a
+    // join attempt that would be refused. Art and sound are not in the hash.
     if ( pPub->m_iGameID != TLP_GAME_ID ||
          pPub->m_cVerMajor != VER_MAJOR  ||
          pPub->m_cVerMinor != VER_MINOR  ||
+         pPub->m_dwDataHash != theGame.m_dwDataHash ||
          ( pPub->m_cFlags & ( CNetPublish::fdebug | CNetPublish::fcheat ) ) != wTst ) {
         if ( s_log )
-            fprintf( stderr, "[join-enum] REJECTED '%s' (game-id/version/debug-cheat-flags mismatch)\n", pPub->GetGameName() );
+            fprintf( stderr, "[join-enum] REJECTED '%s' (game-id/version/data-hash/debug-cheat-flags mismatch; data %08lx want %08lx)\n",
+                     pPub->GetGameName(), (unsigned long)pPub->m_dwDataHash, (unsigned long)theGame.m_dwDataHash );
         return;
     }
 

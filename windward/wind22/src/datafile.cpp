@@ -396,6 +396,41 @@ void CDataFile::SetCountryCode(int countryCode) {
     m_countryCode = countryCode;
 }
 
+BOOL CDataFile::GetContainerEntrySize(const char *pEntryPath, DWORD &dwSize) {
+    dwSize = 0;
+    if ((pEntryPath == NULL) || (m_pDataFile == NULL) || (m_pFileMap == NULL))
+        return FALSE;
+
+    // The map is keyed on the lower-cased path, the same way _Init built it.
+    CString sKey(pEntryPath);
+    sKey.MakeLower();
+
+    void *pvStart;
+    if (m_pFileMap->Lookup(sKey, pvStart) == FALSE)
+        return FALSE;
+    const DWORD dwStart = (DWORD)(intptr_t) pvStart;
+
+    // Entries are concatenated and the TOC carries offsets only, so this entry
+    // ends at the next-higher offset, or at EOF for the last one. That is the
+    // same rule tools/data/dat_extract.py splits the container with, so a loose
+    // entry and its container original are the same bytes.
+    DWORD dwEnd = m_pDataFile->GetLength();
+    POSITION pos = m_pFileMap->GetStartPosition();
+    while (pos != NULL) {
+        CString sName;
+        void   *pvOff;
+        m_pFileMap->GetNextAssoc(pos, sName, pvOff);
+        const DWORD dwOff = (DWORD)(intptr_t) pvOff;
+        if ((dwOff > dwStart) && (dwOff < dwEnd))
+            dwEnd = dwOff;
+    }
+
+    if (dwEnd <= dwStart)
+        return FALSE;
+    dwSize = dwEnd - dwStart;
+    return TRUE;
+}
+
 CMmio *CDataFile::OpenAsMMIO(const char *pFilename, const char *pRif) {
     //  Get the relative path of the file for which to search.
     CString file(pFilename);

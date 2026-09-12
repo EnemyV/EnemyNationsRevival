@@ -1609,6 +1609,9 @@ void CGame::_ctor( )
 
     m_bServer    = FALSE;
     m_bIsNetGame = FALSE;
+    // Set HERE and not in ctor(): the gameplay data hash is computed once at
+    // startup, and ctor() runs again for every new game (015 phase 3).
+    m_dwDataHash = 0;
     ctor( );
 
     // block size, block count, flags
