@@ -64,6 +64,26 @@ A fix for your platform must not break the other two — prefer portable express
 Status: `./mfc-status.ps1`. Build outputs: `cmakeBuild-x64/enations_latest/src/{Release,Debug}/enations.exe`.
 Before answering "is X done?" — build and check the tree; memory and boards are snapshots, source is truth.
 
+### "Run the latest test build"
+
+The 015 integration is **not** in this checkout — it is a worktree, self-contained (own matched DLLs,
+data, res, assets, saves already copied in). Everything below is relative to it:
+
+    D:\Enemy Nations\src-015-series          branch winopus/015-integration
+
+- **Run:** `cmakeBuild-x64\enations_latest\src\Release\enations.exe` **from that folder** (`\Debug\` for Debug x64).
+- **Rebuild:** `& 'D:\Enemy Nations\src-015-series\build.ps1' -x64 [-Release]` — build.ps1 resolves its own
+  root, so the copy in the worktree builds the worktree. Running this checkout's copy builds the wrong tree.
+- `ENATIONS.DAT` resolves absolutely from `D:\Enemy Nations\`, so the run dir does not need one.
+- Do **not** launch `enations-015all.exe` beside the old saves: same exe, but that folder's `vdmplay.dll`
+  is stale, so MP from there is not trustworthy.
+- **Save format is 8.** Saves this build writes will not load in any shipped 3.00.x; older saves load in fine.
+  Release compiles `Cheat\IgnoreSaveVersion` out — the **Debug** build keeps it, so use Debug when a save
+  might be refused. The MP join records carry a gameplay hash: this build refuses, and is refused by,
+  anything older — cross-seat MP must be all on this build.
+
+When this lands on the lane, delete this section; the paths above revert to this checkout.
+
 ## Runtime testing
 
 Run dir = the folder with the DLLs next to the exe. Smoke milestone: reaches world generation.
