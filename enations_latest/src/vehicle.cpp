@@ -1142,10 +1142,13 @@ void CVehicle::CheckOrderStall() {
     // Only inside the dispatch window. order_work has a site of its own to watch,
     // order_road ends at NextRoadHex's terminal branches, and order_none / order_done
     // are not waiting on anything.
+    // The re-drive BUDGET is not reset here. It belongs to the order at the cursor, and it
+    // is reset where the cursor actually leaves one - OrderComplete, OrderFailed,
+    // ClearOrders. Resetting it on order_none would hand a fresh budget back on every
+    // re-drive, which is an unbounded loop when the site cannot be reached at all: the
+    // lifecycle fixture caught exactly that against OrderArrivalFailed.
     if (m_iOrderState != order_sent) {
         m_dwOrderStall = 0;
-        if (m_iOrderState == order_none)
-            m_iOrderRetry = 0;          // the next order starts with a full budget
         return;
     }
 

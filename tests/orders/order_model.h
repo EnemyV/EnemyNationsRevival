@@ -377,10 +377,10 @@ struct Veh {
     // arming event is then never consumed and the state never leaves order_sent, so both
     // halves of NextOrder's busy test refuse for ever.
     void CheckOrderStall() {
+        // the budget belongs to the ORDER, and is reset where the cursor leaves one
+        // (OrderComplete / OrderFailed / ClearOrders) - never on a re-drive
         if (state != order_sent) {
             orderStall = 0;
-            if (state == order_none)
-                orderRetry = 0;
             return;
         }
         if (site) {                       // the job started after all
