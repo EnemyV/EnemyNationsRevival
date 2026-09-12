@@ -47,6 +47,10 @@ int aiDir[9] = {7 * EIGHTH_ROT, 6 * EIGHTH_ROT, 5 * EIGHTH_ROT, 0, 0, 4 * EIGHTH
 
 BOOL CVehicle::TestStuck() {
 
+    // Diagnostic: prove physical recovery without the legacy six-minute hop.
+    if (TrafficOpts() & 128)
+        return FALSE;
+
     // VANILLA GUARD RESTORED (operator, 2026-07-16: 'horrible change, revert
     // for sure'): 2cc7163c flipped this so the 6-min stuck-escape ran for AI
     // vehicles - TELEPORTING AI trucks/cranes into their destination buildings
@@ -92,6 +96,8 @@ BOOL CVehicle::TestStuck() {
         ReleaseOwnership();
         ForceAtDest();
         ArrivedDest();
+        WaitLog("[LEGACY-JUMP] veh %d into building %d head %d,%d owned %d",
+                GetID(), pBldg->GetID(), m_ptHead.x, m_ptHead.y, (int)m_cOwn);
 #if EN_AI_PROBES_ECON && defined(_WIN32)
         {
             char szJ[80];
@@ -150,6 +156,8 @@ BOOL CVehicle::TestStuck() {
             AtNewLoc();
             TakeOwnership();
             _SetRouteMode(moving);
+            WaitLog("[LEGACY-JUMP] veh %d along path head %d,%d tail %d,%d owned %d",
+                    GetID(), m_ptHead.x, m_ptHead.y, m_ptTail.x, m_ptTail.y, (int)m_cOwn);
 #if EN_AI_PROBES_ECON && defined(_WIN32)
             { char szF[96]; sprintf(szF, "[STUCKHOP] veh %lu hopped along path (6-min fallback)\n",
                                     (unsigned long)GetID()); OutputDebugStringA(szF); }

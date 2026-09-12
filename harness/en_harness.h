@@ -22,6 +22,18 @@ struct SDL_Window;
 struct SDL_Renderer;
 struct SDL_Surface;
 
+#ifndef EN_BUILD_HARNESS
+#define EN_BUILD_HARNESS 1
+#endif
+#if !EN_BUILD_HARNESS
+inline void EnHarness_Start(SDL_Window*, SDL_Renderer*) {}
+inline void EnHarness_Service() {}
+inline void EnHarness_ServiceMainLoop() {}
+inline void EnHarness_SetMainSurface(SDL_Surface*) {}
+inline void EnHarness_RegisterWindowSurface(unsigned int, SDL_Surface*) {}
+inline const char* HarnessPendingLoadPath(void) { return nullptr; }
+#else
+
 // Start the control server if the EN_HARNESS env var is set. Safe to call once
 // after the game window exists. Port comes from EN_HARNESS_PORT (default 7070).
 void EnHarness_Start(SDL_Window* window, SDL_Renderer* renderer);
@@ -58,6 +70,15 @@ void EnHarness_RegisterWindowSurface(unsigned int windowId, SDL_Surface* surface
 // (Linux/mac) and a Windows debug hotkey (same fn) to make crane/unit location
 // deterministic instead of a blind dblclick-sweep. Call on the game/render thread.
 void HarnessDumpUnits(std::string& out);
+// Read-only, render-thread snapshot for a single vehicle and its occupied/goal subs.
+void HarnessVehicleState(unsigned long id, std::string& out);
+// Read-only bounded map rectangle for corridor test setup; never changes terrain.
+void HarnessMapRect(int x, int y, int width, int height, std::string& out);
+// Explicit operator move for one owned vehicle; replaces its order through normal APIs.
+// Acceptance means an order was issued, not that the vehicle arrived.
+bool HarnessMoveVehicle(unsigned long id, int hexX, int hexY, bool detachForTest = false);
+// Same explicit Stop method used by the area toolbar; local owned vehicle only.
+bool HarnessStopVehicle(unsigned long id);
 
 // Report the CURRENT SELECTION (count + primary unit description) from live game
 // state. Added because there is no way to read "what is selected" on Linux: the
@@ -218,4 +239,5 @@ bool HarnessNewGame(int ai, int pos, int size, int numai, int worldType = 0, int
 // Render/game thread only. Backs the `gamestate` cmd.
 void HarnessDumpGameState(std::string& out);
 
+#endif // EN_BUILD_HARNESS
 #endif // EN_HARNESS_H
