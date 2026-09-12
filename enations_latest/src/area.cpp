@@ -2614,6 +2614,33 @@ void CWndArea::DrawRouteWaypoints( )
         return best;
     };
 
+    // #38: GHOST FOOTPRINT for a queued build order - the outline of the CX x CY hex
+    // rectangle the building will stand on (the two swap when it is turned 90 degrees,
+    // the same rule the placement cursor uses). Drawn with the same dotted segments as
+    // the route legs, and snapped to the wrap copy nearest `ref` for the same reason.
+    auto ghost = [&]( CHexCoord hcUL, int iBldg, int iDir, CPoint ref )
+    {
+        if ( ( iBldg <= 0 ) || ( iBldg > theStructures.GetNumBuildings( ) ) )
+            return;
+        CStructureData const* pData = theStructures.GetData( iBldg );
+        if ( pData == NULL )
+            return;
+        int cx = ( iDir & 1 ) ? pData->GetCY( ) : pData->GetCX( );
+        int cy = ( iDir & 1 ) ? pData->GetCX( ) : pData->GetCY( );
+        if ( ( cx <= 0 ) || ( cy <= 0 ) )
+            return;
+        CPoint c[4];
+        for ( int i = 0; i < 4; ++i )
+        {
+            CHexCoord hc( hcUL.X( ) + ( ( ( i == 1 ) || ( i == 2 ) ) ? cx - 1 : 0 ),
+                          hcUL.Y( ) + ( ( i >= 2 ) ? cy - 1 : 0 ) );
+            hc.Wrap( );
+            c[i] = wrapNear( hexWin( hc ), ref );
+        }
+        for ( int i = 0; i < 4; ++i )
+            seg( c[i], c[( i + 1 ) & 3] );
+    };
+
     for ( POSITION pos = m_lstUnits.GetHeadPosition( ); pos != NULL; )
     {
         CUnit* pUnit = m_lstUnits.GetNext( pos );
@@ -2645,6 +2672,18 @@ void CWndArea::DrawRouteWaypoints( )
             CPoint  wp = wrapNear( hexWin( pR->GetCoord( ) ), prev );   // torus: short path over the seam
             seg( prev, wp );
             plot( wp.x, wp.y, 3 );   // a slightly bigger dot marks each waypoint
+            // #38: a queued BUILD order also shows WHAT will stand there, not only the
+            // leg's end dot
+            if ( pR->GetRouteType( ) == CRoute::build )
+                ghost( pR->GetCoord( ), pR->GetBldgType( ), pR->GetBldgDir( ), wp );
+            // #38: a queued ROAD order shows the segment it will lay
+            if ( pR->GetRouteType( ) == CRoute::build_road )
+            {
+                CPoint we = wrapNear( hexWin( pR->GetEndCoord( ) ), wp );
+                seg( wp, we );
+                plot( we.x, we.y, 3 );
+                wp = we;
+            }
             prev = wp;
         }
     }
@@ -4158,6 +4197,7 @@ void CWndArea::StopRoute( CVehicle* pVeh )
     pVeh->GetRouteList( ).RemoveAll( );
     pVeh->SetRoutePos( NULL );
     pVeh->SetRouteLoop( TRUE );
+    pVeh->ClearOrders( );   // #38: the list is already empty; this resets the order state
     if ( pVeh->m_pSdlRoute != NULL )
         pVeh->m_pSdlRoute->RefreshRoute( );
 }
@@ -4210,7 +4250,14 @@ void CWndArea::OnLButtonUp( UINT nFlags, CPoint point )
     case build_loc:
     case rocket_pos: {
         ASSERT_STRICT( ( 0 < m_iBuild ) && ( m_iBuild <= theStructures.GetNumBuildings( ) ) );
-        if ( ( nFlags & MK_SHIFT ) && ( m_pUnit != NULL ) && ( m_pUnit->GetUnitType( ) == CUnit::vehicle ) )
+
+        // #38: Shift+place QUEUES the building on the selected crane instead of
+        // replacing its job. Gated on build_loc ONLY - this case label is shared with
+        // rocket_pos, where Shift keeps its 1996 meaning (bail back out of placement).
+        const BOOL bQueueBuild = ( m_iMode == build_loc ) && ( nFlags & MK_SHIFT ) && ( m_pUnit != NULL ) &&
+                                 ( m_pUnit->GetUnitType( ) == CUnit::vehicle );
+        if ( ( nFlags & MK_SHIFT ) && ( !bQueueBuild ) && ( m_pUnit != NULL ) &&
+             ( m_pUnit->GetUnitType( ) == CUnit::vehicle ) )
         {
             TRAP( );  // BUGBUG - check what this does
             ( (CVehicle*)m_pUnit )->SetEvent( CVehicle::none );
@@ -4274,14 +4321,34 @@ void CWndArea::OnLButtonUp( UINT nFlags, CPoint point )
         // find the closest surrounding hex
         theGame.Event( EVENT_CONST_CANT, EVENT_OFF );
 
-        CHexCoord hexDest( hex );
-        BuildBldgDest( (CVehicle*)m_pUnit, m_iBuild, GetBuildDir( ), hexDest );
+        CVehicle* pVehBuild = (CVehicle*)m_pUnit;
 
-        // lets build here
+        // #38 QUEUE: the site passed the same check a plain placement makes (m_iFound
+        // above), so append the order and STAY armed - same crane still selected, same
+        // building type still on the cursor - so the next click places the next one.
+        // Esc / Cancel leaves the mode and the queue stays on the crane. NextOrder only
+        // dispatches if the crane is idle; on a busy crane this is a pure append.
+        if ( bQueueBuild )
+        {
+            pVehBuild->AddOrder( hex, CRoute::build, m_iBuild, GetBuildDir( ) );
+            pVehBuild->NextOrder( );
+            if ( pVehBuild->m_pSdlRoute != NULL )
+                pVehBuild->m_pSdlRoute->RefreshRoute( );
+            m_iMode = build_ready;
+            SetButtonState( );
+            return;
+        }
+
+        CHexCoord hexDest( hex );
+        BuildBldgDest( pVehBuild, m_iBuild, GetBuildDir( ), hexDest );
+
+        // lets build here - a plain placement REPLACES the queue (the same
+        // replace-versus-append split a move has) and executes now
+        pVehBuild->ClearOrders( );
         m_pUnit->ResumeUnit( );
-        ( (CVehicle*)m_pUnit )->SetBuilding( hex, m_iBuild, GetBuildDir( ) );
-        ( (CVehicle*)m_pUnit )->SetEvent( CVehicle::build );
-        ( (CVehicle*)m_pUnit )->SetDestAndMode( hexDest, CVehicle::full );
+        pVehBuild->SetBuilding( hex, m_iBuild, GetBuildDir( ) );
+        pVehBuild->SetEvent( CVehicle::build );
+        pVehBuild->SetDestAndMode( hexDest, CVehicle::full );
 
         // we loose selection of the crane so we don't change the orders
         m_lstUnits.RemoveAllUnits( TRUE );
@@ -4453,12 +4520,33 @@ void CWndArea::OnLButtonUp( UINT nFlags, CPoint point )
         if ( ( m_pUnit == NULL ) || ( m_pUnit->GetUnitType( ) != CUnit::vehicle ) )
             break;
 
-        SelectOff( );
+        // #38: Shift QUEUES this segment on the selected crane(s) and stays armed, so
+        // the next drag queues the next segment. (Shift used to CANCEL the drag here.)
         if ( nFlags & MK_SHIFT )
         {
+            CHexCoord hexQ = m_aa.WindowToHex( point );
+            hexQ.Wrap( );
+            CHexCoord hexStartQ( m_hexRoadStart );
+            hexStartQ.Wrap( );
+            for ( POSITION posQ = m_lstUnits.GetHeadPosition( ); posQ != NULL; )
+            {
+                CUnit* pUnitQ = m_lstUnits.GetNext( posQ );
+                ASSERT_STRICT_VALID( pUnitQ );
+                if ( pUnitQ->GetUnitType( ) != CUnit::vehicle )
+                    continue;
+                CVehicle* pVehQ = (CVehicle*)pUnitQ;
+                pVehQ->AddOrder( hexStartQ, CRoute::build_road, 0, 0, &hexQ );
+                pVehQ->NextOrder( );   // no-op unless the crane is idle
+                if ( pVehQ->m_pSdlRoute != NULL )
+                    pVehQ->m_pSdlRoute->RefreshRoute( );
+            }
+            m_iMode = road_begin;   // stay armed for the next segment
+            AreaApplyCursor( m_hCurRoadBgn[m_aa.m_iZoom] );
             SetButtonState( );
             return;
         }
+
+        SelectOff( );
 
         CHexCoord hex = m_aa.WindowToHex( point );
 
@@ -4467,6 +4555,7 @@ void CWndArea::OnLButtonUp( UINT nFlags, CPoint point )
         {
             CUnit* pUnit = m_lstUnits.GetNext( pos );
             ASSERT_STRICT_VALID( pUnit );
+            ( (CVehicle*)pUnit )->ClearOrders( );   // #38: a plain road REPLACES the queue
             SetDestAndSfx( (CVehicle*)pUnit, m_hexRoadStart );
             ( (CVehicle*)pUnit )->SetRoad( m_hexRoadStart, hex );
         }
@@ -4483,7 +4572,11 @@ void CWndArea::OnLButtonUp( UINT nFlags, CPoint point )
         if ( ( m_pUnit == NULL ) || ( m_pUnit->GetUnitType( ) != CUnit::vehicle ) )
             break;
 
-        SelectOff( );
+        // #38: Shift QUEUES the repair on the selected crane(s) and stays armed, so the
+        // next click queues the next repair.
+        const BOOL bQueueRepair = ( nFlags & MK_SHIFT ) != 0;
+        if ( !bQueueRepair )
+            SelectOff( );
 
         CHexCoord hex = m_aa.WindowToHex( point );
         hex.Wrap( );
@@ -4498,11 +4591,28 @@ void CWndArea::OnLButtonUp( UINT nFlags, CPoint point )
                 ASSERT_STRICT_VALID( pUnit );
                 if ( ( (CVehicle*)pUnit )->GetData( )->GetType( ) == CTransportData::construction )
                 {
+                    CVehicle* pVehR = (CVehicle*)pUnit;
+                    if ( bQueueRepair )
+                    {
+                        pVehR->AddOrder( hex, CRoute::repair, 0, 0 );
+                        pVehR->NextOrder( );   // no-op unless the crane is idle
+                        if ( pVehR->m_pSdlRoute != NULL )
+                            pVehR->m_pSdlRoute->RefreshRoute( );
+                        continue;
+                    }
+                    pVehR->ClearOrders( );   // #38: a plain repair REPLACES the queue
                     pUnit->ResumeUnit( );
-                    ( (CVehicle*)pUnit )->SetEvent( CVehicle::repair_bldg );
-                    SetDestAndSfx( (CVehicle*)pUnit, hex );
+                    pVehR->SetEvent( CVehicle::repair_bldg );
+                    SetDestAndSfx( pVehR, hex );
                 }
             }
+        }
+
+        if ( bQueueRepair )
+        {
+            m_iMode = repair_bldg;   // stay armed for the next repair
+            SetButtonState( );
+            return;
         }
 
         // deselect all

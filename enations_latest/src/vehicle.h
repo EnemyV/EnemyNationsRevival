@@ -266,11 +266,21 @@ public:
 class CRoute : public CObject
 {
 public:
-		enum { waypoint, unload, load };
+		// waypoint/unload/load are the 1996 movement STOPS. build (and the kinds added
+		// after it) are ORDERS: the vehicle does a job at the hex instead of only
+		// stopping there. Both kinds live on the one list, CVehicle::m_route.
+		enum { waypoint, unload, load, build, build_road, repair };
 
-		CRoute () {}
-		CRoute (CHexCoord & hex, int iType) { ASSERT ((0 <= iType) && (iType <= 2));
-											m_hex = hex; m_iType = (BYTE) iType; }
+		CRoute () : m_iType (waypoint), m_iBldgType (0), m_iDir (0) {}
+		CRoute (CHexCoord & hex, int iType) { ASSERT ((0 <= iType) && (iType <= load));
+													m_hex = hex; m_hexEnd = hex; m_iType = (BYTE) iType;
+													m_iBldgType = 0; m_iDir = 0; }
+		// order form: the payload names WHICH building and which way round it faces;
+		// a build_road order uses m_hex / m_hexEnd as the segment's two ends instead.
+		CRoute (CHexCoord const & hex, int iType, int iBldgType, int iDir)
+												{ ASSERT ((0 <= iType) && (iType <= repair));
+													m_hex = hex; m_hexEnd = hex; m_iType = (BYTE) iType;
+													m_iBldgType = (BYTE) iBldgType; m_iDir = (BYTE) iDir; }
 		~CRoute () {}
 
 		BOOL operator== (CRoute & src ) const
@@ -280,12 +290,24 @@ public:
 
 		CHexCoord const & GetCoord () const { return (m_hex); }
 		int				GetRouteType () const { return (m_iType); }
+		int				GetBldgType () const { return (m_iBldgType); }
+		int				GetBldgDir () const { return (m_iDir); }
+		CHexCoord const & GetEndCoord () const { return (m_hexEnd); }
+		void			SetEndCoord (CHexCoord const & hex) { m_hexEnd = hex; }
+
+		// TRUE for the ORDER kinds (a job to do at the hex), FALSE for the 1996 stops.
+		// The order dispatcher owns the former; ArrivedDest still owns the latter.
+		static BOOL		IsOrder (int iType) { return (iType >= build); }
 
 		void 					Serialize (CArchive & ar);
 
 protected:
 		CHexCoord		m_hex;			// where to go
 		BYTE				m_iType;		// enum values above of what to do at this location
+		BYTE				m_iBldgType;	// order payload: building type (0 on a movement stop)
+		BYTE				m_iDir;			// order payload: build direction (0 on a movement stop)
+		CHexCoord		m_hexEnd;		// order payload: far end of a build_road segment
+												//   (== m_hex on every other kind)
 };
 
 
@@ -457,10 +479,20 @@ public:
 		void					PathNextHex ();
 		void					DeletePath ();
 		void					SetLocation (CHexCoord & hex, POSITION pos, int iType);
+
+		// ORDER QUEUE (#38). Orders share m_route with the movement stops.
+		void					AddOrder (CHexCoord const & hex, int iType, int iBldgType, int iDir,
+													CHexCoord const * pHexEnd = NULL);
+		void					ClearOrders ();
+		BOOL					NextOrder ();
+		void					OrderComplete ();
+		void					OrderEnded ();
+		void					OrderFailed (CHexCoord const & hex, int iBldgType);
 		CList <CRoute *, CRoute *> &	GetRouteList () { ASSERT_STRICT_VALID (this); return (m_route); }
 		// Looping vs one-shot route. TRUE (default) = the legacy behavior (cycle back to
-		// the first stop at the end); FALSE = stop at the last stop. Runtime-only (not
-		// serialized — defaults to looping on load to preserve save compatibility).
+		// the first stop at the end); FALSE = stop at the last stop. Serialized from save
+		// release 8 (BUGS #95); a pre-8 save does not carry it, so such a route still
+		// comes back looping - the ctor default.
 		BOOL				GetRouteLoop () const { return (m_bRouteLoop); }
 		void				SetRouteLoop (BOOL b) { m_bRouteLoop = b; }
 		POSITION			GetRoutePos () const { ASSERT_STRICT_VALID (this); return (m_pos); }
@@ -621,6 +653,15 @@ protected:
 		CList <CRoute *, CRoute *> m_route;		// route its travelling
 		BOOL				m_bRouteLoop;						// TRUE = loop the route (legacy); FALSE = stop at the end
 		POSITION			m_pos;									// element we are travelling to
+
+		// #38 order queue. m_iEvent CANNOT say whether a job is under way: BuildBldg
+		// clears it at SEND (1996), so "event none, stopped" is both "waiting for the
+		// server" and "idle". This is the bit that tells them apart. Runtime only,
+		// deliberately not serialized - a loaded crane picks its queue up from idle.
+		enum ORDER_STATE { order_none, order_sent, order_work, order_road, order_done };
+		BYTE				m_iOrderState;					// ORDER_STATE of the order being run
+		CHexCoord		m_hexOrder;						// identity of the order dispatched - the
+		BYTE				m_iOrderKind;					//   list can change while the job runs
 		CSubHex				m_ptDest;								// final sub-hex we are going to
 		CHexCoord			m_hexDest;							// final hex we are going to
 		CHexCoord			m_hexLastDest;					// to stop back and forth
