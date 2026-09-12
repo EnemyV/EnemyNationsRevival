@@ -1128,6 +1128,21 @@ void CUnit::IncrementSpotting( CHexCoord const& hex )
                             }
                         }
 
+                        // Slash and Burn fog reveal (E22). A hex clear-cut while we could not see
+                        // it kept its remembered FOREST ground (SlashHex restores the visible
+                        // type when the hex is unlit), so without this it would read as forest
+                        // forever after we sight it. Runs AFTER the road and bridge clauses above
+                        // on purpose: a fogged road-over-forest belongs to ChangeToRoad, and the
+                        // bridge clause has already re-synced its own hex.
+                        // Deliberately NARROW, not a blanket "visible != type -> sync": visible
+                        // forest over non-forest soil can only come from a slash, whereas crop
+                        // fields intentionally carry visible `fields` over a different soil type
+                        // and a blanket sync would wipe them. SetVisibleType calls g_enEditHex
+                        // itself, so no explicit re-mesh is needed here.
+                        if ( ( pHex->GetVisibleType( ) == CHex::forest )
+                             && ( pHex->GetType( ) != CHex::forest ) )
+                            pHex->SetVisibleType( pHex->GetType( ) );
+
                         if ( pHex->GetUnits( ) & CHex::bldg )
                         {
                             CBuilding* pBldg = theBuildingHex._GetBuilding( _hex );
@@ -2582,15 +2597,114 @@ int CShipyardBuilding::GetBldgResReq( int iInd, BOOL bAll ) const
 /////////////////////////////////////////////////////////////////////////////
 // CPowerBuilding - creates power
 
+// ---------------------------------------------------------------------------------------
+// CPowerBuilding's per-building MATERIAL ROLE (see CBuilding::EffInputMat in building.h).
+//
+// A power plant has two roles. Normally it burns its own fuel and hands out no material. With
+// a TIME-DRIVEN AltOutput conversion toggled on it stops burning fuel and instead consumes the
+// def's input material and hands out the def's output. Every consumer -- GetInputs/GetAccepts,
+// GetNextMinuteMat, IsOperating, BuildPower, ShowStatusText and the human router's source rule
+// -- reads these four accessors instead of re-deriving the rule from CBuildPower::GetInput().
+//
+// TimeDrivenDef() is non-NULL only for a plant whose toggle is ON with an eTimeDriven def
+// Available() -- Charcoal on a coal plant, Coal Liquefaction on an oil plant. For every other
+// plant, and for those two with the toggle off, it is NULL and all four answers are exactly the
+// shipped fuel-plant values.
+// ---------------------------------------------------------------------------------------
+
+// Production units CBuilding::GetProd( 1 ) accrues per GAME minute. GetProd adds
+// opersElapsed / AVG_SPEED_MUL per call (building.inl), and game time runs at 384 opers/sec
+// (CPlayer::GetElapsedSeconds) => 23040 opers per game minute => 23040 / AVG_SPEED_MUL.
+static const int PROD_PER_MIN = 23040 / AVG_SPEED_MUL;   // = 1440
+
+AltOutput::AltOutputDef const* CPowerBuilding::TimeDrivenDef( ) const
+{
+    // AltOutput::Available( ) and IsFlag( ) both take a non-const CBuilding* -- the same
+    // const_cast precedent CMaterialBuilding::GetNextMinuteMat above already sets.
+    CPowerBuilding* pThis = const_cast<CPowerBuilding*>( this );
+    if ( !pThis->IsFlag( CUnit::alt_oil ) )
+        return ( NULL );
+    AltOutput::AltOutputDef const* pDef = AltOutput::Available( pThis );
+    if ( !pDef || ( pDef->m_eDrive != AltOutput::EDrive::eTimeDriven ) )
+        return ( NULL );
+    return ( pDef );
+}
+
+int CPowerBuilding::EffInputMat( ) const
+{
+    AltOutput::AltOutputDef const* pDef = TimeDrivenDef( );
+    if ( pDef )
+        return ( pDef->m_iInputMat );
+    // RAW, exactly as every caller read it before: this may be -1 (nuclear) or an out-of-range
+    // sentinel. Deliberately NOT clamped here -- each caller keeps its own existing guard.
+    return ( GetData( )->GetBldPower( )->GetInput( ) );
+}
+
+int CPowerBuilding::EffOutputMat( ) const
+{
+    AltOutput::AltOutputDef const* pDef = TimeDrivenDef( );
+    if ( pDef )
+        return ( pDef->m_iOutputMat );
+    return ( -1 );          // a normal power plant hands out no material at all
+}
+
+int CPowerBuilding::EffInputBatch( ) const
+{
+    AltOutput::AltOutputDef const* pDef = TimeDrivenDef( );
+    if ( pDef )
+        return ( AltOutput::InputRatio( const_cast<CPowerBuilding*>( this ), pDef ) );
+    return ( 1 );           // a fuel plant burns whole units: any fuel at all runs a batch
+}
+
+int CPowerBuilding::EffInputPerMin( ) const
+{
+    // The TRUE consumption rate. Exactly ONE caller wants it (BuildPower's resupply trigger);
+    // everything router-facing keeps the router's own units instead -- see GetNextMinuteMat.
+    CBuildPower* pBp   = GetData( )->GetBldPower( );
+    int          iRate = pBp->GetRate( );
+    if ( iRate <= 0 )
+        return ( 0 );       // power_3 (nuclear) decodes as Input = -1, Rate = 0
+
+    AltOutput::AltOutputDef const* pDef = TimeDrivenDef( );
+    if ( pDef )
+        return ( ( PROD_PER_MIN / iRate ) * AltOutput::InputRatio( const_cast<CPowerBuilding*>( this ), pDef ) );
+
+    if ( pBp->GetInput( ) < 0 )
+        return ( 0 );       // no fuel, nothing consumed
+    return ( PROD_PER_MIN / iRate );
+}
+
+int CPowerBuilding::GetProductionPer( ) const
+{
+    // A time-driven conversion has a real batch cycle, so show it. NOT the alt accumulator:
+    // in this mode m_fAltAccum is always exactly 0 (BuildPower only ever hands Convert a whole
+    // batch's worth of input), so GetAltProgressPer( ) would sit frozen at 0 forever.
+    AltOutput::AltOutputDef const* pDef = TimeDrivenDef( );
+    if ( !pDef )
+        return ( -1 );      // fuel plant: unchanged, the CBuilding base answer
+
+    int iRate = GetData( )->GetBldPower( )->GetRate( );
+    if ( iRate <= 0 )
+        return ( -1 );
+
+    int iPer = (int)( m_iBuildDone * 100 / iRate );
+    return ( iPer < 0 ) ? 0 : ( ( iPer > 100 ) ? 100 : iPer );
+}
+
 void CPowerBuilding::GetInputs( int* pVals ) const
 {
 
     ASSERT_VALID( this );
     memset( pVals, 0, sizeof( int ) * CMaterialTypes::GetNumTypes( ) );
 
-    CBuildPower* pBldPwr = GetData( )->GetBldPower( );
-    if ( pBldPwr->GetInput( ) >= 0 )
-        pVals[pBldPwr->GetInput( )] = 1;
+    // EXCLUSIVELY the one material this plant wants right now -- never an alt-mode input
+    // alongside the fuel. GetInputs doubles as the truck's "the SOURCE consumes this, don't
+    // load it out" mask (vehicle.cpp iCant), so listing both would strand the alt mode's own
+    // output. In fuel mode EffInputMat( ) IS GetBldPower( )->GetInput( ), unclamped, so this is
+    // byte-identical to the code it replaces.
+    int iIn = EffInputMat( );
+    if ( iIn >= 0 )
+        pVals[iIn] = 1;
 }
 
 int CPowerBuilding::GetNextMinuteMat( int iInd ) const
@@ -2598,12 +2712,22 @@ int CPowerBuilding::GetNextMinuteMat( int iInd ) const
 
     int iRtn = GetBldgResReq( iInd, FALSE );
 
-    CBuildPower* pBp = GetData( )->GetBldPower( );
-    if ( pBp->GetInput( ) != iInd )
+    if ( EffInputMat( ) != iInd )
         return ( iRtn );
 
-    // add 1 minute of materials
-    int iNum = 60 / pBp->GetRate( ) + 1;
+    CBuildPower* pBp = GetData( )->GetBldPower( );
+    if ( pBp->GetRate( ) <= 0 )
+        return ( iRtn );    // unreachable today (a Rate == 0 plant has Input == -1, so the test
+                            // above already returned) -- but never assume a non-zero divisor.
+
+    // Add 1 minute of materials in the ROUTER's units, NOT the true consumption rate. The router
+    // multiplies this by iTime (120) for its demand and re-tests it against the store for a +40
+    // priority bump, so feeding it EffInputPerMin( ) here would ask for ~22x too much and pin the
+    // plant's route priority. Keep the legacy expression and scale it by the conversion ratio
+    // instead. In fuel mode the ratio is 1, i.e. character-for-character today's expression.
+    AltOutput::AltOutputDef const* pDef = TimeDrivenDef( );
+    int iRatio = pDef ? AltOutput::InputRatio( const_cast<CPowerBuilding*>( this ), pDef ) : 1;
+    int iNum   = ( 60 / pBp->GetRate( ) + 1 ) * iRatio;
 
     return ( iRtn + iNum );
 }
@@ -4133,15 +4257,18 @@ BOOL CPowerBuilding::IsOperating( ) const
     if ( !CBuilding::IsOperating( ) )
         return FALSE;
 
-    CBuildPower* pBp = GetData( )->GetBldPower( );
+    // What this plant needs on hand to run: its fuel normally, a time-driven conversion def's
+    // input in alt mode. In fuel mode EffInputMat( ) IS GetInput( ) and EffInputBatch( ) is 1,
+    // so "< 1" is exactly the old "<= 0".
+    int iIn = EffInputMat( );
 
-    if ( pBp->GetInput( ) < 0 )
+    if ( iIn < 0 )
         return TRUE;
 
     CBuildMaterials const* pBm = GetData( )->GetBldMaterials( );
 
     // materials to run it?
-    if ( GetStore( pBp->GetInput( ) ) <= 0 )
+    if ( GetStore( iIn ) < EffInputBatch( ) )
         return FALSE;
 
     return TRUE;

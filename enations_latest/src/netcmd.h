@@ -154,6 +154,7 @@ class CNetCmd : public VPMsgHdr
         save_info,       // base save info
         research_disc,   // player has discovered research
         edict_toggle,    // player toggled a civ-wide edict (Edicts v1)
+        hex_retype,      // one map hex was retyped at runtime (Slash and Burn clear-cut)
 
         last_message  // used for ASSERT
     };
@@ -1512,6 +1513,29 @@ class CNetEdictToggle : public CNetCmd
     int m_iPlyrNum;
     int m_iEdict;
     int m_bOn;       // 0/1 (int for fixed-size serialization)
+};
+
+// One map hex retyped at runtime. Modelled on _CMsgRoad (an existing hex-terrain mutation
+// message), NOT on edict_toggle: terrain is SHARED WORLD STATE, so unlike a per-player edict
+// EVERY receiving client applies this one, with no IsLocal() skip. Sent through
+// theNet.Broadcast, i.e. VP_MUSTDELIVER / reliable, because a dropped terrain edit forks the
+// map permanently on that client -- pathing, LandMult, vision and rendering all diverge from
+// then on, and every later MP save from that client carries the fork. Today the only sender is
+// Slash and Burn's clear-cut and the only type ever sent is CHex::plain; the RX side whitelists
+// exactly that. Three ints after the 12-byte CNetCmd = 24 bytes in BOTH configs (no polymorphic
+// members), pinned by wire_layout_assert.cpp.
+class CNetHexRetype : public CNetCmd
+{
+  public:
+    CNetHexRetype( CHexCoord hex, int iType );
+    int m_iX;
+    int m_iY;
+    int m_iType;
+
+#ifdef _DEBUG
+  public:
+    void AssertValid( ) const;
+#endif
 };
 
 class CNetNeedSaveInfo : public CNetCmd

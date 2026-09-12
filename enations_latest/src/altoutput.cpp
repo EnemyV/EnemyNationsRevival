@@ -7,6 +7,7 @@
 #include "research.h"   // CRsrchArray enum (via player.h)
 #include "unit.inl"     // CUnit inline accessors (GetData/GetStore/...)
 #include "building.inl" // CStructureData::GetUnionType / GetBldPower inlines
+#include "chproute.hpp" // CHPRouter::MsgOutMat (SetToggle's router notification)
 
 // ---------------------------------------------------------------------------------------
 // Reusable alternate-output toggle system. See altoutput.h for the design rationale.
@@ -44,7 +45,18 @@ namespace
         return ( pBp && ( pBp->GetInput( ) == CMaterialTypes::coal ) );
     }
 
-    // A lumber mill (the sawmill): a farm building whose harvest output is lumber.
+    // An oil-burning power plant: a power building whose input fuel is oil. Coal Liquefaction's
+    // host since the relocation -- the coal it cracks is DELIVERED, not its own fuel.
+    bool IsOilPowerPlant( CBuilding* b )
+    {
+        if ( b->GetData( )->GetUnionType( ) != CStructureData::UTpower )
+            return ( false );
+        CBuildPower* pBp = b->GetData( )->GetBldPower( );
+        return ( pBp && ( pBp->GetInput( ) == CMaterialTypes::oil ) );
+    }
+
+    // A lumber mill (the sawmill): a farm building whose harvest output is lumber. Slash and
+    // Burn's host (Charcoal moved off the mill to the coal power plant).
     bool IsLumberMill( CBuilding* b )
     {
         if ( b->GetData( )->GetUnionType( ) != CStructureData::UTfarm )
@@ -87,6 +99,7 @@ namespace
     bool TechCharcoal( CPlayer* p ) { return ( p->CanCharcoal( ) != FALSE ); }
     bool TechFrack( CPlayer* p ) { return ( p->CanFrack( ) != FALSE ); }
     bool TechMoho( CPlayer* p ) { return ( p->CanMoho( ) != FALSE ); }
+    bool TechSlashBurn( CPlayer* p ) { return ( p->CanSlashBurn( ) != FALSE ); }
     bool TechAlways( CPlayer* ) { return ( true ); }   // Desperate Measures / Scrounging: default-enabled
 
     int FlatMohoIron( CPlayer* p ) { return ( p->GetMohoIronPerMin( ) ); }
@@ -94,6 +107,11 @@ namespace
     // Coal Liquefaction input ratio (coal per 1 oil) by the owner's highest tier: 3 at tier 1,
     // 2 at tier 2 (Catalytic Coal Cracking). Wired into the coal-liq def's m_pfnRatioIn.
     int CoalLiqRatio( CPlayer* p ) { return ( p->GetCoalLiqRatio( ) ); }
+
+    // Charcoal input ratio (lumber per 1 coal) by the owner's highest tier: 4/3/3/2/2. Wired into
+    // the charcoal def's m_pfnRatioIn. Replaces the old GetCharcoalPct throughput scaling, which
+    // scaled a slice of a HARVEST -- there is no harvest at a power plant.
+    int CharcoalRatio( CPlayer* p ) { return ( p->GetCharcoalRatio( ) ); }
 
     // ---- Per-tier flat-rate accessors (eFlatTrickle only) -----------------------------
     // Oil/min an exhausted, fracked well trickles by the owner's highest Fracking tier
@@ -125,12 +143,22 @@ namespace
             0                            // m_iWorkforceAdd (no extra labor)
         },
 
-        // 2) Coal Liquefaction (NEW) -- a coal power plant converts 2 coal -> 1 oil when
-        //    toggled. eRatioConsume: pulls coal from the plant's own store and credits oil.
+        // 2) Coal Liquefaction -- hosted on the OIL power plant. Toggled ON, the plant stops
+        //    generating power and cracks DELIVERED coal into oil at 3:1 (2:1 at Catalytic Coal
+        //    Cracking, via m_pfnRatioIn). eTimeDriven: the conversion runs off elapsed production
+        //    time and burns NO fuel -- see BuildPower's time-driven branch. It was previously
+        //    hosted on the COAL plant, where the coal it consumed was also its own fuel; the
+        //    move makes the produced oil exportable (an oil plant's own fuel is oil, which the
+        //    router refuses to source, so the delivery rules in EffInputMat/EffOutputMat and the
+        //    human router's source rule are what make this work at all).
+        //    SAVE HAZARD, knowingly unguarded (no VER_RELEASE bump this phase): an OLD save with
+        //    a liquefying COAL plant reloads with alt_oil set on a plant that now resolves to
+        //    CHARCOAL -- it silently demands lumber it has never been sent and its oil income
+        //    stops. Test on fresh saves only until the migration lands.
         {
             "Coal Liquefaction",
-            "Stops power generation; converts coal into oil",
-            &IsCoalPowerPlant,
+            "Stops power generation; cracks delivered coal into oil at 3:1 (2:1 with Catalytic Coal Cracking)",
+            &IsOilPowerPlant,
             &TechCoalLiq,
             CMaterialTypes::coal,
             CMaterialTypes::oil,
@@ -143,34 +171,41 @@ namespace
             0,                           // m_iPowerMultAdd (no extra power)
             {},                          // m_aMulti (unused)
             0,                           // m_nMulti
-            &CoalLiqRatio                // per-tier input ratio (3 -> 2 at Catalytic Coal Cracking)
+            &CoalLiqRatio,               // per-tier input ratio (3 -> 2 at Catalytic Coal Cracking)
+            AltOutput::EDrive::eTimeDriven       // m_eDrive: conversion runs off TIME, no fuel burned
         },
 
-        // 3) Charcoal (NEW) -- a lumber mill (the sawmill: UTfarm with lumber output) runs a
-        //    kiln that converts harvested lumber into coal ("Charcoal" label only). The
-        //    Convert() slice-ratio below is a fixed 2 lumber -> 1 coal, BUT the production hook
-        //    only feeds a tier-scaled 6/8/10/12% of the harvest into the kiln and discards the
-        //    rest, so the player-VISIBLE effective rate is ~1 coal per 17-33 lumber (stingy by
-        //    design). Do NOT describe this as "2 lumber -> 1 coal" in the player desc -- that is
-        //    the internal slice ratio, not what the player experiences. eRatioConsume: pulls
-        //    lumber from the mill's own store and
-        //    credits coal. MODE-SWITCH: the production hook (CFarmBuilding::BuildFarm lumber
-        //    branch) diverts the harvest into the kiln instead of crediting player lumber, and
-        //    feeds Convert() a TIER-SCALED amount (CPlayer::GetCharcoalPct; T1 very low) so the
-        //    2:1 ratio stays fixed while throughput scales with research. No energy cost.
+        // 3) Charcoal -- hosted on the COAL power plant, which runs as a KILN. Toggled ON, the
+        //    plant stops generating power and chars DELIVERED lumber into coal. eTimeDriven: the
+        //    conversion runs off elapsed production time and burns NO fuel, so the coal it makes
+        //    LEAVES the plant instead of feeding its own furnace -- that is the whole point, the
+        //    chain is trees -> lumber -> charcoal -> liquefaction -> oil -> gas.
+        //    It was previously hosted on the lumber MILL, where a tier-scaled slice of the
+        //    harvest was diverted into the kiln (CPlayer::GetCharcoalPct). There is no harvest at
+        //    a power plant, so the tier ladder now scales the RATIO instead
+        //    (CPlayer::GetCharcoalRatio, 4/3/3/2/2 lumber per coal, via m_pfnRatioIn).
+        //    SAVE HAZARD, knowingly unguarded (no VER_RELEASE bump this phase): an OLD save with
+        //    a charcoal-burning LUMBER MILL reloads with alt_oil set on a mill that no longer
+        //    matches any def, so the toggle silently does nothing there. Fresh saves only.
         {
             "Charcoal",
-            "Stops lumber output; burns the mill's whole harvest into a small coal trickle (yield scales with Charcoal research), at +15 workers",
-            &IsLumberMill,
+            "Stops power generation; chars delivered lumber into coal at 4:1, improving to 2:1 with Charcoal research, at +2 workers",
+            &IsCoalPowerPlant,
             &TechCharcoal,
             CMaterialTypes::lumber,
             CMaterialTypes::coal,
             AltOutput::eRatioConsume,
             nullptr,                     // m_pfnPct
             nullptr,                     // m_pfnFlat
-            2,                            // 2 lumber per 1 coal
+            4,                            // 4 lumber per 1 coal at tier 1 (m_pfnRatioIn scales it to 2 by T4)
             1.0f,
-            15                           // m_iWorkforceAdd (#2: kiln draws +15 workers ABSOLUTE; operator-tunable, approved linux1)
+            2,                           // m_iWorkforceAdd: 20% of power_1's base GetPeople() (8) -- operator:
+                                         // "the plant's workers plus a small percentage". ABSOLUTE, see the field doc.
+            0,                           // m_iPowerMultAdd (no extra power)
+            {},                          // m_aMulti (unused)
+            0,                           // m_nMulti
+            &CharcoalRatio,              // per-tier input ratio (4 -> 2 up the Charcoal ladder)
+            AltOutput::EDrive::eTimeDriven       // m_eDrive: conversion runs off TIME, no fuel burned
         },
 
         // 4) Fracking (NEW) -- an EXHAUSTED oil well (its deposit run dry, so it is
@@ -237,6 +272,39 @@ namespace
             { { CMaterialTypes::lumber, 5 }, { CMaterialTypes::iron, 2 }, { CMaterialTypes::food, 2 }, { CMaterialTypes::coal, 2 } },
             4
         },
+
+        // 7) Slash and Burn -- the LUMBER MILL cuts at 250% while the toggle is ON, and
+        //    permanently destroys the forest around it as it does. eModifier: this def produces
+        //    NO secondary material at all -- it exists only to carry the per-building toggle,
+        //    and Convert( ) early-returns for it. The 250% itself lives in
+        //    CFarmBuilding::BuildFarm (AltOutput::SLASH_BURN_MULT), gated by
+        //    CFarmBuilding::SlashBurnActive( ); the two UI rate readouts apply the same
+        //    multiplier through the same predicate so the displayed rate matches the sim.
+        //    NOT YET IMPLEMENTED: the deforestation half. Until it lands, the toggle is a pure
+        //    250% harvest bonus and the tooltip below promises a cost the sim does not charge.
+        {
+            "Slash and Burn",
+            "Cuts at 250% of the normal rate -- but PERMANENTLY destroys the forest around this mill, until there is nothing left to cut. Cannot be undone.",
+            &IsLumberMill,
+            &TechSlashBurn,
+            CMaterialTypes::lumber,      // unused: eModifier consumes nothing
+            CMaterialTypes::lumber,      // unused: eModifier produces nothing
+            AltOutput::eModifier,
+            nullptr,                     // m_pfnPct
+            nullptr,                     // m_pfnFlat
+            0,                           // m_iRatioIn (nothing is consumed)
+            1.0f,
+            0,                           // m_iWorkforceAdd: NONE. Operator 2026-09-06, "no upkeep
+                                         // change from regular operation for slash and burn" --
+                                         // the deforestation IS the cost. Do NOT add a labour or
+                                         // power penalty later without asking.
+            0,                           // m_iPowerMultAdd (no extra power, same decision)
+            {},                          // m_aMulti (unused)
+            0,                           // m_nMulti
+            nullptr,                     // m_pfnRatioIn (no per-tier ratio)
+            AltOutput::EDrive::eFuelDriven       // m_eDrive: meaningless for eModifier (nothing converts);
+                                         // spelled out rather than omitted so the tail is explicit
+        },
     };
 
     const int s_nDefs = (int)( sizeof( s_aDefs ) / sizeof( s_aDefs[0] ) );
@@ -267,6 +335,60 @@ namespace AltOutput
         return ( pDef );
     }
 
+    bool StopsPower( CBuilding* pBldg, const AltOutputDef* pDef )
+    {
+        // DERIVED, not stored (see altoutput.h): a store-consuming conversion def hosted on a
+        // power plant. Reproduces the old inline bCoalLiq exactly -- today's only UTpower def is
+        // Coal Liquefaction (eRatioConsume), which already suppressed power before this existed.
+        if ( !pBldg || !pDef )
+            return ( false );
+        if ( pBldg->GetData( )->GetUnionType( ) != CStructureData::UTpower )
+            return ( false );
+        return ( pDef->m_eMode == eRatioConsume );
+    }
+
+    int InputRatio( CBuilding* pBldg, const AltOutputDef* pDef )
+    {
+        // Same expression Convert()'s eRatioConsume branch computes inline; Convert keeps its own
+        // copy deliberately (it must stay byte-identical for the shipped callers).
+        if ( !pBldg || !pDef )
+            return ( 0 );
+        CPlayer* pOwner = pBldg->GetOwner( );
+        if ( !pOwner )
+            return ( 0 );
+        return ( pDef->m_pfnRatioIn ? pDef->m_pfnRatioIn( pOwner ) : pDef->m_iRatioIn );
+    }
+
+    void SetToggle( CBuilding* pBldg, bool bOn )
+    {
+        if ( !pBldg )
+            return;
+        if ( ( pBldg->IsFlag( CUnit::alt_oil ) != FALSE ) == bOn )
+            return;                     // already in the requested state -- nothing changed
+
+        if ( bOn )
+            pBldg->SetFlag( CUnit::alt_oil );
+        else
+            pBldg->ClrFlag( CUnit::alt_oil );
+
+        // A mode change alters what this building wants DELIVERED, and nothing else tells the
+        // router: CHPRouter::NeedsCommodities( NULL ) only revisits buildings already in its need
+        // list, so a stocked plant that needed nothing can never be discovered. Fire the existing
+        // per-building entry point on both ON and OFF. Scoped to the INPUT-CONSUMING modes so the
+        // four shipped trickle/modifier features are untouched. (The AI writes the flag directly
+        // for its trickle defs and so bypasses this -- harmless, they consume no input.)
+        const AltOutputDef* pDef = Available( pBldg );
+        if ( !pDef )
+            return;
+        if ( ( pDef->m_eMode != eRatioConsume ) && ( pDef->m_eMode != eGlobalConsume ) )
+            return;
+        CPlayer* pOwner = pBldg->GetOwner( );
+        if ( !pOwner || !pOwner->IsMe( ) )
+            return;
+        if ( theGame.m_pHpRtr )
+            theGame.m_pHpRtr->MsgOutMat( pBldg );
+    }
+
     void Convert( CBuilding* pBldg, int iAmount, float& fAccum )
     {
         if ( iAmount <= 0 )
@@ -277,6 +399,14 @@ namespace AltOutput
             return;
         const AltOutputDef* pDef = Available( pBldg );
         if ( !pDef )
+            return;
+
+        // eModifier defs produce NO secondary material at all -- they exist only to carry the
+        // per-building toggle plus modifier fields, and their effect lives in the feature's own
+        // production hook. This return MUST be explicit: the if/else chain below ends in an
+        // unguarded `else` that IS eGlobalConsume, so an eModifier def would otherwise fall into
+        // the global-food accounting. (No def uses eModifier yet, so this is inert today.)
+        if ( pDef->m_eMode == eModifier )
             return;
 
         CPlayer* pOwner = pBldg->GetOwner( );

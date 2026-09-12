@@ -44,6 +44,10 @@ class CBuildRepair;
 class CBuildShipyard;
 class CRepairBuilding;
 
+// Forward declaration ONLY. building.h deliberately does not #include "altoutput.h" (see the
+// note on m_afAltAccum below); CPowerBuilding needs nothing more than the incomplete type here.
+namespace AltOutput { struct AltOutputDef; }
+
 
 /////////////////////////////////////////////////////////////////////////////
 // CStructure - data on buildings
@@ -793,6 +797,16 @@ public:
 		virtual int		GetBldgResReq (int iInd, BOOL) const { return GetBldgMatReq (iInd, TRUE); }
 		virtual int		GetNextMinuteMat (int iInd) const { return GetBldgResReq (iInd, FALSE); }
 
+		// Per-building MATERIAL ROLE -- the single source of truth for "what does THIS building
+		// want delivered / hand out / need on hand right now". Virtual because a per-BUILDING mode
+		// (an AltOutput toggle) can answer differently from the static per-TYPE structure data, which
+		// by construction cannot see it. Base = "no material role"; only CPowerBuilding overrides
+		// these today (a later pass could adopt them for CMaterialBuilding).
+		virtual int		EffInputMat () const { return -1; }		// material it wants delivered NOW (-1 = none)
+		virtual int		EffOutputMat () const { return -1; }	// material it hands out NOW      (-1 = none)
+		virtual int		EffInputPerMin () const { return 0; }	// TRUE units/min of EffInputMat consumed (0 = none)
+		virtual int		EffInputBatch () const { return 1; }	// units of EffInputMat on hand to run ONE batch (1 = any)
+
 		void					AddConstDone (int iDone);
 		CStructureSprite *GetSprite() const
 								{
@@ -1114,7 +1128,24 @@ public:
 		virtual void GetInputs (int * pVals) const;
 		virtual void GetAccepts (int * pVals) const { GetInputs (pVals); }
 
+		// Material role (see CBuilding::EffInputMat). A plant normally burns its fuel and hands out
+		// nothing; with a TIME-DRIVEN AltOutput conversion on it consumes the def's input instead.
+		virtual int		EffInputMat () const;
+		virtual int		EffOutputMat () const;
+		virtual int		EffInputPerMin () const;
+		virtual int		EffInputBatch () const;
+
+		// Conversion-cycle progress for a TIME-DRIVEN alt mode (the batch timer). A fuel plant
+		// keeps the CBuilding base answer of -1 ("no production cycle").
+		virtual int		GetProductionPer () const;
+
 protected:
+
+		// The def driving this plant's TIME-DRIVEN alt mode, or NULL: toggle on, def Available()
+		// for the owner, and m_eDrive == eTimeDriven. One source of truth for all four Eff*
+		// answers and for BuildPower's gates. NULL unless this plant is actively running a kiln
+		// (Charcoal) or liquefaction conversion; every other def is fuel-driven.
+		AltOutput::AltOutputDef const *	TimeDrivenDef () const;
 
 #ifdef _DEBUG
 public:
@@ -1239,6 +1270,20 @@ public:
 		static int		LandMult (CHexCoord _hex, int iTyp, int iDir);
 		virtual int		GetProductionPer () const;
 		void					BuildFarm ();
+
+		// Slash and Burn: is THIS mill cutting at 250% right now? Lumber mill + alt_oil set +
+		// an Available() eModifier def. The ONE source of truth -- BuildFarm and both UI rate
+		// readouts call it rather than re-deriving the test. FALSE for every food farm by
+		// construction (the lumber check comes first).
+		BOOL					SlashBurnActive () const;
+
+		// Slash and Burn deforestation. SlashTick() accrues destroyed hexes on TIME and is called
+		// from BuildFarm on every tick the mill actually produces. ApplySlash() is the ONE place a
+		// hex is cleared: it retypes the hex and refreshes m_iTerMult on every lumber mill whose
+		// box covers it. Both the local path and the netapi hex_retype RX path call ApplySlash, so
+		// no client can keep a stale multiplier. Static because the RX side has no mill to hand.
+		void					SlashTick ();
+		static BOOL		ApplySlash (CHexCoord hex);
 		void					UpdateFarm ();
 
 		// Soil fertility of the hexes this farm covers (0..10). The status bar and
@@ -1263,6 +1308,13 @@ protected:
 		void					ctor ();
 
 		LONG					m_iTerMult;											// multiplier for terrain
+
+		// Slash and Burn: fractional hexes-to-destroy carried between ticks. TRANSIENT -- it is
+		// deliberately NOT serialized. CFarmBuilding::Serialize writes exactly ONE field
+		// (m_iTerMult), so appending anything here would change the on-disk layout of every farm
+		// and lumber mill in every existing save. Losing it on load costs at most one hex of
+		// progress, the same trade CBuilding::m_fAltAccum already makes.
+		float					m_fSlashAccum;
 
 		CList <CLandUse *, CLandUse *>	m_landUse;		// surrounding tiles we are using
 		LONG					m_iTimeToNext;									// time to next change

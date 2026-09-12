@@ -102,6 +102,7 @@ static_assert(sizeof(CMsgShoot)==688, "CMsgShoot");
 static_assert(sizeof(CNetAiGpf)==16, "CNetAiGpf");
 static_assert(sizeof(CNetRsrchDisc)==20, "CNetRsrchDisc");
 static_assert(sizeof(CNetEdictToggle)==24, "CNetEdictToggle");   // Edicts v1 net-sync (CNetCmd 12 + 3 ints); pins cross-compiler wire size
+static_assert(sizeof(CNetHexRetype)==24, "CNetHexRetype");   // Slash and Burn terrain sync (CNetCmd 12 + 3 ints); pins cross-compiler wire size
 static_assert(sizeof(CNetNeedSaveInfo)==16, "CNetNeedSaveInfo");
 static_assert(sizeof(CNetSaveInfo)==40, "CNetSaveInfo");
 #else   // Release == the on-the-wire layout
@@ -187,6 +188,7 @@ static_assert(sizeof(CMsgShoot)==688, "CMsgShoot");
 static_assert(sizeof(CNetAiGpf)==16, "CNetAiGpf");
 static_assert(sizeof(CNetRsrchDisc)==20, "CNetRsrchDisc");
 static_assert(sizeof(CNetEdictToggle)==24, "CNetEdictToggle");   // Edicts v1 net-sync (CNetCmd 12 + 3 ints); pins cross-compiler wire size
+static_assert(sizeof(CNetHexRetype)==24, "CNetHexRetype");   // Slash and Burn terrain sync (CNetCmd 12 + 3 ints); pins cross-compiler wire size
 static_assert(sizeof(CNetNeedSaveInfo)==16, "CNetNeedSaveInfo");
 static_assert(sizeof(CNetSaveInfo)==40, "CNetSaveInfo");
 #endif

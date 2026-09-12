@@ -29,6 +29,7 @@
 #include "area.h"
 #include "relation.h"
 #include "sfx.h"
+#include "netapi.h"      // theNet.Broadcast (Slash and Burn terrain replication; CNetHexRetype via player.h -> netcmd.h)
 
 #include "terrain.inl"
 #include "minerals.inl"
@@ -262,25 +263,17 @@ void CFarmBuilding::ShowStatusText( std::string& str )
 
     CBuildFarm* pBf = GetData( )->GetBldFarm( );
 
-    // Charcoal (#44): a lumber mill with the kiln ON credits NO player lumber — the harvest
-    // feeds the kiln and only the coal trickle comes out (BuildFarm's lumber branch). The
-    // harvest-rate line below would claim full lumber output; say what it actually does.
-    // Same gate expression as the sim's kiln branch.
-    if ( pBf->GetTypeFarm( ) == CMaterialTypes::lumber && IsFlag( CUnit::alt_oil ) )
-    {
-        const AltOutput::AltOutputDef* pDef = AltOutput::Available( this );
-        if ( pDef )
-        {
-            str = "Converting " + CMaterialTypes::GetDesc( pDef->m_iInputMat ) +
-                  " to " + CMaterialTypes::GetDesc( pDef->m_iOutputMat );
-            return;
-        }
-    }
+    // (No conversion branch here any more: Charcoal moved off the lumber mill to the coal power
+    // plant. Slash and Burn is an eModifier def -- it produces nothing, it just multiplies the
+    // harvest, so the plain harvest line below is still the right thing to show.)
 
     // Operator: actual rate, not theoretical — 0 while the sim has the farm halted.
+    // Slash and Burn multiplies the harvest in CFarmBuilding::BuildFarm, so apply the SAME
+    // multiplier through the SAME predicate here or the readout under-reports by 2.5x.
+    float fSlash = SlashBurnActive( ) ? AltOutput::SLASH_BURN_MULT : 1.0f;
     int iFarmRate = ( m_unitFlags & ( stopped | abandoned | event | dying ) )
                         ? 0
-                        : (int)GetFrameProd( GetOwner( )->GetFarmProd( ) * m_iTerMult *
+                        : (int)GetFrameProd( GetOwner( )->GetFarmProd( ) * m_iTerMult * fSlash *
                                              float( 24 * 60 * pBf->GetQuantity( ) ) /
                                              float( pBf->GetTimeToFarm( ) ) );
     std::string sNum = IntToStr( iFarmRate, 10, true );
@@ -296,26 +289,33 @@ void CPowerBuilding::ShowStatusText( std::string& str )
         return;
     }
 
-    CBuildPower* pBp = GetData( )->GetBldPower( );
-    int iFuel = pBp ? pBp->GetInput( ) : -1;
+    // The material this plant actually needs on hand right now: its fuel normally, a time-driven
+    // conversion def's input in alt mode (CPowerBuilding::EffInputMat). In fuel mode this IS
+    // GetBldPower( )->GetInput( ) and EffInputBatch( ) is 1, so the idle test is unchanged.
+    int iFuel = EffInputMat( );
     // CRASH-HARDEN (newwin, sibling of the #51 C5 crash mac2 found): GetInput() returns the raw
     // m_iInput, which for a fuel-less plant can be a sentinel/garbage index >= num_types (not just
     // -1). GetStore() only ASSERT_STRICTs the range (ignored in this build) -> OOB read. Bound it.
     if ( iFuel >= 0 && iFuel < CMaterialTypes::GetNumTypes( ) )
-        if ( GetStore( iFuel ) <= 0 )
+        if ( GetStore( iFuel ) < EffInputBatch( ) )
         {
             str = EnLoadStdString( IDS_STAT_IDLE );
             return;
         }
 
-    // Coal Liquefaction mode (#43): when the alt-output toggle is ON (and the tech is
-    // researched), this coal plant converts coal -> oil instead of generating power
-    // (BuildPower suppresses AddPwrHave in this mode). Reflect that in the status text
-    // rather than the misleading "Generating N units power" line.
-    if ( IsFlag( CUnit::alt_oil ) && ( AltOutput::Available( this ) != nullptr ) )
+    // Alt-output conversion mode: when the toggle is ON (and the tech is researched), this
+    // plant converts instead of generating power (BuildPower suppresses AddPwrHave). Name the
+    // def's OWN materials -- the host is the oil plant for Coal Liquefaction and the coal plant
+    // for the Charcoal kiln, so a hard-coded "coal to oil" is wrong for half of them.
+    if ( IsFlag( CUnit::alt_oil ) )
     {
-        str = "Converting coal to oil";
-        return;
+        const AltOutput::AltOutputDef* pDef = AltOutput::Available( this );
+        if ( pDef )
+        {
+            str = "Converting " + CMaterialTypes::GetDesc( pDef->m_iInputMat ) +
+                  " to " + CMaterialTypes::GetDesc( pDef->m_iOutputMat );
+            return;
+        }
     }
 
     std::string sNum  = IntToStr( (int)( GetFrameProd( 1 ) * (float)GetData( )->GetBldPower( )->GetPower( ) ) );
@@ -3934,6 +3934,7 @@ void CFarmBuilding::ctor( )
 
     m_iTerMult   = 0;
     m_iFieldStage = -1;
+    m_fSlashAccum = 0.0f;   // transient (see building.h) -- reset on construct AND on load
 }
 
 CFarmBuilding::~CFarmBuilding( )
@@ -3960,6 +3961,24 @@ static int fnLumberFromGround( CHex* pHex, CHexCoord, void* pData )
     return ( FALSE );
 }
 
+// The lumber mill's LandMult box: the footprint grown by 3 hexes on every side. Extracted so
+// the yield scan (LandMult, below) and the Slash and Burn slash scan CANNOT diverge -- if they
+// did, a mill would destroy trees outside the box its own m_iTerMult averages over, the yield
+// would never drop, and the feature would be a silent visual-only no-op. The `iDir & 1` swap is
+// the load-bearing part: without it exactly that happens on every mill built at an odd rotation,
+// i.e. roughly half of them, with no error and no crash.
+// On return _hex is the box's TOP-LEFT corner and ex/ey are its extents.
+static void LumberBox( CHexCoord& _hex, int& ex, int& ey, CStructureData const* pData, int iDir )
+{
+    int cx = iDir & 1 ? pData->GetCY( ) : pData->GetCX( );
+    int cy = iDir & 1 ? pData->GetCX( ) : pData->GetCY( );
+
+    _hex.X( _hex.X( ) - 3 );
+    _hex.Y( _hex.Y( ) - 3 );
+    ex = cx + 6;
+    ey = cy + 6;
+}
+
 int CFarmBuilding::LandMult( CHexCoord _hex, int iTyp, int iDir )
 {
 
@@ -3971,10 +3990,10 @@ int CFarmBuilding::LandMult( CHexCoord _hex, int iTyp, int iDir )
     {
         // get the number of forest hexes
         int iRtn = 0;
-        _hex.X( _hex.X( ) - 3 );
-        _hex.Y( _hex.Y( ) - 3 );
-        theMap.EnumHexes( _hex, cx + 6, cy + 6, fnLumberFromGround, &iRtn );
-        return ( iRtn / ( ( cx + 6 ) * ( cy + 6 ) ) );
+        int ex, ey;
+        LumberBox( _hex, ex, ey, pData, iDir );   // == the old -3/-3 corner and cx+6 / cy+6
+        theMap.EnumHexes( _hex, ex, ey, fnLumberFromGround, &iRtn );
+        return ( iRtn / ( ex * ey ) );
     }
 
     // get the terrain multiplier
@@ -3989,6 +4008,239 @@ void CFarmBuilding::UpdateFarm( )
 {
 
     m_iTerMult = LandMult( m_hex, GetData( )->GetType( ), GetDir( ) );
+}
+
+BOOL CFarmBuilding::SlashBurnActive( ) const
+{
+    // Lumber mills only -- a food farm can never match, so the old "does this multiplier leak
+    // onto farms?" hazard cannot arise.
+    if ( GetData( )->GetBldFarm( )->GetTypeFarm( ) != CMaterialTypes::lumber )
+        return ( FALSE );
+
+    // AltOutput::Available( ) and IsFlag( ) take a non-const CBuilding* -- the same const_cast
+    // precedent as CMaterialBuilding::GetNextMinuteMat and CPowerBuilding::TimeDrivenDef.
+    CFarmBuilding* pThis = const_cast<CFarmBuilding*>( this );
+    if ( !pThis->IsFlag( CUnit::alt_oil ) )
+        return ( FALSE );
+
+    const AltOutput::AltOutputDef* pDef = AltOutput::Available( pThis );
+    return ( pDef && ( pDef->m_eMode == AltOutput::eModifier ) ) ? TRUE : FALSE;
+}
+
+// ---------------------------------------------------------------------------------------
+// Slash and Burn: the deforestation.
+// ---------------------------------------------------------------------------------------
+
+// Candidate collection for one slash: the forest hex nearest the mill, ties broken by (x, y).
+struct SlashPickCtx
+{
+    CHexCoord m_hexCentre;
+    CHexCoord m_hexBest;
+    int       m_iBestDist;
+    BOOL      m_bFound;
+};
+
+static int fnPickSlash( CHex* pHex, CHexCoord hex, void* pData )
+{
+    SlashPickCtx* pCtx = (SlashPickCtx*)pData;
+
+    if ( pHex->GetType( ) != CHex::forest )
+        return ( FALSE );
+
+    // E21 -- MANDATORY, and a memory-corruption guard rather than tidiness: the tree index and
+    // the building DIRECTION share m_bType bits 4-7 (terrain.h), and SetTree( 0 ) writes
+    // m_bType & 0x8F, so clearing a hex under a building or bridge would silently rewrite that
+    // building's direction. Mirrors fnCollectField's skip.
+    if ( pHex->GetUnits( ) & ( CHex::bldg | CHex::bridge ) )
+        return ( FALSE );
+
+    // Wrap-safe distance (the box can straddle the map seam). Chebyshev, which is enough to
+    // order candidates; no MyRand / RandNum anywhere in the selection, so the choice is a pure
+    // function of the map state.
+    int dx = abs( CHexCoord::Diff( hex.X( ) - pCtx->m_hexCentre.X( ) ) );
+    int dy = abs( CHexCoord::Diff( hex.Y( ) - pCtx->m_hexCentre.Y( ) ) );
+    int d  = ( dx > dy ) ? dx : dy;
+
+    BOOL bBetter = !pCtx->m_bFound || ( d < pCtx->m_iBestDist );
+    if ( !bBetter && ( d == pCtx->m_iBestDist ) )
+        bBetter = ( hex.X( ) < pCtx->m_hexBest.X( ) )
+                  || ( ( hex.X( ) == pCtx->m_hexBest.X( ) ) && ( hex.Y( ) < pCtx->m_hexBest.Y( ) ) );
+
+    if ( bBetter )
+    {
+        pCtx->m_bFound    = TRUE;
+        pCtx->m_hexBest   = hex;
+        pCtx->m_iBestDist = d;
+    }
+    return ( FALSE );
+}
+
+// Choose the next hex this mill clears, or FALSE when its box holds no cuttable forest.
+static BOOL PickSlashHex( CFarmBuilding* pMill, CHexCoord& out )
+{
+    CStructureData const* pData = pMill->GetData( );
+
+    CHexCoord    hexBox( pMill->GetHex( ).X( ), pMill->GetHex( ).Y( ) );
+    int          ex, ey;
+    LumberBox( hexBox, ex, ey, pData, pMill->GetDir( ) );   // the SAME box LandMult averages over
+    hexBox.Wrap( );
+
+    SlashPickCtx ctx;
+    ctx.m_hexCentre = CHexCoord( hexBox.X( ) + ex / 2, hexBox.Y( ) + ey / 2 );
+    ctx.m_hexCentre.Wrap( );
+    ctx.m_hexBest   = ctx.m_hexCentre;
+    ctx.m_iBestDist = 0;
+    ctx.m_bFound    = FALSE;
+
+    theMap.EnumHexes( hexBox, ex, ey, fnPickSlash, &ctx );
+
+    if ( !ctx.m_bFound )
+        return ( FALSE );
+    out = ctx.m_hexBest;
+    return ( TRUE );
+}
+
+// Retype ONE hex forest -> plain. Returns FALSE if it did not (and must not) change.
+static BOOL SlashHex( CHexCoord hex )
+{
+    CHex* p = theMap._GetHex( hex );
+
+    // Idempotent. The RX path may see a hex an earlier message already cleared, and
+    // theNet.Broadcast( ..., bLocal = TRUE ) loops the message back to the sender.
+    if ( p->GetType( ) != CHex::forest )
+        return ( FALSE );
+
+    // E21 again -- re-checked HERE and not only in the picker, because the RX side never ran
+    // the picker. See fnPickSlash for why this is a corruption guard, not tidiness.
+    if ( p->GetUnits( ) & ( CHex::bldg | CHex::bridge ) )
+        return ( FALSE );
+
+    // Order matters: SetType preserves the high nibble of m_bType, so the tree bits would
+    // survive it. Drop the tree FIRST -- the CHex::ChangeToRoad precedent.
+    p->SetTree( 0 );
+    p->SetType( CHex::plain );
+
+    // Read the type BACK rather than assuming plain: SetType re-derives hill/mountain on slope.
+    // In practice it is always plain here (a hex can only BE forest where SetType already
+    // accepted forest, which needs the same slope), but do not design around the assumption.
+    int t = p->GetType( );
+
+    // FOG. SetType has ALREADY overwritten the visible type on every one of its exit paths, so
+    // gating SetVisibleType on visibility AFTER it would be dead code -- the gate has to RESTORE
+    // the fogged ground instead (the bridge.cpp shape). The reveal clause in CUnit's spotting
+    // loop (unit.cpp) re-syncs it the moment the player next sees the hex.
+    // ACCEPTED, NOT FIXED (operator 2026-09-06): the tree SPRITES still disappear through
+    // explored-but-currently-unlit fog, because every tree draw path tests the REAL type and the
+    // ++g_enStaticDirtyGen below forces a recapture that omits them. Roads and bridges already
+    // leak exactly this way in shipped code. Do NOT build a remembered-appearance layer here.
+    if ( !p->GetVisibility( ) )
+        p->SetVisibleType( CHex::forest );
+
+    int n = theTerrain.GetCount( t );
+    p->m_psprite = theTerrain.GetSprite( t, n <= 1 ? 0 : ( ( hex.X( ) * 2 + hex.Y( ) ) % n ) );
+
+    // Trees are STATIC GPU sprites (E5): without this the tree floats over bare ground until a
+    // zoom or direction change forces a recapture. Same reason CHex::ChangeToRoad bumps it.
+    extern unsigned g_enStaticDirtyGen;
+    ++g_enStaticDirtyGen;
+
+    hex.SetInvalidated( );
+    return ( TRUE );
+}
+
+BOOL CFarmBuilding::ApplySlash( CHexCoord hex )
+{
+    if ( !SlashHex( hex ) )
+        return ( FALSE );
+
+    // Refresh EVERY lumber mill whose box covers this hex, not just the one that cut it: boxes
+    // overlap, and a stale m_iTerMult would keep paying the old yield and keep showing the old
+    // fertility percentage. Both the local path and the netapi hex_retype RX path come through
+    // here, so no client can be left holding a stale multiplier.
+    //
+    // NOTE for whoever rebases the Scrounging terrain cache onto this: m_iScrForest is cached on
+    // the explicit assumption that terrain never changes at runtime. Slash and Burn falsifies
+    // that. It must be invalidated HERE, for every warehouse whose scan ring covers this hex.
+    POSITION pos = theBuildingMap.GetStartPosition( );
+    while ( pos != NULL )
+    {
+        DWORD      dwID;
+        CBuilding* pBldg = NULL;
+        theBuildingMap.GetNextAssoc( pos, dwID, pBldg );
+        if ( pBldg == NULL )
+            continue;
+        if ( pBldg->GetData( )->GetUnionType( ) != CStructureData::UTfarm )
+            continue;
+        if ( pBldg->GetData( )->GetType( ) != CStructureData::lumber )
+            continue;
+
+        // Wrap-safe and deliberately OVER-inclusive: max(cx,cy)+6 is at least the true box on
+        // both axes whatever the rotation, so a mill may be refreshed that did not need it.
+        // UpdateFarm is a cheap re-scan and slashes are rare, so over-refreshing is the safe
+        // direction to err in -- under-refreshing is the bug.
+        CStructureData const* pData = pBldg->GetData( );
+        int iReach = ( ( pData->GetCX( ) > pData->GetCY( ) ) ? pData->GetCX( ) : pData->GetCY( ) ) + 6;
+        int dx     = abs( CHexCoord::Diff( hex.X( ) - pBldg->GetHex( ).X( ) ) );
+        int dy     = abs( CHexCoord::Diff( hex.Y( ) - pBldg->GetHex( ).Y( ) ) );
+        if ( ( dx <= iReach ) && ( dy <= iReach ) )
+            ( (CFarmBuilding*)pBldg )->UpdateFarm( );
+    }
+    return ( TRUE );
+}
+
+void CFarmBuilding::SlashTick( )
+{
+    // Accrue on TIME, mirroring AltOutput::Convert's eFlatTrickle branch exactly: a per-GAME-
+    // minute rate scaled by the opers elapsed this call, with a float accumulator carrying the
+    // sub-unit remainder. 23040 = 384 opers/sec * 60 (see CPlayer::GetElapsedSeconds).
+    const float OPERS_PER_MINUTE = 384.0f * 60.0f;   // = 23040 (matches Convert)
+
+    m_fSlashAccum += ( AltOutput::SLASH_HEXES_PER_MINUTE * (float)theGame.GetOpersElapsed( ) )
+                     / OPERS_PER_MINUTE;
+
+    while ( m_fSlashAccum >= 1.0f )
+    {
+        m_fSlashAccum -= 1.0f;
+
+        CHexCoord hex( 0, 0 );
+        if ( !PickSlashHex( this, hex ) )
+        {
+            // Nothing cuttable left in our own box. DISCARD the remainder rather than banking
+            // it: a finished mill would otherwise build an unbounded debt that fired as a burst
+            // the moment a hex became forest again.
+            m_fSlashAccum = 0.0f;
+            break;
+        }
+
+        const BOOL bCut = ApplySlash( hex );
+
+        if ( bCut && theGame.IsNetGame( ) )
+        {
+            // BuildFarm runs only on the owner's client, but terrain is SHARED world state, so
+            // the edit must be replicated or the map forks (pathing, LandMult, vision,
+            // rendering). Same TX shape as CPlayer::ToggleEdictNet; theNet.Broadcast is the
+            // reliable (VP_MUSTDELIVER) path, which a terrain edit requires -- one dropped
+            // message forks that client's map permanently.
+            CNetHexRetype msg( hex, CHex::plain );
+            theNet.Broadcast( &msg, sizeof( msg ), TRUE );
+        }
+
+        // STOP AT FERTILITY ZERO, re-checked INSIDE the loop. ApplySlash -> UpdateFarm has just
+        // recomputed m_iTerMult, so this is current. The productivity gate in BuildFarm is
+        // evaluated ONCE, before this call, so it cannot stop iterations 2..n of a catch-up
+        // tick: one long frame (this engine has documented multi-second stalls -- see the
+        // message-drain budget in CConquerApp::ProcessAllMessages) delivers a whole game-minute
+        // of opers at once, and the loop would keep cutting straight past the stopping point.
+        // Measured by an external review on an extracted fixture: 8 forest hexes in a 72-hex box
+        // (fertility 1), one tick of 23040 opers -> all 8 cleared, though fertility hit 0 after
+        // the FIRST cut. Discard the remaining accumulator rather than banking it, exactly as
+        // the no-hex-found branch above does.
+        if ( bCut && ( m_iTerMult <= 0 ) )
+        {
+            m_fSlashAccum = 0.0f;
+            break;
+        }
+    }
 }
 
 // Record one hex of the ring as a crop plot, if it is farmable and unoccupied.
