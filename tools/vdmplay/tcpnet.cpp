@@ -553,6 +553,13 @@ BOOL CTcpNet::TCPAddress::TranslateAddressString(tcpaddress_s &addr, LPCSTR addr
  if (validLen == strlen(addrString))
  {
   addr.m_stationAddress.s_addr = inet_addr(hostpart);
+  if (addr.m_stationAddress.s_addr == INADDR_NONE)
+   // Malformed dotted address (e.g. "54.219.190."): inet_addr's failure value is
+   // bit-identical to INADDR_BROADCAST, so an unchecked assignment here silently
+   // turned a typo into a LAN broadcast instead of a rejected address. A genuinely
+   // empty addrString still ends up broadcasting, via the caller's own "no server
+   // address configured" fallback -- unaffected by this check.
+   return FALSE;
  }
  else if (lstrcmpi(hostpart, "localhost") == 0)
  {
