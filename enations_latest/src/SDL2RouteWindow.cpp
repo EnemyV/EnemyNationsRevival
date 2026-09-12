@@ -236,10 +236,23 @@ void SDL2RouteWindow::RebuildList() {
             loc = std::to_string(pR->GetCoord().X()) + "," + std::to_string(pR->GetCoord().Y());
 
         // Route type
-        const char* typeStr = "Waypoint";
+        std::string typeStr = "Waypoint";
         switch (pR->GetRouteType()) {
-            case 1: typeStr = "Unload"; break;
-            case 2: typeStr = "Load"; break;
+            case CRoute::unload: typeStr = "Unload"; break;
+            case CRoute::load:   typeStr = "Load";   break;
+
+            // #38: an ORDER row names the job. The location half is forced back to the
+            // hex because the lookup above names the building STANDING there, and a
+            // queued site is either empty or (on a looping list) already holds the one
+            // this order just put up - either way it would mislabel the row.
+            case CRoute::build: {
+                typeStr = "Build";
+                CStructureData const* pSd = theStructures.GetData(pR->GetBldgType());
+                if (pSd != NULL)
+                    typeStr += " " + pSd->GetDesc();
+                loc = std::to_string(pR->GetCoord().X()) + "," + std::to_string(pR->GetCoord().Y());
+                break;
+            }
         }
 
         entry.text = loc + " - " + typeStr;

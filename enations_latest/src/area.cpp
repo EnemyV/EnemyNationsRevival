@@ -2614,6 +2614,33 @@ void CWndArea::DrawRouteWaypoints( )
         return best;
     };
 
+    // #38: GHOST FOOTPRINT for a queued build order - the outline of the CX x CY hex
+    // rectangle the building will stand on (the two swap when it is turned 90 degrees,
+    // the same rule the placement cursor uses). Drawn with the same dotted segments as
+    // the route legs, and snapped to the wrap copy nearest `ref` for the same reason.
+    auto ghost = [&]( CHexCoord hcUL, int iBldg, int iDir, CPoint ref )
+    {
+        if ( ( iBldg <= 0 ) || ( iBldg > theStructures.GetNumBuildings( ) ) )
+            return;
+        CStructureData const* pData = theStructures.GetData( iBldg );
+        if ( pData == NULL )
+            return;
+        int cx = ( iDir & 1 ) ? pData->GetCY( ) : pData->GetCX( );
+        int cy = ( iDir & 1 ) ? pData->GetCX( ) : pData->GetCY( );
+        if ( ( cx <= 0 ) || ( cy <= 0 ) )
+            return;
+        CPoint c[4];
+        for ( int i = 0; i < 4; ++i )
+        {
+            CHexCoord hc( hcUL.X( ) + ( ( ( i == 1 ) || ( i == 2 ) ) ? cx - 1 : 0 ),
+                          hcUL.Y( ) + ( ( i >= 2 ) ? cy - 1 : 0 ) );
+            hc.Wrap( );
+            c[i] = wrapNear( hexWin( hc ), ref );
+        }
+        for ( int i = 0; i < 4; ++i )
+            seg( c[i], c[( i + 1 ) & 3] );
+    };
+
     for ( POSITION pos = m_lstUnits.GetHeadPosition( ); pos != NULL; )
     {
         CUnit* pUnit = m_lstUnits.GetNext( pos );
@@ -2645,6 +2672,10 @@ void CWndArea::DrawRouteWaypoints( )
             CPoint  wp = wrapNear( hexWin( pR->GetCoord( ) ), prev );   // torus: short path over the seam
             seg( prev, wp );
             plot( wp.x, wp.y, 3 );   // a slightly bigger dot marks each waypoint
+            // #38: a queued BUILD order also shows WHAT will stand there, not only the
+            // leg's end dot
+            if ( pR->GetRouteType( ) == CRoute::build )
+                ghost( pR->GetCoord( ), pR->GetBldgType( ), pR->GetBldgDir( ), wp );
             prev = wp;
         }
     }
