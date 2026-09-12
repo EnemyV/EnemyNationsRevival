@@ -39,6 +39,36 @@ void EnBridgeDbgLog( const char* pszMsg )
     FILE* f = fopen( EnLogPath( "bridge_debug.log" ).c_str(), "a" );
     if ( f != NULL ) { fputs( pszMsg, f ); fclose( f ); }
 }
+
+// #38 ORDER DISPATCH TRACE (bug #114). One line per dispatch, completion, failure,
+// end, stall and REFUSED poll, with the busy-test fields that caused the refusal, so
+// the next occurrence names the path instead of needing a repro. Same file sink and
+// the same reason as above; compiled out with EN_GAMEPLAY_PROBES (0 by default).
+void EnOrderDbgLog( const char* pszMsg )
+{
+    FILE* f = fopen( EnLogPath( "order_debug.log" ).c_str(), "a" );
+    if ( f != NULL ) { fputs( pszMsg, f ); fclose( f ); }
+}
+
+// veh, the four busy-test fields, the queue depth and the cursor kind: everything
+// NextOrder reads. Call it with a short verb and an optional detail string.
+void CVehicle::OrderProbe( char const* pszWhat, char const* pszWhy ) const
+{
+    char szO[256];
+    sprintf( szO, "[ORDER] %-9s veh %lu state %d event %d mode %d bldg %d "
+                  "hold %d resume %d rows %d kind %d hex %d,%d retry %d%s%s\n",
+             pszWhat, (unsigned long) GetID( ), (int) m_iOrderState, (int) m_iEvent,
+             (int) m_cMode, m_pBldg != NULL ? 1 : 0, m_iHoldFrames, m_bResume ? 1 : 0,
+             (int) m_route.GetCount( ), (int) m_iOrderKind, m_hexOrder.X( ), m_hexOrder.Y( ),
+             (int) m_iOrderRetry, ( pszWhy != NULL ) ? " - " : "", ( pszWhy != NULL ) ? pszWhy : "" );
+    EnOrderDbgLog( szO );
+}
+#endif
+
+#if EN_GAMEPLAY_PROBES
+  #define ORDER_PROBE(w, y)  OrderProbe (w, y)
+#else
+  #define ORDER_PROBE(w, y)  ((void) 0)
 #endif
 
 // #114 stall watch tuning. The dwell is long enough that a couple of frames of
@@ -285,6 +315,7 @@ void CVehicle::Operate() {
     if (GetOwner()->IsLocal()) {
         if ((m_iOrderState == order_work) && (m_pBldg == NULL)) {
             m_iOrderState = order_done;
+            ORDER_PROBE("complete", "site tie gone after order_work");
         }
         if (m_iOrderState == order_done)
             OrderComplete();
@@ -850,8 +881,21 @@ BOOL CVehicle::NextOrder() {
     // covers the window where m_iEvent cannot (request sent, waiting on the server);
     // the rest is the ordinary "this crane has a job" test.
     if ((m_iOrderState != order_none) || (m_pBldg != NULL) ||
-        (m_iEvent != none) || (m_cMode != stop))
+        (m_iEvent != none) || (m_cMode != stop)) {
+#if EN_GAMEPLAY_PROBES
+        // Every REFUSED poll, with the busy fields that caused it - throttled per
+        // vehicle, because an idle poll runs every tick, and only while there is
+        // actually something queued to refuse.
+        if (!m_route.IsEmpty()) {
+            DWORD dwNow = theGame.GettimeGetTime();
+            if ((m_dwOrderLog == 0) || (dwNow - m_dwOrderLog >= 5000)) {
+                m_dwOrderLog = dwNow;
+                OrderProbe("refused", "busy test");
+            }
+        }
+#endif
         return (FALSE);
+    }
 
     // Loop, so an order that can never run is dropped and the NEXT one starts in this
     // same call rather than costing a tick each. The list only ever shrinks here.
@@ -935,6 +979,7 @@ BOOL CVehicle::NextOrder() {
             return (FALSE);
     }
 
+    ORDER_PROBE("dispatch", NULL);
     return (TRUE);
 }
 
@@ -1024,6 +1069,7 @@ void CVehicle::CheckOrderStall() {
     m_dwOrderStall = 0;
 
     if (++m_iOrderRetry > ORDER_STALL_TRIES) {
+        ORDER_PROBE("stall-drop", "re-drives exhausted - order given up");
         m_iOrderRetry = 0;
         SetEventAndRoute(none, stop);   // drop the stale arming event
         m_iOrderState = order_done;     // the poll's OrderComplete consumes the order
@@ -1032,6 +1078,7 @@ void CVehicle::CheckOrderStall() {
         return;
     }
 
+    ORDER_PROBE("stall-redrive", "idle and armed - the arrival never ran");
     SetEventAndRoute(none, stop);       // so NextOrder's busy test lets us back in
     m_iOrderState = order_none;         // the poll's NextOrder re-dispatches this order
 }
@@ -1044,6 +1091,7 @@ void CVehicle::OrderEnded() {
 
     if (m_iOrderState != order_none) {
         m_iOrderState = order_done;
+        ORDER_PROBE("ended", NULL);
     }
 }
 
@@ -1131,6 +1179,7 @@ void CVehicle::OrderFailed(CHexCoord const &hex, int iBldgType) {
     m_route.RemoveAt(pos);
     delete pR;
     SetRoutePos(m_route.GetHeadPosition());
+    ORDER_PROBE("failed", "server rejected the site");
 
     if (m_pSdlRoute != NULL)
         m_pSdlRoute->RefreshRoute();

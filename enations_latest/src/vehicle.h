@@ -498,6 +498,10 @@ public:
 		// BUG #114: an order that was dispatched but whose arrival never happened.
 		// Polled from the idle branch; may re-drive the order or give it up.
 		void					CheckOrderStall ();
+#if EN_GAMEPLAY_PROBES
+		// one dispatch-trace line, carrying every field NextOrder's busy test reads
+		void					OrderProbe (char const * pszWhat, char const * pszWhy = NULL) const;
+#endif
 		CList <CRoute *, CRoute *> &	GetRouteList () { ASSERT_STRICT_VALID (this); return (m_route); }
 		// Looping vs one-shot route. TRUE (default) = the legacy behavior (cycle back to
 		// the first stop at the end); FALSE = stop at the last stop. Serialized from save
@@ -681,6 +685,9 @@ protected:
 		// give that state a dwell and a bounded re-drive. Runtime only, like the state.
 		DWORD				m_dwOrderStall;				// ms the idle-but-armed state was first seen (0 = not watching)
 		BYTE				m_iOrderRetry;					// re-drives spent on the order at the cursor
+#if EN_GAMEPLAY_PROBES
+		DWORD				m_dwOrderLog;					// last refused-poll trace line (probe only)
+#endif
 		CSubHex				m_ptDest;								// final sub-hex we are going to
 		CHexCoord			m_hexDest;							// final hex we are going to
 		CHexCoord			m_hexLastDest;					// to stop back and forth

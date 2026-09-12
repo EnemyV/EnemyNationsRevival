@@ -5434,6 +5434,9 @@ void CVehicle::ctor( )
     m_hexOrder    = CHexCoord( 0, 0 );
     m_dwOrderStall = 0;           // #114 stall watch: not watching, full re-drive budget
     m_iOrderRetry  = 0;
+#if EN_GAMEPLAY_PROBES
+    m_dwOrderLog = 0;
+#endif
     m_phexPath = NULL;
     m_iPathOff = 0;
     m_iPathLen = 0;
