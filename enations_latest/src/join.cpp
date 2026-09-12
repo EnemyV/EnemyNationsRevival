@@ -112,20 +112,24 @@ void CJoinMulti::OnSessionEnum( LPCVPSESSIONINFO pSi )
                  (int)pPub->m_cVerMajor, (int)pPub->m_cVerMinor, (int)VER_MAJOR, (int)VER_MINOR,
                  (unsigned)pPub->m_cFlags, (unsigned)wTst );
 
-    // 015 phase 3: the gameplay data hash joins the same test, so a game whose
-    // unit/research/text tables differ from ours is not offered in the browser.
-    // Enforcement is server-side (netapi.cpp OnMsgJoin); this half only saves a
-    // join attempt that would be refused. Art and sound are not in the hash.
     if ( pPub->m_iGameID != TLP_GAME_ID ||
          pPub->m_cVerMajor != VER_MAJOR  ||
          pPub->m_cVerMinor != VER_MINOR  ||
-         pPub->m_dwDataHash != theGame.m_dwDataHash ||
          ( pPub->m_cFlags & ( CNetPublish::fdebug | CNetPublish::fcheat ) ) != wTst ) {
         if ( s_log )
-            fprintf( stderr, "[join-enum] REJECTED '%s' (game-id/version/data-hash/debug-cheat-flags mismatch; data %08lx want %08lx)\n",
-                     pPub->GetGameName(), (unsigned long)pPub->m_dwDataHash, (unsigned long)theGame.m_dwDataHash );
+            fprintf( stderr, "[join-enum] REJECTED '%s' (game-id/version/debug-cheat-flags mismatch)\n", pPub->GetGameName() );
         return;
     }
+
+    // 015 phase 3: the gameplay data hash is CARRIED, not filtered on. A game
+    // whose unit/research/text tables differ from ours stays in the browser and
+    // is refused at Join, with both numbers shown - dropping the row here would
+    // leave the player looking at "No games found" with a host running in front
+    // of them and no way to tell why. Enforcement is the host's (netapi.cpp
+    // OnMsgJoin); the browser only carries the number to the join path.
+    if ( s_log && ( pPub->m_dwDataHash != theGame.m_dwDataHash ) )
+        fprintf( stderr, "[join-enum] LISTED '%s' with a DIFFERENT data hash %08lx (ours %08lx) - refused at Join\n",
+                 pPub->GetGameName(), (unsigned long)pPub->m_dwDataHash, (unsigned long)theGame.m_dwDataHash );
 
     // Skip in-progress games (not joinable from lobby)
     if ( pPub->m_cFlags & CNetPublish::finprogress ) {
@@ -147,6 +151,7 @@ void CJoinMulti::OnSessionEnum( LPCVPSESSIONINFO pSi )
             s.worldSize    = pPub->m_iWorldSize;
             s.startPos     = pPub->m_iPos;
             s.cFlags       = pPub->m_cFlags;
+            s.dataHash     = pPub->m_dwDataHash;
             return;
         }
     }
@@ -160,6 +165,7 @@ void CJoinMulti::OnSessionEnum( LPCVPSESSIONINFO pSi )
     e.worldSize    = pPub->m_iWorldSize;
     e.startPos     = pPub->m_iPos;
     e.cFlags       = pPub->m_cFlags;
+    e.dataHash     = pPub->m_dwDataHash;
     m_sessions.push_back( e );
 }
 

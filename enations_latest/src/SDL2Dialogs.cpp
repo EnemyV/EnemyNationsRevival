@@ -19,6 +19,7 @@
 #include "creatmul.inl"
 #include "netcmd.h"
 #include "netapi.h"
+#include "datahashguard.h"   // the joiner-side data-hash check (015 phase 3)
 #include "SDL2GameDialogs.h"   // SDL2Chat_Send / Count / Line for lobby chat
 
 #undef min
@@ -1932,6 +1933,43 @@ bool SDL2_RunJoinNetworkFlow(GameWindow* gameWindow) {
             return false;
         }
         chosenIdx = browseDlg.m_chosenIdx;
+
+        // 015 phase 3: the JOINER checks the gameplay data hash here, before any
+        // wire call. It is the only machine holding both numbers at this point,
+        // so it is the only one that can say WHY - the host's refusal arrives at
+        // the joiner as a silent timeout. The game is still listed in the browser
+        // on purpose (see CJoinMulti::OnSessionEnum): a dropped row reads as "No
+        // games found" with a host running in plain sight. Returning to the
+        // browser rather than the main menu lets the player pick another game.
+        if ( ( chosenIdx >= 0 ) && ( chosenIdx < (int)pJoin->m_sessions.size() ) )
+        {
+            const CJoinMulti::SessionEntry& pick = pJoin->m_sessions[chosenIdx];
+            if ( !endataguard::JoinAllowed( pick.dataHash, theGame.m_dwDataHash ) )
+            {
+                char szTheirs[16] = { 0 };
+                char szMine[16]   = { 0 };
+                snprintf( szTheirs, sizeof( szTheirs ), "%08lx", (unsigned long)pick.dataHash );
+                snprintf( szMine, sizeof( szMine ), "%08lx", (unsigned long)theGame.m_dwDataHash );
+                std::string sMsg = strPrintf( EnLoadStdString( IDS_DATA_MISMATCH ).c_str(),
+                                              pick.gameName.c_str(), szTheirs, szMine );
+
+                char szLog[256];
+                snprintf( szLog, sizeof( szLog ), "[DATAHASH] not joining '%s': host %s, this machine %s",
+                          pick.gameName.c_str(), szTheirs, szMine );
+                OutputDebugStringA( szLog );
+                OutputDebugStringA( "\n" );
+                theApp.Log( szLog );
+
+                // Parented to the game window, NOT nullptr: a null-parent box opens
+                // undecorated and unfocusable BEHIND the fullscreen window on
+                // Linux/XWayland/Mutter and the game looks hung (see the same fix
+                // in SDL2OptionsDialog above).
+                SDL_ShowSimpleMessageBox( SDL_MESSAGEBOX_ERROR, "Enemy Nations", sMsg.c_str(),
+                                          gameWindow ? gameWindow->GetWindow() : nullptr );
+                chosenIdx = -1;
+                continue;   // back to the browser
+            }
+        }
         break;
     }
 

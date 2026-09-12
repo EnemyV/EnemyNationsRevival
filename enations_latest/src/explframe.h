@@ -30,12 +30,20 @@ namespace enexpl {
 
 //  Frames a dying unit's corpse is held before the cleanup runs.
 //
-//  The old art-derived value was AnimCount/2, and sprtinit.cpp:3113 asserts an
-//  animation is at most 26 frames, so the rule could only ever produce 0..13.
-//  This sits in the middle of that band: within a few frames of what every
-//  shipped explosion did, and now the SAME number on every client whatever art
-//  it is running.
-const int EXPL_KILLFRAME = 6;
+//  MEASURED off the shipped art, so this is what the stock game already did -
+//  it is not a new timing, it is the old one written down where a mod cannot
+//  move it.
+//
+//  units.rif's EXPL list names four explosion sprites (entries 2, 3 and 4 are
+//  what CExplosion picks at random for a dying unit, entry 5 is the one the
+//  projectile constructor uses), and those are exactly the four sprites in
+//  effect.rif with CEffect::explosion's id. Their ANIM_FRONT_1 frame counts are
+//  10, 11, 10 and 10, so the old `AnimCount( ANIM_FRONT_1 ) / 2` evaluated to 5
+//  for EVERY stock explosion - the integer divide flattens the 11.
+//
+//  tests/data/test_data_expl.cpp re-reads those counts out of effect.rif and
+//  fails if this constant stops matching them.
+const int EXPL_KILLFRAME = 5;
 
 //  "This explosion owns no corpse." The old code spelled this 10000 and then
 //  asked `m_iKillFrame < 256` to mean the opposite; one name for it now.

@@ -20,7 +20,9 @@
 
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 #include <string>
+#include <vector>
 
 namespace {
 
@@ -130,11 +132,169 @@ void TestExplosionWithNoCorpseIsNotHeld( )
 void TestConstantIsInsideTheBandTheOldRuleCouldProduce( )
 {
     // sprtinit.cpp:3113 asserts an animation is at most 26 frames, so the old
-    // AnimCount/2 rule could only ever produce 0..13. Keeping the constant in
-    // that band is what "matches today's stock timing" means here.
+    // AnimCount/2 rule could only ever produce 0..13. That is the cheap bound;
+    // TestConstantMatchesTheShippedArt below is the real check.
     CHECK( Lt( 0, enexpl::EXPL_KILLFRAME ) );
     CHECK( Le( enexpl::EXPL_KILLFRAME, 13 ) );
     CHECK( Lt( enexpl::EXPL_KILLFRAME, enexpl::EXPL_NO_KILLFRAME ) );
+}
+
+//---------------------------------------------------------------------------
+//  The constant, pinned to the shipped art.
+//
+//  EXPL_KILLFRAME is the old `AnimCount( ANIM_FRONT_1 ) / 2` written down as a
+//  simulation constant, so it has to keep equalling that for the sprites the
+//  game actually uses. This reads effect.rif with the on-disk sprite layout the
+//  loader uses (sprite.h: CSpriteHdr, CSpriteView, CSpriteDIB, 32-bit, pack(4))
+//  and re-derives the number. Path from EN_EFFECT_RIF; SKIP when the extracted
+//  data set is not on this machine, the way tests/ai/test_ai_data.cpp skips a
+//  missing stdgta.dat.
+//---------------------------------------------------------------------------
+
+// on-disk layout, from sprite.h
+const int kSpriteHdrFixed    = 4 + 4 + 4 + 4 * 8;         // compression, nViews, nSupers, CBlockInfo[4]
+const int kSuperviewInfo     = 4 * ( 8 + 4 * 4 );         // CLayoutInfo[NUM_ZOOM_LEVELS]
+const int kSpriteViewAnim0   = 128 + 32 + 4 + 4 + 4 + 4;  // reserved, anchor, superviewIdx, nHotSpots, nBase, nOverlay
+const int kEffectExplosionId = 2;                         // CEffect::explosion
+
+typedef std::vector<unsigned char> Blob;
+
+unsigned long LE32( const Blob& b, size_t at )
+{
+    if ( at + 4 > b.size( ) ) return 0;
+    return (unsigned long)b[at] | ( (unsigned long)b[at + 1] << 8 ) | ( (unsigned long)b[at + 2] << 16 ) |
+           ( (unsigned long)b[at + 3] << 24 );
+}
+
+bool ReadWhole( const char* pPath, Blob& out )
+{
+    FILE* fp = NULL;
+    fopen_s( &fp, pPath, "rb" );
+    if ( fp == NULL ) return false;
+    unsigned char buf[8192];
+    size_t        n;
+    out.clear( );
+    while ( ( n = fread( buf, 1, sizeof( buf ), fp ) ) > 0 ) out.insert( out.end( ), buf, buf + n );
+    fclose( fp );
+    return !out.empty( );
+}
+
+bool Is4( const Blob& b, size_t at, const char* p4 )
+{
+    return ( at + 4 <= b.size( ) ) && ( memcmp( &b[at], p4, 4 ) == 0 );
+}
+
+// Payload bounds of the named top-level LIST inside a RIFF of form pForm.
+bool FindList( const Blob& b, const char* pForm, const char* pList, size_t& rStart, size_t& rEnd )
+{
+    if ( b.size( ) < 12 || !Is4( b, 0, "RIFF" ) || !Is4( b, 8, pForm ) ) return false;
+    size_t end = (size_t)LE32( b, 4 ) + 8;
+    if ( end > b.size( ) ) end = b.size( );
+
+    size_t p = 12;
+    while ( p + 8 <= end )
+    {
+        const unsigned long cb = LE32( b, p + 4 );
+        if ( cb > end - ( p + 8 ) ) return false;
+        if ( Is4( b, p, "LIST" ) && cb >= 4 && Is4( b, p + 8, pList ) )
+        {
+            rStart = p + 12;
+            rEnd   = p + 8 + (size_t)cb;
+            return true;
+        }
+        p = p + 8 + (size_t)cb + ( cb & 1 );
+    }
+    return false;
+}
+
+// ANIM_FRONT_1 counts of every sprite in effect.rif carrying the explosion id,
+// in file order. Empty means the parse failed.
+std::vector<int> ExplosionFront1Counts( const Blob& b )
+{
+    std::vector<int> out;
+    size_t           s = 0, e = 0;
+    if ( !FindList( b, "EFFX", "SP24", s, e ) ) return out;
+
+    size_t p = s;
+    while ( p + 8 <= e )
+    {
+        const unsigned long cb   = LE32( b, p + 4 );
+        const size_t        body = p + 8;
+        if ( cb > e - body ) return std::vector<int>( );
+
+        if ( Is4( b, p, "DATA" ) )
+        {
+            size_t    q   = body;
+            const int iID = (short)( b[q] | ( b[q + 1] << 8 ) );
+            q += 2;
+            const long lLenTotal = (long)LE32( b, q );
+            q += 4;
+            q += 4;  // m_iType: overridden at load, not needed here
+
+            if ( ( lLenTotal != -1 ) && ( iID == kEffectExplosionId ) )
+            {
+                const size_t lHdrLen = (size_t)LE32( b, q );
+                q += 4;
+                const size_t hdr = q;
+                if ( hdr + lHdrLen > b.size( ) ) return std::vector<int>( );
+
+                const int nViews  = (int)LE32( b, hdr + 4 );
+                const int nSupers = (int)LE32( b, hdr + 8 );
+                if ( nViews <= 0 || nViews > 256 || nSupers < 0 || nSupers > 256 ) return std::vector<int>( );
+
+                const size_t offsAt = hdr + kSpriteHdrFixed + (size_t)nSupers * kSuperviewInfo;
+                for ( int v = 0; v < nViews; v++ )
+                {
+                    const size_t voff = (size_t)LE32( b, offsAt + 4 * v );
+                    const size_t at   = hdr + voff + kSpriteViewAnim0;
+                    if ( at + 4 > b.size( ) ) return std::vector<int>( );
+                    out.push_back( (int)LE32( b, at ) );
+                }
+            }
+        }
+        p = body + (size_t)cb + ( cb & 1 );
+    }
+    return out;
+}
+
+void TestConstantMatchesTheShippedArt( )
+{
+    const char* pPath = getenv( "EN_EFFECT_RIF" );
+    Blob        b;
+    if ( pPath == NULL || *pPath == 0 || !ReadWhole( pPath, b ) )
+    {
+        std::printf( "[data_expl] SKIP art measurement (set EN_EFFECT_RIF to the extracted effect.rif)\n" );
+        return;
+    }
+
+    const std::vector<int> counts = ExplosionFront1Counts( b );
+    CHECK( !counts.empty( ) );
+    if ( counts.empty( ) )
+    {
+        std::printf( "[data_expl] effect.rif did not parse - the sprite layout constants are wrong\n" );
+        return;
+    }
+
+    std::printf( "[data_expl] stock explosion ANIM_FRONT_1 counts:" );
+    for ( size_t i = 0; i < counts.size( ); i++ ) std::printf( " %d", counts[i] );
+    std::printf( "  (EXPL_KILLFRAME=%d)\n", enexpl::EXPL_KILLFRAME );
+
+    // units.rif's EXPL list names four explosion sprites and effect.rif holds
+    // exactly four with that id, so this covers every explosion a dying unit
+    // can draw.
+    CHECK_EQ( (int)counts.size( ), 4 );
+
+    for ( size_t i = 0; i < counts.size( ); i++ )
+    {
+        // A sane frame count in the first place - sprtinit.cpp:3113's bound. If
+        // this trips, the layout arithmetic above is reading the wrong field and
+        // the equality below would be meaningless.
+        CHECK( Lt( 0, counts[i] ) );
+        CHECK( Le( counts[i], 26 ) );
+
+        // ...and the actual claim: the constant IS the old art-derived value.
+        CHECK_EQ( counts[i] / 2, enexpl::EXPL_KILLFRAME );
+    }
 }
 
 //---------------------------------------------------------------------------
@@ -209,6 +369,7 @@ int main( )
     TestLongArtStillOutlivesTheRelease( );
     TestExplosionWithNoCorpseIsNotHeld( );
     TestConstantIsInsideTheBandTheOldRuleCouldProduce( );
+    TestConstantMatchesTheShippedArt( );
     TestProjbaseCallSites( );
     TestFLhaveArtIsNotGatedOnASprite( );
     return microtest::Summary( );

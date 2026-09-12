@@ -31,8 +31,15 @@
 // The production loader, compiled into this fixture.
 #include "../../windward/wind22/src/datafile.cpp"
 
+// ...and the production byte-extraction and hash walker on top of it, so the
+// RIFF byte ranges and the loose-vs-container hash parity are checked for real
+// rather than read.
+#include "../../enations_latest/src/datahash_read.h"
+#include "../../enations_latest/src/datahash_walk.h"
+
 std::vector<std::string> g_openLog;
 std::vector<std::string> g_mmioLog;
+int                      g_iRiffDataOffsetBias = 8;
 std::vector<std::string> g_msgBoxes;
 
 int EnTestMessageBox( HWND, const char* pText, const char*, UINT )
@@ -248,6 +255,18 @@ void TestFverMismatchRejectsTheLooseCopy( )
     }
     CHECK( bThrew );
     CHECK( LoggedOpen( "units\\units.rif" ) );  // it was found...
+
+    // ...and the phase-2 message names the ENTRY and the patch dir, instead of
+    // the old "ENations.dat could not be found" that sent players hunting for a
+    // file a loose-only install does not use. This is the FIRST check to reach
+    // that path; the box is a one-shot (`static bool bTold`), so it is the only
+    // place the text can be read.
+    CHECK( !g_msgBoxes.empty( ) );
+    if ( !g_msgBoxes.empty( ) )
+    {
+        CHECK( g_msgBoxes[0].find( "units" ) != std::string::npos );
+        CHECK( g_msgBoxes[0].find( "ENations.dat could not be found" ) == std::string::npos );
+    }
     df.Close( );
 }
 
@@ -509,6 +528,131 @@ void TestPinWrittenOnlyForAContainerThatOpened( )
     ::SetCurrentDirectoryA( szCwd );
 }
 
+//---------------------------------------------------------------------------
+//  The hash pipeline on top of the loader: what bytes come back, and do a
+//  loose install and a container install agree on them.
+//---------------------------------------------------------------------------
+
+Bytes ReadWholeFile( const std::string& sPath )
+{
+    Bytes b;
+    FILE* fp = NULL;
+    fopen_s( &fp, sPath.c_str( ), "rb" );
+    if ( fp == NULL ) return b;
+    unsigned char tmp[4096];
+    size_t        n;
+    while ( ( n = fread( tmp, 1, sizeof( tmp ), fp ) ) > 0 ) b.insert( b.end( ), tmp, tmp + n );
+    fclose( fp );
+    return b;
+}
+
+unsigned long HashOneRiff( CDataFile& df, const char* pEntry, const char* pForm, const char* const* ppNames,
+                           int cNames )
+{
+    std::vector<unsigned char> buf;
+    unsigned long              h = endatahash::kFnvOffset;
+    const bool                 bOk = endataread::ReadRiffEntry( df, pEntry, pForm, buf );
+    endatahash::HashSetMember( h, 0, ( bOk && !buf.empty( ) ) ? &buf[0] : NULL, bOk ? buf.size( ) : 0, ppNames,
+                               cNames );
+    return h;
+}
+
+void TestRiffBytesAreTheWholeFileUnderBothOffsetConventions( )
+{
+    const std::string sData = g_root + "\\Bytes\\data";
+    const Bytes       img   = MakeRif( "UNIT", kRifVer, "LOOSE-BYTES" );
+    WriteFile( sData + "\\units\\units.rif", img );
+
+    CDataFile df;
+    df._Init( NULL, sData.c_str( ), kRifVer );
+
+    for ( int iBias = 0; iBias < 2; iBias++ )
+    {
+        g_iRiffDataOffsetBias = iBias == 0 ? 8 : 12;
+
+        std::vector<unsigned char> buf;
+        CHECK( endataread::ReadRiffEntry( df, "units", "UNIT", buf ) );
+        CHECK_EQ( buf.size( ), img.size( ) );
+        CHECK( buf == img );
+    }
+    g_iRiffDataOffsetBias = 8;
+    df.Close( );
+}
+
+void TestLooseAndContainerHashTheSame( )
+{
+    // The property the MP guard rests on: a player running the extracted loose
+    // set and a player running the container must produce the same number.
+    const std::string sDir      = g_root + "\\Parity";
+    const std::string sDat      = sDir + "\\ENations.dat";
+    const std::string sDataOnly = sDir + "\\loose\\data";
+
+    std::vector<ContainerEntry> v = StockContainer( );
+    WriteContainer( sDat, v );
+
+    // The loose set is a byte-exact split of the container, which is what
+    // tools/data/dat_extract.py produces.
+    WriteFile( sDataOnly + "\\units\\units.rif", v[0].payload );
+    WriteFile( sDataOnly + "\\files\\stdgta.dat", v[1].payload );
+
+    unsigned long hLoose = 0, hContainer = 0;
+    {
+        CDataFile df;
+        df._Init( NULL, sDataOnly.c_str( ), kRifVer );
+        hLoose = HashOneRiff( df, "units", "UNIT", NULL, 0 );
+
+        std::vector<unsigned char> gta;
+        CHECK( endataread::ReadFileEntry( df, "stdgta.dat", gta ) );
+        CHECK_EQ( gta.size( ), v[1].payload.size( ) );
+        CHECK( gta == v[1].payload );
+        df.Close( );
+    }
+    {
+        // Container only: no patch dir at all, so every entry comes out of the
+        // 540-MB-style concatenation.
+        CDataFile df;
+        df._Init( sDat.c_str( ), NULL, kRifVer );
+        hContainer = HashOneRiff( df, "units", "UNIT", NULL, 0 );
+
+        std::vector<unsigned char> gta;
+        CHECK( endataread::ReadFileEntry( df, "stdgta.dat", gta ) );
+        CHECK_EQ( gta.size( ), v[1].payload.size( ) );
+        CHECK( gta == v[1].payload );  // TOC-derived length, not "to end of file"
+        df.Close( );
+    }
+
+    CHECK_EQ( hLoose, hContainer );
+
+    // ...and the instrument can tell an edited set apart: flip one byte of the
+    // loose unit record.
+    Bytes edited = v[0].payload;
+    edited[edited.size( ) - 1] ^= 0x01;
+    WriteFile( sDataOnly + "\\units\\units.rif", edited );
+    {
+        CDataFile df;
+        df._Init( NULL, sDataOnly.c_str( ), kRifVer );
+        CHECK( HashOneRiff( df, "units", "UNIT", NULL, 0 ) != hLoose );
+        df.Close( );
+    }
+}
+
+void TestUnreadableEntryIsAMissNotGarbage( )
+{
+    const std::string sData = g_root + "\\Missing\\data";
+    MakeDirs( sData );
+
+    CDataFile df;
+    df._Init( NULL, sData.c_str( ), kRifVer );
+    ResetLogs( );
+
+    std::vector<unsigned char> buf;
+    CHECK( !endataread::ReadRiffEntry( df, "units", "UNIT", buf ) );
+    CHECK( buf.empty( ) );  // nothing half-read is left for the hash to chew on
+    // (The loader's message box is a one-shot `static bool bTold`, so the text
+    // is checked where it FIRST fires - TestFverMismatchRejectsTheLooseCopy.)
+    df.Close( );
+}
+
 }  // namespace
 
 int main( )
@@ -537,6 +681,9 @@ int main( )
     TestOpenAsFileNameAsGivenThenFilesFallback( );
     TestManifestSelectsTheRootAndRetiresThePin( );
     TestPinWrittenOnlyForAContainerThatOpened( );
+    TestRiffBytesAreTheWholeFileUnderBothOffsetConventions( );
+    TestLooseAndContainerHashTheSame( );
+    TestUnreadableEntryIsAMissNotGarbage( );
 
     return microtest::Summary( );
 }

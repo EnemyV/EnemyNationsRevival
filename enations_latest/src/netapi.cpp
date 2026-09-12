@@ -10,6 +10,7 @@
 //
 
 #include "netapi.h"
+#include "datahashguard.h"   // the host-side data-hash predicate (015 phase 3)
 
 #include "SDL2GameDialogs.h"
 #include "enprobes.h"
@@ -692,7 +693,8 @@ static void OnMsgJoin( LPCVPPLAYERINFO pPi, BOOL bLocal, BYTE bErr )
         if ( theGame.AmServer( ) )
         {
             const BOOL bTooShort = ( pJn->m_iLen < CNetJoin::MinLen( ) );
-            if ( bTooShort || ( pJn->m_dwDataHash != theGame.m_dwDataHash ) )
+            if ( !endataguard::AcceptJoin( pJn->m_iLen, CNetJoin::MinLen( ), pJn->m_dwDataHash,
+                                           theGame.m_dwDataHash ) )
             {
                 // strPrintf is POSITIONAL (%1/%2/%3), not printf, so the two hex
                 // numbers are formatted first.
@@ -705,8 +707,25 @@ static void OnMsgJoin( LPCVPPLAYERINFO pPi, BOOL bLocal, BYTE bErr )
                 const std::string sMsg =
                     strPrintf( EnLoadStdString( IDS_DATA_MISMATCH ).c_str( ), sName.c_str( ), szTheirs, szMine );
 
+                // The refusal is the authority; the joiner does its own check
+                // first, but a modified or older client cannot be relied on to.
                 theNet.DeletePlayer( pPi->playerId );
-                EnMessageBox( sMsg.c_str( ), MB_OK | MB_ICONSTOP );
+
+                // NOT a modal box. This runs on the host inside the lobby's
+                // message pump, and EnMessageBox would stop it dead until
+                // somebody clicked (and on POSIX draws nothing at all - the
+                // MessageBoxA stub is stderr). CDlgModelessMsg is the same
+                // non-modal notification the other MP player events use, and it
+                // is SDL-rendered, so it shows on every platform.
+                char szLog[256];
+                snprintf( szLog, sizeof( szLog ), "[DATAHASH] refused '%s': joiner %s, this game %s",
+                          sName.c_str( ), szTheirs, szMine );
+                OutputDebugStringA( szLog );
+                OutputDebugStringA( "\n" );
+                theApp.Log( szLog );
+
+                CDlgModelessMsg* pDlg = new CDlgModelessMsg( );
+                pDlg->Create( sMsg.c_str( ) );
                 return;
             }
         }

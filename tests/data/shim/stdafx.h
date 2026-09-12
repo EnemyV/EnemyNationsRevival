@@ -24,6 +24,7 @@
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
 #include <commdlg.h>   // OFN_FILEMUSTEXIST, used by the .dat picker
+#include <mmsystem.h>  // MMCKINFO, for CMmio::GetRiffChunkInfo
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -286,6 +287,12 @@ class CMapStringToPtr
 //  CMmio: a real (small) RIFF reader, enough for the loader's FVER gate.
 //---------------------------------------------------------------------------
 
+//  Which convention CMmio::GetRiffChunkInfo reports for a RIFF chunk's
+//  dwDataOffset: 8 = at the form type (what the POSIX mmio shim sets,
+//  win32_compat.cpp:1040), 12 = past it (the Win32 documentation's reading).
+//  The checks run the reader under BOTH, because the game does.
+extern int g_iRiffDataOffsetBias;
+
 class CMmio
 {
   public:
@@ -310,8 +317,18 @@ class CMmio
         if ( m_riffEnd > m_buf.size( ) ) m_riffEnd = m_buf.size( );
         m_listEnd  = m_riffEnd;
         m_pos      = 12;
+
+        memset( &m_mckiRiff, 0, sizeof( m_mckiRiff ) );
+        m_mckiRiff.ckid    = mmioFOURCC( 'R', 'I', 'F', 'F' );
+        m_mckiRiff.fccType = mmioFOURCC( a, b, c, d );
+        m_mckiRiff.cksize  = (DWORD)LE32( 4 );
+        //  The RIFF sits at the start of the buffer, which is m_fileBase bytes
+        //  into the real file (non-zero for a container entry).
+        m_mckiRiff.dwDataOffset = (DWORD)( m_fileBase + (size_t)g_iRiffDataOffsetBias );
         return (DWORD)LE32( 4 );
     }
+
+    const MMCKINFO& GetRiffChunkInfo( ) const { return m_mckiRiff; }
     DWORD DescendList( char a, char b, char c, char d )
     {
         const char form[4] = { a, b, c, d };
@@ -365,6 +382,7 @@ class CMmio
     void LoadFrom( const char* pPath, size_t off )
     {
         m_buf.clear( );
+        m_fileBase = off;
         FILE* fp = NULL;
         fopen_s( &fp, pPath, "rb" );
         if ( fp == NULL ) Throw( );
@@ -389,6 +407,8 @@ class CMmio
 
     std::string       m_sFileName;
     std::vector<char> m_buf;
+    MMCKINFO          m_mckiRiff = {};
+    size_t            m_fileBase = 0;   // where m_buf[0] sits in the real file
     size_t            m_pos      = 0;
     size_t            m_riffEnd  = 0;
     size_t            m_listEnd  = 0;
