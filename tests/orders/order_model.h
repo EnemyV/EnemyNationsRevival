@@ -110,6 +110,13 @@ inline void RouteLoad(Ar &ar, Route &r, unsigned ver) {
 // ---------------------------------------------------------------------------
 enum { CUR_NULL = -1, CUR_STALE = -2 };
 
+// BUGS #99 (integration): a NULL cursor now stores an out-of-range SENTINEL, and the
+// loader honours it only on a counter >= 8 save. Counter <= 7 writers still stored N-1
+// and counter <= 7 loaders still walk to it, so the shipped behaviour of every old save
+// is unchanged. VER_RELEASE is 8 on this branch, so the sentinel is what a new save
+// carries.
+enum { ROUTE_POS_NONE = 0xffff };
+
 struct VehRoute {
     std::vector<Route> route;
     int                cursor;
@@ -128,8 +135,11 @@ inline void VehRouteStore(Ar &ar, VehRoute const &v, unsigned ver) {
         RouteStore(ar, v.route[i], ver);
         iOn++;
     }
-    if ((v.cursor == CUR_NULL) && (iOn > 0))   // BUGS #88: a NULL cursor still stores N-1
-        iPos = iOn - 1;
+    // BUGS #88 restored N-1 for a NULL cursor; BUGS #99 decided the policy question it
+    // left open - a NULL cursor means NO cursor. The sentinel is written unconditionally
+    // (this build always stamps counter 8) and read back only at counter >= 8.
+    if (v.cursor == CUR_NULL)
+        iPos = (int)ROUTE_POS_NONE;
     ar.put16((unsigned)iPos);
 
     if (ver >= 8)                              // BUGS #95: the one-shot/loop flag
@@ -147,7 +157,8 @@ inline void VehRouteLoad(Ar &ar, VehRoute &v, unsigned ver) {
 
     unsigned w = ar.get16();
     v.cursor   = CUR_NULL;
-    if (!v.route.empty())
+    bool bNone = (ver >= 8) && (w == (unsigned)ROUTE_POS_NONE);
+    if ((!bNone) && (!v.route.empty()))
         v.cursor = (w < v.route.size()) ? (int)w : CUR_NULL;   // walk exhausted -> NULL
 
     if (ver >= 8)
@@ -162,8 +173,13 @@ enum { order_none, order_sent, order_work, order_road, order_done };
 
 // m_iEvent values that matter here
 enum { ev_none, ev_build, ev_build_road, ev_repair_bldg };
-// m_cMode values that matter here
-enum { md_stop, md_moving, md_run };
+// m_cMode values that matter here. cant_deploy is the mode ExitBuilding leaves a crane
+// in when it was welded INSIDE the building it just finished (m_cOwn is FALSE there), and
+// the idle branch does not run in it - which is half of bug #114.
+enum { md_stop, md_moving, md_run, md_cant_deploy };
+
+// #114 stall watch tuning, mirrored from vehicle.cpp
+enum { ORDER_STALL_MS = 3000, ORDER_STALL_TRIES = 3 };
 
 struct Veh {
     std::vector<Route> route;
@@ -179,10 +195,20 @@ struct Veh {
     int                dispatches;   // how many requests went out (wire traffic)
     std::vector<Hex>   repairTargets;// hexes where RepairTargetLives() says yes
 
+    // #114: the traffic recovery state the stall watch must not fire through, and the
+    // watch's own two fields.
+    bool               resume;       // m_bResume - a saved job a detour will drive back to
+    int                holdFrames;   // m_iHoldFrames - a post-retreat hold is a live job
+    unsigned           nowMs;        // theGame.GettimeGetTime()
+    unsigned           orderStall;   // m_dwOrderStall
+    int                orderRetry;   // m_iOrderRetry
+    int                givenUp;      // orders the watch gave up on (EVENT_CONST_CANT)
+
     Veh()
         : cursor(CUR_NULL), loop(true), state(order_none), local(true),
           event(ev_none), mode(md_stop), site(false), orderKind(waypoint),
-          dispatches(0) {}
+          dispatches(0), resume(false), holdFrames(0), nowMs(1000),
+          orderStall(0), orderRetry(0), givenUp(0) {}
 
     Route *At(int i) { return ((i >= 0) && (i < (int)route.size())) ? &route[i] : 0; }
 
@@ -233,7 +259,9 @@ struct Veh {
         route.swap(kept);
         if (bCurGone)
             cursor = route.empty() ? CUR_NULL : 0;
-        state = order_none;
+        state      = order_none;
+        orderRetry = 0;
+        orderStall = 0;
     }
 
     // --- CVehicle::NextOrder ---
@@ -298,7 +326,9 @@ struct Veh {
 
     // --- CVehicle::OrderComplete ---
     void OrderComplete() {
-        state = order_none;
+        state      = order_none;
+        orderRetry = 0;             // #114: every order gets its own re-drive budget
+        orderStall = 0;
 
         int pos = (cursor != CUR_NULL) ? cursor : (route.empty() ? CUR_NULL : 0);
         if (pos == CUR_NULL)
@@ -322,6 +352,8 @@ struct Veh {
     void OrderFailed(Hex hex, int iBldgType) {
         bool bWasSent = (state == order_sent);
         state         = order_none;
+        orderRetry    = 0;          // #114: as above
+        orderStall    = 0;
         if (!bWasSent)
             return;
 
@@ -338,17 +370,96 @@ struct Veh {
         cursor = route.empty() ? CUR_NULL : 0;
     }
 
+    // --- CVehicle::CheckOrderStall (#114) ---
+    // An order is dispatched by NextOrder and consumed by the vehicle ARRIVING, and
+    // arriving is not guaranteed: FindNextHex's give-up exits stop a vehicle short of its
+    // destination with _SetRouteMode(stop) + PostArrivedOrBlocked, never ArrivedDest. The
+    // arming event is then never consumed and the state never leaves order_sent, so both
+    // halves of NextOrder's busy test refuse for ever.
+    void CheckOrderStall() {
+        if (state != order_sent) {
+            orderStall = 0;
+            if (state == order_none)
+                orderRetry = 0;
+            return;
+        }
+        if (site) {                       // the job started after all
+            orderStall = 0;
+            return;
+        }
+        if (resume || (holdFrames > 0)) { // a traffic detour is a job STILL under way
+            orderStall = 0;
+            return;
+        }
+
+        int armed;
+        switch (orderKind) {
+            case build:      armed = ev_build; break;
+            case build_road: armed = ev_build_road; break;
+            case repair:     armed = ev_repair_bldg; break;
+            default:         orderStall = 0; return;
+        }
+        // event cleared = the request is genuinely in flight to the server
+        if (event != armed) {
+            orderStall = 0;
+            return;
+        }
+
+        if (orderStall == 0) {            // start the dwell
+            orderStall = nowMs;
+            return;
+        }
+        if (nowMs - orderStall < (unsigned)ORDER_STALL_MS)
+            return;
+        orderStall = 0;
+
+        if (++orderRetry > ORDER_STALL_TRIES) {
+            orderRetry = 0;
+            event      = ev_none;
+            mode       = md_stop;
+            state      = order_done;      // OrderComplete, next line, consumes it
+            givenUp++;
+            return;
+        }
+        event = ev_none;                  // so NextOrder's busy test lets us back in
+        mode  = md_stop;
+        state = order_none;               // NextOrder, next line, re-dispatches it
+    }
+
+    // --- the COMPLETION half of the poll, hoisted OUT of `case stop` (#114) ---
+    // A crane's job at a site ends when its own tie to the site goes. That is a fact about
+    // the crane, not about its movement mode, so it must be read in every mode: a crane
+    // that cannot step straight out of the building it just finished sits in cant_deploy,
+    // where the idle branch never runs.
+    void PollCompletion() {
+        if (!local)
+            return;
+        if ((state == order_work) && (!site))
+            state = order_done;
+        if (state == order_done)
+            OrderComplete();
+    }
+
     // --- the idle poll in CVehicle::Operate, `case stop` ---
     // Returns true when it dispatched (production returns out of Operate there).
     bool PollIdle() {
         if (!local)
             return false;                 // the shipped `if (!IsLocal()) return;`
-        if ((state == order_work) && (!site))
-            state = order_done;
+        CheckOrderStall();
         if (state == order_done)
             OrderComplete();
         if (state == order_none)
             return NextOrder();
+        return false;
+    }
+
+    // one CVehicle::Operate call: the completion half runs before the mode switch, the
+    // dispatch half only in `case stop`.
+    bool Tick(unsigned msElapsed = 0) {
+        nowMs += msElapsed;
+        PollCompletion();
+        if (mode == md_stop)
+            return PollIdle();
         return false;
     }
 
@@ -378,6 +489,29 @@ struct Veh {
         event = ev_none;
         mode  = md_stop;
     }
+    // the ordinary end of a BUILD: the crane was welded INSIDE the building, so
+    // ExitBuilding finds m_cOwn FALSE and leaves it in cant_deploy, NOT stop.
+    void SiteDoneWeldedInside() {
+        site  = false;
+        event = ev_none;
+        mode  = md_cant_deploy;
+    }
+    // it found a free square and drove out
+    void DeployOut() { mode = md_stop; }
+
+    // FindNextHex / HandleBlocked give up SHORT of the destination: the vehicle is
+    // stopped and notified, but ArrivedDest - the only thing that consumes the arming
+    // event - never runs, so m_iEvent is left exactly as the dispatch set it.
+    void GiveUpShortOfDest() { mode = md_stop; }
+
+    // a traffic detour is under way: a hold armed and a saved job to come back to
+    void TrafficHold(int frames) { resume = true; holdFrames = frames; mode = md_stop; }
+    void HoldExpiresAndResumes() { resume = false; holdFrames = 0; mode = md_moving; }
+
+    // the repair target dies while the crane is travelling: ArrivedDest's repair_bldg
+    // case finds neither a building nor an unbuilt bridge and falls THROUGH, leaving
+    // m_iEvent == repair_bldg on a stopped crane (the review's deferred residual)
+    void ArriveAtDeadRepairTarget() { mode = md_stop; }
 };
 
 }   // namespace orders
