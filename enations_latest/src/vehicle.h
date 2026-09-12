@@ -81,7 +81,7 @@ const int HOLD_FRAMES     = 240;    // after a retreat, wait this long before re
 //   MOVER - hold this long behind a vehicle that is itself moving before we
 //           give up on it and start looking for a way around
 const DWORD TRAFFIC_WAIT_MSG   = 24;
-const DWORD TRAFFIC_WAIT_MOVER = 24 * 10;
+const DWORD TRAFFIC_WAIT_MOVER = 24;
 const int NUM_SUBS_OWNED = 4;
 
 
@@ -572,6 +572,8 @@ protected:
 		void					AssignNextHex ();
 		BOOL					TestStuck ();
 		void					HandleBlocked ();
+		BOOL					BlockedLaneStep (CSubHex &blockedStep);
+		BOOL					MustKeepLane (CSubHex &blockedStep);
 		BOOL					WaitForMover ();
 		BOOL					ResumeWaitedStep ();
 		BOOL					AskToMove (CVehicle *pAsker);

@@ -89,8 +89,8 @@ CHexCoord* CPathMgr::GetPath( CVehicle* pVehicle, CHexCoord& hexFrom, CHexCoord&
 // back as the m_iX element of the first CHexCoord
 //
 // Is every vehicle occupying this hex on the move? Such a hex is passable for
-// planning purposes - it will be clear by the time anyone routed through it
-// arrives. A stopped, blocked or waiting vehicle is a genuine obstacle.
+// planning purposes; ordinary movement must still wait for actual clearance.
+// Traffic-wait mode is transient. Explicit Stop, parked and blocked modes are obstacles.
 BOOL CPathMgr::IsHexMovingVehicle( CHexCoord const & hex )
 {
     // ALL FOUR sub-hexes: a hex is passable only if everything sitting in it is
@@ -105,7 +105,7 @@ BOOL CPathMgr::IsHexMovingVehicle( CHexCoord const & hex )
             if ( pVeh == NULL )
                 continue;
 
-            if ( !pVeh->IsOnTheMove( ) )
+            if ( pVeh->IsFlag( CUnit::stopped ) || !pVeh->IsOnTheMove( ) )
                 return ( FALSE );  // something is parked here - a real obstacle
             bAny = TRUE;
         }
