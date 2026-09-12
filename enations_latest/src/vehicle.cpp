@@ -747,16 +747,16 @@ void CVehicle::AddOrder(CHexCoord const &hex, int iType, int iBldgType, int iDir
     ASSERT_VALID (this);
     ASSERT (CRoute::IsOrder(iType));
 
-    BOOL bFresh = m_route.IsEmpty();
     CRoute *pR = new CRoute(hex, iType, iBldgType, iDir);
     if (pHexEnd != NULL)
         pR->SetEndCoord(*pHexEnd);      // build_road: the far end of the segment
     m_route.AddTail(pR);
 
-    // an order queue is one-shot: each order is consumed when its job ends. Only on
-    // a FRESH list, so queueing behind an existing loop route doesn't rewrite it.
-    if (bFresh)
-        m_bRouteLoop = FALSE;
+    // An order queue is ONE-SHOT: each order is consumed when its job ends. Set on
+    // every append, not only a fresh list - m_bRouteLoop defaults TRUE (ctor, and
+    // every pre-8 save), and a looping order list would rebuild the same building
+    // for ever instead of moving on.
+    m_bRouteLoop = FALSE;
 
     if (GetRoutePos() == NULL)
         SetRoutePos(m_route.GetHeadPosition());
@@ -905,9 +905,12 @@ void CVehicle::OrderComplete() {
     if (pR == NULL)
         return;
 
-    // only consume the order we actually dispatched (a plain, unqueued build matches
-    // nothing here and simply leaves the list alone)
-    if ((pR->GetRouteType() != m_iOrderKind) || (!(pR->GetCoord() == m_hexOrder)))
+    // Only consume the order we actually dispatched. The IsOrder test is what keeps a
+    // plain, unqueued build (which dispatches nothing, so m_iOrderKind is still its
+    // waypoint initialiser) from matching - and deleting - a movement waypoint that
+    // happens to sit at the same hex.
+    if ((!CRoute::IsOrder(m_iOrderKind)) ||
+        (pR->GetRouteType() != m_iOrderKind) || (!(pR->GetCoord() == m_hexOrder)))
         return;
 
     if (m_bRouteLoop) {

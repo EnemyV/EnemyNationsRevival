@@ -490,8 +490,9 @@ public:
 		void					OrderFailed (CHexCoord const & hex, int iBldgType);
 		CList <CRoute *, CRoute *> &	GetRouteList () { ASSERT_STRICT_VALID (this); return (m_route); }
 		// Looping vs one-shot route. TRUE (default) = the legacy behavior (cycle back to
-		// the first stop at the end); FALSE = stop at the last stop. Runtime-only (not
-		// serialized — defaults to looping on load to preserve save compatibility).
+		// the first stop at the end); FALSE = stop at the last stop. Serialized from save
+		// release 8 (BUGS #95); a pre-8 save does not carry it, so such a route still
+		// comes back looping - the ctor default.
 		BOOL				GetRouteLoop () const { return (m_bRouteLoop); }
 		void				SetRouteLoop (BOOL b) { m_bRouteLoop = b; }
 		POSITION			GetRoutePos () const { ASSERT_STRICT_VALID (this); return (m_pos); }
