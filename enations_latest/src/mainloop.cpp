@@ -2810,13 +2810,18 @@ void CPowerBuilding::BuildPower( )
 
     float fPower = GetFrameProd( 1 );
 
-    // Coal Liquefaction mode (bug #43): when this coal plant's alt-output toggle is ON and
-    // the tech is researched, it STOPS feeding the colony power grid and instead converts
-    // its coal into oil (the conversion runs below via AltOutput::Convert). So while the
-    // toggle is active we suppress the AddPwrHave() calls -- the plant produces oil, not
-    // power. (No-op for non-coal plants / toggle OFF / un-researched: bCoalLiq stays false
-    // and power generation is byte-identical to before.)
-    const bool bCoalLiq = IsFlag( CUnit::alt_oil ) && ( AltOutput::Available( this ) != nullptr );
+    // AltOutput mode-switch, split into its TWO independent halves. Conflating them is what
+    // the single old bCoalLiq flag did, and it is why moving a def would have changed shipped
+    // behaviour two phases early:
+    //   bAltStopsPower -- POWER half. DERIVED (a store-consuming conversion def on a UTpower
+    //                     host), so it is TRUE for today's Coal Liquefaction exactly as
+    //                     bCoalLiq was: the plant feeds no power to the grid and instead DRAWS
+    //                     2 power to run the conversion.
+    //   bAltTimeDriven -- PRODUCTION half. The def's own explicit m_eDrive. FALSE for every def
+    //                     shipped today, so the fuel-burn path below is byte-identical.
+    const AltOutput::AltOutputDef* pAlt = IsFlag( CUnit::alt_oil ) ? AltOutput::Available( this ) : nullptr;
+    const bool bAltStopsPower = pAlt && AltOutput::StopsPower( this, pAlt );
+    const bool bAltTimeDriven = pAlt && ( pAlt->m_eDrive == AltOutput::EDrive::eTimeDriven );
 
     if ( pBp->GetInput( ) < 0 )
     {
@@ -2825,6 +2830,105 @@ void CPowerBuilding::BuildPower( )
         GetOwner( )->AddPwrHave( (int)( (float)pBp->GetPower( ) * fPower ) );
         return;
     }
+
+    if ( bAltTimeDriven )
+    {
+        // ---- TIME-DRIVEN conversion (a kiln / liquefaction plant) --------------------------
+        // No fuel is burned at all. The conversion runs off the plant's own production
+        // accumulator and consumes the DEF's input material; GetRate( ) is reused as the
+        // CONVERSION period, so the existing per-type tuning knob still applies. Unreachable
+        // until a def sets m_eDrive = eTimeDriven.
+        const int iIn    = pAlt->m_iInputMat;
+        const int iRatio = AltOutput::InputRatio( this, pAlt );
+        if ( ( iRatio <= 0 ) || ( pBp->GetRate( ) <= 0 ) )
+        {
+            AnimateOperating( FALSE );
+            return;
+        }
+
+        // Can't fund ONE whole batch -> not operating. Same rule as IsOperating( ) and
+        // EffInputBatch( ). Note what is deliberately NOT here: the fuel path's low-fuel
+        // discard branch below. On a fuel plant "burned the last of it" is correct; applied to
+        // a kiln's lumber it would DELETE trucked input without converting it. Sub-batch input
+        // is simply left in the store.
+        if ( GetStore( iIn ) < iRatio )
+        {
+            AnimateOperating( FALSE );
+            return;
+        }
+
+        AnimateOperating( TRUE );
+
+        // The POWER half stays on the DERIVED flag -- unchanged from shipped Coal-Liq behaviour.
+        if ( !bAltStopsPower )
+            GetOwner( )->AddPwrHave( (int)( (float)pBp->GetPower( ) * fPower ) );
+        else
+            GetOwner( )->AddPwrNeed( 2 );
+
+        int iInc = GetProd( 1 );
+        if ( iInc <= 0 )
+            return;
+        m_iBuildDone += iInc;
+
+        if ( m_iBuildDone < pBp->GetRate( ) )
+            return;
+
+        int iNum = m_iBuildDone / pBp->GetRate( );      // conversion batches elapsed this tick
+
+        // Batch TIME is spent whether or not the store could fund it. That is the deliberate
+        // half of the accumulator decision: unfunded time is DISCARDED, so a starved plant
+        // banks no debt and there is no burst the moment a truck arrives, and m_iBuildDone
+        // stays bounded below Rate exactly as it does on the fuel path.
+        //
+        // The other half is caller-side too, and it is why AltOutput::Convert( ) is NOT
+        // modified (it is shared with the fuel-driven Coal-Liq and Charcoal callers, which must
+        // stay byte-identical): Convert's eRatioConsume branch credits fAccum BEFORE it clamps
+        // to what the store can afford, so a starved caller banks unfunded OUTPUT forever and
+        // dumps it in one burst later. This caller can never trigger that, because it only ever
+        // passes iDo * iRatio -- an exact whole-batch input quantity the store already holds --
+        // so fWant is an integer, fAccum returns to exactly 0 after every call, and nothing is
+        // ever banked.
+        m_iBuildDone -= iNum * pBp->GetRate( );
+
+        int iAfford = GetStore( iIn ) / iRatio;         // whole batches the store can fund
+        int iDo     = __min( iNum, iAfford );
+
+        // The ONE consumer of the TRUE consumption rate. Everything router-facing keeps the
+        // router's own units instead (see CPowerBuilding::GetNextMinuteMat).
+        int i1Min   = EffInputPerMin( );
+        int iBefore = GetStore( iIn );
+
+        // Convert( ) takes the INPUT quantity, not the batch count.
+        if ( iDo > 0 )
+            AltOutput::Convert( this, iDo * iRatio, m_fAltAccum );
+
+        int iAfter = GetStore( iIn );
+        if ( iAfter < iRatio )
+        {
+            // Ran dry this tick. Ask the router HERE, once: from the next tick the top gate
+            // returns before any notification path, so this is the last chance to ask.
+            AnimateOperating( FALSE );
+            theGame.Event( EVENT_MANUF_HALTED, EVENT_WARN, this );
+            if ( GetOwner( )->IsMe( ) )
+                theGame.m_pHpRtr->MsgOutMat( this );
+            else
+                MaterialMessage( );
+        }
+        else if ( ( iBefore >= i1Min ) && ( iAfter < i1Min ) )
+        {
+            // Crossed the 1-minute mark this tick -- ask for more. Sampled AFTER Convert( ) for
+            // the same reason the fuel path does: Convert drains the store with no router
+            // notification of its own.
+            if ( GetOwner( )->IsMe( ) )
+                theGame.m_pHpRtr->MsgOutMat( this );
+        }
+
+        // update the %
+        MaterialChange( );
+        return;
+    }
+
+    // ---- FUEL-DRIVEN (every def shipped today; unchanged apart from bCoalLiq's rename) -----
 
     // if we have nothing to burn there is nothing to do -- and it isn't operating, so stop the
     // animation (operator: a coal-liq plant with no coal shouldn't animate).
@@ -2839,7 +2943,7 @@ void CPowerBuilding::BuildPower( )
     // add in our power if we have any input materials left -- UNLESS we're in coal-liq mode,
     // where the burned coal becomes oil instead of power AND the plant DRAWS 2 power to run the
     // conversion (operator).
-    if ( !bCoalLiq )
+    if ( !bAltStopsPower )
         GetOwner( )->AddPwrHave( (int)( (float)pBp->GetPower( ) * fPower ) );
     else
         GetOwner( )->AddPwrNeed( 2 );
@@ -3021,23 +3125,97 @@ void CFarmBuilding::BuildFarm( )
         GrowFields( );
     UpdateFieldStage( FARM_HARVEST_SLOW * GetData( )->GetBldFarm( )->GetTimeToFarm( ) );
 
+    // EXHAUSTED SITE -- draw nothing at all, exactly like a depleted mine (operator).
+    // m_iTerMult is the 0..10 terrain multiplier and it is the whole of fMul below, so at 0 this
+    // farm can never yield anything: it is the mill's equivalent of CMineBuilding's
+    // `m_iMinerals <= 0`. Mirror that hook's shape -- and note WHERE it sits, which is the point
+    // of the fix: BuildMine returns BEFORE AddPwrNeed/AddPplNeedBldg, so a dead mine costs the
+    // colony no power and no workers. A mill that has slashed its own box flat was still paying
+    // full upkeep for nothing.
+    //
+    // Reachable only since Slash and Burn: before it, terrain never changed at runtime, so a
+    // built farm's m_iTerMult never fell. (A food farm sited on zero-fertility soil hits the same
+    // path; same rule, and it is correct for it too.)
+    //
+    // `stopped` is what CBuilding::Operate gates on (m_unitFlags & (stopped | abandoned)), so the
+    // building idles instead of ticking. It is self-correcting rather than a one-way door: if the
+    // flag is ever cleared while the site is still barren, the next tick simply re-sets it.
+    if ( m_iTerMult <= 0 )
+    {
+        m_iBuildDone = 0;
+        SetFlag( stopped );
+        m_iLastPer = 0;
+        AnimateOperating( FALSE );
+        return;
+    }
+
     // add in its power & people usuage
     GetOwner( )->AddPwrNeed( GetData( )->GetPower( ) );
     // Agricultural Subsidy edict bumps only the farm's own worker requirement (default ×1.0).
     GetOwner( )->AddPplNeedBldg(
         (int)( GetData( )->GetPeople( ) * GetOwner( )->GetEdictFarmWorkerMult( ) + 0.5f ) );
 
+    CBuildFarm* pBf = GetData( )->GetBldFarm( );
+
     // BUGBUG - pull this from the adjoining hexes!!!
     float fMul = GetOwner( )->GetFarmProd( ) * m_iTerMult;
 
-    CBuildFarm* pBf = GetData( )->GetBldFarm( );
+    // Slash and Burn: this mill cuts at 250% while its toggle is on. Per-BUILDING, no CPlayer
+    // state and no edict multiplier chain. Food farms are untouched BY CONSTRUCTION --
+    // SlashBurnActive( ) requires a lumber mill -- so the multiplier can never leak onto food.
+    if ( SlashBurnActive( ) )
+        fMul *= AltOutput::SLASH_BURN_MULT;
+
     // get the productivity of this farm and add it to our total
     if ( pBf->GetTypeFarm( ) == CMaterialTypes::food )
         GetOwner( )->AddFoodProd(
             GetFrameProdNoPeople( fMul * float( 24 * 60 * pBf->GetQuantity( ) ) / float( pBf->GetTimeToFarm( ) ) ) );
 
+    // Slash and Burn: destroy forest on TIME, on every tick this mill actually produces -- not
+    // only on harvest ticks. The gate is the per-FRAME production rate, which is the exact
+    // expression of "does this mill produce at all": GetFrameProdNoPeople is
+    // m_fDamPerfMult * fMul * powerFactor with NO accumulator and NO truncation, so it is > 0
+    // exactly when all three factors are. The three real self-terminating gates are therefore
+    // preserved exactly:
+    //   - a stopped / abandoned / event-wedged mill never reaches BuildFarm at all (Operate),
+    //   - a mill wrecked to zero damage-performance has m_fDamPerfMult == 0,
+    //   - a mill that has cut its own box down to fertility 0 has fMul == 0,
+    //     so it stops slashing exactly when it stops yielding.
+    // Do NOT gate on GetProdNoPeople( fMul ) instead. That returns the TRUNCATED per-tick
+    // increment, which is 0 on many ticks for a weak mill (it carries the remainder in
+    // m_fOperMod), so those ticks would contribute no accrual and SLASH_HEXES_PER_MINUTE would
+    // silently run at roughly half rate at fertility 1 -- the dial would not mean what it says.
+    // (Note this does NOT exclude an unpowered mill: the lumber mill has a non-zero
+    // CStructureData::GetNoPower, so it keeps producing at a reduced rate without power and
+    // keeps slashing. That is existing behaviour, not a choice made here.)
+    // "Is this mill actually harvesting?" -- the per-FRAME production rate. Computed once and
+    // used for BOTH the animation and the slash gate, because it is the same question.
+    const BOOL bProducing = ( GetFrameProdNoPeople( fMul ) > 0.0f );
+
+    // Stop the harvest animation when it is NOT harvesting (operator-reported). A mill that has
+    // slashed its own box down to fertility 0 keeps standing and keeps animating while yielding
+    // nothing. Before Slash and Burn that state was effectively unreachable -- terrain never
+    // changed at runtime, so a built mill's m_iTerMult never fell -- which is why BuildFarm never
+    // had to turn the animation off and, unlike BuildPower, never called AnimateOperating at all.
+    //
+    // Gate on the RATE, never on the truncated iInc below: iInc is 0 on many ticks for a weak
+    // mill (the remainder carries in m_fOperMod), so gating on it would strobe the animation and,
+    // because AnimateOperating posts CMsgBldgStat on every state CHANGE, spam that message across
+    // the network every few frames. AnimateOperating is idempotent, so calling it each tick with
+    // an unchanged value costs nothing -- the same pattern BuildPower already uses.
+    //
+    // NOTE this also covers food farms (fertility 0, or wrecked to m_fDamPerfMult == 0), which
+    // previously kept animating too. Same rule, one line, and it is the correct answer for them
+    // as well -- but it IS a behaviour change slightly wider than Slash and Burn itself.
+    AnimateOperating( bProducing );
+
+    if ( SlashBurnActive( ) && bProducing )
+        SlashTick( );
+
     // get change based on everything
     // farms are special - no people degradation
+    // (Must still run exactly once per tick, and after the slash gate above: it advances
+    // m_fOperMod.)
     int iInc = GetProdNoPeople( fMul );
     if ( iInc <= 0 )
         return;
@@ -3062,37 +3240,13 @@ void CFarmBuilding::BuildFarm( )
     }
     else
     {
-        // Charcoal (#44), via the reusable AltOutput system: when this is a LUMBER MILL (the
-        // sawmill) whose alt-output toggle (alt_oil) is ON and the Charcoal tech is
-        // researched, it runs a kiln that converts harvested lumber into coal ("Charcoal")
-        // at a fixed 2 lumber -> 1 coal (eRatioConsume). MODE-SWITCH: while the kiln runs,
-        // normal lumber output STOPS -- we feed only a TIER-SCALED slice of the harvest into
-        // the mill's store as kiln fuel (GetCharcoalPct; T1 very low) and credit no player
-        // lumber, so the 2:1 ratio stays fixed while throughput scales with research.
-        if ( pBf->GetTypeFarm( ) == CMaterialTypes::lumber
-             && IsFlag( CUnit::alt_oil )
-             && AltOutput::Available( this ) )
-        {
-            int iPct  = GetOwner( )->GetCharcoalPct( );
-            int iFeed = ( dtRate.quot * iPct ) / 100;   // tier-scaled lumber into the kiln
-            if ( iFeed > 0 )
-            {
-                // Stage the kiln feed in BOTH the mill store and the player have-total so it
-                // matches Convert's eRatioConsume bookkeeping (it decrements both by the lumber
-                // it consumes). Net player lumber change is ~zero (mode-switch) and coal is
-                // credited by Convert. We do NOT IncMaterialMade the lumber -- it becomes coal,
-                // and Convert already records the coal as made.
-                AddToStore( pBf->GetTypeFarm( ), iFeed );
-                GetOwner( )->IncMaterialHave( pBf->GetTypeFarm( ), iFeed );
-                AltOutput::Convert( this, iFeed, m_fAltAccum );
-            }
-        }
-        else
-        {
-            AddToStore( pBf->GetTypeFarm( ), dtRate.quot );
-            GetOwner( )->IncMaterialMade( pBf->GetTypeFarm( ), dtRate.quot );
-            GetOwner( )->IncMaterialHave( pBf->GetTypeFarm( ), dtRate.quot );
-        }
+        // The lumber mill has no alt-output mode any more: Charcoal moved to the COAL POWER
+        // PLANT, where the kiln is fed TRUCKED lumber instead of a slice of this mill's own
+        // harvest (see the Charcoal def in altoutput.cpp). So a mill always credits its full
+        // harvest, exactly as it did before Charcoal was ever hosted here.
+        AddToStore( pBf->GetTypeFarm( ), dtRate.quot );
+        GetOwner( )->IncMaterialMade( pBf->GetTypeFarm( ), dtRate.quot );
+        GetOwner( )->IncMaterialHave( pBf->GetTypeFarm( ), dtRate.quot );
     }
 
     // update the %
