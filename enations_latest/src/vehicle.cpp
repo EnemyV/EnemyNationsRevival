@@ -41,6 +41,12 @@ void EnBridgeDbgLog( const char* pszMsg )
 }
 #endif
 
+// #114 stall watch tuning. The dwell is long enough that a couple of frames of
+// movement re-planning never trips it, short enough that a wedged queue recovers
+// while the player is still looking at it.
+static DWORD const ORDER_STALL_MS    = 3000;   // idle-but-armed before a re-drive
+static int   const ORDER_STALL_TRIES = 3;      // re-drives before the order is given up
+
 int aiBaseDir[9] = {7, 6, 5, 0, 0, 4, 1, 2, 3};
 int aiDir[9] = {7 * EIGHTH_ROT, 6 * EIGHTH_ROT, 5 * EIGHTH_ROT, 0, 0, 4 * EIGHTH_ROT, 1 * EIGHTH_ROT, 2 * EIGHTH_ROT,
                 3 * EIGHTH_ROT};
@@ -265,6 +271,25 @@ void CVehicle::Operate() {
             AddDamageThisTurn(this, dtKill.quot);
     }
 
+    // #38 ORDER QUEUE, COMPLETION HALF (bug #114). A crane's job at a site ends when its
+    // own tie to that site goes - finished, destroyed, or taken away. That is a fact about
+    // the CRANE, not about its movement mode, and it must be read OUTSIDE case stop.
+    // CBuilding::Construct -> CVehicle::StopConstruction -> ExitBuilding leaves a crane
+    // that was welded INSIDE the finished building with m_cOwn FALSE, and ExitBuilding
+    // then puts it in cant_deploy, not stop (vehmove.cpp ~1994). The idle branch never
+    // runs there, so a crane that could not step straight out of the building it had just
+    // finished never noticed it was done and its queue stopped for good. Reading it here
+    // costs one BYTE compare per vehicle per tick and cannot fire early: order_work is set
+    // only by ConstructBuilding, which returns before it if there is no site.
+    // Already owner-gated, so a remote copy still advances nothing.
+    if (GetOwner()->IsLocal()) {
+        if ((m_iOrderState == order_work) && (m_pBldg == NULL)) {
+            m_iOrderState = order_done;
+        }
+        if (m_iOrderState == order_done)
+            OrderComplete();
+    }
+
     // first we handle combat stuff
     HandleCombat();
 
@@ -300,13 +325,15 @@ void CVehicle::Operate() {
             // #38 ORDER QUEUE. Idle is the only safe place to advance it: every other
             // mode means a job is running. Already under GetOwner()->IsLocal(), so a
             // remote copy of this vehicle never dispatches anything.
-            //   order_work + no site -> this vehicle's job at the site ENDED (finished,
-            //                           or the site was destroyed / taken away)
-            //   order_done           -> consume that order
-            //   order_none           -> start the next one, and stop processing this
-            //                           tick as "idle" - we just stopped being idle
-            if ((m_iOrderState == order_work) && (m_pBldg == NULL))
-                m_iOrderState = order_done;
+            // The COMPLETION half now runs before the switch (see the block above
+            // HandleCombat) so a crane stuck in cant_deploy still sees its site finish.
+            // What is left here is DISPATCH, which genuinely needs an idle vehicle:
+            //   CheckOrderStall -> a dispatched order whose arrival never happened is
+            //                      re-driven, or given up so the queue moves on (#114)
+            //   order_done      -> consume the order the stall watch just gave up on
+            //   order_none      -> start the next one, and stop processing this tick as
+            //                      "idle" - we just stopped being idle
+            CheckOrderStall();
             if (m_iOrderState == order_done)
                 OrderComplete();
             if (m_iOrderState == order_none)
@@ -786,6 +813,8 @@ void CVehicle::ClearOrders() {
         SetRoutePos(m_route.GetHeadPosition());
 
     m_iOrderState = order_none;
+    m_iOrderRetry = 0;              // #114: as above
+    m_dwOrderStall = 0;
 }
 
 // Is there still something at this hex for a repair order to work on? The same two
@@ -909,14 +938,113 @@ BOOL CVehicle::NextOrder() {
     return (TRUE);
 }
 
+// BUG #114: A DISPATCHED ORDER WHOSE ARRIVAL NEVER HAPPENS.
+//
+// NextOrder dispatches; the vehicle ARRIVING is what consumes the dispatch, because
+// CVehicle::ArrivedDest is the only caller of BuildBldg (build), BuildRoad (build_road)
+// and StartConst (repair). But arriving is not guaranteed. vehmove.cpp's FindNextHex has
+// two give-up exits - "heading into the last sub-hex and within one of it" (~990) and
+// "we already tried twice" (~1094) - and both stop the vehicle with
+//    _SetRouteMode (stop); PostArrivedOrBlocked ();
+// which NOTIFIES but does NOT perform the arrival. The vehicle is then parked, idle, with
+// the event the dispatch armed still set and m_iOrderState still order_sent, and nothing
+// in the engine clears either one: NextOrder's busy test refuses on both, for ever, and
+// every remaining order on the list is dead. The repair order whose target dies while the
+// crane is travelling reaches the same state from the other side - ArrivedDest's
+// repair_bldg case finds neither a building nor an unbuilt bridge and falls through,
+// leaving m_iEvent == repair_bldg (the residual the review deferred).
+//
+// So watch for IDLE BUT ARMED, and give it a way out:
+//   - a DWELL, because a frame or two of that state is legal while the movement code
+//     re-plans, and because a stall is not urgent;
+//   - never through a TRAFFIC DETOUR: a hold or a pending resume is a job that is still
+//     running, and Operate's hold block / ResumeJob will put us back on the destination;
+//   - then RE-DRIVE the same order - NextOrder re-arms the event, re-picks the closest
+//     footprint hex and asks for a fresh path - up to ORDER_STALL_TRIES times;
+//   - then GIVE IT UP, with the same warning a refused placement gives, so a site that
+//     cannot be reached costs one order instead of the whole queue.
+void CVehicle::CheckOrderStall() {
+
+    ASSERT_VALID (this);
+
+    // Only inside the dispatch window. order_work has a site of its own to watch,
+    // order_road ends at NextRoadHex's terminal branches, and order_none / order_done
+    // are not waiting on anything.
+    if (m_iOrderState != order_sent) {
+        m_dwOrderStall = 0;
+        if (m_iOrderState == order_none)
+            m_iOrderRetry = 0;          // the next order starts with a full budget
+        return;
+    }
+
+    // a site attached means the job started after all
+    if (m_pBldg != NULL) {
+        m_dwOrderStall = 0;
+        return;
+    }
+
+    // A traffic detour is a job STILL UNDER WAY. The hold is counted down by Operate and
+    // ResumeJob drives us back to m_subResume - the original destination - so re-driving
+    // through one would cancel the very recovery that is about to deliver us.
+    if (m_bResume || (m_iHoldFrames > 0)) {
+        m_dwOrderStall = 0;
+        return;
+    }
+
+    // The event this dispatch armed. Cleared (none) means the request is genuinely IN
+    // FLIGHT: BuildBldg and BuildRoad both clear m_iEvent on the line they send from, and
+    // that window - one server round trip - is exactly what order_sent exists to name.
+    VEH_EVENT iArmed;
+    switch (m_iOrderKind) {
+        case CRoute::build:
+            iArmed = CVehicle::build;
+            break;
+        case CRoute::build_road:
+            iArmed = CVehicle::build_road;
+            break;
+        case CRoute::repair:
+            iArmed = CVehicle::repair_bldg;
+            break;
+        default:
+            m_dwOrderStall = 0;         // not an order kind we dispatch
+            return;
+    }
+    if (m_iEvent != iArmed) {
+        m_dwOrderStall = 0;
+        return;
+    }
+
+    DWORD dwNow = theGame.GettimeGetTime();
+    if (m_dwOrderStall == 0) {
+        m_dwOrderStall = dwNow;         // start the dwell
+        return;
+    }
+    if (dwNow - m_dwOrderStall < ORDER_STALL_MS)
+        return;
+    m_dwOrderStall = 0;
+
+    if (++m_iOrderRetry > ORDER_STALL_TRIES) {
+        m_iOrderRetry = 0;
+        SetEventAndRoute(none, stop);   // drop the stale arming event
+        m_iOrderState = order_done;     // the poll's OrderComplete consumes the order
+        if (GetOwner()->IsMe())
+            theGame.Event(EVENT_CONST_CANT, EVENT_WARN, this);
+        return;
+    }
+
+    SetEventAndRoute(none, stop);       // so NextOrder's busy test lets us back in
+    m_iOrderState = order_none;         // the poll's NextOrder re-dispatches this order
+}
+
 // The order the vehicle was running has ENDED - finished, halted or given up on. Used
 // by the road paths, which have their own end conditions and no site to watch: a road
 // run ends inside NextRoadHex / ConstructRoad rather than by detaching from a building.
 // A no-op when nothing was under way, so the plain (unqueued) road commit is unaffected.
 void CVehicle::OrderEnded() {
 
-    if (m_iOrderState != order_none)
+    if (m_iOrderState != order_none) {
         m_iOrderState = order_done;
+    }
 }
 
 // THIS vehicle's job at the site has ended. Consume the order it was running so the
@@ -937,6 +1065,8 @@ void CVehicle::OrderComplete() {
     ASSERT_VALID (this);
 
     m_iOrderState = order_none;
+    m_iOrderRetry = 0;              // #114: every order gets its own re-drive budget
+    m_dwOrderStall = 0;
 
     POSITION pos = (m_pos != NULL) ? m_pos : m_route.GetHeadPosition();
     if (pos == NULL)
@@ -983,6 +1113,8 @@ void CVehicle::OrderFailed(CHexCoord const &hex, int iBldgType) {
     // answered either way: the crane is no longer waiting on the server
     BOOL bWasSent = (m_iOrderState == order_sent);
     m_iOrderState = order_none;
+    m_iOrderRetry = 0;              // #114: as above
+    m_dwOrderStall = 0;
     if (!bWasSent)
         return;
 

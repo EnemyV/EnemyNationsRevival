@@ -495,6 +495,9 @@ public:
 		void					OrderEnded ();
 		void					OrderFailed (CHexCoord const & hex, int iBldgType);
 		BOOL					RepairTargetLives (CHexCoord const & hex) const;
+		// BUG #114: an order that was dispatched but whose arrival never happened.
+		// Polled from the idle branch; may re-drive the order or give it up.
+		void					CheckOrderStall ();
 		CList <CRoute *, CRoute *> &	GetRouteList () { ASSERT_STRICT_VALID (this); return (m_route); }
 		// Looping vs one-shot route. TRUE (default) = the legacy behavior (cycle back to
 		// the first stop at the end); FALSE = stop at the last stop. Serialized from save
@@ -669,6 +672,15 @@ protected:
 		BYTE				m_iOrderState;					// ORDER_STATE of the order being run
 		CHexCoord		m_hexOrder;						// identity of the order dispatched - the
 		BYTE				m_iOrderKind;					//   list can change while the job runs
+		// BUG #114 stall watch. A dispatched order is consumed by the vehicle ARRIVING:
+		// ArrivedDest is the only caller of BuildBldg / StartConst. Several 1996 give-up
+		// exits (vehmove.cpp FindNextHex ~990 and ~1094, HandleBlocked) stop a vehicle
+		// SHORT of its destination with _SetRouteMode(stop) + PostArrivedOrBlocked - not
+		// ArrivedDest - so the arming event is never consumed and m_iOrderState stays
+		// order_sent. Both halves of NextOrder's busy test then refuse for ever. These two
+		// give that state a dwell and a bounded re-drive. Runtime only, like the state.
+		DWORD				m_dwOrderStall;				// ms the idle-but-armed state was first seen (0 = not watching)
+		BYTE				m_iOrderRetry;					// re-drives spent on the order at the cursor
 		CSubHex				m_ptDest;								// final sub-hex we are going to
 		CHexCoord			m_hexDest;							// final hex we are going to
 		CHexCoord			m_hexLastDest;					// to stop back and forth

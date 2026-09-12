@@ -5432,6 +5432,8 @@ void CVehicle::ctor( )
     m_iOrderState = order_none;   // #38 order queue: nothing under way
     m_iOrderKind  = CRoute::waypoint;
     m_hexOrder    = CHexCoord( 0, 0 );
+    m_dwOrderStall = 0;           // #114 stall watch: not watching, full re-drive budget
+    m_iOrderRetry  = 0;
     m_phexPath = NULL;
     m_iPathOff = 0;
     m_iPathLen = 0;
@@ -6225,6 +6227,24 @@ void CVehicle::StopConstruction( CBuilding* pBldg )
         {
             pVeh->m_pBldg = NULL;
             pVeh->SetEvent( none );
+
+            // BUG #114. told_ai_stop says "this vehicle's owner has already been told it
+            // is parked". The crane was told that when it ARRIVED at the site, and
+            // nothing between arrival and completion clears it (StartConst and
+            // ConstructBuilding never call SetDestAndMode, which is what normally
+            // clears it). A crane welded INSIDE the building comes out of ExitBuilding
+            // below in cant_deploy, and cant_deploy's only escape - the 30-second
+            // "backup method" that forces stop and re-notifies - is gated on
+            // !told_ai_stop (vehicle.cpp, case cant_deploy). With the flag still set
+            // from the arrival, that escape can never fire: a crane that cannot step
+            // straight out of the building it just finished stays in cant_deploy, the
+            // idle branch never runs, and its order queue is dead. The job it was
+            // reported parked for is over, so the report is stale: drop it and let the
+            // ordinary stop/deploy machinery notify again. Same reasoning, and the same
+            // one-line shape, as the hold expiry in CVehicle::Operate.
+            if ( pVeh->GetOwner( ) != NULL && pVeh->GetOwner( )->IsLocal( ) )
+                pVeh->m_bFlags &= ~told_ai_stop;
+
             pVeh->ExitBuilding( );
             pVeh->MaterialChange( );
         }
