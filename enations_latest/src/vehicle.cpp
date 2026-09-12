@@ -1052,6 +1052,64 @@ BOOL CVehicle::NextOrder() {
     return (TRUE);
 }
 
+// Is m_iEvent still the event THIS dispatch armed? Event `none` on a dispatched order
+// means the request is genuinely in flight - BuildBldg and BuildRoad both clear the event
+// on the line they send from - and that window is what order_sent exists to name, not a
+// failure. FALSE for a plain, unqueued job too: its m_iOrderKind is not an order kind.
+BOOL CVehicle::ArmedForOrder() const {
+
+    switch (m_iOrderKind) {
+        case CRoute::build:      return (m_iEvent == CVehicle::build);
+        case CRoute::build_road: return (m_iEvent == CVehicle::build_road);
+        case CRoute::repair:     return (m_iEvent == CVehicle::repair_bldg);
+    }
+    return (FALSE);
+}
+
+// WinAstra finding 4: A GIVE-UP IS A FAILED ARRIVAL, AND IT SAYS SO AT ONCE.
+//
+// FindNextHex has two exits that stop the vehicle SHORT of its destination and report it
+// with PostArrivedOrBlocked - "heading into the last sub-hex" (vehmove.cpp ~990) and "we
+// already tried twice" (~1096). PostArrivedOrBlocked is a NOTIFICATION; its own comment
+// says it "does not perform ArrivedDest, building entry, route advance or load/unload".
+// So the arrival that would have consumed the dispatch - ArrivedDest is the only caller of
+// BuildBldg, BuildRoad and StartConst - is never going to run, and the dispatch is dead
+// the instant those lines execute. Say so here rather than leaving CheckOrderStall's
+// three-second dwell to discover it: the watchdog stays as the backstop for the give-ups
+// that do NOT come through these two exits, but it is no longer the primary path.
+//
+// The budget is the SAME one CheckOrderStall spends, so a run of give-ups on one order
+// cannot loop: within budget the order is re-driven on the next idle tick (a fresh
+// GetPath, which is what a blocked approach actually needs), and once it is spent the
+// order is given up and the queue moves on.
+void CVehicle::OrderArrivalFailed() {
+
+    if (m_iOrderState != order_sent)
+        return;                         // nothing dispatched, or already working
+    if (m_pBldg != NULL)
+        return;                         // the job started after all
+    if (m_bResume || (m_iHoldFrames > 0))
+        return;                         // a traffic detour: ResumeJob owns this vehicle
+    if (!ArmedForOrder())
+        return;                         // request in flight, or a plain unqueued job
+
+    m_dwOrderStall = 0;                 // the watchdog has nothing left to discover
+
+    if (++m_iOrderRetry > ORDER_STALL_TRIES) {
+        ORDER_PROBE("arrival-drop", "gave up short of the site - order given up");
+        m_iOrderRetry = 0;
+        SetEvent(none);                 // mode is already stop at both call sites
+        m_iOrderState = order_done;     // the idle poll's OrderComplete consumes it
+        if (GetOwner()->IsMe())
+            theGame.Event(EVENT_CONST_CANT, EVENT_WARN, this);
+        return;
+    }
+
+    ORDER_PROBE("arrival-redrive", "gave up short of the site - re-driving");
+    SetEvent(none);
+    m_iOrderState = order_none;         // the idle poll's NextOrder re-dispatches it
+}
+
 // BUG #114: A DISPATCHED ORDER WHOSE ARRIVAL NEVER HAPPENS.
 //
 // NextOrder dispatches; the vehicle ARRIVING is what consumes the dispatch, because
@@ -1108,22 +1166,7 @@ void CVehicle::CheckOrderStall() {
     // The event this dispatch armed. Cleared (none) means the request is genuinely IN
     // FLIGHT: BuildBldg and BuildRoad both clear m_iEvent on the line they send from, and
     // that window - one server round trip - is exactly what order_sent exists to name.
-    VEH_EVENT iArmed;
-    switch (m_iOrderKind) {
-        case CRoute::build:
-            iArmed = CVehicle::build;
-            break;
-        case CRoute::build_road:
-            iArmed = CVehicle::build_road;
-            break;
-        case CRoute::repair:
-            iArmed = CVehicle::repair_bldg;
-            break;
-        default:
-            m_dwOrderStall = 0;         // not an order kind we dispatch
-            return;
-    }
-    if (m_iEvent != iArmed) {
+    if (!ArmedForOrder()) {
         m_dwOrderStall = 0;
         return;
     }

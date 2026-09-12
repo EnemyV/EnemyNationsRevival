@@ -628,16 +628,32 @@ void CVehicle::ArrivedDest() {
             CBuilding *pBldg = theBuildingHex._GetBuilding(m_ptHead);
             if (pBldg != NULL) {
                 ASSERT_VALID (pBldg);
-                StartConst(pBldg);
+                StartConst(pBldg);           // a building to work on - unchanged
                 break;
             }
 
             CBridgeUnit *pBu = theBridgeHex.GetBridge(m_ptHead);
             if (pBu != NULL) {
                 CBridge *pBridge = pBu->GetParent();
-                if ((pBridge != NULL) && (!pBridge->IsBuilt()))
+                if ((pBridge != NULL) && (!pBridge->IsBuilt())) {
                     SetEventAndRoute(CVehicle::build_road, CVehicle::run);
+                    break;                   // an unfinished bridge to finish - unchanged
+                }
             }
+
+            // NOTHING TO REPAIR HERE. The target died while we were travelling, or the
+            // bridge was finished by somebody else meanwhile. 1996 fell out of this case
+            // leaving m_iEvent == repair_bldg on a stopped vehicle with no work - which
+            // NextOrder's busy test (vehicle.cpp) then refuses on for ever, so a queued
+            // repair whose target dies AFTER dispatch killed the whole queue. The
+            // dispatch-time RepairTargetLives check cannot see this: the target was alive
+            // when the order went out. Finish the arrival properly instead - go genuinely
+            // idle, and tell the order layer the job is over so the idle poll consumes it.
+            // A plain, unqueued repair click reaches the same two lines: OrderEnded is a
+            // no-op when nothing was dispatched, and "stopped with no event" is what an
+            // arrival with nothing to do always should have left behind.
+            SetEventAndRoute(none, stop);
+            OrderEnded();
             break;
         }
 
@@ -989,6 +1005,7 @@ BOOL CVehicle::GetNextHex(BOOL bNew) {
         m_bFlags &= ~at_end_of_path;
         _SetRouteMode(stop);
         PostArrivedOrBlocked();
+        OrderArrivalFailed();   // #38: stopped short - ArrivedDest will never run
         return (FALSE);
     }
 
@@ -1094,6 +1111,7 @@ BOOL CVehicle::GetNextHex(BOOL bNew) {
                     // if we already tried twice then lets just stop
                     _SetRouteMode(stop);
                     PostArrivedOrBlocked();
+                    OrderArrivalFailed();   // #38: as above - a give-up, not an arrival
                     return (FALSE);
                 }
 

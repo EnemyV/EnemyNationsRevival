@@ -502,6 +502,10 @@ public:
 		// BUG #114: an order that was dispatched but whose arrival never happened.
 		// Polled from the idle branch; may re-drive the order or give it up.
 		void					CheckOrderStall ();
+		// Finding 4: a movement give-up that stops the vehicle SHORT of its destination
+		// tells the order layer at once, instead of leaving it to the watchdog's dwell.
+		void					OrderArrivalFailed ();
+		BOOL					ArmedForOrder () const;
 #if EN_GAMEPLAY_PROBES
 		// one dispatch-trace line, carrying every field NextOrder's busy test reads
 		void					OrderProbe (char const * pszWhat, char const * pszWhy = NULL) const;
