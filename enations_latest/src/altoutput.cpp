@@ -217,7 +217,7 @@ namespace
         //    (CMineBuilding::FrackTick), not here.
         {
             "Fracking",
-            "Revives this exhausted oil well to trickle oil, at +50% power cost",
+            "Revives this exhausted oil well to trickle oil, at triple power cost",
             &IsExhaustedOilWell,
             &TechFrack,
             CMaterialTypes::oil,         // notional input (not consumed in eFlatTrickle)
@@ -232,10 +232,11 @@ namespace
 
         // 5) Moho Mining (NEW) -- an EXHAUSTED iron mine trickles a flat iron rate when toggled,
         //    exactly like Fracking on an oil well (shares the generic UTmine FrackTick path +
-        //    its +50% power surcharge). eFlatTrickle, ~10 iron/min. Tech-gated on mine_2.
+        //    its +50% power surcharge). eFlatTrickle, 10 iron/min at the mine_2-granted base
+        //    tier, rising +1 per moho_2..moho_6 upgrade to 15 (CPlayer::GetMohoIronPerMin).
         {
             "Moho Mining",
-            "Revives this exhausted iron mine to trickle iron, at +50% power cost",
+            "Revives this exhausted iron mine to trickle iron, at a heavy flat power cost",
             &IsExhaustedIronMine,
             &TechMoho,
             CMaterialTypes::iron,        // notional input (not consumed in eFlatTrickle)
@@ -251,13 +252,52 @@ namespace
             0                            // m_nMulti
         },
 
-        // 6) Scrounging (NEW) -- the WAREHOUSE scrounges a small multi-resource trickle when
-        //    toggled: emergency income at a cost. eMultiTrickle, default-enabled. Costs 25 workers
-        //    and DOUBLES the warehouse's power draw while ON (m_iPowerMultAdd=1).
+        // 6) Scrounging -- the WAREHOUSE scrounges a small multi-resource trickle when toggled:
+        //    emergency income at a cost. eMultiTrickle, no tech gate. Costs 30 WORKERS and nothing
+        //    else (m_iPowerMultAdd=0).
+        //    It used to double the warehouse's power draw (m_iPowerMultAdd=1). Dropped as an
+        //    operator design call, NOT because power is inert -- power is a real cost, and an
+        //    earlier note here claimed otherwise. Correcting the record, because the claim is easy
+        //    to re-derive wrongly: CPlayer::m_fPwrMult IS consumed, by five production functions in
+        //    building.inl (GetProd, GetProdNoPeople, GetProdNoDamage, GetFrameProd,
+        //    GetFrameProdNoPeople), each gating on
+        //        if ( GetOwner()->GetPwrMult() < 1 )
+        //            fInc *= GetNoPower() + ( 1 - GetNoPower() ) * GetPwrMult();
+        //    i.e. a colony in power DEFICIT has every building's output dragged toward that
+        //    building type's GetNoPower() floor. The trap that produced the wrong conclusion: a
+        //    grep over *.cpp/*.h misses .inl entirely, and caimgr.cpp:5399 declares an unrelated
+        //    GetPwrMult() on the AI manager that a search lands on first.
+        //    So the cost is real but CONDITIONAL: it is free while the colony runs a power
+        //    surplus, and bites colony-wide only once need passes have -- the same shape as the
+        //    workforce cost via m_fPplMult. Restoring it is a legitimate balance option (set
+        //    m_iPowerMultAdd back to 1); raising m_iWorkforceAdd is the other lever, and the one
+        //    that competes in the same currency as the rocket's Desperate Measures.
+        //    TERRAIN-SCALED (m_bTerrainScaled=true): EVERY line below is the yield at a PERFECT
+        //    site. MultiLinesFor scales each by this warehouse's own ground -- lumber =
+        //    3 * forestMult / 10, food = 2 * soilMult / 10, iron and coal = 3 * scrapMult / 10.
+        //    ForestMultAt and the scrounge soil scan are 0..10; the two scrap scales run 0..20
+        //    because mountain rock counts double, so solid rock scrounges ~6 iron + ~5 coal where
+        //    ordinary broken ground caps at 3 + 3 and forest (half weight) at 2 + 1. Iron and coal
+        //    are SEPARATE scales because city ground yields only iron and roadbed only coal.
+        //    The scaling ROUNDS (see MultiLinesFor), so a middling site pays one unit rather than
+        //    nothing: ~17% forest cover buys the first lumber, fertility 3 (hill, marsh, water)
+        //    the first food, ~15% of a mountain ring the first iron.
+        //    Every terrain in the game now yields SOMETHING, so "Nothing here to scrounge" is
+        //    effectively unreachable -- it is kept as an honest fallback, not a live case. What
+        //    varies is how much and of what: 8/min on solid rock down to 1/min on bare roadbed.
+        //    Worst case (rock/road): 4 units/min for 30 workers = 0.13 per worker. A realistic
+        //    forest site (forestMult 8) runs ~7/min = 0.23. That is now ABOVE Desperate Measures
+        //    per worker (25/min per DESPERATE_RATE_PER=200 workers = 0.125) -- deliberate: the two
+        //    are no longer competing on efficiency. Scrounging is capped per warehouse (30 workers
+        //    each, and you must have built the warehouse where the trees are); Desperate Measures
+        //    is uncapped, conscripting HALF the colony's idle labour at once. Efficiency vs scale.
         //    (The rocket's richer version, Desperate Measures, is a civ-wide edict, not AltOutput.)
         {
             "Scrounging",
-            "Scrounge base resources: +5 lumber, +2 iron, +2 food, +2 coal / min; costs 25 workers and doubles power while on",
+            "Scrounge from the land: what this warehouse yields is decided by the ground around it --\n"
+            "lumber from forest, food from soil, marsh and water, iron and coal from rough country\n"
+            "and richest on bare mountain rock, plus salvage off city ground and roadbeds.\n"
+            "Costs 30 workers while on.",
             &IsWarehouse,
             &TechAlways,
             CMaterialTypes::lumber,
@@ -267,10 +307,18 @@ namespace
             nullptr,
             0,
             1.0f,
-            25,                          // m_iWorkforceAdd (25 workers)
-            1,                           // m_iPowerMultAdd (double the warehouse's power while ON)
-            { { CMaterialTypes::lumber, 5 }, { CMaterialTypes::iron, 2 }, { CMaterialTypes::food, 2 }, { CMaterialTypes::coal, 2 } },
-            4
+            30,                          // m_iWorkforceAdd (30 workers)
+            0,                           // m_iPowerMultAdd (no extra power -- see the note above)
+            // every line is the PERFECT-site yield, terrain-scaled per warehouse (MultiLinesFor);
+            // iron/coal DOUBLE these on solid mountain rock, which scores 20 on a 0..10 scale
+            { { CMaterialTypes::lumber, 3 }, { CMaterialTypes::iron, 3 }, { CMaterialTypes::food, 2 }, { CMaterialTypes::coal, 3 } },
+            4,
+            nullptr,                     // m_pfnRatioIn (unused)
+            AltOutput::EDrive::eFuelDriven, // m_eDrive: spelled out, NOT omitted. m_eDrive now sits
+                                         // ahead of m_bTerrainScaled in the struct tail, so a bare
+                                         // trailing `true` would bind to it -- see the EDrive note
+                                         // in altoutput.h. Scrounging is a trickle and burns fuel.
+            true                         // m_bTerrainScaled: lumber + food scale with the site
         },
 
         // 7) Slash and Burn -- the LUMBER MILL cuts at 250% while the toggle is ON, and
@@ -389,7 +437,7 @@ namespace AltOutput
             theGame.m_pHpRtr->MsgOutMat( pBldg );
     }
 
-    void Convert( CBuilding* pBldg, int iAmount, float& fAccum )
+    void Convert( CBuilding* pBldg, int iAmount, float& fAccum, float fThrottle )
     {
         if ( iAmount <= 0 )
             return;
@@ -441,7 +489,10 @@ namespace AltOutput
             if ( iRate <= 0 )
                 return;
 
-            fAccum += ( (float)iRate * (float)iAmount ) / OPERS_PER_MINUTE;
+            // fThrottle is the caller's production multiplier (damage / workforce / power).
+            // Applied here, in float, so a partial tick keeps its remainder in fAccum.
+            if ( fThrottle < 0.0f ) fThrottle = 0.0f;
+            fAccum += ( (float)iRate * (float)iAmount * fThrottle ) / OPERS_PER_MINUTE;
             int iWantOut = (int)fAccum;
             if ( iWantOut <= 0 )
                 return;
@@ -553,6 +604,53 @@ namespace AltOutput
         }
     }
 
+    int MultiLinesFor( CBuilding* pBldg, const AltOutputDef* pDef, AltMat* pOut )
+    {
+        if ( !pDef || !pOut )
+            return ( 0 );
+
+        int nLines = ( pDef->m_nMulti < kMaxMulti ) ? pDef->m_nMulti : kMaxMulti;
+        for ( int i = 0; i < nLines; i++ )
+            pOut[i] = pDef->m_aMulti[i];
+
+        // Not terrain-scaled (or not a warehouse host): the table lines ARE the rates.
+        if ( !pDef->m_bTerrainScaled || !pBldg
+             || ( pBldg->GetData( )->GetUnionType( ) != CStructureData::UTwarehouse ) )
+            return ( nLines );
+
+        // Scrounging: scale the wood and food lines by what is actually around this warehouse.
+        // Both mults are 0..10 and cached on the building (the scan is a hex enumeration).
+        CWarehouseBuilding* pWh     = (CWarehouseBuilding*)pBldg;
+        int                 iForest = pWh->GetScroungeForestMult( );
+        int                 iSoil   = pWh->GetScroungeSoilMult( );
+        int                 iIron   = pWh->GetScroungeIronMult( );
+        int                 iCoal   = pWh->GetScroungeCoalMult( );
+        // ONE rounding, here, and nowhere else. The mults arrive in HUNDREDTHS of the 0..10
+        // scale (UpdateScrounge asks the scans for 100x), so the divisor is 1000 and the
+        // round-to-nearest term is half of it. Every term is non-negative, so the usual
+        // signed-rounding trap does not apply.
+        //
+        // Two roundings is what this shipped with and it was wrong twice over. Truncating the
+        // AVERAGE inside each scan threw away up to a full multiplier point before the rate was
+        // computed -- a systematic downward bias, worst exactly where the weights are small. That
+        // is what made an ordinary town warehouse (a MIX of city and road, each averaging ~1.8,
+        // each truncating to 1) score zero on every line and report "Nothing here to scrounge".
+        // Rounding once, at the end, keeps the fractions that decide these small numbers.
+        const int kScale = 1000;
+        for ( int i = 0; i < nLines; i++ )
+        {
+            if ( pOut[i].m_iMat == CMaterialTypes::lumber )
+                pOut[i].m_iPerMin = ( pOut[i].m_iPerMin * iForest + kScale / 2 ) / kScale;
+            else if ( pOut[i].m_iMat == CMaterialTypes::food )
+                pOut[i].m_iPerMin = ( pOut[i].m_iPerMin * iSoil + kScale / 2 ) / kScale;
+            else if ( pOut[i].m_iMat == CMaterialTypes::iron )
+                pOut[i].m_iPerMin = ( pOut[i].m_iPerMin * iIron + kScale / 2 ) / kScale;
+            else if ( pOut[i].m_iMat == CMaterialTypes::coal )
+                pOut[i].m_iPerMin = ( pOut[i].m_iPerMin * iCoal + kScale / 2 ) / kScale;
+        }
+        return ( nLines );
+    }
+
     void ConvertMulti( CBuilding* pBldg, int iAmount, float* afAccum )
     {
         if ( !pBldg->IsFlag( CUnit::alt_oil ) )
@@ -560,6 +658,9 @@ namespace AltOutput
         const AltOutputDef* pDef = Available( pBldg );
         if ( !pDef || ( pDef->m_eMode != eMultiTrickle ) )
             return;
-        CreditTrickle( pBldg, iAmount, afAccum, pDef->m_aMulti, pDef->m_nMulti );
+        // Credit what this SITE yields, not what the table says -- see MultiLinesFor.
+        AltMat aLines[kMaxMulti];
+        int    nLines = MultiLinesFor( pBldg, pDef, aLines );
+        CreditTrickle( pBldg, iAmount, afAccum, aLines, nLines );
     }
 }

@@ -768,9 +768,14 @@ public:
 			int p = (int)( m_fAltAccum * 100.0f );
 			return ( p < 0 ) ? 0 : ( p > 100 ? 100 : p );
 		}
-		// eMultiTrickle (Desperate/Scrounging) progress: line 0 accumulator as a representative bar.
+		// eMultiTrickle (Desperate/Scrounging) progress: the FURTHEST-ALONG line as a representative
+		// bar. Line 0 alone sits dead at 0 for a terrain-scaled Scrounging warehouse whose site
+		// yields no lumber, even though its other lines are ticking along fine.
 		int						GetAltProgressPerMulti () const {
-			int p = (int)( m_afAltAccum[0] * 100.0f );
+			float fMax = m_afAltAccum[0];
+			for ( int i = 1; i < 4; i++ )
+				if ( m_afAltAccum[i] > fMax ) fMax = m_afAltAccum[i];
+			int p = (int)( fMax * 100.0f );
 			return ( p < 0 ) ? 0 : ( p > 100 ? 100 : p );
 		}
 
@@ -1166,7 +1171,29 @@ public:
 
 		virtual void GetAccepts (int * pVals) const;
 
+		// Scrounging (AltOutput): what the ground around THIS warehouse is made of, on three
+		// 0..10 scales - forest cover, soil fertility (both as the farm and mill placement
+		// preview shows them), and broken ground (rough / hill / desert, mountain double). Every line of
+		// the Scrounging toggle scales with one of them, so the SITE decides what it yields:
+		// woods give lumber, good soil gives food, rough country gives scrap iron and coal,
+		// and a warehouse paved into the city core gives nothing at all. Scanned on first use
+		// and cached (terrain never changes at runtime); see CWarehouseBuilding::UpdateScrounge.
+		int				GetScroungeForestMult ();
+		int				GetScroungeSoilMult ();
+		int				GetScroungeIronMult ();
+		int				GetScroungeCoalMult ();
+		void			UpdateScrounge ();
+
 protected:
+
+		// -1 = not scanned yet (also the state after a load - these are runtime-only).
+		// HUNDREDTHS of the 0..10 scale (so 0..1000; the two scrap ones reach 2000 because
+		// mountain counts double). MultiLinesFor does the single rounding - do NOT truncate
+		// these to whole multipliers on the way past, that bug shipped once already.
+		LONG			m_iScrForest = -1;
+		LONG			m_iScrSoil   = -1;
+		LONG			m_iScrIron   = -1;
+		LONG			m_iScrCoal   = -1;
 
 #ifdef _DEBUG
 public:
@@ -1268,6 +1295,26 @@ public:
 								~CFarmBuilding ();
 
 		static int		LandMult (CHexCoord _hex, int iTyp, int iDir);
+
+		// The two halves of LandMult, usable by any building that wants to know what its
+		// own site is made of (Scrounging asks this of a warehouse). Both 0..10: forest
+		// coverage over the footprint+3 ring, soil fertility over the footprint+1 ring.
+		// ScrapMultsAt is the third of the set (not part of LandMult - no farm wants it):
+		// scrap-bearing ground over the footprint+2 ring - rough / hill / desert at full
+		// weight, mountain DOUBLE, forest HALF, plus city (iron only) and road (coal only).
+		// Iron and coal are SEPARATE scales, so it fills two outputs in one pass. Scale is
+		// 0..20, not 0..10: rock beats the cap.
+		// iScale multiplies the result before the divide, so a caller can keep fractional
+		// precision the whole-number average would throw away: Scrounging passes 100 and
+		// rounds ONCE at the end. Farms/mills omit it and get the historic 0..10.
+		static int		ForestMultAt (CHexCoord _hex, int iTyp, int iDir, int iScale = 1);
+		static int		SoilMultAt (CHexCoord _hex, int iTyp, int iDir);
+		static void		ScrapMultsAt (CHexCoord _hex, int iTyp, int iDir, int * piIron, int * piCoal,
+									  int iScale = 1);
+		// SoilMultAt as SCROUNGING sees it - identical except bog and water read 6, so a
+		// warehouse on a marsh or a shoreline forages 1 food. Farms keep SoilMultAt; nothing
+		// of theirs moves.
+		static int		ScroungeSoilMultAt (CHexCoord _hex, int iTyp, int iDir, int iScale = 1);
 		virtual int		GetProductionPer () const;
 		void					BuildFarm ();
 
