@@ -100,6 +100,7 @@ struct BldgData { int type = 0; int GetType() const { return type; } };
 struct CBuilding {
     CHexCoord hex;
     BldgData  data;
+    int cx = 1, cy = 1; // supplementary scene footprint, default preserves existing cases
     CHexCoord const &GetHex() const { return hex; }
     BldgData const  *GetData() const { return &data; }
 };
@@ -108,7 +109,8 @@ struct BuildingHex {
     std::vector<CBuilding *> live;
     CBuilding *_GetBuilding(CHexCoord h) const {
         for (CBuilding *b : live)
-            if (b->hex == h) return b;
+            if (h.X() >= b->hex.X() && h.X() < b->hex.X()+b->cx &&
+                h.Y() >= b->hex.Y() && h.Y() < b->hex.Y()+b->cy) return b;
         return nullptr;
     }
     void Add(CBuilding *b) { live.push_back(b); }
@@ -459,6 +461,38 @@ int main() {
         v.SiteGone();
         check(Tick(v), "load/repair: the finished repair is consumed and the build starts");
         check_eq(v.m_route.GetCount(), 1, "load/repair: one row left");
+    }
+
+
+    // WinAstra supplementary check: non-origin repair tile of a 2x2 site.
+    // The production identity/dispatch/completion methods remain unchanged.
+    {
+        theBuildingHex.live.clear();
+        CVehicle v; v.owner = &g_me;
+        CBuilding target; target.hex=CHexCoord(8,8); target.cx=2; target.cy=2;
+        theBuildingHex.Add(&target);
+        v.AddOrder(CHexCoord(9,9), CRoute::repair, 0, 0);
+        v.AddOrder(CHexCoord(40,40), CRoute::build, 5, 0);
+        check(v.NextOrder()!=FALSE, "multihex: non-origin repair dispatches");
+        v.ArriveAndSend(); v.ServerAccept(&target); v.SaveLoadRoundTrip(); v.WorkTick();
+        check_eq(v.m_iOrderKind, CRoute::repair, "multihex: loaded repair identity restored");
+        check(v.m_hexOrder==CHexCoord(9,9), "multihex: identity preserves clicked tile, not origin");
+        check_eq(v.requests,1,"multihex: reidentification sends no extra request");
+        theBuildingHex.Kill(&target); v.SiteGone();
+        check(Tick(v),"multihex: completion dispatches the following build");
+        check_eq(v.m_route.GetCount(),1,"multihex: completed repair consumed exactly once");
+        check_eq(v.m_hexOrder.X(),40,"multihex: next build owns the new identity");
+    }
+    {
+        theBuildingHex.live.clear();
+        CVehicle v; v.owner=&g_me;
+        CBuilding ordered, welded;
+        ordered.hex=CHexCoord(8,8); ordered.cx=2; ordered.cy=2;
+        welded.hex=CHexCoord(20,20);
+        theBuildingHex.Add(&ordered); theBuildingHex.Add(&welded);
+        v.AddOrder(CHexCoord(9,9),CRoute::repair,0,0);
+        v.m_pBldg=&welded; v.ReestablishOrderIdentity();
+        check_eq(v.m_iOrderKind,CRoute::waypoint,"multihex: different welded instance is not matched");
     }
 
     // ---------------------------------------------------------------- FINDING 4
