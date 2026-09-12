@@ -3960,22 +3960,178 @@ static int fnLumberFromGround( CHex* pHex, CHexCoord, void* pData )
     return ( FALSE );
 }
 
-int CFarmBuilding::LandMult( CHexCoord _hex, int iTyp, int iDir )
+// Forest coverage around a building of type iTyp placed at _hex (0..10, 10 = every hex in the
+// ring is forest). The lumber mill's half of LandMult, split out so a NON-farm building can ask
+// the same question about its own footprint -- the Scrounging warehouse scrounges wood from the
+// trees it sits among. Ring: the footprint grown by 3 hexes on every side.
+int CFarmBuilding::ForestMultAt( CHexCoord _hex, int iTyp, int iDir, int iScale )
 {
 
     CStructureData const* pData = theStructures.GetData( iTyp );
     int                   cx    = iDir & 1 ? pData->GetCY( ) : pData->GetCX( );
     int                   cy    = iDir & 1 ? pData->GetCX( ) : pData->GetCY( );
 
-    if ( iTyp == CStructureData::lumber )
+    // get the number of forest hexes
+    int iRtn = 0;
+    _hex.X( _hex.X( ) - 3 );
+    _hex.Y( _hex.Y( ) - 3 );
+    theMap.EnumHexes( _hex, cx + 6, cy + 6, fnLumberFromGround, &iRtn );
+    // iScale defaults to 1, so the mill/farm callers get the historic 0..10. Scrounging asks for
+    // 100 and divides once at the end instead -- see the note on ScrapMultsAt.
+    return ( ( iRtn * iScale ) / ( ( cx + 6 ) * ( cy + 6 ) ) );
+}
+
+// Broken ground -- rough, hill, mountain (rock) and desert (sand) -- around a building of type
+// iTyp placed at _hex. This is what Scrounging picks scrap iron and coal out of, so it is a TYPE
+// test, not a fertility test: rough ground has FarmMult 6 (more fertile than forest), while road
+// and city sit at 0 along with all the water, so "fertility == 0" would select pavement and lakes
+// and reject the one tile we most want.
+//
+// Iron and coal ride SEPARATE scales -- they used to share one, but city yields iron only and
+// road yields coal only (operator), so one number cannot carry both. Same ring, same pass, two
+// accumulators.
+//
+// Scale is 0..20, NOT 0..10 like the forest and soil scans: bare mountain rock is worth DOUBLE
+// (operator's call), so a ring of solid mountain returns 20 and scrounges the full 4 iron + 4
+// coal, while ordinary broken ground tops out at 10 for 3 + 3 and forest at 5 for 2 + 1. Nothing
+// clamps this -- the 20 is the point. Keep MultiLinesFor's /10 in step with the 10 used here.
+//
+// Forest at HALF weight is the closest this pipeline can get to the half-unit the operator asked
+// for: AltMat::m_iPerMin is an int, so 0.5/min cannot be credited. Half the MULTIPLIER can, and
+// with the perfect-site base at 2 a solid forest ring lands on exactly 1 iron + 1 coal -- half of
+// what rough ground gives. If a true 0.5/min is ever wanted, m_iPerMin has to become a float.
+//
+// City 6 / road 6 are the salvage lines: a warehouse walled in by its own colony strips 1 iron
+// out of the rubble, one on a road network scrapes 1 coal off the traffic, and neither is enough
+// to matter next to real ground -- 2 on a ring of nothing else, 1 on the mixed city/road ground
+// a real town warehouse actually stands in. They were capped at 1 until the iron/coal base went
+// 2 -> 3; a pure road ring scores 6 * 32/36 = 5.33, and 3 * 5.33 / 10 = 1.6, which ROUNDS UP.
+// That is deliberate now (operator asked for a warehouse in a road network to be worth more than
+// 1), but note what it means: road and city are the only PLAYER-PLACEABLE terrain in this whole
+// system -- every other weight is whatever the map generator gave you. So these two are the only
+// ones a player can farm by building, and paving a ring is cheap and unlimited. If that ever
+// reads as an exploit, drop both to 4: that restores the 1 cap under the base-3 rates without
+// touching any natural terrain.
+//
+// They shipped at 3 and that was a BUG, reported from a live game as "Nothing here to scrounge"
+// on a perfectly ordinary town warehouse. 3 is the least weight that clears the 1-unit threshold,
+// so it only paid out on a ring of 100% city or 100% road -- and a real town warehouse sits in a
+// MIX of the two, where each line averages ~1.8, truncates to 1, and scores nothing. Every line
+// then read zero and the toggle declared the site barren. The lesson generalises: a weight sitting
+// exactly ON its threshold is unreachable in practice, because no real ring is pure.
+//
+// NOTE the building's own footprint turns to CHex::city on completion (fnBuildOnHex), so every
+// warehouse carries a few city hexes. Still far too few to reach the bar alone (a 3x3 pad is 9 of
+// 49 -> 6*9/49 = 1), so this does not quietly hand every site in the game a free iron.
+struct ScrapAccum { int iIron; int iCoal; };
+
+static int fnScrapFromGround( CHex* pHex, CHexCoord, void* pData )
+{
+
+    ScrapAccum* pAcc  = (ScrapAccum*)pData;
+    int         iType = pHex->GetType( );
+    if ( iType == CHex::mountain )
     {
-        // get the number of forest hexes
-        int iRtn = 0;
-        _hex.X( _hex.X( ) - 3 );
-        _hex.Y( _hex.Y( ) - 3 );
-        theMap.EnumHexes( _hex, cx + 6, cy + 6, fnLumberFromGround, &iRtn );
-        return ( iRtn / ( ( cx + 6 ) * ( cy + 6 ) ) );
+        pAcc->iIron += 20;           // bare rock -- twice the scrap of any other broken ground
+        pAcc->iCoal += 20;
     }
+    else if ( ( iType == CHex::rough ) || ( iType == CHex::hill ) || ( iType == CHex::desert ) )
+    {
+        pAcc->iIron += 10;
+        pAcc->iCoal += 10;
+    }
+    else if ( iType == CHex::forest )
+    {
+        pAcc->iIron += 5;            // deadfall and bog iron -- half a scrap tile
+        pAcc->iCoal += 5;
+    }
+    else if ( iType == CHex::city )
+        pAcc->iIron += 6;            // salvage: scrap metal out of the built-up ground
+    else if ( iType == CHex::road )
+        pAcc->iCoal += 6;            // salvage: coal dust and cinders off the roadbed
+    return ( FALSE );
+}
+
+// Soil as SCROUNGING sees it: the farm's fertility, overridden for the two kinds of ground a
+// FORAGER can eat off but a plough cannot -- bog and water, which read 6 here against a true
+// fertility of 2 and 0. Kept separate from SoilMultAt on purpose: that one is the FARM's, and it
+// feeds farm output, the placement preview and the AI's site ratings, none of which should shift
+// because a warehouse learned to forage.
+//
+// 6, not the 3 this shipped with. 3 was chosen as the least value that clears the 1-food
+// threshold -- which meant it only ever cleared it on a ring of NOTHING BUT marsh. Mix in a
+// single dry hex and the average fell under the bar and paid zero. Every weight here needs
+// headroom against dilution, because real ground is mixed; see fnScrapFromGround, which had the
+// same defect and produced "Nothing here to scrounge" on an ordinary town warehouse.
+static int fnScroungeSoilFromGround( CHex* pHex, CHexCoord, void* pData )
+{
+
+    int iType = pHex->GetType( );
+    int iMult;
+    if ( ( iType == CHex::swamp ) || ( iType == CHex::lake ) || ( iType == CHex::ocean )
+         || ( iType == CHex::river ) || ( iType == CHex::coastline ) )
+        iMult = 6;                   // forage the marsh / fish the water
+    else
+        iMult = theTerrain.GetData( iType ).GetFarmMult( );
+    *( (int*)pData ) += iMult;
+    return ( FALSE );
+}
+
+// Ring: footprint+2, matching the scrap scan. NOT the farm's footprint+1, which this used to
+// copy and which quietly crippled the food line: the ring is squared, so at +1 a 2x2 warehouse
+// gets 4x4 = 16 hexes of which its own 4-hex pad is FOUR -- 25% of the food scan reading the
+// building's own concrete, against 11% for scrap (+2) and 6% for forest (+3). The food line was
+// taxed four times harder than lumber purely by ring geometry, and it cost a real tile: a hill
+// ring scored 3 * 12/16 = 2.25, just under the 2.5 bar, so hills fed nobody. At +2 it is 36
+// hexes, the pad is 11%, and hills feed 1 as intended.
+//
+// The farm keeps SoilMultAt at +1 -- a farm works the soil it stands on, a forager ranges wider.
+int CFarmBuilding::ScroungeSoilMultAt( CHexCoord _hex, int iTyp, int iDir, int iScale )
+{
+
+    CStructureData const* pData = theStructures.GetData( iTyp );
+    int                   cx    = iDir & 1 ? pData->GetCY( ) : pData->GetCX( );
+    int                   cy    = iDir & 1 ? pData->GetCX( ) : pData->GetCY( );
+
+    int iRtn = 0;
+    _hex.X( _hex.X( ) - 2 );
+    _hex.Y( _hex.Y( ) - 2 );
+    theMap.EnumHexes( _hex, cx + 4, cy + 4, fnScroungeSoilFromGround, &iRtn );
+    return ( ( iRtn * iScale ) / ( ( cx + 4 ) * ( cy + 4 ) ) );
+}
+
+// Ring: the footprint grown by 2 hexes per side -- wider than the soil scan (scrap is scavenged,
+// not farmed) and tighter than the forest scan (you cannot drag rubble in from 3 hexes out).
+// Fills BOTH scales in one pass; either may be null if a caller only wants the other.
+void CFarmBuilding::ScrapMultsAt( CHexCoord _hex, int iTyp, int iDir, int* piIron, int* piCoal,
+                                  int iScale )
+{
+
+    CStructureData const* pData = theStructures.GetData( iTyp );
+    int                   cx    = iDir & 1 ? pData->GetCY( ) : pData->GetCX( );
+    int                   cy    = iDir & 1 ? pData->GetCX( ) : pData->GetCY( );
+
+    ScrapAccum acc = { 0, 0 };
+    _hex.X( _hex.X( ) - 2 );
+    _hex.Y( _hex.Y( ) - 2 );
+    theMap.EnumHexes( _hex, cx + 4, cy + 4, fnScrapFromGround, &acc );
+
+    int iHexes = ( cx + 4 ) * ( cy + 4 );
+    if ( piIron )
+        *piIron = ( acc.iIron * iScale ) / iHexes;
+    if ( piCoal )
+        *piCoal = ( acc.iCoal * iScale ) / iHexes;
+}
+
+// Soil fertility around a building of type iTyp placed at _hex (the average per-hex FarmMult;
+// the placement preview calls < 2 unusable and < 5 poor). The food farm's half of LandMult,
+// split out for the same reason as ForestMultAt. Ring: the footprint grown by 1 hex per side.
+int CFarmBuilding::SoilMultAt( CHexCoord _hex, int iTyp, int iDir )
+{
+
+    CStructureData const* pData = theStructures.GetData( iTyp );
+    int                   cx    = iDir & 1 ? pData->GetCY( ) : pData->GetCX( );
+    int                   cy    = iDir & 1 ? pData->GetCX( ) : pData->GetCY( );
 
     // get the terrain multiplier
     int iRtn = 0;
@@ -3985,10 +4141,72 @@ int CFarmBuilding::LandMult( CHexCoord _hex, int iTyp, int iDir )
     return ( iRtn / ( ( cx + 2 ) * ( cy + 2 ) ) );
 }
 
+int CFarmBuilding::LandMult( CHexCoord _hex, int iTyp, int iDir )
+{
+
+    // a mill harvests trees, a farm works the soil
+    if ( iTyp == CStructureData::lumber )
+        return ( ForestMultAt( _hex, iTyp, iDir ) );
+    return ( SoilMultAt( _hex, iTyp, iDir ) );
+}
+
 void CFarmBuilding::UpdateFarm( )
 {
 
     m_iTerMult = LandMult( m_hex, GetData( )->GetType( ), GetDir( ) );
+}
+
+// Scrounging (AltOutput): the site a warehouse scrounges from, on the same two 0..10 scales the
+// farm/mill placement preview uses, but measured over the WAREHOUSE's own footprint. Terrain
+// never changes at runtime (nothing in the game consumes a forest or a soil hex), so this is
+// scanned once and cached. The cache is runtime-only and refills itself on first use after a
+// load -- like the farm's field plots, there is nothing here worth serializing.
+void CWarehouseBuilding::UpdateScrounge( )
+{
+
+    // HUNDREDTHS (0..1000 for the 0..10 scales, 0..2000 for the scrap ones). The scans used to
+    // hand back a truncated whole number and MultiLinesFor rounded a second time on top, so every
+    // site lost up to a full point of signal before the rate was even computed -- a systematic
+    // downward bias, and the reason a mixed ring could score zero on every line. Carry the
+    // precision here and round ONCE, in MultiLinesFor.
+    m_iScrForest = CFarmBuilding::ForestMultAt( m_hex, GetData( )->GetType( ), GetDir( ), 100 );
+    m_iScrSoil   = CFarmBuilding::ScroungeSoilMultAt( m_hex, GetData( )->GetType( ), GetDir( ), 100 );
+    int iIron = 0, iCoal = 0;
+    CFarmBuilding::ScrapMultsAt( m_hex, GetData( )->GetType( ), GetDir( ), &iIron, &iCoal, 100 );
+    m_iScrIron = iIron;
+    m_iScrCoal = iCoal;
+}
+
+int CWarehouseBuilding::GetScroungeForestMult( )
+{
+
+    if ( m_iScrForest < 0 )
+        UpdateScrounge( );
+    return ( (int)m_iScrForest );
+}
+
+int CWarehouseBuilding::GetScroungeIronMult( )
+{
+
+    if ( m_iScrIron < 0 )
+        UpdateScrounge( );
+    return ( (int)m_iScrIron );
+}
+
+int CWarehouseBuilding::GetScroungeCoalMult( )
+{
+
+    if ( m_iScrCoal < 0 )
+        UpdateScrounge( );
+    return ( (int)m_iScrCoal );
+}
+
+int CWarehouseBuilding::GetScroungeSoilMult( )
+{
+
+    if ( m_iScrSoil < 0 )
+        UpdateScrounge( );
+    return ( (int)m_iScrSoil );
 }
 
 // Record one hex of the ring as a crop plot, if it is farmable and unoccupied.
