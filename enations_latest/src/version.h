@@ -48,9 +48,12 @@ const char GameLogFile[] = "ENations.log";
 #define         VER_RELEASE     8
 
 // 3.1.001: display version only. No HEADER change - VER_MAJOR/VER_MINOR stay 3/0, so
-// every 3.00.x save still loads. (VER_RELEASE is bumped to 8 above by BUGS #99; the
-// release counter is not part of the load check.) Bumping VER_MINOR would refuse them
-// all (CGame::Serialize).
+// every 3.00.x save still passes the major/minor check and loads. (VER_RELEASE is
+// bumped to 8 above by BUGS #99. The release counter is NOT part of that major/minor
+// header check - but it is not ignored either: a save whose counter is ABOVE this
+// build's is refused outright (BUGS #102), and a counter BELOW it is read with its own
+// layout, which is what the m_dwVer >= N field gates exist to do.) Bumping VER_MINOR
+// would refuse them all (CGame::Serialize).
 #define         VER_STRING                              "3.1.001"
 #define         RES_VER_STRING                          "3.1.001\0"
 
