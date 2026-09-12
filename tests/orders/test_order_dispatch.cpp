@@ -72,7 +72,7 @@ static void test_busy_appends_only() {
     v.ArriveAndSend();                    // event none + stopped, request in flight
     CHECK_EQ(v.mode, md_stop);
     CHECK_EQ(v.event, ev_none);
-    CHECK(!v.PollIdle());                 // <- the whole reason m_iOrderState exists
+    CHECK(!v.Tick());                 // <- the whole reason m_iOrderState exists
     CHECK_EQ(v.dispatches, 1);
 }
 
@@ -87,19 +87,19 @@ static void test_completion_advances_in_order() {
     CHECK(v.NextOrder());
 
     RunOneBuildToCompletion(v);
-    CHECK(v.PollIdle());                  // consumes #1 and starts #2
+    CHECK(v.Tick());                  // consumes #1 and starts #2
     CHECK_EQ((int)v.route.size(), 2);
     CHECK(v.route[0].hex == Hex(20, 20));
     CHECK(v.orderHex == Hex(20, 20));
     CHECK_EQ(v.state, order_sent);
 
     RunOneBuildToCompletion(v);
-    CHECK(v.PollIdle());                  // consumes #2 and starts #3
+    CHECK(v.Tick());                  // consumes #2 and starts #3
     CHECK_EQ((int)v.route.size(), 1);
     CHECK(v.orderHex == Hex(30, 30));
 
     RunOneBuildToCompletion(v);
-    CHECK(!v.PollIdle());                 // consumes #3, nothing left
+    CHECK(!v.Tick());                 // consumes #3, nothing left
     CHECK_EQ((int)v.route.size(), 0);
     CHECK_EQ(v.cursor, CUR_NULL);
     CHECK_EQ(v.state, order_none);
@@ -120,7 +120,7 @@ static void test_destroyed_site_drops_the_order() {
     v.WorkTick();
     v.SiteGone();                          // the half-built site was destroyed
 
-    CHECK(v.PollIdle());
+    CHECK(v.Tick());
     CHECK_EQ((int)v.route.size(), 1);      // dropped, not retried
     CHECK(v.route[0].hex == Hex(20, 20));
     CHECK(v.orderHex == Hex(20, 20));
@@ -143,13 +143,13 @@ static void test_order_ended_releases_the_queue() {
     // "job over" (that is what a road-specific work state buys)
     v.event = ev_none;
     v.mode  = md_stop;
-    CHECK(!v.PollIdle());
+    CHECK(!v.Tick());
     CHECK_EQ((int)v.route.size(), 2);
 
     v.OrderEnded();                        // NextRoadHex: the run reached its far end
     v.event = ev_none;
     v.mode  = md_stop;
-    CHECK(v.PollIdle());
+    CHECK(v.Tick());
     CHECK_EQ((int)v.route.size(), 1);
     CHECK(v.route[0].hex == Hex(9, 9));
 }
@@ -183,7 +183,7 @@ static void test_server_error_drops_only_the_matching_order() {
     CHECK_EQ(v.state, order_none);
 
     // and the crane is free, so the next poll starts the survivor
-    CHECK(v.PollIdle());
+    CHECK(v.Tick());
     CHECK(v.orderHex == Hex(20, 20));
     CHECK_EQ(v.dispatches, 1);             // the failed one sent exactly one request
 }
@@ -215,13 +215,13 @@ static void test_non_local_owner_never_dispatches() {
     CHECK_EQ(v.event, ev_none);
 
     // the idle poll is behind the same gate
-    CHECK(!v.PollIdle());
+    CHECK(!v.Tick());
     CHECK_EQ(v.dispatches, 0);
 
     // even with a remote copy that somehow reached a work state
     v.state = order_work;
     v.site  = false;
-    CHECK(!v.PollIdle());
+    CHECK(!v.Tick());
     CHECK_EQ(v.state, order_work);         // untouched: the gate returns first
     CHECK_EQ((int)v.route.size(), 1);
 }
@@ -293,7 +293,7 @@ static void test_movement_stop_at_the_cursor_is_not_dispatched() {
     // A stopped vehicle with waypoints left must NOT be restarted by the order poll:
     // ArrivedDest owns movement stops.
     CHECK(!v.NextOrder());
-    CHECK(!v.PollIdle());
+    CHECK(!v.Tick());
     CHECK_EQ(v.event, ev_none);
     CHECK_EQ(v.dispatches, 0);
     CHECK_EQ((int)v.route.size(), 2);
@@ -311,7 +311,7 @@ static void test_unqueued_build_leaves_waypoints_alone() {
     v.ServerAccept();
     v.WorkTick();
     v.SiteGone();
-    v.PollIdle();
+    v.Tick();
 
     CHECK_EQ((int)v.route.size(), 1);                // the waypoint survived
     CHECK_EQ(v.route[0].type, waypoint);
@@ -336,7 +336,7 @@ static void test_repair_and_road_dispatch_their_own_way() {
     v.OrderEnded();
     v.event = ev_none;
     v.mode  = md_stop;
-    CHECK(v.PollIdle());
+    CHECK(v.Tick());
     CHECK_EQ(v.event, ev_repair_bldg);
     CHECK_EQ((int)v.route.size(), 1);
 
@@ -344,7 +344,7 @@ static void test_repair_and_road_dispatch_their_own_way() {
     v.ServerAccept();
     v.WorkTick();
     v.SiteGone();
-    CHECK(!v.PollIdle());
+    CHECK(!v.Tick());
     CHECK_EQ((int)v.route.size(), 0);
 }
 
@@ -428,6 +428,228 @@ static void test_all_dead_repairs_empty_the_queue() {
     CHECK_EQ(v.dispatches, 0);
 }
 
+// ---------------------------------------------------------------------------
+// BUG #114 -- a queue that went idle with its orders still listed.
+//
+// Two independent terminal states, both of which the traffic series made easy to
+// reach and neither of which anything in the engine could leave.
+// ---------------------------------------------------------------------------
+
+// (1) THE CRANE NEVER NOTICES. The ordinary end of a build leaves the crane welded
+// INSIDE the finished building: StopConstruction detaches it and ExitBuilding finds
+// m_cOwn FALSE (EnterBuilding released the hexes) and puts it in cant_deploy, not stop.
+// The idle branch - where the completion test used to live - does not run there, so a
+// crane that could not step straight out never learned its building was done.
+static void test_completion_is_seen_from_cant_deploy() {
+    Veh v;
+    v.AddOrder(Hex(10, 10), build, 4, 0);
+    v.AddOrder(Hex(20, 20), build, 5, 0);
+    CHECK(v.NextOrder());
+    v.ArriveAndSend();
+    v.ServerAccept();
+    v.WorkTick();
+
+    v.SiteDoneWeldedInside();             // -> cant_deploy, NOT stop
+    CHECK_EQ(v.mode, md_cant_deploy);
+
+    // ticks spent stuck in the doorway still consume the finished order
+    CHECK(!v.Tick());                     // cant_deploy: completion yes, dispatch no
+    CHECK_EQ(v.state, order_none);
+    CHECK_EQ((int)v.route.size(), 1);     // order 1 consumed
+    CHECK_EQ((int)v.route[0].hex.x, 20);
+    CHECK(!v.Tick());
+    CHECK_EQ((int)v.route.size(), 1);     // and only once
+
+    v.DeployOut();                        // it finally found a free square
+    CHECK(v.Tick());                      // now it dispatches order 2
+    CHECK_EQ(v.state, order_sent);
+    CHECK_EQ(v.event, ev_build);
+    CHECK_EQ((int)v.orderHex.x, 20);
+}
+
+// (2) THE ARRIVAL NEVER HAPPENS. FindNextHex gives up short of the destination with
+// _SetRouteMode(stop) + PostArrivedOrBlocked - not ArrivedDest - so BuildBldg is never
+// called, the arming event is never cleared and the state never leaves order_sent.
+// Before the stall watch, NextOrder's busy test refused on BOTH for ever.
+static void test_a_dispatch_that_never_arrives_is_re_driven() {
+    Veh v;
+    v.AddOrder(Hex(10, 10), build, 4, 0);
+    v.AddOrder(Hex(20, 20), build, 5, 0);
+    CHECK(v.NextOrder());
+    CHECK_EQ(v.state, order_sent);
+    CHECK_EQ(v.event, ev_build);
+
+    v.GiveUpShortOfDest();                // parked, idle, still armed
+    CHECK_EQ(v.mode, md_stop);
+
+    CHECK(!v.Tick(0));                    // the dwell starts
+    CHECK(!v.Tick(1000));                 // and is not short-circuited
+    CHECK_EQ(v.state, order_sent);
+    CHECK(v.Tick(2500));                  // dwell served -> re-dispatch, same order
+
+    CHECK_EQ(v.state, order_sent);
+    CHECK_EQ(v.event, ev_build);
+    CHECK_EQ(v.mode, md_moving);
+    CHECK_EQ((int)v.orderHex.x, 10);      // the SAME order, not the next one
+    CHECK_EQ((int)v.route.size(), 2);     // nothing dropped
+    CHECK_EQ(v.orderRetry, 1);
+}
+
+// ...and the re-drive is bounded, so a site that simply cannot be reached costs one
+// order instead of the whole queue.
+static void test_an_unreachable_order_is_given_up_and_the_queue_runs_on() {
+    Veh v;
+    v.AddOrder(Hex(10, 10), build, 4, 0);
+    v.AddOrder(Hex(20, 20), build, 5, 0);
+    CHECK(v.NextOrder());
+
+    for (int i = 0; i < ORDER_STALL_TRIES; ++i) {
+        v.GiveUpShortOfDest();
+        v.Tick(0);                        // arm the dwell
+        CHECK(v.Tick(ORDER_STALL_MS + 1));// re-dispatch
+        CHECK_EQ(v.orderRetry, i + 1);
+    }
+
+    v.GiveUpShortOfDest();
+    v.Tick(0);
+    CHECK(v.Tick(ORDER_STALL_MS + 1));    // budget spent: drop #1 and start #2
+    CHECK_EQ(v.givenUp, 1);
+    CHECK_EQ((int)v.route.size(), 1);
+    CHECK_EQ((int)v.route[0].hex.x, 20);
+    CHECK_EQ(v.state, order_sent);
+    CHECK_EQ((int)v.orderHex.x, 20);
+    CHECK_EQ(v.orderRetry, 0);            // the new order gets a full budget
+}
+
+// The budget is PER ORDER: a queue of hard-but-reachable sites must not run out of
+// re-drives because an earlier order needed one.
+static void test_the_re_drive_budget_is_per_order() {
+    Veh v;
+    v.AddOrder(Hex(10, 10), build, 4, 0);
+    v.AddOrder(Hex(20, 20), build, 5, 0);
+    CHECK(v.NextOrder());
+
+    v.GiveUpShortOfDest();
+    v.Tick(0);
+    CHECK(v.Tick(ORDER_STALL_MS + 1));
+    CHECK_EQ(v.orderRetry, 1);
+
+    v.ArriveAndSend();                    // the re-drive worked
+    v.ServerAccept();
+    v.WorkTick();
+    v.SiteGone();
+    CHECK(v.Tick());                      // order 1 done, order 2 out
+    CHECK_EQ(v.orderRetry, 0);
+    CHECK_EQ((int)v.orderHex.x, 20);
+}
+
+// A TRAFFIC DETOUR is a job that is still running: the hold is counted down by Operate
+// and ResumeJob drives the vehicle back to the destination the dispatch named. Re-driving
+// through one would cancel the recovery that is about to deliver it.
+static void test_the_stall_watch_never_fires_through_a_traffic_hold() {
+    Veh v;
+    v.AddOrder(Hex(10, 10), build, 4, 0);
+    CHECK(v.NextOrder());
+
+    v.TrafficHold(120);                   // parked off-road with a saved job
+    for (int i = 0; i < 6; ++i)
+        CHECK(!v.Tick(ORDER_STALL_MS));
+    CHECK_EQ(v.state, order_sent);
+    CHECK_EQ(v.event, ev_build);
+    CHECK_EQ(v.orderRetry, 0);            // never counted a re-drive
+    CHECK_EQ((int)v.route.size(), 1);
+
+    v.HoldExpiresAndResumes();            // ResumeJob puts it back on the build dest
+    v.ArriveAndSend();
+    v.ServerAccept();
+    v.WorkTick();
+    v.SiteGone();
+    CHECK(!v.Tick());
+    CHECK_EQ((int)v.route.size(), 0);
+}
+
+// The REQUEST-IN-FLIGHT window is what order_sent exists to name, and it looks idle:
+// BuildBldg clears m_iEvent on the line it sends from. It must never be re-driven, or
+// every queued build would go out twice.
+static void test_the_stall_watch_never_fires_on_a_request_in_flight() {
+    Veh v;
+    v.AddOrder(Hex(10, 10), build, 4, 0);
+    CHECK(v.NextOrder());
+    v.ArriveAndSend();                    // event cleared, request on the wire
+    CHECK_EQ(v.state, order_sent);
+    CHECK_EQ(v.event, ev_none);
+    CHECK_EQ(v.mode, md_stop);
+
+    for (int i = 0; i < 6; ++i)
+        CHECK(!v.Tick(ORDER_STALL_MS));
+    CHECK_EQ(v.dispatches, 1);            // exactly one request, not six
+    CHECK_EQ(v.orderRetry, 0);
+    CHECK_EQ((int)v.route.size(), 1);
+
+    v.ServerAccept();
+    v.WorkTick();
+    v.SiteGone();
+    CHECK(!v.Tick());
+    CHECK_EQ((int)v.route.size(), 0);
+}
+
+// The review's DEFERRED RESIDUAL, closed by the same watch: a repair target that dies
+// while the crane is travelling. ArrivedDest's repair_bldg case finds neither a building
+// nor an unbuilt bridge and falls through, leaving m_iEvent == repair_bldg on a stopped
+// crane. The watch re-drives, NextOrder's RepairTargetLives rejects the dead target, the
+// order is dropped and the build behind it starts.
+static void test_a_repair_target_that_dies_in_flight_no_longer_wedges() {
+    Veh v;
+    v.repairTargets.push_back(Hex(5, 5));
+    v.AddOrder(Hex(5, 5), repair);
+    v.AddOrder(Hex(9, 9), build, 4, 0);
+    CHECK(v.NextOrder());                 // the target was alive at dispatch
+    CHECK_EQ(v.event, ev_repair_bldg);
+
+    v.repairTargets.clear();              // it dies while the crane is on the road
+    v.ArriveAtDeadRepairTarget();
+
+    v.Tick(0);
+    CHECK(v.Tick(ORDER_STALL_MS + 1));    // re-drive -> validated -> dropped -> next
+    CHECK_EQ((int)v.route.size(), 1);
+    CHECK_EQ((int)v.route[0].hex.x, 9);
+    CHECK_EQ(v.state, order_sent);
+    CHECK_EQ(v.event, ev_build);
+    CHECK_EQ(v.givenUp, 0);               // dropped at dispatch, not by the budget
+}
+
+// A vehicle we do not own must never re-drive or give up anything, the same way it
+// never dispatches. The watch lives behind PollIdle's own IsLocal gate.
+static void test_a_remote_copy_never_re_drives() {
+    Veh v;
+    v.AddOrder(Hex(10, 10), build, 4, 0);
+    CHECK(v.NextOrder());
+    v.GiveUpShortOfDest();
+    v.local = false;
+
+    for (int i = 0; i < 6; ++i)
+        CHECK(!v.Tick(ORDER_STALL_MS));
+    CHECK_EQ(v.state, order_sent);
+    CHECK_EQ(v.orderRetry, 0);
+    CHECK_EQ(v.givenUp, 0);
+    CHECK_EQ((int)v.route.size(), 1);
+}
+
+// A crane with NOTHING queued that gives up short of a plain, unqueued placement must be
+// left exactly as 1996 left it: the watch is gated on order_sent, which only a dispatch
+// sets, so an empty queue is inert.
+static void test_an_unqueued_crane_is_not_touched_by_the_watch() {
+    Veh v;
+    v.state = order_none;
+    v.event = ev_build;                   // a plain placement armed it
+    v.mode  = md_stop;
+    for (int i = 0; i < 6; ++i)
+        CHECK(!v.Tick(ORDER_STALL_MS));
+    CHECK_EQ(v.event, ev_build);          // untouched
+    CHECK_EQ(v.state, order_none);
+    CHECK_EQ(v.givenUp, 0);
+}
+
 int main() {
     std::printf("[orders] dispatch suite\n");
 
@@ -451,6 +673,17 @@ int main() {
     test_order_takes_the_list_over_from_a_route();
     test_dead_repair_target_is_skipped();
     test_all_dead_repairs_empty_the_queue();
+
+    // bug #114
+    test_completion_is_seen_from_cant_deploy();
+    test_a_dispatch_that_never_arrives_is_re_driven();
+    test_an_unreachable_order_is_given_up_and_the_queue_runs_on();
+    test_the_re_drive_budget_is_per_order();
+    test_the_stall_watch_never_fires_through_a_traffic_hold();
+    test_the_stall_watch_never_fires_on_a_request_in_flight();
+    test_a_repair_target_that_dies_in_flight_no_longer_wedges();
+    test_a_remote_copy_never_re_drives();
+    test_an_unqueued_crane_is_not_touched_by_the_watch();
 
     return microtest::Summary();
 }

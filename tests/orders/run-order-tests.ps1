@@ -9,8 +9,9 @@
 # arithmetic and the dispatch half is a state machine: an optimiser difference in either
 # is a real finding.
 #
-# The serialize suite is also handed three production source paths and LINTS them, so a
-# model that has drifted from the code it mirrors fails here.
+# The serialize suite is also handed six production source paths and LINTS them, so a
+# model that has drifted from the code it mirrors fails here. The LIFECYCLE suite goes
+# further and compiles the production bodies themselves.
 #
 # Exit codes: 0 all pass, 1 a test failed, 2 toolchain / compile error.
 
@@ -62,6 +63,15 @@ foreach ($opt in @('/Od', '/O2')) {
         }
         if ($LASTEXITCODE -ne 0) { $failed = 1 }
     }
+}
+
+# The LIFECYCLE suite compiles the PRODUCTION method bodies (tests/traffic's technique)
+# rather than the mirror, so it can catch a defect that lives in the shipped code. Its
+# runner is Python because the extraction is; it builds and runs at both optimisations too.
+foreach ($opt in @('/Od', '/O2')) {
+    Write-Host "--- lifecycle $opt ---"
+    python (Join-Path $here 'run-order-lifecycle.py') --opt $opt
+    if ($LASTEXITCODE -ne 0) { $failed = 1 }
 }
 
 if ($failed -ne 0) { Write-Host '[orders] FAILURES'; exit 1 }

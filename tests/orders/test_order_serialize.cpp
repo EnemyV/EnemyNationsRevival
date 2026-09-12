@@ -63,7 +63,14 @@ static void test_v7_stream_is_the_shipped_stream() {
         if ((cur >= 0) && (cur < 3))
             iPos = cur;
         else if (cur == CUR_NULL)
-            iPos = 2;                     // #88: a NULL cursor stores N-1
+            // BUGS #99 (this integration) replaced #88's N-1 with an out-of-range
+            // sentinel, and writes it UNCONDITIONALLY. So this is the one field of a
+            // counter-7 stream that is no longer byte-for-byte the shipped stream - and
+            // the difference is unreachable, because the writer always stamps counter 8
+            // (VER_RELEASE), and a counter <= 7 LOADER ignores the sentinel and walks to
+            // the tail, which is the N-1 answer it always gave. Every entry byte, and the
+            // cursor word for every non-NULL cursor, is still identical.
+            iPos = (int)ROUTE_POS_NONE;
         aExp.put16((unsigned)iPos);
 
         CHECK(aNew.buf == aExp.buf);
@@ -184,7 +191,7 @@ static void test_cursor_survives_the_payload() {
 
             int expect = cur;
             if (cur == CUR_NULL)
-                expect = n - 1;            // #88's preserved NULL policy
+                expect = CUR_NULL;         // #99: a NULL cursor round-trips as NO cursor
             else if (cur == CUR_STALE)
                 expect = 0;                // a cursor in no node stores 0
             CHECK_EQ(w.cursor, expect);
@@ -245,8 +252,13 @@ static int test_source_lint(const char *newUnit, const char *vehicleH, const cha
     lint_needs(s, "theGame.m_dwVer >= 8", "the payload sits behind a v8 gate");
     lint_forbids(s, "TRAP( m_route.GetCount( ) > 0 );", "the obsolete serialize TRAP is retired");
     lint_needs(s, "EN_TRAP_REMOVED( \"CVehicle::Serialize", "and retired with the house pattern");
-    // #88's writer must still be the pre-advance compare plus the NULL restore
-    lint_needs(s, "if ( ( m_pos == NULL ) && ( iOn > 0 ) )", "#88's NULL-cursor policy survives");
+    // #88's writer must still be the pre-advance compare; #99 (landed in this
+    // integration) replaced #88's N-1 restore with an out-of-range sentinel, honoured on
+    // load only at counter >= 8. Both halves are pinned so the model cannot drift back.
+    lint_needs(s, "if ( m_pos == NULL )", "the NULL-cursor case is still handled explicitly");
+    lint_needs(s, "iPos = (int)wROUTE_POS_NONE;", "#99's sentinel is what a NULL cursor stores");
+    lint_needs(s, "( theGame.m_dwVer >= 8 ) && ( wNR == wROUTE_POS_NONE )",
+               "and the loader honours it only on a counter >= 8 save");
 
     if (!ReadFile(vehicleH, s)) {
         std::printf("[orders] SKIP vehicle.h lint (cannot open %s)\n", vehicleH);
@@ -261,8 +273,11 @@ static int test_source_lint(const char *newUnit, const char *vehicleH, const cha
         std::printf("[orders] SKIP version.h lint (cannot open %s)\n", versionH);
         return 2;
     }
-    // The whole point of gating the WRITER too: this branch must not move the counter.
-    lint_needs(s, "#define         VER_RELEASE     7", "VER_RELEASE is untouched at 7");
+    // The counter is 8 in this integration (the traffic series' format-8 save plus
+    // BUGS #99), so the v8 gates the order payload sits behind are now LIVE: a save
+    // written by this build carries the payload and the loop flag. Pinned, because the
+    // serialize model's v7-versus-v8 claims are only meaningful against a known counter.
+    lint_needs(s, "#define         VER_RELEASE     8", "VER_RELEASE is 8 in this integration");
 
     // The dispatcher half of the model has no byte stream to compare against, so these
     // pin the two invariants a fixture cannot see: one list never holds both kinds, and
@@ -279,6 +294,24 @@ static int test_source_lint(const char *newUnit, const char *vehicleH, const cha
     }
     lint_needs(s, "RepairTargetLives(pR->GetCoord())", "NextOrder validates a repair target first");
     lint_needs(s, "BOOL CVehicle::RepairTargetLives", "and the predicate exists");
+    // bug #114: the completion half must sit OUTSIDE the idle branch, and the stall
+    // watch must exist and be called from it.
+    lint_needs(s, "void CVehicle::CheckOrderStall", "the stall watch exists");
+    lint_needs(s, "            CheckOrderStall();", "and the idle branch calls it");
+    // The completion half must sit in Operate BEFORE the mode switch. Its comment
+    // banner is the stable anchor; the `case stop` block that used to hold it now says
+    // so in as many words.
+    lint_needs(s, "// #38 ORDER QUEUE, COMPLETION HALF (bug #114).",
+               "completion is read before the mode switch");
+    lint_needs(s, "// The COMPLETION half now runs before the switch",
+               "and the idle branch no longer does it");
+
+    if (!ReadFile(newUnit, s)) {
+        std::printf("[orders] SKIP new_unit.cpp #114 lint (cannot open %s)\n", newUnit);
+        return 2;
+    }
+    lint_needs(s, "pVeh->m_bFlags &= ~told_ai_stop;",
+               "StopConstruction drops the arrival's stale told_ai_stop");
 
     if (!ReadFile(areaCpp, s)) {
         std::printf("[orders] SKIP area.cpp lint (cannot open %s)\n", areaCpp);
