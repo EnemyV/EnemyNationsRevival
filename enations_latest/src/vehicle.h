@@ -473,7 +473,13 @@ public:
 		void					DeletePath ();
 		void					SetLocation (CHexCoord & hex, POSITION pos, int iType);
 
-		// ORDER QUEUE (#38). Orders share m_route with the movement stops.
+		// ORDER QUEUE (#38). Orders live on m_route, the same list as the movement stops,
+		// but the two NEVER COEXIST on one vehicle. ArrivedDest advances to whatever entry
+		// is at the head and drives to it as a STOP, then consumes it, so an order sharing
+		// a list with a live movement route is driven to, trips ArrivedDest's Debug TRAP
+		// and is deleted unexecuted. The rule is enforced at both input edges: a movement
+		// append (SetLocation) calls ClearOrders first, and the first order appended onto a
+		// vehicle that is running stops takes the list over (CWndArea::StopRoute).
 		void					AddOrder (CHexCoord const & hex, int iType, int iBldgType, int iDir,
 													CHexCoord const * pHexEnd = NULL);
 		void					ClearOrders ();
@@ -481,6 +487,7 @@ public:
 		void					OrderComplete ();
 		void					OrderEnded ();
 		void					OrderFailed (CHexCoord const & hex, int iBldgType);
+		BOOL					RepairTargetLives (CHexCoord const & hex) const;
 		CList <CRoute *, CRoute *> &	GetRouteList () { ASSERT_STRICT_VALID (this); return (m_route); }
 		// Looping vs one-shot route. TRUE (default) = the legacy behavior (cycle back to
 		// the first stop at the end); FALSE = stop at the last stop. Serialized from save

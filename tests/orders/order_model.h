@@ -177,6 +177,7 @@ struct Veh {
     Hex                orderHex;     // m_hexOrder
     int                orderKind;    // m_iOrderKind
     int                dispatches;   // how many requests went out (wire traffic)
+    std::vector<Hex>   repairTargets;// hexes where RepairTargetLives() says yes
 
     Veh()
         : cursor(CUR_NULL), loop(true), state(order_none), local(true),
@@ -194,6 +195,25 @@ struct Veh {
         loop = false;                       // an order queue is ONE-SHOT, always
         if (cursor == CUR_NULL)
             cursor = 0;
+    }
+
+    // --- CVehicle::SetLocation, the MOVEMENT-append entry point ---
+    // A movement route and an order queue never share one list: every movement append
+    // drops the orders first.
+    void AddMoveStop(Hex hex, int iType = waypoint) {
+        if (!IsOrder(iType))
+            ClearOrders();
+        route.push_back(Route(hex, iType));
+        if (cursor == CUR_NULL)
+            cursor = 0;
+    }
+
+    // --- CVehicle::RepairTargetLives ---
+    bool RepairTargetLives(Hex hex) const {
+        for (std::size_t i = 0; i < repairTargets.size(); ++i)
+            if (repairTargets[i] == hex)
+                return true;
+        return false;
     }
 
     // --- CVehicle::ClearOrders ---
@@ -223,14 +243,27 @@ struct Veh {
         if ((state != order_none) || site || (event != ev_none) || (mode != md_stop))
             return false;
 
-        int pos = (cursor != CUR_NULL) ? cursor : (route.empty() ? CUR_NULL : 0);
-        if (pos == CUR_NULL)
-            return false;
-        Route *pR = At(pos);
-        if (pR == 0)
-            return false;
-        if (!IsOrder(pR->type))
-            return false;
+        int    pos = CUR_NULL;
+        Route *pR  = 0;
+        for (;;) {
+            pos = (cursor != CUR_NULL) ? cursor : (route.empty() ? CUR_NULL : 0);
+            if (pos == CUR_NULL)
+                return false;
+            pR = At(pos);
+            if (pR == 0)
+                return false;
+            if (!IsOrder(pR->type))
+                return false;
+
+            // a repair order whose target is gone can never finish - drop it and take
+            // the next order in this same call
+            if ((pR->type == repair) && (!RepairTargetLives(pR->hex))) {
+                route.erase(route.begin() + pos);
+                cursor = route.empty() ? CUR_NULL : 0;
+                continue;
+            }
+            break;
+        }
 
         cursor    = pos;
         state     = order_sent;
