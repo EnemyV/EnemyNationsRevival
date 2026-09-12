@@ -45,6 +45,17 @@ const char GameLogFile[] = "ENations.log";
 // it is read back as a NULL cursor only when the loaded save's release is >= 8. Older
 // saves keep the shipped N-1 rule exactly - a release-7 save storing N-1 still restores
 // the last route entry as the cursor.
+// Release 8 carries three more things besides that sentinel, all gated the same way and
+// all written only once the counter reached 8 (they were authored against a 7 counter, so
+// the WRITER is gated too - see the comments at each site in new_unit.cpp):
+//   - CVehicle::Serialize: the nine traffic detour/recovery fields (m_bResume,
+//     m_subResume, m_iResumeMode, m_bReversing, m_bForwardEscape, m_iHoldFrames,
+//     m_iBackUps, m_iJamClear, m_iJamCool), so a vehicle mid-detour or mid-hold resumes
+//     its saved job instead of coming back parked; plus m_bRouteLoop, the one-shot/loop
+//     flag (BUGS #95) - a pre-8 save never wrote it, so such a route loads LOOPING.
+//   - CRoute::Serialize: the order-queue payload (m_iBldgType, m_iDir, m_hexEnd) for
+//     BUGS #38, so a queued build/road order survives save/load as an order rather than
+//     decaying into a bare movement stop (pre-8 entries are movement stops only).
 #define         VER_RELEASE     8
 
 // 3.1.001: display version only. No HEADER change - VER_MAJOR/VER_MINOR stay 3/0, so
