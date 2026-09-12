@@ -177,6 +177,7 @@ struct CVehicle {
     void GetPath(BOOL) {}
     void MakeBlocked() { ++blockedCalls; ++g_recovery; }
     void PostArrivedOrBlocked() { ++blockedCalls; ++g_recovery; }
+    void OrderArrivalFailed() {}
     void _SetRouteMode(int m) { m_cMode = m; }
     void SetLoc(BOOL) {}
     void CheckNextHex() {}
