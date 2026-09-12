@@ -3324,7 +3324,7 @@ int CWndArea::OnCreate( LPCREATESTRUCT lpCreateStruct )
                     if (sc == SDL_SCANCODE_LEFTBRACKET)  { pThis->RotateBuildDir(-1); return true; }
                     if (sc == SDL_SCANCODE_RIGHTBRACKET) { pThis->RotateBuildDir(+1); return true; }
 
-#ifdef _WIN32
+#if defined(_WIN32) && EN_BUILD_HARNESS
                     // Harness (Windows transport): F9 dumps the local player's units via
                     // HarnessDumpUnits (en_harness.h) to OutputDebugString, which dbgcatch
                     // captures — giving the PostMessage/.ps1 harness deterministic unit
@@ -7706,6 +7706,7 @@ int CWndArea::NumGiveable( ) const
 // WrapWorldToWindow(WorldToCenterWorld(GetWorldPixels())) path, which was offset
 // from the rendered sprite by ~the cluster spacing and made click-targeting miss.
 //---------------------------------------------------------------------------
+#if EN_BUILD_HARNESS
 static CPoint HarnessHexToWindow( CAnimAtr& aa, const CHexCoord& hex )
 {
     CPoint p[4];
@@ -7748,6 +7749,173 @@ void HarnessDumpSelection( std::string& out )
               a->NumSelected( ),
               pPrimary ? pPrimary->GetData( )->GetDesc( ).c_str( ) : "(none)" );
     out = line;
+}
+
+bool HarnessMoveVehicle(unsigned long id, int hexX, int hexY, bool detachForTest)
+{
+    CWndArea* a = theAreaList.GetTop();
+    CVehicle* v = NULL;
+    if (a == NULL || hexX < 0 || hexY < 0 || hexX >= theMap.Get_eX() || hexY >= theMap.Get_eY() ||
+        !theVehicleMap.Lookup((DWORD) id, v) || v == NULL || v->GetOwner() == NULL ||
+        !v->GetOwner()->IsMe() || !v->GetOwner()->IsLocal() || v->IsFlag(CUnit::dying) || v->GetTransport())
+        return false;
+    CHexCoord target(hexX, hexY);
+    // Ground movement only: do not accidentally turn a QA move into a pickup/repair.
+    if (theMap._GetHex(target)->GetUnits() & CHex::bldg)
+        return false;
+    // A fixture must retain automatic traffic eligibility while it is staged.
+    // Taking dispatch ownership through the UI would instead set HpControl.
+    if (detachForTest && (theGame.m_pHpRtr == NULL || v->GetData()->IsBoat() ||
+        (!v->GetData()->IsTransport() && !v->GetData()->IsCrane()) ||
+        (theMap._GetHex(v->GetHexHead())->GetUnits() & CHex::bldg)))
+        return false;
+    // Same order replacement as the single-vehicle goto in DoCommandAt.
+    a->StopRoute(v);
+    if (detachForTest)
+        theGame.m_pHpRtr->MsgTakeVeh(v);
+    v->TempTargetOff();
+    v->SetEvent(CVehicle::none);
+    v->ResumeUnit();
+    a->SetDestAndSfx(v, target);
+    v->_SetTarget(NULL);
+    return true;
+}
+
+bool HarnessStopVehicle(unsigned long id)
+{
+    CVehicle* v = NULL;
+    if (!theVehicleMap.Lookup((DWORD) id, v) || v == NULL || v->GetOwner() == NULL ||
+        !v->GetOwner()->IsMe() || !v->GetOwner()->IsLocal() || v->IsFlag(CUnit::dying))
+        return false;
+    v->StopUnit(); // CWndArea::StopUnit invokes this same virtual method.
+    return true;
+}
+
+void HarnessMapRect(int x, int y, int width, int height, std::string& out)
+{
+    out.clear();
+    if (theAreaList.GetTop() == NULL || x < 0 || y < 0 || width < 1 || width > 32 || height < 1 || height > 32 ||
+        x >= theMap.Get_eX() || y >= theMap.Get_eY() || width > theMap.Get_eX() - x || height > theMap.Get_eY() - y) {
+        out = "err maprect outside loaded map\n";
+        return;
+    }
+    const CTransportData* truck = theTransports.GetData(CTransportData::heavy_truck);
+    char line[256];
+    for (int yy = y; yy < y + height; ++yy)
+        for (int xx = x; xx < x + width; ++xx) {
+            CHexCoord coord(xx, yy);
+            CHex* hex = theMap._GetHex(coord);
+            CBuilding* building = theBuildingHex._GetBuilding(CSubHex(coord));
+            unsigned long vehicles[4] = {};
+            for (int sub = 0; sub < 4; ++sub) {
+                CVehicle* vehicle = theVehicleHex._GetVehicle(CSubHex(xx * 2 + sub % 2, yy * 2 + sub / 2));
+                if (vehicle != NULL) vehicles[sub] = (unsigned long)vehicle->GetID();
+            }
+            snprintf(line, sizeof(line), "hex %d,%d terrain %d bridge %d building %lu travel %d cost %d vehicles %lu,%lu,%lu,%lu\n",
+                     xx, yy, hex->GetType(), (int)((hex->GetUnits() & CHex::bridge) != 0),
+                     building ? (unsigned long)building->GetID() : 0, (int)truck->CanTravelHex(hex),
+                     theMap.GetTerrainCost(hex, hex, 0, truck->GetWheelType()),
+                     vehicles[0], vehicles[1], vehicles[2], vehicles[3]);
+            out += line;
+        }
+}
+
+void HarnessVehicleState(unsigned long id, std::string& out)
+{
+    CVehicle* v = NULL;
+    if (!theVehicleMap.Lookup((DWORD) id, v) || v == NULL) {
+        out = "err no-vehicle\n";
+        return;
+    }
+    char line[1024];
+    snprintf(line, sizeof(line),
+        "veh %lu type %d mode %d event %d owned %d hpcontrol %d stopped %d "
+        "reverse %d forward_escape %d resume %d resume_sub %d,%d hold %d jam %d watch %d cool %d "
+        "retries %d backups %d dir %d\n",
+        id, v->GetData()->GetType(), (int) v->m_cMode, (int) v->m_iEvent,
+        (int) v->m_cOwn, (int) v->IsHpControl(), (int) v->IsFlag(CUnit::stopped),
+        (int) v->m_bReversing, (int) v->m_bForwardEscape, (int) v->m_bResume, v->m_subResume.x, v->m_subResume.y,
+        v->m_iHoldFrames, v->m_iJamClear, v->m_iJamWatch, v->m_iJamCool,
+        v->m_iNumRetries, v->m_iBackUps, v->m_iDir);
+    out = line;
+    snprintf(line, sizeof(line), "wait_spent %d wait_time %lu wait_limit %lu active_building %d carrier %lu\n",
+             (int) v->m_bWaitedForMover, (unsigned long) v->m_dwTimeBlocked,
+             (unsigned long) v->m_dwTrafficWait, (int) (v->m_pBldg != NULL),
+             v->GetTransport() ? (unsigned long)v->GetTransport()->GetID() : 0);
+    out += line;
+    snprintf(line, sizeof(line), "health points %d maximum %d dying %d owner %d\n",
+             v->GetDamagePoints(), v->GetData()->GetDamagePoints(),
+             (int) !!v->IsFlag(CUnit::dying),
+             v->GetOwner() ? v->GetOwner()->GetPlyrNum() : -1);
+    out += line;
+    const char* names[] = { "head", "tail", "next", "dest", "waiting" };
+    CSubHex subs[] = { v->m_ptHead, v->m_ptTail, v->m_ptNext, v->m_ptDest, v->m_subWaitNext };
+    for (int i = 0; i < 5; ++i) {
+        if (subs[i].x < 0 || subs[i].y < 0 ||
+            subs[i].x >= theMap.Get_eX() * 2 || subs[i].y >= theMap.Get_eY() * 2) {
+            snprintf(line, sizeof(line), "%s %d,%d unavailable\n", names[i], subs[i].x, subs[i].y);
+            out += line;
+            continue;
+        }
+        CHex* h = theMap._GetHex(subs[i]);
+        CVehicle* on = theVehicleHex._GetVehicle(subs[i]);
+        snprintf(line, sizeof(line), "%s %d,%d terrain %d bridge %d building %d occupant %lu clear %d\n",
+            names[i], subs[i].x, subs[i].y, h->GetType(),
+            (int) ((h->GetUnits() & CHex::bridge) != 0),
+            (int) ((h->GetUnits() & CHex::bldg) != 0),
+            on ? (unsigned long) on->GetID() : 0, (int) v->ClearOfRoad(subs[i]));
+        out += line;
+    }
+    snprintf(line, sizeof(line), "world %d,%d\n", v->m_maploc.x, v->m_maploc.y);
+    out += line;
+    CHex* headHex = theMap._GetHex(v->m_ptHead);
+    snprintf(line, sizeof(line), "terrain head_alt %d sea_level %d wading_depth %d travel_head %d local_cost %d\n",
+             headHex->GetAlt(), (int) CHex::sea_level, v->GetData()->GetWaterDepth(),
+             (int) v->GetData()->CanTravelHex(headHex),
+             theMap.GetTerrainCost(headHex, headHex, 0, v->GetData()->GetWheelType()));
+    out += line;
+    snprintf(line, sizeof(line), "path next_hex %d,%d offset %d length %d block_count %ld speed %d confined %d corridor %d\n",
+             v->m_hexNext.X(), v->m_hexNext.Y(), v->m_iPathOff, v->m_iPathLen,
+             (long) v->m_iBlockCount, v->m_iSpeed, (int) v->m_bConfined, v->m_iCorrLen);
+    out += line;
+    for (int turn = -3; turn <= 3; ++turn) {
+        CSubHex s = v->Rotate(turn);
+        CVehicle* on = theVehicleHex._GetVehicle(s);
+        snprintf(line, sizeof(line), "step %d sub %d,%d occupant %lu passable %d lane %d enter %d\n",
+                 turn, s.x, s.y, on ? (unsigned long) on->GetID() : 0,
+                 (int) v->IsPassable(s), (int) v->InLane(s), (int) v->CanEnter(s));
+        out += line;
+    }
+    int bodyFacing = (v->CalcDir() + (v->m_bReversing ? FULL_ROT / 2 : 0)) % FULL_ROT;
+    int stepTurn = GetAngle(v->m_ptNext, v->m_ptHead, v->m_ptHead, v->m_ptTail);
+    int expected = (bodyFacing + (STEPS_HEX - v->m_iStepsLeft) * stepTurn + FULL_ROT) % FULL_ROT;
+    snprintf(line, sizeof(line), "facing body %d expected_moving %d steps_left %d turn %d actual_turn %d\n",
+             bodyFacing, expected, v->m_iStepsLeft, stepTurn, v->m_iDadd);
+    out += line;
+    snprintf(line, sizeof(line), "circling visits %d anchor %d,%d\n",
+             v->m_iTimesOn, v->m_subOn.x, v->m_subOn.y);
+    out += line;
+    // Exercise the production full/compact encoders and decoder without
+    // applying a packet or mutating the vehicle being inspected.
+    // Read the actual route, without issuing a speculative path search.
+    const CHexCoord *firstPath = v->m_phexPath != NULL && v->m_iPathLen > 0 ? v->m_phexPath : NULL;
+    const CHexCoord *lastPath = firstPath != NULL ? firstPath + v->m_iPathLen - 1 : NULL;
+    snprintf(line, sizeof(line), "route_nodes first %d,%d last %d,%d requested %d,%d\n",
+             firstPath ? firstPath->X() : -1, firstPath ? firstPath->Y() : -1,
+             lastPath ? lastPath->X() : -1, lastPath ? lastPath->Y() : -1,
+             v->m_hexDest.X(), v->m_hexDest.Y());
+    out += line;
+    CMsgVehGoto full(v);
+    CMsgVehCompLocElem packed;
+    memset(&packed, 0, sizeof(packed));
+    packed = *v;
+    CMsgVehLoc expanded(&packed);
+    snprintf(line, sizeof(line), "wire full_next %d,%d compact_next %d,%d full_dest %d,%d compact_dest %d,%d "
+             "full_dir %d compact_dir %d full_steps %d compact_steps %d\n",
+             full.m_hexNext.X(), full.m_hexNext.Y(), expanded.m_hexNext.X(), expanded.m_hexNext.Y(),
+             full.m_hexDest.X(), full.m_hexDest.Y(), expanded.m_hexDest.X(), expanded.m_hexDest.Y(),
+             full.m_iDir, expanded.m_iDir, full.m_iStepsLeft, expanded.m_iStepsLeft);
+    out += line;
 }
 
 void HarnessDumpUnits( std::string& out )
@@ -8489,3 +8657,5 @@ void HarnessDumpGameState( std::string& out )
         st, theGame.HaveHP( ) ? 1 : 0, bh, vh, bd, vd, allc, aic, elapsed, verdict );
     out = buf;
 }
+
+#endif // EN_BUILD_HARNESS

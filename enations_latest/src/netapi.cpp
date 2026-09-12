@@ -2604,6 +2604,16 @@ static void TransMat( CMsgTransMat* pMsg )
 
         pSrc->AddToStore( iOn, -pMsg->m_aiMat[iOn] );
         pDest->AddToStore( iOn, pMsg->m_aiMat[iOn] );
+
+        // Measure applied deliveries, not merely a router request or REJOIN.
+        // WaitLog is inert unless EN_WAIT_LOG is set; no routing state changes.
+        if ( pMsg->m_aiMat[iOn] > 0 && pSrc->GetUnitType( ) == CUnit::vehicle &&
+             pDest->GetUnitType( ) == CUnit::building && pSrc->GetOwner( )->IsMe( ) &&
+             ((CVehicle*)pSrc)->GetData( )->IsTransport( ) &&
+             !((CVehicle*)pSrc)->GetData( )->IsBoat( ) )
+            WaitLog( "[DELIVERED] veh %lu building %lu material %d amount %d truck_store %d building_store %d",
+                     (unsigned long)pSrc->GetID( ), (unsigned long)pDest->GetID( ), iOn,
+                     pMsg->m_aiMat[iOn], pSrc->GetStore( iOn ), pDest->GetStore( iOn ) );
     }
 
     // turn back on if paused
@@ -2670,6 +2680,16 @@ static void DeleteUnit( CMsgDeleteUnit* pCmd )
         return;
     ASSERT_CMD( pCmd );
     ASSERT( pUnit->GetFlags( ) & CUnit::dying );
+
+    // Diagnostic only: disappearing traffic must not count as successful recovery.
+    if ( pUnit->GetUnitType( ) == CUnit::vehicle )
+    {
+        CVehicle* v = (CVehicle*)pUnit;
+        WaitLog( "[VEH-DELETE] veh %lu health %d dying %d owner %d killer %d head %d,%d tail %d,%d",
+                 (unsigned long)v->GetID(), v->GetDamagePoints(), (int) !!v->IsFlag(CUnit::dying),
+                 v->GetOwner() ? v->GetOwner()->GetPlyrNum() : -1, pCmd->m_iPlyrKiller,
+                 v->GetPtHead().x, v->GetPtHead().y, v->GetPtTail().x, v->GetPtTail().y );
+    }
 
     CPlayer* pPlr;
     if ( pCmd->m_iPlyrKiller >= 0 )

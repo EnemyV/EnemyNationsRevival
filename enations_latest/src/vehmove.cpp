@@ -2374,6 +2374,7 @@ int TrafficOpts() {
 
 // Experimental probe for the wait/resume work: one line per event so a single
 // follower can be traced end to end. Inert unless EN_WAIT_LOG names a file.
+#if EN_TRAFFIC_PROBES
 void WaitLog(const char *fmt, ...) {
 
     static FILE *s_fp = NULL;
@@ -2403,6 +2404,7 @@ void WaitLog(const char *fmt, ...) {
     fputc('\n', s_fp);
     fflush(s_fp);
 }
+#endif
 
 // Hold position behind a vehicle that is still moving, instead of immediately
 // looking for a way around it. Returns TRUE if we are waiting this tick.

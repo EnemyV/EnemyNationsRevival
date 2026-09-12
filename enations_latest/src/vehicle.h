@@ -28,13 +28,20 @@ class CBridgeUnit;
 
 
 int  TrafficOpts ();   // EN_TRAFFIC bitmask: which traffic rules are live
+#ifndef EN_TRAFFIC_PROBES
+#define EN_TRAFFIC_PROBES 1
+#endif
+#if EN_TRAFFIC_PROBES
 void WaitLog (const char *fmt, ...);   // wait/resume probe, inert unless EN_WAIT_LOG is set
+#else
+#define WaitLog(...) ((void)0)
+#endif
 
 const int MAX_NUM_RETRIES = 25;
 const int MAX_BACK_UPS    = 2;      // per destination, so a stuck pair cannot ping-pong forever
 // Adjacent-truck clearance ("panic"), per WinAstra's 015-winastra-adjacent-clearance
 // plan. A truck stuck this long asks the trucks TOUCHING it to make space for a brief
-// window; each recipient forwards ONCE to its own neighbours, carrying the REMAINING
+// window; each recipient re-offers it to touching neighbours, carrying the REMAINING
 // window rather than a fresh one, so an adjacency cycle cannot refresh itself forever.
 // No manager, no group object, no recursion, no requester-chosen direction.
 const int JAM_STUCK_FRAMES  = 24 * 30;   // stagnation before a truck may raise a request
@@ -298,6 +305,7 @@ friend void CTransport::InitSprites ();
 friend void CTransport::InitLang ();
 friend void CTransport::Close ();
 friend class CWndOrders;
+friend void HarnessVehicleState(unsigned long id, std::string& out);
 friend class CMsgVehGoto;
 friend class CMsgVehLoc;
 friend class CMsgBlocked;

@@ -1,5 +1,8 @@
 message("Current CMAKE_SOURCE_DIR: ${CMAKE_SOURCE_DIR}")
 
+option(EN_BUILD_HARNESS "Compile the control socket and game-side harness" ON)
+option(EN_TRAFFIC_PROBES "Compile traffic event probes (runtime EN_WAIT_LOG still required)" ON)
+
 # Dev cheat surface. OFF by default: a debug build is NOT a cheat build.
 # Turn on deliberately with -DEN_CHEAT=ON (needed for the in-dev End-key
 # spectator mode). See the _CHEAT note in target_compile_definitions below.
@@ -135,8 +138,11 @@ set(enations_sources
         # In-process LLM-driving harness (TCP control server). All three platforms —
         # it is the only way to query live game state headlessly, and Windows had no
         # equivalent. Completely inert unless EN_HARNESS is set in the environment.
-        ../../harness/control_socket.cpp
 )
+
+if (EN_BUILD_HARNESS)
+    list(APPEND enations_sources ../../harness/control_socket.cpp)
+endif ()
 
 # ---------------------------------------------------------------------------
 # Linux source-list adjustments:
@@ -263,6 +269,9 @@ endif ()
 # The WIN32 keyword is a no-op on non-Windows (CMake ignores it), so it is
 # harmless to leave for the Linux build.
 add_executable(enations WIN32 ${enations_sources})
+target_compile_definitions(enations PRIVATE
+    EN_BUILD_HARNESS=$<BOOL:${EN_BUILD_HARNESS}>
+    EN_TRAFFIC_PROBES=$<BOOL:${EN_TRAFFIC_PROBES}>)
 
 # network/ TUs do winsock2-before-windows.h ordering themselves; skip the
 # force-included PCH (stdafx.h->windows.h pulls winsock1 and breaks ws2tcpip.h).
