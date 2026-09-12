@@ -27,6 +27,7 @@
 #include "bitmaps.h"
 #include "bmbutton.h"
 #include "chat.h"
+#include "datahash.h"
 #include "creatmul.inl"
 #include "creatsin.h"
 //#include "dlgflic.h"
@@ -1075,6 +1076,19 @@ BOOL CConquerApp::InitInstance( )
             bErr = TRUE;
         }
     } while ( bErr );
+
+    // 015 phase 3: fingerprint the gameplay data now that the loader is up, so
+    // the join and publish messages can carry it. Printed once so QA can compare
+    // two machines by eye; art, sound and text outside the gameplay tables do not
+    // change it.
+    theGame.m_dwDataHash = EnComputeGameplayDataHash( );
+    {
+        char szHash[64];
+        sprintf( szHash, "[DATAHASH] %08lx", (unsigned long)theGame.m_dwDataHash );
+        Log( szHash );
+        OutputDebugStringA( szHash );
+        OutputDebugStringA( "\n" );
+    }
 
     // 015 phase 2: the "< 400 MB .dat means shareware" size check is gone. It read
     // the size of the CONTAINER, and a loose-only install has no container at all

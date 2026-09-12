@@ -107,6 +107,14 @@ class CDataFile
     //  Closes a CArchive returned from OpenAsCArchive.
     void CloseCArchive( CArchive *pArchive );
 
+    //  Byte length of a named entry INSIDE the container ( pEntryPath is the
+    //  map key, e.g. "files\stdgta.dat" ). The TOC stores offsets and no
+    //  sizes, so an entry ends where the next one begins; returns FALSE when
+    //  no container is open or the name is not in it. 015 phase 3: a caller
+    //  that hashes a non-RIFF entry has no other way to know where it stops,
+    //  because the CFile it gets back spans the whole container.
+    BOOL GetContainerEntrySize( const char *pEntryPath, DWORD &dwSize );
+
 protected:
     CFile *_OpenAsFile( const char *pFilename );
 
