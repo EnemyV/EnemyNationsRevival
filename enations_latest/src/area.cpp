@@ -4540,7 +4540,6 @@ void CWndArea::OnLButtonUp( UINT nFlags, CPoint point )
                 if ( pVehQ->m_pSdlRoute != NULL )
                     pVehQ->m_pSdlRoute->RefreshRoute( );
             }
-            ClrRoadIcons( );
             m_iMode = road_begin;   // stay armed for the next segment
             AreaApplyCursor( m_hCurRoadBgn[m_aa.m_iZoom] );
             SetButtonState( );
