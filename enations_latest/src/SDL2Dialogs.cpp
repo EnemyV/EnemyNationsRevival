@@ -1874,7 +1874,15 @@ bool SDL2_RunJoinNetworkFlow(GameWindow* gameWindow) {
     // joined lobby doesn't show stale history (operator: chat should clear on join).
     SDL2Chat_Clear();
 
-    // Step 2: write TCP config for VDMPLAY
+    // Step 2: write TCP config for VDMPLAY — validate BEFORE persisting: a bad
+    // address (e.g. a stray colon, or a malformed dotted quad) must not get
+    // written to vdmplay.ini, or every later launch pre-fills and re-tries the
+    // same poisoned value with no UI way to clear it.
+    if (!vpValidateAddressString(joinDlg.m_serverAddr.c_str())) {
+        SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, "Network Error",
+            "That server address is not valid.", nullptr);
+        return false;
+    }
     WritePrivateProfileString("TCP", "ServerAddress", joinDlg.m_serverAddr.c_str(), ".\\vdmplay.ini");
     std::string sPort = std::to_string(joinDlg.m_iPort);
     WritePrivateProfileString("TCP", "WellKnownPort", sPort.c_str(), ".\\vdmplay.ini");
@@ -1908,6 +1916,15 @@ bool SDL2_RunJoinNetworkFlow(GameWindow* gameWindow) {
         SDL2SessionBrowseDialog browseDlg(gameWindow, pJoin);
         int r = browseDlg.DoModal();
         if (r == 3) {
+            // Re-target: validate BEFORE persisting (same reasoning as Step 2
+            // above) — a bad re-search address must not overwrite the working
+            // ServerAddress in vdmplay.ini. Re-show the browser rather than
+            // aborting the whole join, since the existing session is still valid.
+            if (!vpValidateAddressString(browseDlg.m_searchAddr.c_str())) {
+                SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, "Network Error",
+                    "That server address is not valid.", nullptr);
+                continue;
+            }
             // Re-target: write the edited address/port and re-open the client.
             WritePrivateProfileString("TCP", "ServerAddress", browseDlg.m_searchAddr.c_str(), ".\\vdmplay.ini");
             WritePrivateProfileString("TCP", "WellKnownPort",

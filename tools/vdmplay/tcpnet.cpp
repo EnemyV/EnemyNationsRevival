@@ -599,6 +599,16 @@ CNetAddress* CTcpNet::MakeAddressFromString(LPCSTR addrString)
 
 }
 
+// Exported parse-only check (see vdmplay.h) — same TranslateAddressString the
+// TCP transport itself uses, exposed so a caller can validate a typed address
+// before persisting it, without needing an open session/handle. extern "C"
+// here to match the linkage of the vdmplay.h declaration (its extern "C" block).
+extern "C" BOOL VPAPI vpValidateAddressString(LPCSTR addrString)
+{
+ tcpaddress_s addr;
+ return addrString && CTcpNet::TCPAddress::TranslateAddressString(addr, addrString);
+}
+
 void CTcpNet::SetRegistrationAddress(LPCSTR addr)
 {
  if (m_regAddr)

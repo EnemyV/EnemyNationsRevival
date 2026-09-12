@@ -489,6 +489,12 @@ extern "C"
     // relay gate is on; sends no payload.
     BOOL VPAPI vpProbePeerLink( IN VPSESSIONHANDLE pSesHdl, IN VPPLAYERID playerId );
 
+    // Parse-only check of a "host[:streamport[,dgport]]" address string (no
+    // session/handle needed) — TRUE iff the transport would accept it. Lets a
+    // caller reject a bad address BEFORE persisting it (e.g. to vdmplay.ini),
+    // instead of finding out only when a later OpenClient/connect attempt fails.
+    BOOL VPAPI vpValidateAddressString( IN LPCSTR addrString );
+
 
 #if !defined( __VDMPLUI_H__ ) && !defined( VPSYSTEM )
 
