@@ -6,6 +6,8 @@ Run from the repository root on Windows with Visual Studio 2022 Community:
 python tests/traffic/run-remote-loc-test.py
 python tests/traffic/run-remote-loc-test.py --clearance
 python tests/traffic/run-remote-loc-test.py --parking
+python tests/traffic/run-remote-loc-test.py --junction
+python tests/traffic/run-remote-loc-test.py --junction --o2
 ```
 
 The runner compiles the actual production method bodies against minimal scene
@@ -17,6 +19,17 @@ The parking suite checks bounded path searches and continuation, failed-request
 throttling, remote blocker classification, and the civilian flee target guard.
 It also checks that saved recovery cannot run on remote copies, that ownerless
 blockers are safe, and that local arrival/hold behavior remains enabled.
+
+The junction suite compiles the whole of `GetNextHex` - plus `Rotate`, `GetAngle` and
+`aiBaseDir`, so the angle limit is the real one - and drives two trucks round a paved
+bend. Both decide from the same scene state in the same tick, and what each ASKS for is
+recorded; nothing is reserved or interpolated, and a pair whose requests coincide stops
+there. It covers all four rotations of the bend in both travel directions, and requires
+the step to be unchanged off pavement, on a bridge deck, where `MustKeepLane` governs,
+within three sub-hexes of the destination, while reversing, and for a straight step
+through a crossroads. `--o2` compiles the fixture optimised; both must pass. The
+correction is toggled through `EN_TRAFFIC` bit 16, which is how one binary prints the
+before and after columns.
 
 Use `--baseline-ref <commit>` to run the same assertions against older source.
 For example, bfad1d28 fails four explicit-Stop checks that bd62368e fixes.

@@ -16,9 +16,13 @@ parser = argparse.ArgumentParser(description=__doc__)
 parser.add_argument('--baseline-ref', help='Read production methods from this Git revision')
 parser.add_argument('--clearance', action='store_true', help='Check eligibility, touching propagation and expiry instead')
 parser.add_argument('--parking', action='store_true', help='Check bounded parking, failed-request cooldown, lane authority and fleeing')
+parser.add_argument('--junction', action='store_true', help='Check road-turn lane discipline at an open paved junction')
+parser.add_argument('--o2', action='store_true', help='Compile the fixture optimised (/O2) instead of /Od')
 args = parser.parse_args()
-suite = 'parking' if args.parking else ('clearance' if args.clearance else 'locations')
-out = HERE / 'remote-loc-out' / suite / ('baseline' if args.baseline_ref else 'candidate')
+suite = ('junction' if args.junction else
+         'parking' if args.parking else ('clearance' if args.clearance else 'locations'))
+out = (HERE / 'remote-loc-out' / suite /
+       (('baseline' if args.baseline_ref else 'candidate') + ('-o2' if args.o2 else '')))
 out.mkdir(parents=True, exist_ok=True)
 path = 'enations_latest/src/vehmove.cpp'
 source = (subprocess.check_output(['git', '-C', str(ROOT), 'show', args.baseline_ref + ':' + path]).decode()
@@ -39,7 +43,20 @@ def method(signature, source=source):
     return header + '\n' + source[opening:end]
 
 
-if args.parking:
+if args.junction:
+    def other(rel):
+        return (subprocess.check_output(['git', '-C', str(ROOT), 'show', args.baseline_ref + ':' + rel]).decode()
+                if args.baseline_ref else (ROOT / rel).read_text(encoding='utf-8'))
+    veh = other('enations_latest/src/vehicle.cpp')
+    inl = other('enations_latest/src/vehicle.inl')
+    unit = other('enations_latest/src/unit.cpp')
+    actual = re.search(r'^int aiBaseDir\[9\][^;]*;', veh, re.M).group(0)
+    actual += '\n' + method('_inline int GetDirIndex ', inl)
+    actual += '\n' + method('_inline int GetAngle ', inl)
+    actual += '\n' + method('CSubHex Rotate( int iDir,', unit)
+    actual += '\n' + method('BOOL CVehicle::GetNextHex(')
+    case, include = 'test_junction.cpp', 'junction_actual.inc'
+elif args.parking:
     actual = '\n'.join(method(s) for s in (
         'BOOL CVehicle::FindOffRoadSpot(', 'BOOL CVehicle::AskToMove(', 'BOOL CVehicle::MustKeepLane('))
     path = 'enations_latest/src/netapi.cpp'
@@ -85,8 +102,14 @@ print('Production methods SHA256:', hashlib.sha256(actual.encode()).hexdigest(),
 vs = Path('C:/Program Files/Microsoft Visual Studio/2022/Community/VC/Auxiliary/Build/vcvars64.bat')
 batch = out / 'compile.cmd'
 exe = out / 'remote_loc_test.exe'
+opt = '/O2' if args.o2 else '/Od'
+# The junction suite compiles a whole shipped function rather than a small method,
+# so it carries that function's own /W4 noise: C4456/C4457 (the production body
+# redeclares xDif/yDif in inner scopes) and C4100 (an argument only a debug build
+# uses). Suppressed here, never in the game build.
+noise = ' /wd4456 /wd4457 /wd4100' if args.junction else ''
 batch.write_text(f'@echo off\ncall "{vs}" >nul 2>&1\nif errorlevel 1 exit /b 2\n'
-                 f'cl /nologo /EHsc /std:c++17 /W4 /I"{out}" "{HERE / case}" '
+                 f'cl /nologo /EHsc /std:c++17 /W4 {opt}{noise} /I"{out}" "{HERE / case}" '
                  f'/Fo"{out / "remote_loc.obj"}" /Fe"{exe}"\nexit /b %errorlevel%\n', encoding='utf-8')
 compiled = subprocess.run(['cmd', '/c', str(batch)], cwd=out)
 if compiled.returncode:
