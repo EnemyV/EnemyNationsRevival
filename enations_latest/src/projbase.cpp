@@ -661,6 +661,14 @@ CExplosion::Draw(
 
     CSpriteView *pspriteview = GetView();
 
+    // 015 phase 3: an explosion that owns a corpse now lives EXPL_KILLFRAME
+    // frames whatever its art is doing, so a sprite without a usable view is
+    // drawn several times instead of once before Operate removed it. The sprite
+    // check above never covered that case; make it explicit rather than widen
+    // an existing window.
+    if ( pspriteview == NULL )
+        return CRect( 0, 0, 0, 0 );
+
     ptOffset.x -= pspriteview->Width()  >> 1;
     ptOffset.y -= pspriteview->Height();
 
