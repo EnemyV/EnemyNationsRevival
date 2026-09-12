@@ -1960,7 +1960,12 @@ bool SDL2_RunJoinNetworkFlow(GameWindow* gameWindow) {
                 OutputDebugStringA( "\n" );
                 theApp.Log( szLog );
 
-                SDL_ShowSimpleMessageBox( SDL_MESSAGEBOX_ERROR, "Enemy Nations", sMsg.c_str(), nullptr );
+                // Parented to the game window, NOT nullptr: a null-parent box opens
+                // undecorated and unfocusable BEHIND the fullscreen window on
+                // Linux/XWayland/Mutter and the game looks hung (see the same fix
+                // in SDL2OptionsDialog above).
+                SDL_ShowSimpleMessageBox( SDL_MESSAGEBOX_ERROR, "Enemy Nations", sMsg.c_str(),
+                                          gameWindow ? gameWindow->GetWindow() : nullptr );
                 chosenIdx = -1;
                 continue;   // back to the browser
             }
