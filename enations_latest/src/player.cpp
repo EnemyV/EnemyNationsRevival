@@ -852,7 +852,15 @@ void CPlayer::Research( int iNumSec )
     CRsrchStatus* pRs      = &GetRsrch( GetRsrchItem( ) );
     ASSERT( !pRs->m_bDiscovered );
 
-    int iNum = m_iRsrchHave * iNumSec * 2;
+    // Research Speed line: +10% points per level (100% at none .. 150% at level 5).
+    // 64-bit intermediate because the scaled product is 1.5x what this line used to
+    // compute, and the 32-bit version of this arithmetic has overflowed before (see
+    // the m_iPtsDiscovered note below). At 100% the result is bit-identical to the old
+    // expression, so saves and pre-line games are unaffected.
+    long long llNum = ( (long long)m_iRsrchHave * iNumSec * 2 * GetRsrchSpeedPct( ) ) / 100;
+    if ( llNum > 0x7FFFFFFF ) llNum = 0x7FFFFFFF;   // unreachable in practice, but this
+    if ( llNum < 0 )          llNum = 0;            // line has overflowed before (see below)
+    int iNum = (int)llNum;
     pRs->m_iPtsDiscovered += iNum;
 
     // did we discover it
@@ -993,11 +1001,36 @@ void CPlayer::UpdateRacialAttributes( int iRsrch )
         m_bRange = m_iRsrchItem - CRsrchArray::range_1 + 1;
         m_bRange = __minmax( 0, 3, m_bRange );
         break;
+    // range_4 is appended at the END of the enum (not contiguous after range_3), so map it
+    // explicitly -- the subtraction above would give a nonsense level. The level-4 range
+    // bonus is a diminishing step in CUnit::AssignData (the >>(4-lvl) form would shift by 0).
+    case CRsrchArray::range_4:
+        m_bRange = 4;
+        break;
     case CRsrchArray::atk_1:
     case CRsrchArray::atk_2:
     case CRsrchArray::atk_3:
         m_bAttack = m_iRsrchItem - CRsrchArray::atk_1 + 1;
         m_bAttack = __minmax( 0, 3, m_bAttack );
+        break;
+    // atk_4..atk_8 are appended at the END of the enum -- same reason as range_4 above.
+    // atk_4 was appended in an earlier batch than atk_5..8, so the two groups are NOT
+    // contiguous with each other and each level is mapped by hand. The per-level bonus
+    // (diminishing, floored at +2 percentage points) is a table in CUnit::AssignData.
+    case CRsrchArray::atk_4:
+        m_bAttack = 4;
+        break;
+    case CRsrchArray::atk_5:
+        m_bAttack = 5;
+        break;
+    case CRsrchArray::atk_6:
+        m_bAttack = 6;
+        break;
+    case CRsrchArray::atk_7:
+        m_bAttack = 7;
+        break;
+    case CRsrchArray::atk_8:
+        m_bAttack = 8;
         break;
     case CRsrchArray::def_1:
     case CRsrchArray::def_2:
@@ -1187,6 +1220,22 @@ BOOL CPlayer::CanRsrch( int iIndex )
     for ( int iNum = 0, *piNum = pRi->m_piBldgsRequired; iNum < pRi->m_iNumBldgsRequired; iNum++, piNum++ )
         if ( !GetExists( *piNum ) )
             return ( FALSE );
+
+    // Research Speed 1: gated on how much research the colony has ALREADY completed,
+    // not on a precursor topic (the prereq array is AND-only and cannot express "any
+    // N of them"). Only PAID topics count -- the free ones load pre-discovered, so
+    // counting them would grant 5 of the 10 before the game even starts. Loop bound is
+    // GetRsrchSize() (the player's own array), not num_types, so a save still being
+    // resized up cannot walk off the end.
+    if ( iIndex == CRsrchArray::rsrch_speed_1 )
+    {
+        int iDone = 0;
+        for ( int iOn = 1; iOn < GetRsrchSize( ); iOn++ )
+            if ( GetRsrch( iOn ).m_bDiscovered && ( theRsrch[iOn].m_iPtsRequired > 0 ) )
+                iDone++;
+        if ( iDone < RSRCH_SPEED_MIN_TOPICS )
+            return ( FALSE );
+    }
 
     // Pontoon Bridges: ONE-OF building gate (light factory line / refinery /
     // heavy factory) - the prereq array is AND-only, so the OR lives here
