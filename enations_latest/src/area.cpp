@@ -4158,6 +4158,7 @@ void CWndArea::StopRoute( CVehicle* pVeh )
     pVeh->GetRouteList( ).RemoveAll( );
     pVeh->SetRoutePos( NULL );
     pVeh->SetRouteLoop( TRUE );
+    pVeh->ClearOrders( );   // #38: the list is already empty; this resets the order state
     if ( pVeh->m_pSdlRoute != NULL )
         pVeh->m_pSdlRoute->RefreshRoute( );
 }
@@ -4210,7 +4211,14 @@ void CWndArea::OnLButtonUp( UINT nFlags, CPoint point )
     case build_loc:
     case rocket_pos: {
         ASSERT_STRICT( ( 0 < m_iBuild ) && ( m_iBuild <= theStructures.GetNumBuildings( ) ) );
-        if ( ( nFlags & MK_SHIFT ) && ( m_pUnit != NULL ) && ( m_pUnit->GetUnitType( ) == CUnit::vehicle ) )
+
+        // #38: Shift+place QUEUES the building on the selected crane instead of
+        // replacing its job. Gated on build_loc ONLY - this case label is shared with
+        // rocket_pos, where Shift keeps its 1996 meaning (bail back out of placement).
+        const BOOL bQueueBuild = ( m_iMode == build_loc ) && ( nFlags & MK_SHIFT ) && ( m_pUnit != NULL ) &&
+                                 ( m_pUnit->GetUnitType( ) == CUnit::vehicle );
+        if ( ( nFlags & MK_SHIFT ) && ( !bQueueBuild ) && ( m_pUnit != NULL ) &&
+             ( m_pUnit->GetUnitType( ) == CUnit::vehicle ) )
         {
             TRAP( );  // BUGBUG - check what this does
             ( (CVehicle*)m_pUnit )->SetEvent( CVehicle::none );
@@ -4274,14 +4282,34 @@ void CWndArea::OnLButtonUp( UINT nFlags, CPoint point )
         // find the closest surrounding hex
         theGame.Event( EVENT_CONST_CANT, EVENT_OFF );
 
-        CHexCoord hexDest( hex );
-        BuildBldgDest( (CVehicle*)m_pUnit, m_iBuild, GetBuildDir( ), hexDest );
+        CVehicle* pVehBuild = (CVehicle*)m_pUnit;
 
-        // lets build here
+        // #38 QUEUE: the site passed the same check a plain placement makes (m_iFound
+        // above), so append the order and STAY armed - same crane still selected, same
+        // building type still on the cursor - so the next click places the next one.
+        // Esc / Cancel leaves the mode and the queue stays on the crane. NextOrder only
+        // dispatches if the crane is idle; on a busy crane this is a pure append.
+        if ( bQueueBuild )
+        {
+            pVehBuild->AddOrder( hex, CRoute::build, m_iBuild, GetBuildDir( ) );
+            pVehBuild->NextOrder( );
+            if ( pVehBuild->m_pSdlRoute != NULL )
+                pVehBuild->m_pSdlRoute->RefreshRoute( );
+            m_iMode = build_ready;
+            SetButtonState( );
+            return;
+        }
+
+        CHexCoord hexDest( hex );
+        BuildBldgDest( pVehBuild, m_iBuild, GetBuildDir( ), hexDest );
+
+        // lets build here - a plain placement REPLACES the queue (the same
+        // replace-versus-append split a move has) and executes now
+        pVehBuild->ClearOrders( );
         m_pUnit->ResumeUnit( );
-        ( (CVehicle*)m_pUnit )->SetBuilding( hex, m_iBuild, GetBuildDir( ) );
-        ( (CVehicle*)m_pUnit )->SetEvent( CVehicle::build );
-        ( (CVehicle*)m_pUnit )->SetDestAndMode( hexDest, CVehicle::full );
+        pVehBuild->SetBuilding( hex, m_iBuild, GetBuildDir( ) );
+        pVehBuild->SetEvent( CVehicle::build );
+        pVehBuild->SetDestAndMode( hexDest, CVehicle::full );
 
         // we loose selection of the crane so we don't change the orders
         m_lstUnits.RemoveAllUnits( TRUE );

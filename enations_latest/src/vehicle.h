@@ -467,6 +467,11 @@ public:
 		void					PathNextHex ();
 		void					DeletePath ();
 		void					SetLocation (CHexCoord & hex, POSITION pos, int iType);
+
+		// ORDER QUEUE (#38). Orders share m_route with the movement stops.
+		void					AddOrder (CHexCoord const & hex, int iType, int iBldgType, int iDir);
+		void					ClearOrders ();
+		BOOL					NextOrder ();
 		CList <CRoute *, CRoute *> &	GetRouteList () { ASSERT_STRICT_VALID (this); return (m_route); }
 		// Looping vs one-shot route. TRUE (default) = the legacy behavior (cycle back to
 		// the first stop at the end); FALSE = stop at the last stop. Runtime-only (not
@@ -628,6 +633,13 @@ protected:
 		CList <CRoute *, CRoute *> m_route;		// route its travelling
 		BOOL				m_bRouteLoop;						// TRUE = loop the route (legacy); FALSE = stop at the end
 		POSITION			m_pos;									// element we are travelling to
+
+		// #38 order queue. m_iEvent CANNOT say whether a job is under way: BuildBldg
+		// clears it at SEND (1996), so "event none, stopped" is both "waiting for the
+		// server" and "idle". This is the bit that tells them apart. Runtime only,
+		// deliberately not serialized - a loaded crane picks its queue up from idle.
+		enum ORDER_STATE { order_none, order_sent, order_work, order_done };
+		BYTE				m_iOrderState;					// ORDER_STATE of the order being run
 		CSubHex				m_ptDest;								// final sub-hex we are going to
 		CHexCoord			m_hexDest;							// final hex we are going to
 		CHexCoord			m_hexLastDest;					// to stop back and forth

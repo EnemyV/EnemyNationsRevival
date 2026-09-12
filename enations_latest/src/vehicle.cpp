@@ -678,11 +678,128 @@ void CVehicle::Operate() {
     ASSERT_VALID (this);
 }
 
+// ---------------------------------------------------------------------------
+// ORDER QUEUE (#38)
+//
+// An ORDER is a job the vehicle does at a hex (build a structure, lay a road,
+// repair) as opposed to a 1996 movement STOP (waypoint/load/unload). Both live on
+// m_route, so the route window, the Shift preview, save/load and the crane's
+// destructor already handle orders for free.
+//
+// One dispatcher, NextOrder(), decides what "start the next one" means. Nothing is
+// reserved or validated when an order is QUEUED - the site is re-checked by the
+// client and then by the server at DISPATCH, exactly as a single placement is.
+// ---------------------------------------------------------------------------
+
+// Append an order at the tail. Queue-time only: no validation, no reservation, no
+// message on the wire.
+void CVehicle::AddOrder(CHexCoord const &hex, int iType, int iBldgType, int iDir) {
+
+    ASSERT_VALID (this);
+    ASSERT (CRoute::IsOrder(iType));
+
+    BOOL bFresh = m_route.IsEmpty();
+    m_route.AddTail(new CRoute(hex, iType, iBldgType, iDir));
+
+    // an order queue is one-shot: each order is consumed when its job ends. Only on
+    // a FRESH list, so queueing behind an existing loop route doesn't rewrite it.
+    if (bFresh)
+        m_bRouteLoop = FALSE;
+
+    if (GetRoutePos() == NULL)
+        SetRoutePos(m_route.GetHeadPosition());
+}
+
+// A plain (no-Shift) command REPLACES the queue, the way a plain move replaces a
+// route. Only the ORDER kinds go: movement stops on the same list belong to the
+// route feature and are left exactly as they are.
+void CVehicle::ClearOrders() {
+
+    ASSERT_VALID (this);
+
+    BOOL bCurGone = FALSE;
+    POSITION pos = m_route.GetHeadPosition();
+    while (pos != NULL) {
+        POSITION cur = pos;
+        CRoute *pR = m_route.GetNext(pos);
+        if ((pR != NULL) && (CRoute::IsOrder(pR->GetRouteType()))) {
+            if (cur == m_pos)
+                bCurGone = TRUE;
+            m_route.RemoveAt(cur);
+            delete pR;
+        }
+    }
+    // never leave the cursor on a freed node - GetHeadPosition is NULL on an empty list
+    if (bCurGone)
+        SetRoutePos(m_route.GetHeadPosition());
+
+    m_iOrderState = order_none;
+}
+
+// Start the order at the cursor, if there is one and this vehicle is free to take
+// it. Returns TRUE if an order was dispatched.
+BOOL CVehicle::NextOrder() {
+
+    ASSERT_VALID (this);
+
+    // OWNER AUTHORITY: a queue is client-local and is only ever dispatched by the
+    // client that owns the unit. Never from a remote node's copy.
+    if ((GetOwner() == NULL) || (!GetOwner()->IsLocal()))
+        return (FALSE);
+
+    // Busy? The queue advances when the current job ENDS, not before. m_iOrderState
+    // covers the window where m_iEvent cannot (request sent, waiting on the server);
+    // the rest is the ordinary "this crane has a job" test.
+    if ((m_iOrderState != order_none) || (m_pBldg != NULL) ||
+        (m_iEvent != none) || (m_cMode != stop))
+        return (FALSE);
+
+    POSITION pos = (m_pos != NULL) ? m_pos : m_route.GetHeadPosition();
+    if (pos == NULL)
+        return (FALSE);
+    CRoute *pR = m_route.GetAt(pos);
+    if (pR == NULL)
+        return (FALSE);
+
+    // A movement STOP at the cursor belongs to ArrivedDest's route machinery. Leaving
+    // it alone is what keeps a stopped waypoint route stopped instead of restarting it.
+    if (!CRoute::IsOrder(pR->GetRouteType()))
+        return (FALSE);
+
+    SetRoutePos(pos);
+
+    switch (pR->GetRouteType()) {
+        case CRoute::build: {
+            // exactly what a plain placement does, read back off the order
+            CHexCoord hexDest(pR->GetCoord());
+            BuildBldgDest(this, pR->GetBldgType(), pR->GetBldgDir(), hexDest);
+            ResumeUnit();
+            SetBuilding(pR->GetCoord(), pR->GetBldgType(), pR->GetBldgDir());
+            SetEvent(build);
+            SetDestAndMode(hexDest, full);
+            break;
+        }
+
+        default:
+            TRAP();     // an order kind with no dispatch - add it to this switch
+            return (FALSE);
+    }
+
+    return (TRUE);
+}
+
 void CVehicle::BuildBldg() {
 
     m_iEvent = none;
     if (!GetOwner()->IsLocal())
         return;
+
+    // #38: a build request is now IN FLIGHT. m_iEvent was cleared on the line above
+    // (1996: the build event ends at SEND, not at completion), so this flag is the
+    // only thing that tells "waiting for the server" from "idle with a queue". Set
+    // for EVERY build request, queued or not, so the two paths share one state
+    // machine and a plain build can never be mistaken for an idle crane.
+    m_iOrderState = order_sent;
     ASSERT_STRICT (m_ptHead.SameHex(m_ptTail));
 
     CMsgBuildBldg msg(this, m_hexBldg, m_iBuildDir, m_iBldgType);

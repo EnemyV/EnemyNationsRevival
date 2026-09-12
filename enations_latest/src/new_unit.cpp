@@ -4958,6 +4958,7 @@ void CVehicle::ctor( )
     m_cMode    = stop;
     m_pos      = NULL;
     m_bRouteLoop = TRUE;   // legacy default; F1 lets the player set one-shot routes
+    m_iOrderState = order_none;   // #38 order queue: nothing under way
     m_phexPath = NULL;
     m_iPathOff = 0;
     m_iPathLen = 0;
