@@ -472,6 +472,8 @@ public:
 		void					AddOrder (CHexCoord const & hex, int iType, int iBldgType, int iDir);
 		void					ClearOrders ();
 		BOOL					NextOrder ();
+		void					OrderComplete ();
+		void					OrderFailed (CHexCoord const & hex, int iBldgType);
 		CList <CRoute *, CRoute *> &	GetRouteList () { ASSERT_STRICT_VALID (this); return (m_route); }
 		// Looping vs one-shot route. TRUE (default) = the legacy behavior (cycle back to
 		// the first stop at the end); FALSE = stop at the last stop. Runtime-only (not
@@ -640,6 +642,8 @@ protected:
 		// deliberately not serialized - a loaded crane picks its queue up from idle.
 		enum ORDER_STATE { order_none, order_sent, order_work, order_done };
 		BYTE				m_iOrderState;					// ORDER_STATE of the order being run
+		CHexCoord		m_hexOrder;						// identity of the order dispatched - the
+		BYTE				m_iOrderKind;					//   list can change while the job runs
 		CSubHex				m_ptDest;								// final sub-hex we are going to
 		CHexCoord			m_hexDest;							// final hex we are going to
 		CHexCoord			m_hexLastDest;					// to stop back and forth

@@ -9,6 +9,7 @@
 #include "stdafx.h"
 #include "en_logpath.h"   // EnLogPath - logs to the launch dir, not the exe dir
 #include "SDL2GameDialogs.h"
+#include "SDL2RouteWindow.h"   // #38: refresh the route window as orders are consumed
 #include "event.h"
 #include "lastplnt.h"
 #include "cpathmgr.h"
@@ -275,6 +276,22 @@ void CVehicle::Operate() {
 
             if (TestStuck())
                 return;
+
+            // #38 ORDER QUEUE. Idle is the only safe place to advance it: every other
+            // mode means a job is running. Already under GetOwner()->IsLocal(), so a
+            // remote copy of this vehicle never dispatches anything.
+            //   order_work + no site -> this vehicle's job at the site ENDED (finished,
+            //                           or the site was destroyed / taken away)
+            //   order_done           -> consume that order
+            //   order_none           -> start the next one, and stop processing this
+            //                           tick as "idle" - we just stopped being idle
+            if ((m_iOrderState == order_work) && (m_pBldg == NULL))
+                m_iOrderState = order_done;
+            if (m_iOrderState == order_done)
+                OrderComplete();
+            if (m_iOrderState == order_none)
+                if (NextOrder())
+                    return;
 
             xASSERT (ASSERT_PRI_ANAL, ASSERT_VEH_MOVE, (!m_cOwn) || (theBuildingHex.GetBuilding(m_ptHead) == NULL));
             if (!(m_bFlags & told_ai_stop)) {
@@ -768,6 +785,12 @@ BOOL CVehicle::NextOrder() {
 
     SetRoutePos(pos);
 
+    // Remember WHICH order went out. The route window can delete entries or move the
+    // cursor while the job runs, and a rejection can come back a tick or more later,
+    // so completion and failure both match against this rather than trusting the cursor.
+    m_hexOrder   = pR->GetCoord();
+    m_iOrderKind = (BYTE) pR->GetRouteType();
+
     switch (pR->GetRouteType()) {
         case CRoute::build: {
             // exactly what a plain placement does, read back off the order
@@ -786,6 +809,88 @@ BOOL CVehicle::NextOrder() {
     }
 
     return (TRUE);
+}
+
+// THIS vehicle's job at the site has ended. Consume the order it was running so the
+// next one can start.
+//
+// WHERE THIS IS DETECTED, and why not inside the completion call itself: there is no
+// per-crane completion callback in the 1996 code. ConstructBuilding hands work to the
+// building and never learns the outcome; the building decides completion and tells
+// every attached crane through the StopConstruction SWEEP, which receives only a
+// CBuilding* and so cannot tell "finished" from "destroyed", "repaired" or "abandoned
+// mine", and runs on every node. Hooking there would advance a queue on a destroyed
+// site and on a remote client. So the crane watches its OWN tie to the site instead -
+// m_pBldg going NULL after the work started - read from its own idle branch, which is
+// already local-owner gated. Site destroyed and site finished both end the order,
+// which is what the design asks for: destruction DROPS the order, it does not retry it.
+void CVehicle::OrderComplete() {
+
+    ASSERT_VALID (this);
+
+    m_iOrderState = order_none;
+
+    POSITION pos = (m_pos != NULL) ? m_pos : m_route.GetHeadPosition();
+    if (pos == NULL)
+        return;
+    CRoute *pR = m_route.GetAt(pos);
+    if (pR == NULL)
+        return;
+
+    // only consume the order we actually dispatched (a plain, unqueued build matches
+    // nothing here and simply leaves the list alone)
+    if ((pR->GetRouteType() != m_iOrderKind) || (!(pR->GetCoord() == m_hexOrder)))
+        return;
+
+    if (m_bRouteLoop) {
+        // looping list: keep the order, step the cursor on, cycle at the tail
+        POSITION posNext = pos;
+        m_route.GetNext(posNext);
+        SetRoutePos((posNext != NULL) ? posNext : m_route.GetHeadPosition());
+    } else {
+        m_route.RemoveAt(pos);
+        delete pR;
+        SetRoutePos(m_route.GetHeadPosition());
+    }
+
+    if (m_pSdlRoute != NULL)
+        m_pSdlRoute->RefreshRoute();
+}
+
+// A build request came back REJECTED. All three failure exits - the client's own
+// pre-send check, the server's foundation check and the server's tech gate - land in
+// ErrBuildBldg, which is where this is called from, after the standard warning.
+//
+// The rejection is matched to the ACTIVE request (the order that was sent, by hex and
+// building type), because it can arrive a tick or more after the send: only the order
+// it is FOR is dropped, and the rest of the queue carries on. A failed site is dropped
+// even on a looping list - looping will not make an unbuildable site buildable.
+void CVehicle::OrderFailed(CHexCoord const &hex, int iBldgType) {
+
+    ASSERT_VALID (this);
+
+    // answered either way: the crane is no longer waiting on the server
+    BOOL bWasSent = (m_iOrderState == order_sent);
+    m_iOrderState = order_none;
+    if (!bWasSent)
+        return;
+
+    POSITION pos = (m_pos != NULL) ? m_pos : m_route.GetHeadPosition();
+    if (pos == NULL)
+        return;
+    CRoute *pR = m_route.GetAt(pos);
+    if (pR == NULL)
+        return;
+    if ((pR->GetRouteType() != CRoute::build) || (!(pR->GetCoord() == hex)) ||
+        (pR->GetBldgType() != iBldgType))
+        return;       // not the order that was sent (or a plain, unqueued placement)
+
+    m_route.RemoveAt(pos);
+    delete pR;
+    SetRoutePos(m_route.GetHeadPosition());
+
+    if (m_pSdlRoute != NULL)
+        m_pSdlRoute->RefreshRoute();
 }
 
 void CVehicle::BuildBldg() {
@@ -1205,6 +1310,11 @@ void CVehicle::ConstructBuilding() {
         return;
     }
     ASSERT_STRICT_VALID (m_pBldg);
+
+    // #38: the site exists and this crane is working it, so the request phase is over.
+    // Set unconditionally rather than only out of order_sent, so a crane loaded from a
+    // save mid-build reaches this state too and its queue still advances on completion.
+    m_iOrderState = order_work;
 
     // get change based on everything
     int iInc = GetProd(GetOwner()->GetConstProd());
