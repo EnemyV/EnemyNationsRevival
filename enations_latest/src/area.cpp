@@ -4184,6 +4184,22 @@ void CWndArea::ShiftQueueMove( CVehicle* pVeh, CSubHex const& sub )
 // the operator wants a move to interrupt them. If the vehicle is auto-router-controlled (a
 // loop/haul route) release it from the router first, then clear the route list and reset the
 // loop flag to the default.
+// #38: TRUE while this vehicle's list still holds 1996 MOVEMENT stops. An order queue
+// and a movement route may not share one list - ArrivedDest would drive to an order as
+// if it were a stop and delete it unexecuted - so the FIRST order appended onto a
+// vehicle that is running stops takes the list over through StopRoute (which also hands
+// it back from the auto-router). The other direction is enforced in CVehicle::SetLocation.
+static BOOL HasMoveStops( CVehicle* pVeh )
+{
+    for ( POSITION p = pVeh->GetRouteList( ).GetHeadPosition( ); p != NULL; )
+    {
+        CRoute* pR = pVeh->GetRouteList( ).GetNext( p );
+        if ( ( pR != NULL ) && ( !CRoute::IsOrder( pR->GetRouteType( ) ) ) )
+            return ( TRUE );
+    }
+    return ( FALSE );
+}
+
 void CWndArea::StopRoute( CVehicle* pVeh )
 {
     if ( pVeh->IsHpControl( ) )          // on an auto-router (loop/haul) route — release it
@@ -4330,6 +4346,8 @@ void CWndArea::OnLButtonUp( UINT nFlags, CPoint point )
         // dispatches if the crane is idle; on a busy crane this is a pure append.
         if ( bQueueBuild )
         {
+            if ( HasMoveStops( pVehBuild ) )
+                StopRoute( pVehBuild );   // #38: one list, one meaning
             pVehBuild->AddOrder( hex, CRoute::build, m_iBuild, GetBuildDir( ) );
             pVehBuild->NextOrder( );
             if ( pVehBuild->m_pSdlRoute != NULL )
@@ -4535,6 +4553,8 @@ void CWndArea::OnLButtonUp( UINT nFlags, CPoint point )
                 if ( pUnitQ->GetUnitType( ) != CUnit::vehicle )
                     continue;
                 CVehicle* pVehQ = (CVehicle*)pUnitQ;
+                if ( HasMoveStops( pVehQ ) )
+                    StopRoute( pVehQ );   // #38: one list, one meaning
                 pVehQ->AddOrder( hexStartQ, CRoute::build_road, 0, 0, &hexQ );
                 pVehQ->NextOrder( );   // no-op unless the crane is idle
                 if ( pVehQ->m_pSdlRoute != NULL )
@@ -4594,6 +4614,8 @@ void CWndArea::OnLButtonUp( UINT nFlags, CPoint point )
                     CVehicle* pVehR = (CVehicle*)pUnit;
                     if ( bQueueRepair )
                     {
+                        if ( HasMoveStops( pVehR ) )
+                            StopRoute( pVehR );   // #38: one list, one meaning
                         pVehR->AddOrder( hex, CRoute::repair, 0, 0 );
                         pVehR->NextOrder( );   // no-op unless the crane is idle
                         if ( pVehR->m_pSdlRoute != NULL )

@@ -230,7 +230,8 @@ static void lint_forbids(std::string const &src, const char *what, const char *d
     }
 }
 
-static int test_source_lint(const char *newUnit, const char *vehicleH, const char *versionH) {
+static int test_source_lint(const char *newUnit, const char *vehicleH, const char *versionH,
+                            const char *unitCpp, const char *vehicleCpp, const char *areaCpp) {
     std::string s;
 
     if (!ReadFile(newUnit, s)) {
@@ -262,6 +263,31 @@ static int test_source_lint(const char *newUnit, const char *vehicleH, const cha
     }
     // The whole point of gating the WRITER too: this branch must not move the counter.
     lint_needs(s, "#define         VER_RELEASE     7", "VER_RELEASE is untouched at 7");
+
+    // The dispatcher half of the model has no byte stream to compare against, so these
+    // pin the two invariants a fixture cannot see: one list never holds both kinds, and
+    // a repair order is validated before it is dispatched.
+    if (!ReadFile(unitCpp, s)) {
+        std::printf("[orders] SKIP unit.cpp lint (cannot open %s)\n", unitCpp);
+        return 2;
+    }
+    lint_needs(s, "if ( !CRoute::IsOrder( iType ) )", "SetLocation drops orders on a movement append");
+
+    if (!ReadFile(vehicleCpp, s)) {
+        std::printf("[orders] SKIP vehicle.cpp lint (cannot open %s)\n", vehicleCpp);
+        return 2;
+    }
+    lint_needs(s, "RepairTargetLives(pR->GetCoord())", "NextOrder validates a repair target first");
+    lint_needs(s, "BOOL CVehicle::RepairTargetLives", "and the predicate exists");
+
+    if (!ReadFile(areaCpp, s)) {
+        std::printf("[orders] SKIP area.cpp lint (cannot open %s)\n", areaCpp);
+        return 2;
+    }
+    lint_needs(s, "static BOOL HasMoveStops( CVehicle* pVeh )", "the move-stop test");
+    lint_needs(s, "StopRoute( pVehBuild );", "a build order takes the list over");
+    lint_needs(s, "StopRoute( pVehQ );", "a road order takes the list over");
+    lint_needs(s, "StopRoute( pVehR );", "a repair order takes the list over");
     return 0;
 }
 
@@ -274,8 +300,8 @@ int main(int argc, char **argv) {
     test_route_loop_round_trip();
     test_cursor_survives_the_payload();
 
-    if (argc >= 4) {
-        int rc = test_source_lint(argv[1], argv[2], argv[3]);
+    if (argc >= 7) {
+        int rc = test_source_lint(argv[1], argv[2], argv[3], argv[4], argv[5], argv[6]);
         if (rc == 2)
             std::printf("[orders] (source lint skipped)\n");
     } else {
