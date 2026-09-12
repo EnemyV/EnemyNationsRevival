@@ -6178,6 +6178,13 @@ void CFlag::Serialize( CArchive& ar )
     }
 }
 
+// BUGS #99 (save format Release 8): the "no cursor" sentinel for the serialized route
+// cursor. The cursor index goes on the wire as a WORD, and so does the route count, so
+// the largest index a real cursor can take is 0xFFFE - 0xFFFF is out of range for every
+// possible route and is therefore safe as a sentinel. It is (WORD)-1, and it round-trips
+// byte-for-byte through CArchive's raw WORD write/read.
+static const WORD wROUTE_POS_NONE = (WORD)-1;
+
 void CVehicle::Serialize( CArchive& ar )
 {
 
@@ -6206,17 +6213,17 @@ void CVehicle::Serialize( CArchive& ar )
             pR->Serialize( ar );
             iOn++;
         }
-        // BUGS #88: the ONE case the pre-advance compare changes that is not a cursor
-        // sitting on an element - a NULL cursor. The shipped post-advance compare
-        // matched on the final iteration (GetNext leaves pos NULL, and NULL == NULL),
-        // so a NULL cursor on an N-element route stored N-1; pre-advance it would
-        // store 0. Restore N-1 explicitly, so this fix is a provable no-op outside
-        // its trigger. Whether N-1 (rather than 0, or a real "no cursor" sentinel) is
-        // the RIGHT value for a NULL cursor is a separate question, tracked as
-        // BUGS #99 - it is NOT decided here; this only preserves the pre-existing
-        // accidental policy.
-        if ( ( m_pos == NULL ) && ( iOn > 0 ) )
-            iPos = iOn - 1;
+        // BUGS #88 / #99: the ONE case the pre-advance compare changes that is not a
+        // cursor sitting on an element - a NULL cursor. The shipped post-advance compare
+        // matched on the final iteration (GetNext leaves pos NULL, and NULL == NULL), so
+        // a NULL cursor on an N-element route stored N-1; pre-advance it stores 0. #88
+        // restored N-1 explicitly and left the policy question open as BUGS #99. #99
+        // decides it here: a NULL cursor means NO cursor, not "the last stop", so store
+        // the out-of-range sentinel. Written unconditionally - this build always stamps
+        // save counter 8 - and the loader below honours it only on a counter >= 8 save,
+        // so counter <= 7 saves keep the shipped N-1 rule exactly.
+        if ( m_pos == NULL )
+            iPos = (int)wROUTE_POS_NONE;
         ar << (WORD)iPos;
 
         ar << m_ptDest;
@@ -6294,7 +6301,15 @@ void CVehicle::Serialize( CArchive& ar )
         // get m_pos
         ar >> wNR;
         m_pos = NULL;
-        if ( m_route.GetCount( ) > 0 )
+        // BUGS #99: on a counter >= 8 save the sentinel means "no cursor" - leave m_pos
+        // NULL and skip the walk entirely. Counter <= 7 saves cannot carry it (their
+        // writer stored N-1 for a NULL cursor), so they take the walk unchanged and a
+        // stored N-1 still restores the last entry, exactly as today. If a sentinel ever
+        // did arrive in a counter <= 7 save it still would not crash: wNR is unsigned, so
+        // the walk below never satisfies wNR <= 0 within a route of N < 0xFFFF entries -
+        // it runs off the tail and leaves m_pos NULL, the same answer the slow way.
+        const bool bNoRoutePos = ( theGame.m_dwVer >= 8 ) && ( wNR == wROUTE_POS_NONE );
+        if ( !bNoRoutePos && ( m_route.GetCount( ) > 0 ) )
         {
             POSITION pos = m_route.GetHeadPosition( );
             while ( pos != NULL )
