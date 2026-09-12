@@ -495,6 +495,10 @@ public:
 		void					OrderEnded ();
 		void					OrderFailed (CHexCoord const & hex, int iBldgType);
 		BOOL					RepairTargetLives (CHexCoord const & hex) const;
+		// Finding 3: rebuild m_hexOrder/m_iOrderKind for a job re-established WITHOUT a
+		// dispatch (a crane loaded from a save mid-build / mid-road / mid-repair), from
+		// the crane's own site or road ends, and only when they match the cursor entry.
+		void					ReestablishOrderIdentity ();
 		// BUG #114: an order that was dispatched but whose arrival never happened.
 		// Polled from the idle branch; may re-drive the order or give it up.
 		void					CheckOrderStall ();

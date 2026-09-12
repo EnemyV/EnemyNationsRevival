@@ -866,6 +866,75 @@ BOOL CVehicle::RepairTargetLives(CHexCoord const &hex) const {
     return (FALSE);
 }
 
+// WinAstra finding 3: RE-ESTABLISH THE ACTIVE ORDER'S IDENTITY.
+//
+// m_hexOrder / m_iOrderKind are set in ONE place - NextOrder, at dispatch - and are not
+// serialized (they are runtime state; the save format is 8 and already distributed to the
+// test seats, so nothing here may add a field). A crane SAVED WHILE ALREADY WORKING comes
+// back with its queue, its cursor, its site and its event all restored but with the ctor's
+// identity: m_iOrderKind == CRoute::waypoint, m_hexOrder == (0,0). ConstructBuilding then
+// sets order_work and nothing else, so when the site finishes OrderComplete returns at its
+// IsOrder(m_iOrderKind) guard, the finished entry stays at the head, NextOrder re-dispatches
+// it, and the host rejects it as bldg_or_river - one spurious EVENT_CONST_CANT and one
+// wasted request per loaded mid-build crane, and the same for roads and repairs.
+//
+// Rebuild the identity HERE, where the job is genuinely re-established, from the CRANE'S
+// OWN FACTS rather than from the cursor: the site it is actually attached to (build and
+// repair) or the road run it is actually laying (build_road) must MATCH the entry at the
+// cursor before that entry is labelled. Never label blindly - the cursor is player-editable
+// from the Routes window, and mislabelling would make OrderComplete delete the wrong row.
+//
+// Runs only while the identity is missing (one BYTE compare on a dispatched job), so a job
+// that DID come through NextOrder is never relabelled.
+void CVehicle::ReestablishOrderIdentity() {
+
+    if (CRoute::IsOrder(m_iOrderKind))
+        return;                             // already identified by the dispatcher
+
+    POSITION pos = (m_pos != NULL) ? m_pos : m_route.GetHeadPosition();
+    if (pos == NULL)
+        return;
+    CRoute *pR = m_route.GetAt(pos);
+    if ((pR == NULL) || (!CRoute::IsOrder(pR->GetRouteType())))
+        return;                             // a plain, unqueued job - leave 1996 alone
+
+    switch (pR->GetRouteType()) {
+        case CRoute::build:
+            // The site must BE this crane's site, and be the building the order asked for.
+            // _GetBuilding pins the instance (a multi-hex building answers on any of its
+            // hexes), the type check pins WHAT was asked for.
+            if (m_pBldg == NULL)
+                return;
+            if (theBuildingHex._GetBuilding(pR->GetCoord()) != m_pBldg)
+                return;
+            if (pR->GetBldgType() != (int) m_pBldg->GetData()->GetType())
+                return;
+            break;
+
+        case CRoute::repair:
+            // A repair order names the hex the player clicked, which on a multi-hex
+            // building is not its origin - so match on the INSTANCE, not on the hex.
+            if (m_pBldg == NULL)
+                return;
+            if (theBuildingHex._GetBuilding(pR->GetCoord()) != m_pBldg)
+                return;
+            break;
+
+        case CRoute::build_road:
+            // A road run has no site; its facts are the two ends SetRoad recorded.
+            if ((!(pR->GetCoord() == m_hexStart)) || (!(pR->GetEndCoord() == m_hexEnd)))
+                return;
+            break;
+
+        default:
+            return;
+    }
+
+    m_hexOrder   = pR->GetCoord();
+    m_iOrderKind = (BYTE) pR->GetRouteType();
+    ORDER_PROBE("reidentify", "job re-established without a dispatch (loaded save)");
+}
+
 // Start the order at the cursor, if there is one and this vehicle is free to take
 // it. Returns TRUE if an order was dispatched.
 BOOL CVehicle::NextOrder() {
@@ -1619,6 +1688,9 @@ void CVehicle::ConstructBuilding() {
     // #38: the site exists and this crane is working it, so the request phase is over.
     // Set unconditionally rather than only out of order_sent, so a crane loaded from a
     // save mid-build reaches this state too and its queue still advances on completion.
+    // Finding 3: order_work ALONE is not enough for that crane - it also needs the
+    // identity NextOrder would have given it, or OrderComplete cannot consume the entry.
+    ReestablishOrderIdentity();
     m_iOrderState = order_work;
 
     // get change based on everything
@@ -1661,6 +1733,9 @@ void CVehicle::ConstructRoad() {
     // building to watch, and it goes briefly idle (event none, stopped) between every
     // hex while the server answers - which under order_work's "no site => done" rule
     // would end the order on the first hex.
+    // Finding 3: same as ConstructBuilding - a road run restored from a save never went
+    // through NextOrder, so it has no identity for OrderEnded's consume to match on.
+    ReestablishOrderIdentity();
     m_iOrderState = order_road;
 
     int iInc = GetProd(GetOwner()->GetConstProd());
