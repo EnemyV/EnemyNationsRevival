@@ -4177,10 +4177,14 @@ void CFarmBuilding::UpdateFarm( )
 }
 
 // Scrounging (AltOutput): the site a warehouse scrounges from, on the same two 0..10 scales the
-// farm/mill placement preview uses, but measured over the WAREHOUSE's own footprint. Terrain
-// never changes at runtime (nothing in the game consumes a forest or a soil hex), so this is
-// scanned once and cached. The cache is runtime-only and refills itself on first use after a
+// farm/mill placement preview uses, but measured over the WAREHOUSE's own footprint. Scanned
+// on demand and cached. The cache is runtime-only and refills itself on first use after a
 // load -- like the farm's field plots, there is nothing here worth serializing.
+//
+// This used to be cached on the premise that terrain never changes at runtime. Slash and Burn
+// falsifies that premise, so the cache is INVALIDATED (see InvalidateScrounge, called from
+// CFarmBuilding::ApplySlash) instead of written once. Do not reintroduce a write-once
+// assumption here.
 void CWarehouseBuilding::UpdateScrounge( )
 {
 
@@ -4195,6 +4199,25 @@ void CWarehouseBuilding::UpdateScrounge( )
     CFarmBuilding::ScrapMultsAt( m_hex, GetData( )->GetType( ), GetDir( ), &iIron, &iCoal, 100 );
     m_iScrIron = iIron;
     m_iScrCoal = iCoal;
+}
+
+// Drop all four cached multipliers so the next getter re-scans. Invalidate rather than re-scan in
+// place: the getters are already gated on the negative sentinel, so the work happens once, on the
+// next production tick that actually asks -- a warehouse nobody queries pays nothing, and several
+// slashes inside one tick cost one rescan, not one per cut. UpdateScrounge is three whole hex
+// enumerations and ApplySlash runs this over every warehouse in reach of the cut.
+//
+// ALL FOUR, not just the forest one. A forest hex carries weight in three of the four scans:
+// fnLumberFromGround (10), fnScrapFromGround (5 iron AND 5 coal), and fnScroungeSoilFromGround,
+// which reads the hex's FarmMult -- and forest's differs from that of the plain SlashHex leaves
+// behind. Invalidating only m_iScrForest would leave the iron, coal and food lines paying the
+// pre-cut rate forever.
+void CWarehouseBuilding::InvalidateScrounge( )
+{
+    m_iScrForest = -1;
+    m_iScrSoil   = -1;
+    m_iScrIron   = -1;
+    m_iScrCoal   = -1;
 }
 
 int CWarehouseBuilding::GetScroungeForestMult( )
@@ -4377,9 +4400,10 @@ BOOL CFarmBuilding::ApplySlash( CHexCoord hex )
     // fertility percentage. Both the local path and the netapi hex_retype RX path come through
     // here, so no client can be left holding a stale multiplier.
     //
-    // NOTE for whoever rebases the Scrounging terrain cache onto this: m_iScrForest is cached on
-    // the explicit assumption that terrain never changes at runtime. Slash and Burn falsifies
-    // that. It must be invalidated HERE, for every warehouse whose scan ring covers this hex.
+    // The SAME walk invalidates the Scrounging terrain cache on every warehouse in reach. That
+    // cache was written on the assumption that terrain never changes at runtime, and THIS
+    // function is what falsifies it, so this is the one place that has to answer for it. One
+    // walk, two building kinds -- no periodic manager and no second sweep of theBuildingMap.
     POSITION pos = theBuildingMap.GetStartPosition( );
     while ( pos != NULL )
     {
@@ -4388,21 +4412,34 @@ BOOL CFarmBuilding::ApplySlash( CHexCoord hex )
         theBuildingMap.GetNextAssoc( pos, dwID, pBldg );
         if ( pBldg == NULL )
             continue;
-        if ( pBldg->GetData( )->GetUnionType( ) != CStructureData::UTfarm )
-            continue;
-        if ( pBldg->GetData( )->GetType( ) != CStructureData::lumber )
+
+        CStructureData const* pData = pBldg->GetData( );
+        const BOOL bMill = ( ( pData->GetUnionType( ) == CStructureData::UTfarm )
+                             && ( pData->GetType( ) == CStructureData::lumber ) ) ? TRUE : FALSE;
+        const BOOL bWhse = ( pData->GetUnionType( ) == CStructureData::UTwarehouse ) ? TRUE : FALSE;
+        if ( !bMill && !bWhse )
             continue;
 
         // Wrap-safe and deliberately OVER-inclusive: max(cx,cy)+6 is at least the true box on
         // both axes whatever the rotation, so a mill may be refreshed that did not need it.
         // UpdateFarm is a cheap re-scan and slashes are rare, so over-refreshing is the safe
         // direction to err in -- under-refreshing is the bug.
-        CStructureData const* pData = pBldg->GetData( );
+        //
+        // The same +6 covers the warehouse, and covers ALL FOUR of its multipliers: its widest
+        // scan is the forest one, which goes through LumberBox -- literally the mill's box
+        // (footprint+3 per side). The scrap and scrounge-soil scans are footprint+2, strictly
+        // inside it. So one reach test cannot miss a warehouse whose iron, coal or food ring
+        // covers this hex while its forest ring does not.
         int iReach = ( ( pData->GetCX( ) > pData->GetCY( ) ) ? pData->GetCX( ) : pData->GetCY( ) ) + 6;
         int dx     = abs( CHexCoord::Diff( hex.X( ) - pBldg->GetHex( ).X( ) ) );
         int dy     = abs( CHexCoord::Diff( hex.Y( ) - pBldg->GetHex( ).Y( ) ) );
-        if ( ( dx <= iReach ) && ( dy <= iReach ) )
+        if ( ( dx > iReach ) || ( dy > iReach ) )
+            continue;
+
+        if ( bMill )
             ( (CFarmBuilding*)pBldg )->UpdateFarm( );
+        else
+            ( (CWarehouseBuilding*)pBldg )->InvalidateScrounge( );
     }
     return ( TRUE );
 }
