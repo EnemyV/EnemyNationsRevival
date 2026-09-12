@@ -18,7 +18,11 @@
 # Exit codes: 0 all pass, 1 a test failed, 2 toolchain / compile error.
 
 param(
-    [string]$OutDir = 'd:\tmp\datatests'
+    [string]$OutDir = 'd:\tmp\datatests',
+    # Extracted effect.rif, for the explosion suite's art measurement. Left
+    # empty it is searched for beside the repo (see below) and, failing that,
+    # that one check SKIPs -- the rest of the suite needs no data files.
+    [string]$EffectRif = ''
 )
 
 $ErrorActionPreference = 'Stop'
@@ -50,6 +54,22 @@ if (Test-Path $dfHeader) {
         Set-Content -Encoding ascii (Join-Path $OutDir 'datafile_under_test.h')
 }
 
+# The explosion suite re-derives EXPL_KILLFRAME from the stock explosion sprite's
+# frame count, so it needs the extracted effect.rif. The loose set lives OUTSIDE
+# both repos, so walk up from here looking for the usual extract location; the
+# check SKIPs cleanly when it is not on this machine.
+$effect = $EffectRif
+if (-not $effect) {
+    $probe = $here
+    for ($i = 0; $i -lt 8 -and $probe; $i++) {
+        $cand = Join-Path $probe 'local-tools\data-loose\data\effect\effect.rif'
+        if (Test-Path $cand) { $effect = (Resolve-Path $cand).Path; break }
+        $probe = Split-Path -Parent $probe
+    }
+}
+if ($effect) { Write-Host "effect.rif for the art measurement: $effect" }
+else         { Write-Host 'effect.rif not found - the art measurement will SKIP' }
+
 $suites = @(
     @{ name = 'test_data_hash';   extra = '' },
     @{ name = 'test_data_loader'; extra = "/I`"$here\shim`" /I`"$OutDir`" /I`"$here\..\..\windward\wind22\include`" shlwapi.lib" },
@@ -79,6 +99,7 @@ foreach ($opt in @('/Od', '/O2')) {
         $env:EN_DATA_TEST_DIR = Join-Path $OutDir "$tag.work"
         # Repo root for the source lints in test_data_expl.
         $env:EN_REPO_ROOT = (Resolve-Path (Join-Path $here '..\..')).Path
+        $env:EN_EFFECT_RIF = $effect
         & $exe
         if ($LASTEXITCODE -ne 0) { $failed = 1 }
     }
