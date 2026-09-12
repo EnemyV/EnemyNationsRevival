@@ -483,7 +483,7 @@ BOOL CTcpNet::TCPAddress::extractHostPart(LPSTR hostPart, size_t len, LPCSTR add
   if (len >= (sLen+1))
   {
    strncpy(hostPart, addrString, sLen);
-   hostPart[len] = 0;
+   hostPart[sLen] = 0;
   }
   else
    return FALSE;
