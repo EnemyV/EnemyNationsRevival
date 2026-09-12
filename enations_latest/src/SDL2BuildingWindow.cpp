@@ -295,10 +295,19 @@ static std::string AltProductionStatus(CBuilding* b, const AltOutput::AltOutputD
     }
     if ( pDef->m_eMode == AltOutput::eMultiTrickle ) {
         // Desperate Measures / Scrounging: list each scrounged line, e.g. "+10 lumber +5 iron…/min".
-        std::string s = "Producing:";
-        for ( int i = 0; i < pDef->m_nMulti; i++ )
-            s += " +" + std::to_string( pDef->m_aMulti[i].m_iPerMin ) + " " +
-                 std::string( CMaterialTypes::GetDesc( pDef->m_aMulti[i].m_iMat ).c_str() );
+        // Scrounging is terrain-scaled, so quote what THIS site yields (MultiLinesFor), not the
+        // def's perfect-site table lines, and drop the resources this site has nothing of.
+        AltOutput::AltMat aLines[AltOutput::kMaxMulti];
+        int               nLines = AltOutput::MultiLinesFor( b, pDef, aLines );
+        std::string       s      = "Producing:";
+        bool              bAny   = false;
+        for ( int i = 0; i < nLines; i++ ) {
+            if ( aLines[i].m_iPerMin <= 0 ) continue;
+            bAny = true;
+            s += " +" + std::to_string( aLines[i].m_iPerMin ) + " " +
+                 std::string( CMaterialTypes::GetDesc( aLines[i].m_iMat ).c_str() );
+        }
+        if ( !bAny ) return "Nothing here to scrounge";
         return s + " / min";
     }
     // eRatioConsume / eGlobalConsume: a conversion. Show the OUTPUT RATE (units/min) using the
@@ -2155,17 +2164,21 @@ void SDL2BuildingWindow::Refresh() {
                      && ( m_pBldg->GetData()->GetUnionType() == CStructureData::UTmine )
                      && ( AltOutput::Available( m_pBldg ) != nullptr );
         if ( altmine && m_pBldg->GetData()->GetType() == CStructureData::iron ) {
-            // Moho Mining revives an exhausted IRON mine at a flat 16 power (matches FrackTick).
-            curPwr = 16; curPpl = basePpl; mode = "  (Moho Mining)";
+            // Moho Mining revives an exhausted IRON mine at a flat draw (matches FrackTick --
+            // both read MOHO_POWER_DRAW so the quoted cost cannot drift from the sim's).
+            curPwr = MOHO_POWER_DRAW; curPpl = basePpl; mode = "  (Moho Mining)";
         } else if ( altmine ) {
-            // Fracking revives an exhausted OIL well at 2x power (matches the fracking branch).
-            curPwr = basePwr * 2; curPpl = basePpl * 2; mode = "  (fracking)";
+            // Fracking revives an exhausted OIL well. Both numbers now come from the same
+            // place the sim uses: FrackPowerDraw for power, and the well's BASE workforce --
+            // FrackTick adds GetPeople() unmultiplied, so the old basePpl*2 here overstated
+            // the worker cost just as the flat 2x understated the power.
+            curPwr = FrackPowerDraw( basePwr ); curPpl = basePpl; mode = "  (fracking)";
         } else if ( m_pBldg->IsFlag( CUnit::abandoned ) ) {
             curPwr = 0; curPpl = 0; mode = "  (exhausted)";
         } else if ( m_pBldg->IsFlag( CUnit::stopped ) ) {
             curPwr = basePwr / 2; curPpl = basePpl / 2; mode = "  (stopped)";
         }
-        // AltOutput surcharge (Scrounging: +2x power +25 workers; charcoal/bio kilns: +workers).
+        // AltOutput surcharge (Scrounging: +2x power +30 workers; charcoal/bio kilns: +workers).
         // Mirror the central alt-mode cost block (mainloop.cpp) so the panel shows the ACTUAL
         // draw, not just the base spec. Absolute add on top of the mode adjustment above.
         if ( m_pBldg->IsFlag( CUnit::alt_oil ) ) {
@@ -2175,6 +2188,12 @@ void SDL2BuildingWindow::Refresh() {
                 if ( pSur->m_iPowerMultAdd > 0 ) curPwr += basePwr * pSur->m_iPowerMultAdd;
             }
         }
+        // Desperate Measures is an EDICT, not an AltOutput def, so the block above never saw it:
+        // the rocket's worker line read the base spec while the sim was drafting a hundred-plus
+        // on top. Mirror the rocket branch of CBuilding::Operate.
+        if ( ( m_pBldg->GetData()->GetType() == CStructureData::rocket )
+             && m_pBldg->GetOwner() && m_pBldg->GetOwner()->IsEdictActive( EDICT_DESPERATE_MEASURES ) )
+            curPpl += m_pBldg->GetOwner()->GetDesperateDraft();
         m_lblOperCost->SetText( ( "Power required: " + std::to_string( curPwr )
                               + "     Workers: "     + std::to_string( curPpl ) + mode ).c_str() );
     }
@@ -2210,7 +2229,17 @@ void SDL2BuildingWindow::Refresh() {
                                && m_pBldg->GetOwner() && m_pBldg->GetOwner()->IsEdictActive( EDICT_DESPERATE_MEASURES );
         std::string str;
         if ( bScroungeRocket ) {
-            str = "Producing: +10 lumber +5 iron +5 food +5 coal / min";
+            // Desperate Measures scales with the draft, so scale the quoted rate the same way the
+            // sim credits it (CBuilding::Operate) off the one shared table in edicts.cpp.
+            int iDraft = m_pBldg->GetOwner()->GetDesperateDraft();
+            str = "Producing:";
+            for ( int i = 0; i < DESPERATE_RATE_LINES; i++ ) {
+                int rate = ( DESPERATE_BASE_RATES[i].m_iPerMin * iDraft ) / DESPERATE_RATE_PER;
+                if ( rate <= 0 ) continue;
+                str += " +" + std::to_string( rate ) + " " +
+                       std::string( CMaterialTypes::GetDesc( DESPERATE_BASE_RATES[i].m_iMat ).c_str() );
+            }
+            str += " / min";
         } else if ( bAltPower ) {
             // Name the product and show its per-minute rate so it matches every other producer
             // widget ("Producing Oil: N / min" / "Producing Coal: N / min"), per the operator.

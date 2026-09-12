@@ -143,12 +143,17 @@ const EdictDef g_aEdicts[EDICT_COUNT] =
     // (10 lumber/5 iron/5 food/5 coal per min + 100 workers) is hardcoded in CBuilding::Operate's
     // UTwarehouse case, gated on IsEdictActive. Default-available (gate: nothing, always discovered).
     // Net-synced via ToggleEdictNet; revoked on rocket death via EdictHostLost (rocket host).
-    { "Desperate Measures", "Frantically scrounge base resources: +10 lumber, +5 iron, +5 food, +5 coal / min.\nCost: 100 workers. Lost if rocket destroyed.",
+    { "Desperate Measures", "Frantically scrounge base resources: +10 lumber, +5 iron, +5 food, +5 coal / min per 200 workers drafted.\nConscripts 100 workers plus half of your idle workforce, and scrounges proportionally harder. Lost if rocket destroyed.",
       CStructureData::rocket, EDICT_CIVWIDE, CRsrchArray::nothing,
       1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f,
       0.0f, 0.0f, 0.0f,
       1.0f, 1.0f, 1.0f, 1.0f, 1.0f },
 };
+
+// Desperate Measures' scrounge, per DESPERATE_RATE_PER workers drafted (see edicts.h).
+const AltOutput::AltMat DESPERATE_BASE_RATES[DESPERATE_RATE_LINES] =
+    { { CMaterialTypes::lumber, 10 }, { CMaterialTypes::iron, 5 },
+      { CMaterialTypes::food, 5 },    { CMaterialTypes::coal, 5 } };
 
 bool EdictHostHasEdicts( CStructureData::BLDG_TYPE bldgType )
 {
