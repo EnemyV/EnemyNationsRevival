@@ -453,6 +453,16 @@ void CVehicle::ArrivedDest() {
         case route : {
             if (m_route.IsEmpty())
                 break;
+            // BUGS #99: a NULL cursor on a live route means "start from the head" - the
+            // same answer SetEvent(route) already gives (unit.cpp, case route:
+            // if (m_pos == NULL) m_pos = m_route.GetHeadPosition()), and the same heal
+            // AddRoute applies after a route edit. #99 makes a saved NULL cursor load back
+            // as NULL, so mirror that policy here and the GetAt below is always on a valid
+            // node: CObList::GetAt is an unchecked ((Node*)pos)->val deref, ASSERT_VALID is
+            // a no-op in Release, and the pR != NULL test sits AFTER the deref. Provable
+            // no-op whenever m_pos is non-NULL.
+            if (m_pos == NULL)
+                m_pos = m_route.GetHeadPosition();
             // handle this stop
             CRoute *pR = m_route.GetAt(m_pos);
             ASSERT_VALID (pR);
