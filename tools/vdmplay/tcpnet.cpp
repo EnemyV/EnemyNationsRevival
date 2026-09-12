@@ -1288,9 +1288,9 @@ void CTcpNet::CTCPLink::SendWaitingData()
   
   if (d->GetSeq() != m_nextDgramToSend)
   {
-   wsprintf(logBuf, 
+   wsprintf(logBuf,
     "CtcpLink::SendWaitingData(%d): Seq error: d->seq = %lu, expected=%lu",
-    d->GetSeq(), m_nextDgramToSend);
+    m_socket, d->GetSeq(), m_nextDgramToSend);
    Log(logBuf);
    closesocket(m_socket);
    m_socket = INVALID_SOCKET;
