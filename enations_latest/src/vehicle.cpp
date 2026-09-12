@@ -9,6 +9,7 @@
 #include "stdafx.h"
 #include "en_logpath.h"   // EnLogPath - logs to the launch dir, not the exe dir
 #include "SDL2GameDialogs.h"
+#include "SDL2RouteWindow.h"   // #38: refresh the route window as orders are consumed
 #include "event.h"
 #include "lastplnt.h"
 #include "cpathmgr.h"
@@ -290,6 +291,27 @@ void CVehicle::Operate() {
             if (TestStuck())
                 return;
 
+            // MERGE NOTE (#38 order queue vs the traffic stop-case LeaveRoad): both belong
+            // here and the ORDER MATTERS. The queue runs first, so a vehicle that has work
+            // waiting starts it and drives off under its own job; only a vehicle with
+            // nothing left to do falls through and gets itself off the roadway. The other
+            // order would park a crane that was about to build anyway, and NextOrder( )
+            // returns out of this tick, so LeaveRoad would not even run on that pass.
+            // #38 ORDER QUEUE. Idle is the only safe place to advance it: every other
+            // mode means a job is running. Already under GetOwner()->IsLocal(), so a
+            // remote copy of this vehicle never dispatches anything.
+            //   order_work + no site -> this vehicle's job at the site ENDED (finished,
+            //                           or the site was destroyed / taken away)
+            //   order_done           -> consume that order
+            //   order_none           -> start the next one, and stop processing this
+            //                           tick as "idle" - we just stopped being idle
+            if ((m_iOrderState == order_work) && (m_pBldg == NULL))
+                m_iOrderState = order_done;
+            if (m_iOrderState == order_done)
+                OrderComplete();
+            if (m_iOrderState == order_none)
+                if (NextOrder())
+                    return;
             // Also handle units loaded or left stopped on a through-route. The
             // local method protects explicit Stop, active construction and units
             // inside buildings, and throttles its own parking search.
@@ -704,11 +726,253 @@ void CVehicle::Operate() {
     ASSERT_VALID (this);
 }
 
+// ---------------------------------------------------------------------------
+// ORDER QUEUE (#38)
+//
+// An ORDER is a job the vehicle does at a hex (build a structure, lay a road,
+// repair) as opposed to a 1996 movement STOP (waypoint/load/unload). Both live on
+// m_route, so the route window, the Shift preview, save/load and the crane's
+// destructor already handle orders for free.
+//
+// One dispatcher, NextOrder(), decides what "start the next one" means. Nothing is
+// reserved or validated when an order is QUEUED - the site is re-checked by the
+// client and then by the server at DISPATCH, exactly as a single placement is.
+// ---------------------------------------------------------------------------
+
+// Append an order at the tail. Queue-time only: no validation, no reservation, no
+// message on the wire.
+void CVehicle::AddOrder(CHexCoord const &hex, int iType, int iBldgType, int iDir,
+                        CHexCoord const *pHexEnd) {
+
+    ASSERT_VALID (this);
+    ASSERT (CRoute::IsOrder(iType));
+
+    BOOL bFresh = m_route.IsEmpty();
+    CRoute *pR = new CRoute(hex, iType, iBldgType, iDir);
+    if (pHexEnd != NULL)
+        pR->SetEndCoord(*pHexEnd);      // build_road: the far end of the segment
+    m_route.AddTail(pR);
+
+    // an order queue is one-shot: each order is consumed when its job ends. Only on
+    // a FRESH list, so queueing behind an existing loop route doesn't rewrite it.
+    if (bFresh)
+        m_bRouteLoop = FALSE;
+
+    if (GetRoutePos() == NULL)
+        SetRoutePos(m_route.GetHeadPosition());
+}
+
+// A plain (no-Shift) command REPLACES the queue, the way a plain move replaces a
+// route. Only the ORDER kinds go: movement stops on the same list belong to the
+// route feature and are left exactly as they are.
+void CVehicle::ClearOrders() {
+
+    ASSERT_VALID (this);
+
+    BOOL bCurGone = FALSE;
+    POSITION pos = m_route.GetHeadPosition();
+    while (pos != NULL) {
+        POSITION cur = pos;
+        CRoute *pR = m_route.GetNext(pos);
+        if ((pR != NULL) && (CRoute::IsOrder(pR->GetRouteType()))) {
+            if (cur == m_pos)
+                bCurGone = TRUE;
+            m_route.RemoveAt(cur);
+            delete pR;
+        }
+    }
+    // never leave the cursor on a freed node - GetHeadPosition is NULL on an empty list
+    if (bCurGone)
+        SetRoutePos(m_route.GetHeadPosition());
+
+    m_iOrderState = order_none;
+}
+
+// Start the order at the cursor, if there is one and this vehicle is free to take
+// it. Returns TRUE if an order was dispatched.
+BOOL CVehicle::NextOrder() {
+
+    ASSERT_VALID (this);
+
+    // OWNER AUTHORITY: a queue is client-local and is only ever dispatched by the
+    // client that owns the unit. Never from a remote node's copy.
+    if ((GetOwner() == NULL) || (!GetOwner()->IsLocal()))
+        return (FALSE);
+
+    // Busy? The queue advances when the current job ENDS, not before. m_iOrderState
+    // covers the window where m_iEvent cannot (request sent, waiting on the server);
+    // the rest is the ordinary "this crane has a job" test.
+    if ((m_iOrderState != order_none) || (m_pBldg != NULL) ||
+        (m_iEvent != none) || (m_cMode != stop))
+        return (FALSE);
+
+    POSITION pos = (m_pos != NULL) ? m_pos : m_route.GetHeadPosition();
+    if (pos == NULL)
+        return (FALSE);
+    CRoute *pR = m_route.GetAt(pos);
+    if (pR == NULL)
+        return (FALSE);
+
+    // A movement STOP at the cursor belongs to ArrivedDest's route machinery. Leaving
+    // it alone is what keeps a stopped waypoint route stopped instead of restarting it.
+    if (!CRoute::IsOrder(pR->GetRouteType()))
+        return (FALSE);
+
+    SetRoutePos(pos);
+
+    // The order is under way from here on, whatever kind it is. m_iEvent cannot carry
+    // this: every dispatch below ends with the vehicle clearing its event the moment it
+    // sends the request, and an idle-looking vehicle with a queue would be dispatched
+    // twice.
+    m_iOrderState = order_sent;
+
+    // Remember WHICH order went out. The route window can delete entries or move the
+    // cursor while the job runs, and a rejection can come back a tick or more later,
+    // so completion and failure both match against this rather than trusting the cursor.
+    m_hexOrder   = pR->GetCoord();
+    m_iOrderKind = (BYTE) pR->GetRouteType();
+
+    switch (pR->GetRouteType()) {
+        case CRoute::build: {
+            // exactly what a plain placement does, read back off the order
+            CHexCoord hexDest(pR->GetCoord());
+            BuildBldgDest(this, pR->GetBldgType(), pR->GetBldgDir(), hexDest);
+            ResumeUnit();
+            SetBuilding(pR->GetCoord(), pR->GetBldgType(), pR->GetBldgDir());
+            SetEvent(build);
+            SetDestAndMode(hexDest, full);
+            break;
+        }
+
+        case CRoute::build_road: {
+            // the same commit the road drag makes: drive to the start hex, then lay
+            // toward the far end (SetRoad does the event + dest itself)
+            ResumeUnit();
+            SetRoad(pR->GetCoord(), pR->GetEndCoord());
+            break;
+        }
+
+        case CRoute::repair: {
+            // the same commit the Repair click makes
+            ResumeUnit();
+            SetEvent(repair_bldg);
+            SetDest(pR->GetCoord());
+            break;
+        }
+
+        default:
+            TRAP();     // an order kind with no dispatch - add it to this switch
+            m_iOrderState = order_none;
+            return (FALSE);
+    }
+
+    return (TRUE);
+}
+
+// The order the vehicle was running has ENDED - finished, halted or given up on. Used
+// by the road paths, which have their own end conditions and no site to watch: a road
+// run ends inside NextRoadHex / ConstructRoad rather than by detaching from a building.
+// A no-op when nothing was under way, so the plain (unqueued) road commit is unaffected.
+void CVehicle::OrderEnded() {
+
+    if (m_iOrderState != order_none)
+        m_iOrderState = order_done;
+}
+
+// THIS vehicle's job at the site has ended. Consume the order it was running so the
+// next one can start.
+//
+// WHERE THIS IS DETECTED, and why not inside the completion call itself: there is no
+// per-crane completion callback in the 1996 code. ConstructBuilding hands work to the
+// building and never learns the outcome; the building decides completion and tells
+// every attached crane through the StopConstruction SWEEP, which receives only a
+// CBuilding* and so cannot tell "finished" from "destroyed", "repaired" or "abandoned
+// mine", and runs on every node. Hooking there would advance a queue on a destroyed
+// site and on a remote client. So the crane watches its OWN tie to the site instead -
+// m_pBldg going NULL after the work started - read from its own idle branch, which is
+// already local-owner gated. Site destroyed and site finished both end the order,
+// which is what the design asks for: destruction DROPS the order, it does not retry it.
+void CVehicle::OrderComplete() {
+
+    ASSERT_VALID (this);
+
+    m_iOrderState = order_none;
+
+    POSITION pos = (m_pos != NULL) ? m_pos : m_route.GetHeadPosition();
+    if (pos == NULL)
+        return;
+    CRoute *pR = m_route.GetAt(pos);
+    if (pR == NULL)
+        return;
+
+    // only consume the order we actually dispatched (a plain, unqueued build matches
+    // nothing here and simply leaves the list alone)
+    if ((pR->GetRouteType() != m_iOrderKind) || (!(pR->GetCoord() == m_hexOrder)))
+        return;
+
+    if (m_bRouteLoop) {
+        // looping list: keep the order, step the cursor on, cycle at the tail
+        POSITION posNext = pos;
+        m_route.GetNext(posNext);
+        SetRoutePos((posNext != NULL) ? posNext : m_route.GetHeadPosition());
+    } else {
+        m_route.RemoveAt(pos);
+        delete pR;
+        SetRoutePos(m_route.GetHeadPosition());
+    }
+
+    if (m_pSdlRoute != NULL)
+        m_pSdlRoute->RefreshRoute();
+}
+
+// A build request came back REJECTED. All three failure exits - the client's own
+// pre-send check, the server's foundation check and the server's tech gate - land in
+// ErrBuildBldg, which is where this is called from, after the standard warning.
+//
+// The rejection is matched to the ACTIVE request (the order that was sent, by hex and
+// building type), because it can arrive a tick or more after the send: only the order
+// it is FOR is dropped, and the rest of the queue carries on. A failed site is dropped
+// even on a looping list - looping will not make an unbuildable site buildable.
+void CVehicle::OrderFailed(CHexCoord const &hex, int iBldgType) {
+
+    ASSERT_VALID (this);
+
+    // answered either way: the crane is no longer waiting on the server
+    BOOL bWasSent = (m_iOrderState == order_sent);
+    m_iOrderState = order_none;
+    if (!bWasSent)
+        return;
+
+    POSITION pos = (m_pos != NULL) ? m_pos : m_route.GetHeadPosition();
+    if (pos == NULL)
+        return;
+    CRoute *pR = m_route.GetAt(pos);
+    if (pR == NULL)
+        return;
+    if ((pR->GetRouteType() != CRoute::build) || (!(pR->GetCoord() == hex)) ||
+        (pR->GetBldgType() != iBldgType))
+        return;       // not the order that was sent (or a plain, unqueued placement)
+
+    m_route.RemoveAt(pos);
+    delete pR;
+    SetRoutePos(m_route.GetHeadPosition());
+
+    if (m_pSdlRoute != NULL)
+        m_pSdlRoute->RefreshRoute();
+}
+
 void CVehicle::BuildBldg() {
 
     m_iEvent = none;
     if (!GetOwner()->IsLocal())
         return;
+
+    // #38: a build request is now IN FLIGHT. m_iEvent was cleared on the line above
+    // (1996: the build event ends at SEND, not at completion), so this flag is the
+    // only thing that tells "waiting for the server" from "idle with a queue". Set
+    // for EVERY build request, queued or not, so the two paths share one state
+    // machine and a plain build can never be mistaken for an idle crane.
+    m_iOrderState = order_sent;
     ASSERT_STRICT (m_ptHead.SameHex(m_ptTail));
 
     CMsgBuildBldg msg(this, m_hexBldg, m_iBuildDir, m_iBldgType);
@@ -765,12 +1029,14 @@ void CVehicle::BuildRoad() {
     if (!GetOwner()->CanBridge()) {
         if (GetOwner()->IsMe())
             theGame.Event(EVENT_CANT_BRIDGE, EVENT_NOTIFY);
+        OrderEnded();   // #38: no bridging tech - the run stops here, drop the order
         return;
     }
 
     // done?
     if (m_hexEnd == _hex) {
         TRAP();
+        OrderEnded();   // #38: nothing left to lay
         return;
     }
 
@@ -1115,6 +1381,11 @@ void CVehicle::ConstructBuilding() {
     }
     ASSERT_STRICT_VALID (m_pBldg);
 
+    // #38: the site exists and this crane is working it, so the request phase is over.
+    // Set unconditionally rather than only out of order_sent, so a crane loaded from a
+    // save mid-build reaches this state too and its queue still advances on completion.
+    m_iOrderState = order_work;
+
     // get change based on everything
     int iInc = GetProd(GetOwner()->GetConstProd());
     // Edicts v1: "Fortify Border" (civ-wide) speeds construction of FORTS specifically.
@@ -1151,6 +1422,12 @@ void CVehicle::ConstructRoad() {
 
     ASSERT_STRICT_VALID (this);
 
+    // #38: a road run is under way. Its OWN work state, not order_work: a road has no
+    // building to watch, and it goes briefly idle (event none, stopped) between every
+    // hex while the server answers - which under order_work's "no site => done" rule
+    // would end the order on the first hex.
+    m_iOrderState = order_road;
+
     int iInc = GetProd(GetOwner()->GetConstProd());
     if (iInc <= 0)
         return;
@@ -1178,6 +1455,7 @@ void CVehicle::ConstructRoad() {
                 theGame.PostToClient(GetOwner(), &msg, sizeof(msg));
             }
             SetEventAndRoute(none, stop);
+            OrderEnded();   // #38: out of gas ends the run - drop it, don't stall the queue
             return;
         }
 
@@ -1291,6 +1569,7 @@ BOOL CVehicle::NextRoadHex() {
         if (m_ptHead.SameHex(m_hexEnd) || (--iStepsLeft < 0)) {
             _SetEventAndRoute(none, stop);
             theGame.Event(EVENT_ROAD_DONE, EVENT_NOTIFY, this);
+            OrderEnded();   // #38: THIS is a road run's completion point, per vehicle
             return (FALSE);
         }
 

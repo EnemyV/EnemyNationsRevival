@@ -1987,6 +1987,10 @@ static void ErrBuildBldg( CMsgBuildBldg* pMsg )
     }
     else
         theGame.Event( EVENT_CONST_CANT, EVENT_WARN, pVeh );
+
+    // #38: the request is answered. Drop the queued order this rejection is FOR (if the
+    // crane had one) so the rest of its queue carries on; the warning above is unchanged.
+    pVeh->OrderFailed( pMsg->m_hexBldg, pMsg->m_iType );
 }
 
 #if EN_GAMEPLAY_PROBES
