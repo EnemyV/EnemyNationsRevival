@@ -615,8 +615,18 @@ void CStructure::InitSprites() {
         theApp.BaseYield();
 
         CStructureData *pSd = _GetData(i);
-        if (GetSprite(i, 0, TRUE) != NULL)
-            pSd->m_udFlags = (CUnitData::UNIT_DATA_FLAGS) (pSd->m_udFlags | CUnitData::FLhaveArt);
+        // 015 phase 3: a building is discoverable because it exists in the
+        // GAMEPLAY data (units.rif), not because art for it happened to load.
+        // This used to be `if (GetSprite(i, 0, TRUE) != NULL)`, and FLhaveArt
+        // gates PlyrIsDiscovered (new_unit.cpp:1093), so dropping one sprite
+        // from an art mod silently removed a building from the game - a
+        // simulation change made by a file that is deliberately NOT in the
+        // gameplay hash. A building with no sprite of its own now draws a
+        // placeholder instead: every draw-time lookup is the NON-strict
+        // GetSprite (bridge.cpp:236, new_unit.cpp:2101/5977), and
+        // CSpriteCollectionInfo::MapID's non-strict path already falls back to
+        // the first structure sprite that did load (sprite.cpp:3271).
+        pSd->m_udFlags = (CUnitData::UNIT_DATA_FLAGS) (pSd->m_udFlags | CUnitData::FLhaveArt);
     }
 
 #ifdef _CHEAT

@@ -65,7 +65,10 @@ foreach ($opt in @('/Od', '/O2')) {
 
         $tag = "$($s.name)$($opt.Replace('/',''))"
         $exe = Join-Path $OutDir "$tag.exe"
-        $cl  = "cl /nologo /EHsc /std:c++17 /W4 $opt `"$src`" /Fo`"$OutDir\$tag.obj`" /Fe`"$exe`" $($s.extra)"
+        # _CRT_SECURE_NO_WARNINGS: the shipped datafile.cpp uses fopen/_strlwr and
+        # the fixtures use getenv. Those are the production spellings; the fixture
+        # is not the place to argue with them.
+        $cl  = "cl /nologo /EHsc /std:c++17 /W4 /D_CRT_SECURE_NO_WARNINGS $opt `"$src`" /Fo`"$OutDir\$tag.obj`" /Fe`"$exe`" $($s.extra)"
 
         Write-Host "=== $($s.name) $opt ==="
         cmd /c "`"$vcvars`" >nul 2>&1 && $cl"
@@ -74,6 +77,8 @@ foreach ($opt in @('/Od', '/O2')) {
         # Scratch dir via the environment, never argv: CDataFile::Init treats the
         # first command-line argument as a .dat path.
         $env:EN_DATA_TEST_DIR = Join-Path $OutDir "$tag.work"
+        # Repo root for the source lints in test_data_expl.
+        $env:EN_REPO_ROOT = (Resolve-Path (Join-Path $here '..\..')).Path
         & $exe
         if ($LASTEXITCODE -ne 0) { $failed = 1 }
     }
