@@ -239,6 +239,8 @@ const std::unordered_map<UINT, std::string>& string_table() {
         { IDS_EVENT_ROAD_START,        "Construction of a road has begun" },
         { IDS_EVENT_ROAD_HALTED,       "Construction of a road has halted" },
         { IDS_EVENT_BRIDGE_HALTED,     "Bridge construction halted - ground unsuitable" },
+        // 015 phase 3 data-hash refusal. %1/%2/%3 positional (strPrintf), verbatim from lastplnt.rc.
+        { IDS_DATA_MISMATCH,           "Game data differs from the host (gameplay files edited or a different version).\n\n%1 was not let in: their data is %2, this game is %3.\n\nArt, sound and music may differ freely; the unit, research and text tables may not." },
         { IDS_EVENT_ROAD_DONE,         "Construction of a road has completed" },
         { IDS_EVENT_MANF_HALT,         "%1 has halted manufacturing" },
         { IDS_EVENT_GOTO_CANT,         "%1 is stuck" },

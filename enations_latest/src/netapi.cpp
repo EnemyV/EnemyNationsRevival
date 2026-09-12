@@ -680,6 +680,36 @@ static void OnMsgJoin( LPCVPPLAYERINFO pPi, BOOL bLocal, BYTE bErr )
 
         // if we're not the server & this is the server then it already exists
         CNetJoin* pJn = (CNetJoin*)pPi->playerName;
+
+        // 015 phase 3: the host is the authority on the gameplay data set. A
+        // joiner whose units/research/version/stdgta/race/text tables differ is
+        // refused HERE, before it becomes a player, because from this point on
+        // the two machines would simulate different games. Art, sound, fonts and
+        // videos are not in the hash, so a player with replaced sprites or music
+        // passes. The length check is a sanity bound on the record we are about
+        // to read out of a fixed-size wire buffer; the hash compare is the guard.
+        if ( theGame.AmServer( ) )
+        {
+            const BOOL bTooShort = ( pJn->m_iLen < CNetJoin::MinLen( ) );
+            if ( bTooShort || ( pJn->m_dwDataHash != theGame.m_dwDataHash ) )
+            {
+                // strPrintf is POSITIONAL (%1/%2/%3), not printf, so the two hex
+                // numbers are formatted first.
+                char szTheirs[16] = "?";
+                char szMine[16]   = { 0 };
+                if ( !bTooShort ) snprintf( szTheirs, sizeof( szTheirs ), "%08lx", (unsigned long)pJn->m_dwDataHash );
+                snprintf( szMine, sizeof( szMine ), "%08lx", (unsigned long)theGame.m_dwDataHash );
+
+                const std::string sName = bTooShort ? EnLoadStdString( IDS_UNKNOWN ) : std::string( pJn->m_sName );
+                const std::string sMsg =
+                    strPrintf( EnLoadStdString( IDS_DATA_MISMATCH ).c_str( ), sName.c_str( ), szTheirs, szMine );
+
+                theNet.DeletePlayer( pPi->playerId );
+                EnMessageBox( sMsg.c_str( ), MB_OK | MB_ICONSTOP );
+                return;
+            }
+        }
+
         if ( ( !theGame.AmServer( ) ) && ( pJn->m_bServer ) && ( theGame.GetServer( ) != NULL ) )
         {
             pPlyr = theGame.GetServer( );
@@ -3974,6 +4004,16 @@ void CGame::ProcessMessage(CNetCmd* pCmd )
     }
 }
 
+// 015 phase 3 wire budget. vdmplay copies these records as FIXED blocks: the
+// session record (CNetPublish) as 512 bytes and the player record (CNetJoin) as
+// 256 (the netapi.cpp:3985 comment below has the two crossed - see the 015 plan
+// section 3c). Adding m_dwDataHash grew the headers from 36 to 44 and from 16 to
+// 20 bytes, and the variable tail (names, password, description) has to fit in
+// what is left. Pinned here so the next field to be added has to look at the
+// budget rather than discover it on the wire.
+static_assert( sizeof( CNetPublish ) == 44, "CNetPublish layout changed - re-check the 512-byte vdmplay copy" );
+static_assert( sizeof( CNetJoin ) == 20, "CNetJoin layout changed - re-check the 256-byte vdmplay copy" );
+
 CNetPublish* CNetPublish::Alloc( CCreateBase* pCm )
 {
 
@@ -4003,6 +4043,7 @@ CNetPublish* CNetPublish::Alloc( CCreateBase* pCm )
     pMsg->m_cVerMajor   = VER_MAJOR;
     pMsg->m_cVerMinor   = VER_MINOR;
     pMsg->m_cVerRelease = VER_RELEASE;
+    pMsg->m_dwDataHash  = theGame.m_dwDataHash;
 
     pMsg->m_cFlags = 0;
 #ifdef _DEBUG
@@ -4047,6 +4088,7 @@ CNetPublish* CNetPublish::Alloc( CGame* pGame )
     pMsg->m_cVerMajor   = VER_MAJOR;
     pMsg->m_cVerMinor   = VER_MINOR;
     pMsg->m_cVerRelease = VER_RELEASE;
+    pMsg->m_dwDataHash  = theGame.m_dwDataHash;
 
     pMsg->m_cFlags = 0;
 #ifdef _DEBUG
@@ -4078,9 +4120,10 @@ CNetJoin* CNetJoin::Alloc( CPlayer const* pPlyr, BOOL bSrvr )
     const int iAlloc = __max( 516, iLen );
     CNetJoin* pMsg   = (CNetJoin*)new char[iAlloc];
     memset( pMsg, 0, iAlloc );
-    pMsg->m_iLen     = iLen;
-    pMsg->m_iPlyrNum = pPlyr->GetPlyrNum( );
-    pMsg->m_bServer  = bSrvr;
+    pMsg->m_iLen       = iLen;
+    pMsg->m_iPlyrNum   = pPlyr->GetPlyrNum( );
+    pMsg->m_bServer    = bSrvr;
+    pMsg->m_dwDataHash = theGame.m_dwDataHash;
     strcpy( pMsg->m_sName, pPlyr->GetName( ) );
 
     return ( pMsg );
