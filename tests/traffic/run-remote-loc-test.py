@@ -55,6 +55,13 @@ if args.junction:
     actual += '\n' + method('_inline int GetAngle ', inl)
     actual += '\n' + method('CSubHex Rotate( int iDir,', unit)
     actual += '\n' + method('BOOL CVehicle::GetNextHex(')
+    # The occupied-T follow-up (WinAstra's 2026-09-13 review): once the corner-cut
+    # fix (body 3) puts a turning truck's step into the sub-hex a bar truck is
+    # using, whether it waits or overlaps is decided by WaitForMover/ResumeWaitedStep,
+    # not by GetNextHex alone. Extracted verbatim so the fixture's occupied-T cases
+    # exercise the real wait/resume decision instead of the CanEnter-only stub.
+    actual += '\n' + method('BOOL CVehicle::WaitForMover(')
+    actual += '\n' + method('BOOL CVehicle::ResumeWaitedStep(')
     case, include = 'test_junction.cpp', 'junction_actual.inc'
 elif args.parking:
     actual = '\n'.join(method(s) for s in (
