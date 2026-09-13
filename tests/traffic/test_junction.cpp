@@ -112,9 +112,11 @@ int TrafficOpts() { return g_traffic; }
 // arithmetic under test, so the scenes must never reach one
 int g_recovery = 0;
 int g_roadTurns = 0;
+int g_roadExempt = 0;
 char g_lastTurn[256] = "";
+char g_lastExempt[256] = "";
 void WaitLog(const char *fmt, ...) {
-    char line[256];
+    char line[512];
     va_list va;
     va_start(va, fmt);
     vsnprintf(line, sizeof(line), fmt, va);
@@ -123,6 +125,11 @@ void WaitLog(const char *fmt, ...) {
         ++g_roadTurns;
         if (g_lastTurn[0] == 0)
             std::snprintf(g_lastTurn, sizeof(g_lastTurn), "%s", line);
+    }
+    if (std::strstr(line, "[ROAD-TURN-EXEMPT]") != nullptr) {
+        ++g_roadExempt;
+        if (g_lastExempt[0] == 0)
+            std::snprintf(g_lastExempt, sizeof(g_lastExempt), "%s", line);
     }
 }
 
@@ -211,7 +218,7 @@ void check(bool ok, const char *msg) {
     ++checks;
     if (!ok) {
         ++failures;
-        std::fprintf(stderr, "FAIL: %s\n", msg);
+        std::fprintf(stderr, "FAIL: check %d: %s\n", checks, msg);
     }
 }
 
@@ -329,6 +336,11 @@ bool RunBend(const BendCase &c, int traffic, Trace tr[2], int &collideTick) {
     return true;
 }
 
+// Same scene, but the trucks decide and commit IN TURN, and B holds on the
+// first tick: the later truck sees the position the earlier one has already
+// taken. Records whether anyone asks for an occupied sub-hex.
+bool RunStaggered(const BendCase &c, int traffic, CSubHex req[2][TICKS], int &clash);
+
 // ------------------------------------------------------- the four bends ----
 //
 // One junction hex 11,10 with two paved arms. WinAstra's witness is bend 0:
@@ -370,9 +382,11 @@ const BendCase g_bends[4] = {
 // Every control asks the SAME vehicle for one step with the correction off and
 // on, and requires the two answers to be identical.
 
-enum Tweak { plainGround = 1, bridgeDeck = 2, corridor = 4, nearDest = 8, backing = 16 };
+enum Tweak { plainGround = 1, bridgeDeck = 2, corridor = 4, nearDest = 8, backing = 16,
+             angledHull = 32 };
 
-CSubHex OneStep(const BendCase &c, const TruckPlan &p, int traffic, int tweak) {
+CSubHex OneStep(const BendCase &c, const TruckPlan &p, int traffic, int tweak,
+                const CSubHex *pDest = nullptr, const CHexCoord *pHexDest = nullptr) {
     g_traffic = traffic;
     ClearMap();
     if (!(tweak & plainGround))
@@ -391,6 +405,18 @@ CSubHex OneStep(const BendCase &c, const TruckPlan &p, int traffic, int tweak) {
         v.m_ptDest = CSubHex(v.m_ptHead.x, v.m_ptHead.y + 3);
         v.m_hexDest = CHexCoord(v.m_ptDest);
     }
+    // head and tail differing on BOTH axes is an angled hull: no lane to carry
+    if (tweak & angledHull) {
+        if (v.m_ptTail.x == v.m_ptHead.x)
+            v.m_ptTail.x = v.m_ptHead.x - 1;
+        if (v.m_ptTail.y == v.m_ptHead.y)
+            v.m_ptTail.y = v.m_ptHead.y - 1;
+        v.m_ptTail.Wrap();
+    }
+    if (pDest != nullptr)
+        v.m_ptDest = *pDest;
+    if (pHexDest != nullptr)
+        v.m_hexDest = *pHexDest;
     theVehicleHex.Set(v.m_ptHead, &v);
     theVehicleHex.Set(v.m_ptTail, &v);
     v.GetNextHex(FALSE);
@@ -421,6 +447,45 @@ const BendCase g_cross = {
   {"Q west", {24,20}, {25,20}, {{10,10},{9,10},{9,10}}, {17,20},
    {{12,10,-1,0},{11,11,0,0},{10,10,-1,0},{9,10,-1,0},{-1,-1,0,0}}}}
 };
+
+bool RunStaggered(const BendCase &c, int traffic, CSubHex req[2][TICKS], int &clash) {
+    g_traffic = traffic;
+    clash = -1;
+    ClearMap();
+    for (int i = 0; c.paved[i][0] >= 0; ++i)
+        theMap.hex[c.paved[i][0]][c.paved[i][1]].type = CHex::road;
+
+    static CVehicle v[2];
+    int ri[2] = {0, 0};
+    for (int i = 0; i < 2; ++i)
+        Build(v[i], c.t[i], i + 1);
+    for (int i = 0; i < 2; ++i)
+        Occupy(&v[i], &v[i]);
+
+    for (int tick = 0; tick < TICKS; ++tick)
+        for (int i = 0; i < 2; ++i) {
+            if ((i == 1) && (tick == 0)) {   // B is one tick behind
+                req[i][tick] = v[i].m_ptHead;
+                continue;
+            }
+            if (!v[i].GetNextHex(FALSE))
+                return false;
+            CSubHex want = v[i].m_ptNext;
+            req[i][tick] = want;
+            CVehicle *on = theVehicleHex._GetVehicle(want);
+            if ((on != nullptr) && (on != &v[i]) && (clash < 0))
+                clash = tick;
+            Occupy(&v[i], nullptr);
+            v[i].m_ptTail = v[i].m_ptHead;
+            v[i].m_ptHead = want;
+            Occupy(&v[i], &v[i]);
+            if ((ri[i] + 1 < 3) && v[i].m_hexNext.SameHex(v[i].m_ptHead)) {
+                ++ri[i];
+                v[i].m_hexNext = CHexCoord(c.t[i].route[ri[i]][0], c.t[i].route[ri[i]][1]);
+            }
+        }
+    return true;
+}
 
 int main() {
     std::printf("bend  truck   tick  pre-fix      post-fix\n");
@@ -465,6 +530,52 @@ int main() {
               "witness: both trucks ask for 22,22 at the 10,10-11,10-11,11 bend");
     }
 
+    // WinAstra's round-4 witness: the SAME bend, but both destinations now sit
+    // inside the three-sub-hex neighbourhood that used to switch the correction
+    // off wholesale. A(22,24) is one hex past the turn, B(20,20) is the first hex
+    // of the arm it is turning into. Neither step is the arrival move, so lane
+    // guidance must still apply and the pair must still be separated.
+    {
+        BendCase c = g_bends[0];
+        c.t[0].dest[0] = 22; c.t[0].dest[1] = 24;
+        c.t[1].dest[0] = 20; c.t[1].dest[1] = 20;
+        Trace tr[2];
+        int hit = -1;
+        g_recovery = 0;
+        RunBend(c, 63, tr, hit);
+        std::printf("near-dest hit=%d A=%d,%d B=%d,%d\n", hit, tr[0].req[0].x, tr[0].req[0].y,
+                    tr[1].req[0].x, tr[1].req[0].y);
+        check(hit < 0, "near-dest witness: the two trucks never ask for the same sub-hex");
+        check(!tr[0].opposing[0] && !tr[1].opposing[0],
+              "near-dest witness: neither first step lands in the opposing arm lane");
+        check(g_recovery == 0, "near-dest witness: every step comes from the step arithmetic");
+    }
+
+    // the same witness with an east arm added, so the junction is a three-way.
+    // The far-destination control must keep clearing, and the near pair must be
+    // separated as well.
+    {
+        BendCase c = g_bends[0];
+        c.paved[7][0] = 12; c.paved[7][1] = 10;
+        c.paved[8][0] = -1; c.paved[8][1] = -1;
+        Trace farTr[2];
+        int farHit = -1;
+        RunBend(c, 63, farTr, farHit);
+        check(farHit < 0, "three-way: the far-destination pair is still separated");
+        c.t[0].dest[0] = 22; c.t[0].dest[1] = 24;
+        c.t[1].dest[0] = 20; c.t[1].dest[1] = 20;
+        Trace tr[2];
+        int hit = -1;
+        g_recovery = 0;
+        RunBend(c, 63, tr, hit);
+        std::printf("three-way near-dest hit=%d A=%d,%d B=%d,%d; far hit=%d\n", hit,
+                    tr[0].req[0].x, tr[0].req[0].y, tr[1].req[0].x, tr[1].req[0].y, farHit);
+        check(hit < 0, "three-way near-dest witness: the two trucks never ask for the same sub-hex");
+        check(!tr[0].opposing[0] && !tr[1].opposing[0],
+              "three-way near-dest witness: neither first step lands in the opposing arm lane");
+        check(g_recovery == 0, "three-way near-dest witness: every step comes from the step arithmetic");
+    }
+
     // the probe fires on a corrected turn and names the step it replaced
     {
         Trace post[2];
@@ -475,13 +586,19 @@ int main() {
         check(g_roadTurns >= 2, "probe: a road-turn correction is logged for each truck");
         check(std::strstr(g_lastTurn, "[ROAD-TURN]") != nullptr, "probe: the line is tagged ROAD-TURN");
         check(std::strstr(g_lastTurn, "step ") != nullptr, "probe: the line carries the step before and after");
+        check((std::strstr(g_lastTurn, "head ") != nullptr) &&
+                  (std::strstr(g_lastTurn, "tail ") != nullptr) &&
+                  (std::strstr(g_lastTurn, "next ") != nullptr) &&
+                  (std::strstr(g_lastTurn, "dest ") != nullptr) &&
+                  (std::strstr(g_lastTurn, "reason ") != nullptr),
+              "probe: the corrected line carries head, tail, next, dest and a reason");
         std::printf("probe %s\n", g_lastTurn);
     }
 
     // controls: unchanged where the correction must not reach
     const char *why[] = {"off pavement", "on a bridge deck", "where MustKeepLane governs",
-                         "within three sub-hexes of the destination", "while reversing"};
-    int tweaks[] = {plainGround, bridgeDeck, corridor, nearDest, backing};
+                         "while reversing", "with an angled hull"};
+    int tweaks[] = {plainGround, bridgeDeck, corridor, backing, angledHull};
     for (int k = 0; k < 5; ++k)
         for (int i = 0; i < 2; ++i) {
             CSubHex off = OneStep(g_bends[0], g_bends[0].t[i], 63 & ~16, tweaks[k]);
@@ -490,6 +607,92 @@ int main() {
             std::snprintf(msg, sizeof(msg), "control: step is unchanged %s", why[k]);
             check(off == on, msg);
         }
+
+    // An angled hull has no lane to carry, near the destination as anywhere else.
+    for (int i = 0; i < 2; ++i) {
+        CSubHex off = OneStep(g_bends[0], g_bends[0].t[i], 63 & ~16, angledHull | nearDest);
+        CSubHex on = OneStep(g_bends[0], g_bends[0].t[i], 63, angledHull | nearDest);
+        check(off == on, "control: an angled hull near the destination is unchanged");
+    }
+
+    // The approach is now guided even when the destination is within three
+    // sub-hexes, because that step is not the arrival move. This check is the
+    // inverse of the one it replaces: asserting that this step is unguided IS the
+    // defect WinAstra reported.
+    for (int i = 0; i < 2; ++i) {
+        CSubHex off = OneStep(g_bends[0], g_bends[0].t[i], 63 & ~16, nearDest);
+        CSubHex on = OneStep(g_bends[0], g_bends[0].t[i], 63, nearDest);
+        check(off != on, "near destination but not arriving: the approach is still guided");
+        check(on != CSubHex(22, 22), "near destination but not arriving: the corner sub-hex is not taken");
+    }
+
+    // ...and the arrival move itself keeps its freedom. A: the corner step IS the
+    // step that enters the destination hex - a building's entry diagonal. B: the
+    // truck is already inside the destination hex.
+    {
+        CSubHex destA(23, 23);
+        CHexCoord hexA(11, 11);
+        g_roadExempt = 0;
+        g_lastExempt[0] = '\0';
+        CSubHex offA = OneStep(g_bends[0], g_bends[0].t[0], 63 & ~16, 0, &destA, &hexA);
+        CSubHex onA = OneStep(g_bends[0], g_bends[0].t[0], 63, 0, &destA, &hexA);
+        // the exempted case is named, not silent: QA greps this line for a cut
+        check(g_roadExempt == 1, "probe: the exempted arrival step is logged once");
+        check(std::strstr(g_lastExempt, "corner-cut") != nullptr,
+              "probe: the exempt line names the corner-cut geometry");
+        check((std::strstr(g_lastExempt, "head ") != nullptr) &&
+                  (std::strstr(g_lastExempt, "tail ") != nullptr) &&
+                  (std::strstr(g_lastExempt, "next ") != nullptr) &&
+                  (std::strstr(g_lastExempt, "dest ") != nullptr),
+              "probe: the exempt line carries head, tail, next and dest");
+        std::printf("exempt %s\n", g_lastExempt);
+        check(offA == onA, "control: the step that enters the destination hex is unchanged");
+        check(onA == CSubHex(22, 22), "control: that entry step is still the direct diagonal");
+
+        CSubHex destB(17, 20);
+        CHexCoord hexB(11, 11);
+        CSubHex offB = OneStep(g_bends[0], g_bends[0].t[1], 63 & ~16, 0, &destB, &hexB);
+        CSubHex onB = OneStep(g_bends[0], g_bends[0].t[1], 63, 0, &destB, &hexB);
+        check(offB == onB, "control: a truck already inside the destination hex is unchanged");
+    }
+
+    // Staggered arrival: B decides a tick after A, from the scene A's step left.
+    {
+        BendCase c = g_bends[0];
+        c.t[0].dest[0] = 22; c.t[0].dest[1] = 24;
+        c.t[1].dest[0] = 20; c.t[1].dest[1] = 20;
+        CSubHex req[2][TICKS];
+        int clash = -1;
+        g_recovery = 0;
+        check(RunStaggered(c, 63, req, clash), "staggered: both trucks produce a step every tick");
+        check(clash < 0, "staggered: the later truck never asks for an occupied sub-hex");
+        check(g_recovery == 0, "staggered: no recovery path is needed");
+    }
+
+    // Paired occupancy: A is already sitting in the contested corner sub-hex when
+    // B decides. B must avoid it by lane guidance, not by the retry ladder.
+    {
+        g_traffic = 63;
+        ClearMap();
+        for (int i = 0; g_bends[0].paved[i][0] >= 0; ++i)
+            theMap.hex[g_bends[0].paved[i][0]][g_bends[0].paved[i][1]].type = CHex::road;
+        static CVehicle a, b;
+        Build(a, g_bends[0].t[0], 1);
+        a.m_ptHead = CSubHex(22, 22);
+        a.m_ptTail = CSubHex(21, 22);
+        a.m_ptNext = a.m_ptHead;
+        Build(b, g_bends[0].t[1], 2);
+        b.m_ptDest = CSubHex(20, 20);
+        b.m_hexDest = CHexCoord(10, 10);
+        Occupy(&a, &a);
+        Occupy(&b, &b);
+        g_recovery = 0;
+        check(b.GetNextHex(FALSE) != FALSE, "paired occupancy: B still produces a step");
+        check(b.m_ptNext != a.m_ptHead, "paired occupancy: B does not ask for the sub-hex A is in");
+        check(g_recovery == 0, "paired occupancy: B avoids it by lane guidance, not a recovery path");
+        Occupy(&a, nullptr);
+        Occupy(&b, nullptr);
+    }
 
     // control: a turn onto a squarely adjacent arm is takeable from here
     {
