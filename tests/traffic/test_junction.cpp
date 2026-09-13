@@ -84,6 +84,11 @@ struct Owner {
     BOOL IsMe() const { return TRUE; }
     BOOL IsAI() const { return FALSE; }
 };
+// Off by default (no hex matches (-1,-1), and CanEnterHex stays TRUE) so every
+// existing fixture is untouched; the arrival-approach-diagonal case below is
+// the only one that arms them, and resets them immediately after.
+CHexCoord g_bldgHex(-1, -1);
+BOOL g_bldgAngleOK = TRUE;
 struct CTransportData {
     enum { FL1hex = 1 };
     BOOL IsBoat() const { return FALSE; }
@@ -91,7 +96,7 @@ struct CTransportData {
     BOOL IsCrane() const { return FALSE; }
     int GetVehFlags() const { return 0; }
     int GetWheelType() const { return 1; }
-    BOOL CanEnterHex(CHexCoord, CHexCoord, BOOL, BOOL) const { return TRUE; }
+    BOOL CanEnterHex(CHexCoord, CHexCoord, BOOL, BOOL) const { return g_bldgAngleOK; }
 };
 struct Game {
     BOOL IsNetGame() const { return FALSE; }
@@ -99,7 +104,10 @@ struct Game {
 } theGame;
 struct CBuilding {};
 struct BuildingMap {
-    CBuilding *_GetBuilding(CHexCoord) { return nullptr; }
+    CBuilding *_GetBuilding(CHexCoord h) {
+        static CBuilding b;
+        return (h == g_bldgHex) ? &b : nullptr;
+    }
 } theBuildingHex;
 
 int MyRand() { return 0; }
@@ -627,8 +635,7 @@ int main() {
     }
 
     // ...and the arrival move itself keeps its freedom. A: the corner step IS the
-    // step that enters the destination hex - a building's entry diagonal. B: the
-    // truck is already inside the destination hex.
+    // step that enters the destination hex - a building's entry diagonal.
     {
         CSubHex destA(23, 23);
         CHexCoord hexA(11, 11);
@@ -649,11 +656,66 @@ int main() {
         check(offA == onA, "control: the step that enters the destination hex is unchanged");
         check(onA == CSubHex(22, 22), "control: that entry step is still the direct diagonal");
 
-        CSubHex destB(17, 20);
+        // B used to be "a truck already inside the destination hex" with a
+        // distant m_ptDest (17,20 while m_hexDest was 11,11) - a state
+        // SetHexDest never produces: m_hexDest is always ToCoord(m_ptDest)
+        // (unit.cpp SetDestAndMode, vehmove.cpp SetHexDest), and ToCoord is
+        // x>>1,y>>1, so a hex's own sub-hexes span only {2H,2H+1} on each
+        // axis. The invariant-consistent version of "already inside the
+        // destination hex" is this: m_ptDest in the SAME hex the truck
+        // occupies is necessarily within 1 sub-hex of m_ptHead on each axis,
+        // so the distance clause of bArrival already exempts it - no same-hex
+        // clause of its own is needed.
+        CSubHex destB(23, 22);
         CHexCoord hexB(11, 11);
         CSubHex offB = OneStep(g_bends[0], g_bends[0].t[1], 63 & ~16, 0, &destB, &hexB);
         CSubHex onB = OneStep(g_bends[0], g_bends[0].t[1], 63, 0, &destB, &hexB);
-        check(offB == onB, "control: a truck already inside the destination hex is unchanged");
+        check(offB == onB, "control: already inside the destination hex, dest within one sub-hex, is unchanged");
+    }
+
+    // The arrival-approach diagonal: a live run logged this exact geometry
+    // fourteen identical times. The truck is one sub-hex short of its exact
+    // destination point but has NOT yet crossed into m_hexDest (a building's
+    // entry angle is wrong from here, so bAtDest gets reset off after the
+    // distance test already passed it) - and the route hex the pathfinder
+    // handed it sits one full hex further on, diagonally off the corner it
+    // is about to cut. bCorner sees a genuine corner-cut candidate; bArrival
+    // exempts it anyway, via the distance clause, not the corner-entry one.
+    // Exempt by design pending a witness of an actual overlap there.
+    {
+        static CVehicle v;
+        v = CVehicle();
+        v.id = 9;
+        v.m_ptHead = CSubHex(22, 24);
+        v.m_ptTail = CSubHex(23, 24);               // heading (-1,0)
+        v.m_ptNext = v.m_ptHead;
+        v.m_ptDest = CSubHex(22, 23);                // one sub-hex above head
+        v.m_hexDest = CHexCoord(11, 11);
+        v.m_hexNext = CHexCoord(10, 11);             // hexdest + (-1,0)
+        v.m_cMode = CVehicle::moving;
+
+        g_traffic = 63;
+        ClearMap();
+        theMap.hex[11][12].type = CHex::road;        // head's hex
+        theMap.hex[10][12].type = CHex::road;        // heading-ahead hex
+        theMap.hex[10][11].type = CHex::road;        // the corner-cut hex
+        theMap.hex[11][11].type = CHex::road;        // the destination hex
+        theVehicleHex.Set(v.m_ptHead, &v);
+        theVehicleHex.Set(v.m_ptTail, &v);
+
+        g_roadExempt = 0;
+        g_lastExempt[0] = '\0';
+        g_bldgHex = v.m_hexDest;   // a building sits at the destination hex...
+        g_bldgAngleOK = FALSE;     // ...and this angle can't enter it yet
+        BOOL got = v.GetNextHex(FALSE);
+        g_bldgAngleOK = TRUE;      // armed only for this one fixture
+        g_bldgHex = CHexCoord(-1, -1);
+
+        theVehicleHex.Set(v.m_ptHead, nullptr);
+        theVehicleHex.Set(v.m_ptTail, nullptr);
+        check((got != FALSE) && (v.m_ptNext == CSubHex(21, 23)) && (g_roadExempt == 1) &&
+                  (std::strstr(g_lastExempt, "corner-cut") != nullptr),
+              "arrival-approach diagonal: exempted via the distance clause, step (-1,-1) unchanged");
     }
 
     // Staggered arrival: B decides a tick after A, from the scene A's step left.

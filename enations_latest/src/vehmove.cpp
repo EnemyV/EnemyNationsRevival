@@ -1253,18 +1253,24 @@ BOOL CVehicle::GetNextHex(BOOL bNew) {
                 int iCross = (hx != 0) ? yStep : xStep;
 
                 // THE ONLY STEP THAT NEEDS FREEDOM HERE IS THE ARRIVAL MOVE: the
-                // step that enters the destination hex, a truck already inside it,
-                // or the last sub-hex before the destination point - which is where
-                // a building's entry angle has to be satisfied and a diagonal must
-                // stay available. The near-destination relaxation above
-                // (bCheckStreet off within three sub-hexes of m_ptDest) used to gate
-                // this block too, and three sub-hexes on each axis is a 7x7
-                // neighbourhood - up to three hexes across - so it switched lane
-                // guidance off for a truck still a whole bend short of its
-                // destination. That is the corner cut QA still sees: two trucks with
-                // near destinations meeting at a bend both ask for the same sub-hex.
-                // Guide the approach, exempt the arrival move.
-                BOOL bArrival = _turn.SameHex(m_hexDest) || (_hexHere == m_hexDest) ||
+                // step that enters the destination hex, or the last sub-hex before
+                // the destination point - which is where a building's entry angle
+                // has to be satisfied and a diagonal must stay available. The
+                // near-destination relaxation above (bCheckStreet off within three
+                // sub-hexes of m_ptDest) used to gate this block too, and three
+                // sub-hexes on each axis is a 7x7 neighbourhood - up to three hexes
+                // across - so it switched lane guidance off for a truck still a
+                // whole bend short of its destination. That is the corner cut QA
+                // still sees: two trucks with near destinations meeting at a bend
+                // both ask for the same sub-hex. Guide the approach, exempt the
+                // arrival move.
+                // "Already inside the destination hex" is NOT a separate case: a
+                // hex's sub-hexes are exactly {2H,2H+1} on each axis (ToCoord is
+                // x>>1,y>>1), and SetHexDest/SetDestAndMode keep m_hexDest equal to
+                // m_ptDest's hex, so sharing a hex with m_hexDest already puts
+                // m_ptDest within 1 sub-hex of m_ptHead on each axis - the distance
+                // clause below already covers it.
+                BOOL bArrival = _turn.SameHex(m_hexDest) ||
                                 ((abs(xDest) <= 1) && (abs(yDest) <= 1));
 
                 // 1. in lane, stepping out of it, and the route hex is DIAGONALLY
