@@ -81,6 +81,35 @@ CHexCoord* CPathMgr::GetPath( CVehicle* pVehicle, CHexCoord& hexFrom, CHexCoord&
     EnterCriticalSection( &m_cs );
     Perf::CounterAddElapsedUs( _qMain ? "mpath.wait.main.us" : "mpath.wait.ai.us", _qWait );
     const uint64_t _qWork = Perf::NowIfEnabled( );
+
+    // CACHE-FEASIBILITY PROBE, counting only - no behaviour change, nothing is
+    // reused. Type 58 is closed: the fix is main-thread search COST, and the three
+    // candidates are budget-per-frame, cache/reuse paths, or move off-thread.
+    // This sizes the middle one BEFORE anyone builds it: how often does a
+    // main-thread search repeat a (from -> to) pair seen recently? A ring of the
+    // last 512 keys, scanned linearly - ~130 searches/s makes that free, and it is
+    // main-thread only so the static ring needs no lock. Inert unless EN_PERF is set.
+    if ( _qMain && Perf::IsEnabled( ) )
+    {
+        static uint64_t s_ring[512] = { 0 };
+        static int      s_next      = 0;
+        const uint64_t  key = ( (uint64_t)(uint16_t)hexFrom.X( ) )
+                            | ( (uint64_t)(uint16_t)hexFrom.Y( ) << 16 )
+                            | ( (uint64_t)(uint16_t)hexTo.X( )   << 32 )
+                            | ( (uint64_t)(uint16_t)hexTo.Y( )   << 48 );
+        int hitAt = -1;
+        for ( int i = 0; i < 512; ++i )
+        {
+            const int idx = ( s_next - 1 - i + 1024 ) % 512;   // most recent first
+            if ( s_ring[idx] == key ) { hitAt = i; break; }
+        }
+        if ( hitAt < 0 )        Perf::CounterInc( "mpath.cache.miss" );
+        else if ( hitAt < 16 )  Perf::CounterInc( "mpath.cache.hit16" );
+        else if ( hitAt < 64 )  Perf::CounterInc( "mpath.cache.hit64" );
+        else                    Perf::CounterInc( "mpath.cache.hit512" );
+        s_ring[s_next] = key;
+        s_next = ( s_next + 1 ) % 512;
+    }
 #if EN_PATH_PROBES
     m_iNextSlot = 0;  // trivial rejects skip the in-search reset; don't re-count
 #endif
