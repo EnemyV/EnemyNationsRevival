@@ -3141,7 +3141,7 @@ BOOL CVehicle::FindOffRoadSpot(CSubHex &_found, CVehicle *pAsker) {
                     CHexCoord from(_hexOn), to(_cand);
                     int pathLength = 0;
                     Perf::CounterInc( "pq.offroad" );   // BURST PROBE: FindOffRoadSpot, traffic stop-case LeaveRoad
-        CHexCoord *path = thePathMgr.GetPath(NULL, from, to, pathLength, GetData()->GetType(), FALSE, TRUE);
+                    CHexCoord *path = thePathMgr.GetPath(NULL, from, to, pathLength, GetData()->GetType(), FALSE, TRUE);
                     BOOL reachable = from == to || (path != NULL && pathLength > 0 && path[pathLength - 1] == to);
                     delete[] path;
                     if (!reachable) {
