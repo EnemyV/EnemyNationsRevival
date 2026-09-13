@@ -459,6 +459,18 @@ bool IsMainThread()
     return ( g_mainTid != 0 && GetCurrentThreadId() == g_mainTid );
 }
 
+namespace { const int kFrameMsgTypes = 128;
+           uint64_t g_frameMsgUs[kFrameMsgTypes] = {0};
+           int      g_frameMsgTop = -1; }
+
+void NoteMsgUs( int msgType, uint64_t us )
+{
+    if ( !g_enabled || msgType < 0 || msgType >= kFrameMsgTypes ) return;
+    g_frameMsgUs[msgType] += us;
+    if ( g_frameMsgTop < 0 || g_frameMsgUs[msgType] > g_frameMsgUs[g_frameMsgTop] )
+        g_frameMsgTop = msgType;
+}
+
 uint64_t ElapsedUs( uint64_t startTicks )
 {
     if ( !g_enabled || startTicks == 0 ) return 0;
@@ -565,11 +577,16 @@ void FrameMark()
                     double d = ( (double)( g_secTicks[i] - g_prevFrameSec[i] ) / g_perfFreq ) * 1000.0;
                     if ( d >= 0.5 ) fprintf( s_fp, "  %s=%.1f", kName[i], d );
                 }
+                if ( g_frameMsgTop >= 0 && g_frameMsgUs[g_frameMsgTop] > 0 )
+                    fprintf( s_fp, "  topmsg=%d/%.1fms", g_frameMsgTop,
+                             (double)g_frameMsgUs[g_frameMsgTop] / 1000.0 );
                 fprintf( s_fp, "\n" );
                 fflush( s_fp );
             }
         }
         for ( int i = 0; i < SEC_COUNT; ++i ) g_prevFrameSec[i] = g_secTicks[i];
+        for ( int i = 0; i < kFrameMsgTypes; ++i ) g_frameMsgUs[i] = 0;
+        g_frameMsgTop = -1;
     }
 
     g_frames++;
