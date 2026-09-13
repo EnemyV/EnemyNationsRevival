@@ -11,6 +11,7 @@
 //
 
 #include "stdafx.h"
+#include "Perf.h"      // pq.* path-request burst counters
 #include "base.h"
 #include "lastplnt.h"
 #include "cpathmgr.h"
@@ -3450,6 +3451,7 @@ void CVehicle::GetPath( BOOL bNoOcc )
         }
     }
     else
+        Perf::CounterInc( "pq.veh" );   // BURST PROBE: CVehicle::GetPath, ordinary movement route
         m_phexPath = thePathMgr.GetPath( this, _hexSrc, _hexDest, m_iPathLen, 0, bNoOcc );
 
     // if we have no path we're stuck

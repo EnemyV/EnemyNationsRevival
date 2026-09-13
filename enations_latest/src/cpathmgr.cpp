@@ -72,7 +72,15 @@ CHexCoord* CPathMgr::GetPath( CVehicle* pVehicle, CHexCoord& hexFrom, CHexCoord&
     // mpath.us includes lock wait, so contention shows up here too.
     Perf::ScopeCounter _t( "mpath.us" );
 #endif
+    // CONTENTION SPLIT (see the same block in cpathmap.cpp): mpath.us above lumps
+    // wait and work together, which is exactly the ambiguity being resolved - a
+    // MAIN-thread wait on m_cs is a frame stall, an AI-worker wait is not.
+    const uint64_t _qWait = Perf::Now( );
+    const bool     _qMain = Perf::IsMainThread( );
+    Perf::CounterInc( _qMain ? "mpath.calls.main" : "mpath.calls.ai" );
     EnterCriticalSection( &m_cs );
+    Perf::CounterAddElapsedUs( _qMain ? "mpath.wait.main.us" : "mpath.wait.ai.us", _qWait );
+    const uint64_t _qWork = Perf::Now( );
 #if EN_PATH_PROBES
     m_iNextSlot = 0;  // trivial rejects skip the in-search reset; don't re-count
 #endif
@@ -81,6 +89,7 @@ CHexCoord* CPathMgr::GetPath( CVehicle* pVehicle, CHexCoord& hexFrom, CHexCoord&
     Perf::CounterInc( "mpath.calls" );
     Perf::CounterAdd( "mpath.nodes", m_iNextSlot );  // cells created this search
 #endif
+    Perf::CounterAddElapsedUs( _qMain ? "mpath.work.main.us" : "mpath.work.ai.us", _qWork );
     LeaveCriticalSection( &m_cs );
     return phcPath;
 }

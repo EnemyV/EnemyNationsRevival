@@ -14,6 +14,7 @@
 
 #include "SDL2GameDialogs.h"
 #include "enprobes.h"
+#include "Perf.h"           // flee.* spike counters (main-thread A* in a message handler)
 #include "ai.h"
 #include "area.h"
 #include "bridge.h"
@@ -3054,11 +3055,22 @@ static void UnitAttacked( CMsgUnitAttacked* pMsg )
                             pVeh->GetData()->CanTravelHex(hex) &&
                             theMap.GetTerrainCost(to, to, 0, pVeh->GetData()->GetWheelType()) != 0;
                         if ( usable ) {
+                            // SPIKE PROBE: this is a FULL synchronous A* on the MAIN thread,
+                            // inside a message handler, to validate a RANDOMLY jittered flee
+                            // point. Added by traffic(015) 2/7 (e081a6e7) and ungated - no
+                            // TrafficOpts bit reaches it, which is why the EN_TRAFFIC=0 arm
+                            // could never have exonerated it. flee.reject counts searches
+                            // whose entire cost is thrown away.
+                            Perf::CounterInc( "flee.calls" );
+                            const uint64_t _qFlee = Perf::Now( );
                             int length = 0;
                             CHexCoord *path = thePathMgr.GetPath(NULL, from, to, length,
                                 pVeh->GetData()->GetType(), FALSE, TRUE);
                             usable = from == to || (path != NULL && length > 0 && path[length-1] == to);
                             delete[] path;
+                            Perf::CounterAddElapsedUs( "flee.us", _qFlee );
+                            if ( !usable )
+                                Perf::CounterInc( "flee.reject" );
                         }
                         if ( !usable ) {
                             WaitLog("[FLEE-REJECT] veh %d attacker %d from %d,%d proposed %d,%d terrain %d",

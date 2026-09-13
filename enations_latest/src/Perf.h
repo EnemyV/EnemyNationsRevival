@@ -71,6 +71,10 @@ namespace Perf
         SEC_COUNT
     };
 
+    // TRUE only on the thread that called Init() (the main loop). Lock-wait on the
+    // MAIN thread is a frame stall; the same wait on an AI worker is not.
+    bool IsMainThread();
+
     // ---- named counters ----------------------------------------------------
     void CounterInc( const char* name, int64_t by = 1 );  // accumulator
     void CounterAdd( const char* name, int64_t v );       // accumulator
@@ -80,6 +84,25 @@ namespace Perf
     // ad-hoc sub-phase profiling finer than the fixed Section slots. The counter
     // then reads as µs/interval (÷1000 ≈ the ms/s render/present columns).
     void CounterAddElapsedUs( const char* name, uint64_t startTicks );
+
+    // RAII scoped timer for a NAMED counter. Use where a fixed Section slot is
+    // overkill but an early `goto`/`return` must still be recorded - a bare
+    // CounterAddElapsedUs at the end of a block silently loses those paths.
+    struct ScopeNamed
+    {
+        const char* m_name;
+        uint64_t    m_start;
+        bool        m_active;
+        ScopeNamed( const char* name )
+        {
+            m_active = IsEnabled();
+            if ( m_active ) { m_name = name; m_start = Now(); }
+        }
+        ~ScopeNamed()
+        {
+            if ( m_active ) CounterAddElapsedUs( m_name, m_start );
+        }
+    };
 
     // RAII scoped timer for a fixed slot. Early-outs when disabled.
     struct ScopeSlot
