@@ -40,10 +40,18 @@ CHexCoord *CPathMap::GetRoadPath(
 	// Per-SEARCH counter ops only — CounterInc takes a global CS, so a
 	// per-node counter in AddCellToArray would serialize the AI threads.
 	Perf::ScopeCounter _t( "pathr.us" );
+	// CONTENTION SPLIT: time spent WAITING for m_cs, separated from time doing the
+	// search, and attributed to the MAIN thread or an AI worker. A main-thread wait
+	// is a frame stall; an AI-worker wait is not. QPC, not timeGetTime - a 1ms tick
+	// cannot see a contention pattern that stalls a 35ms frame.
+	const uint64_t _qWait = Perf::Now( );
+	const bool     _qMain = Perf::IsMainThread( );
 #if EN_PERF_PROBES && defined(_WIN32)
 	DWORD dwT0 = timeGetTime( );
 #endif
 	EnterCriticalSection (&m_cs);
+	Perf::CounterAddElapsedUs( _qMain ? "pathr.wait.main.us" : "pathr.wait.ai.us", _qWait );
+	const uint64_t _qWork = Perf::Now( );
 #if EN_PERF_PROBES && defined(_WIN32)
 	DWORD dwT1 = timeGetTime( );
 #endif
@@ -53,6 +61,7 @@ CHexCoord *CPathMap::GetRoadPath(
 	Perf::CounterInc( "pathr.calls" );
 	Perf::CounterAdd( "pathr.nodes", m_iNextSlot );	// cells created this search
 	int iCellsUsed = m_iNextSlot;
+	Perf::CounterAddElapsedUs( _qMain ? "pathr.work.main.us" : "pathr.work.ai.us", _qWork );
 	LeaveCriticalSection (&m_cs);
 #if EN_PERF_PROBES && defined(_WIN32)
 	{
@@ -315,10 +324,16 @@ BOOL CPathMap::GetPath( CHexCoord& hexFrom, CHexCoord& hexTo,
 	// (many calls, few nodes) -> cache quantization; node-bound (few calls,
 	// many nodes) -> scratch/world-read structure work.
 	Perf::ScopeCounter _t( "path.us" );
+	// See the contention note in GetRoadPath: wait vs work, main thread vs AI worker.
+	const uint64_t _qWait = Perf::Now( );
+	const bool     _qMain = Perf::IsMainThread( );
+	Perf::CounterInc( _qMain ? "path.calls.main" : "path.calls.ai" );
 #if EN_PERF_PROBES && defined(_WIN32)
 	DWORD dwT0 = timeGetTime( );
 #endif
 	EnterCriticalSection (&m_cs);
+	Perf::CounterAddElapsedUs( _qMain ? "path.wait.main.us" : "path.wait.ai.us", _qWait );
+	const uint64_t _qWork = Perf::Now( );
 #if EN_PERF_PROBES && defined(_WIN32)
 	DWORD dwT1 = timeGetTime( );
 #endif
@@ -328,6 +343,7 @@ BOOL CPathMap::GetPath( CHexCoord& hexFrom, CHexCoord& hexTo,
 	Perf::CounterInc( "path.calls" );
 	Perf::CounterAdd( "path.nodes", m_iNextSlot );	// cells created this search
 	int iCellsUsed = m_iNextSlot;
+	Perf::CounterAddElapsedUs( _qMain ? "path.work.main.us" : "path.work.ai.us", _qWork );
 	LeaveCriticalSection (&m_cs);
 #if EN_PERF_PROBES && defined(_WIN32)
 	{

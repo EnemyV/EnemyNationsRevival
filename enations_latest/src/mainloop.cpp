@@ -961,6 +961,12 @@ void CConquerApp::GraphicsEnginePump( )
         theGame.m_dwOperSecFrames += theGame.m_dwOpersElapsed;
         if ( theGame.m_dwOperSecFrames >= (DWORD)( FRAME_RATE * theGame.m_iSpeedMul ) )
         {
+            // 591ms of every second inside SEC_SIM is attributed to nothing (measured:
+            // sim 1013 - sleep 260 - msg 55 - operB 12 - operV 95). Perf.h guesses the
+            // remainder is "once-a-second housekeeping + message-posting scans +
+            // animate" - this names it instead of guessing. NOTE this block contains a
+            // `goto NoOper`, so it must be RAII, not a paired call at the end.
+            Perf::ScopeNamed _perfSec( "pump.sec.us" );
             div_t dtNum                = div( theGame.m_dwOperSecFrames, FRAME_RATE );
             theGame.m_dwOperSecElapsed = dtNum.quot;
             theGame.m_dwOperSecFrames  = dtNum.rem;
@@ -1336,15 +1342,21 @@ void CConquerApp::GraphicsEnginePump( )
 
         // got stuck waiting here?
         // take the critical section while we do our thing
+        // ("got stuck waiting here?" is in the 1996 source - so measure it and answer.)
+        const uint64_t _qCs = Perf::Now( );
         EnterCriticalSection( &cs );
+        Perf::CounterAddElapsedUs( "pump.cswait.us", _qCs );
 
         // figure the multipliers, etc
         POSITION pos;
-        for ( pos = theGame.GetAll( ).GetHeadPosition( ); pos != NULL; )
         {
-            CPlayer* pPlr = theGame.GetAll( ).GetNext( pos );
-            ASSERT_STRICT_VALID( pPlr );
-            pPlr->StartLoop( );
+            Perf::ScopeNamed _perfStart( "pump.startloop.us" );
+            for ( pos = theGame.GetAll( ).GetHeadPosition( ); pos != NULL; )
+            {
+                CPlayer* pPlr = theGame.GetAll( ).GetNext( pos );
+                ASSERT_STRICT_VALID( pPlr );
+                pPlr->StartLoop( );
+            }
         }
 
         // operate the buildings

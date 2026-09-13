@@ -52,6 +52,7 @@ namespace
     double   g_perfFreq      = 1.0;        // ticks per second
     LONGLONG g_intervalStart = 0;          // QPC at start of current interval
     DWORD    g_startTickMs   = 0;          // GetTickCount at Init (match time)
+    DWORD    g_mainTid       = 0;          // thread that called Init = the main loop
 
     unsigned g_frames        = 0;
     double   g_frameSumMs    = 0.0;
@@ -431,6 +432,7 @@ void Init()
     g_intervalStart = c.QuadPart;
     g_lastFrameQpc  = c.QuadPart;
     g_startTickMs   = GetTickCount();
+    g_mainTid       = GetCurrentThreadId();
 
     const char* env = getenv( "EN_PERF" );
     if ( env && env[0] && env[0] != '0' )
@@ -449,6 +451,11 @@ void Init()
         g_leakDumpAtSec = atol( envL );   // match-second at which to dump leaks
 
     AllocProfInit();                      // arms operator new/delete if EN_PERF_ALLOC set
+}
+
+bool IsMainThread()
+{
+    return ( g_mainTid != 0 && GetCurrentThreadId() == g_mainTid );
 }
 
 uint64_t Now()
