@@ -665,7 +665,7 @@ void CConquerApp::ProcessAllMessages( DWORD dwBudgetMs )
             int   iMsgType = (int)( (CNetCmd*)pBuf )->GetType( );
             theGame.ProcessMessage( (CNetCmd*)pBuf );
             DWORD dwMsgMs = timeGetTime( ) - dwMsgT0;
-            if ( dwMsgMs > 250 )
+            if ( dwMsgMs > 40 )   // was 250: tests ONE message, but msg= is a SUM - never fired
             {
                 char szM[80];
                 sprintf( szM, "[SLOWMSG] type %d took %lu ms\n", iMsgType, dwMsgMs );
@@ -719,18 +719,25 @@ void CConquerApp::_RenderScreens( )
 {
 
     DWORD dwNow               = timeGetTime( );
+    // JANK PROBE: count how far the ANIMATION clock advances per render. Smooth
+    // motion is ~every render advancing exactly one step; judder is a mix of 0s
+    // and 2+. Nothing in perf.log records this today - avg/max frame time cannot
+    // tell a steady 35ms from an alternating 20/70ms, and those are different bugs.
+    // clk.future counts the render clock landing AHEAD of now, which this function
+    // can cause on its own (see the += rem below vs the -= rem on the oper clock
+    // at the bottom of the pump) and which the OP-CLOCK SANITY clamp then undoes.
+    if ( theGame.m_dwFrameTimeLast > dwNow )
+        Perf::CounterInc( "clk.future" );
     div_t dtFrame             = div( dwNow - theGame.m_dwFrameTimeLast, 1000 / FRAME_RATE );
     theGame.m_dwFramesElapsed = dtFrame.quot;
-    // CARRY the unconsumed remainder, don't ADD it. quot whole 1/24s frames were
-    // consumed; rem ms are left over and must be carried INTO the next interval,
-    // so the clock moves back to the start of that remainder. `+ rem` pushed it
-    // 2*rem AHEAD of where it belongs, so the measured delta alternated ~32/0ms
-    // and NEVER reached the 41ms quantum: EN_PERF anim.step0 was 96.3% of renders
-    // (render-side animation advancing ~1.1 steps/sec instead of ~24). The sim
-    // clock at the bottom of the pump has always done this correctly - this line
-    // is now the same arithmetic. Also makes the OP-CLOCK SANITY clamp below a
-    // no-op for this clock, since now-rem can never exceed now.
-    theGame.m_dwFrameTimeLast = dwNow - dtFrame.rem;
+    // PROBE BRANCH: lane behaviour is kept deliberately (`+ dtFrame.rem`). The fix for
+    // this line lives on winopus/015-anim-clock as 2f62b51f and is NOT merged here, so
+    // the histogram measures what the LANE does, not what my fix does. anim.step* then
+    // records the lane's real animation cadence.
+    theGame.m_dwFrameTimeLast = dwNow + dtFrame.rem;
+    Perf::CounterInc( dtFrame.quot == 0 ? "anim.step0"
+                    : ( dtFrame.quot == 1 ? "anim.step1"
+                    : ( dtFrame.quot == 2 ? "anim.step2" : "anim.step3plus" ) ) );
 
     if ( !theGame.ShouldAnimate() )
     {
@@ -866,7 +873,17 @@ void CConquerApp::GraphicsEnginePump( )
         Perf::ScopeSlot _perfMsg( Perf::SEC_MSG );
         const int   iBacklog = theGame.m_messagePointerList.GetCount( );
         const DWORD dwBudget = iBacklog > 2000 ? 400 : ( iBacklog > 500 ? 200 : 100 );
+        // SPIKE PROBE: msg= is the only strong positive correlate of worst-frame
+        // time (r=+0.61 over 449 intervals). Record what the budget actually did:
+        // the backlog it saw, the tier it chose, and whether the drain RAN OUT of
+        // budget (= this frame was cut short by the cap, not by an empty queue).
+        Perf::GaugeSet( "msg.backlog", iBacklog );
+        Perf::CounterInc( dwBudget == 400 ? "msg.tier400"
+                                          : ( dwBudget == 200 ? "msg.tier200" : "msg.tier100" ) );
+        const DWORD dwDrainT0 = timeGetTime( );
         ProcessAllMessages( dwBudget );
+        if ( timeGetTime( ) - dwDrainT0 >= dwBudget )
+            Perf::CounterInc( "msg.capped" );
     }
 
     theGame._SettimeGetTime( );
