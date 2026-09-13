@@ -89,10 +89,13 @@ struct Owner {
 // the only one that arms them, and resets them immediately after.
 CHexCoord g_bldgHex(-1, -1);
 BOOL g_bldgAngleOK = TRUE;
+// A truck by default, so every existing fixture is untouched; the [ROAD-DIAG]
+// probe fixture is the only one that clears it, and restores it immediately.
+BOOL g_isTransport = TRUE;
 struct CTransportData {
     enum { FL1hex = 1 };
     BOOL IsBoat() const { return FALSE; }
-    BOOL IsTransport() const { return TRUE; }
+    BOOL IsTransport() const { return g_isTransport; }
     BOOL IsCrane() const { return FALSE; }
     int GetVehFlags() const { return 0; }
     int GetWheelType() const { return 1; }
@@ -121,8 +124,10 @@ int TrafficOpts() { return g_traffic; }
 int g_recovery = 0;
 int g_roadTurns = 0;
 int g_roadExempt = 0;
+int g_roadDiag = 0;
 char g_lastTurn[256] = "";
 char g_lastExempt[256] = "";
+char g_lastDiag[256] = "";
 void WaitLog(const char *fmt, ...) {
     char line[512];
     va_list va;
@@ -138,6 +143,10 @@ void WaitLog(const char *fmt, ...) {
         ++g_roadExempt;
         if (g_lastExempt[0] == 0)
             std::snprintf(g_lastExempt, sizeof(g_lastExempt), "%s", line);
+    }
+    if (std::strstr(line, "[ROAD-DIAG]") != nullptr) {
+        ++g_roadDiag;
+        std::snprintf(g_lastDiag, sizeof(g_lastDiag), "%s", line);
     }
 }
 
@@ -673,15 +682,23 @@ int main() {
         check(offB == onB, "control: already inside the destination hex, dest within one sub-hex, is unchanged");
     }
 
-    // The arrival-approach diagonal: a live run logged this exact geometry
-    // fourteen identical times. The truck is one sub-hex short of its exact
+    // The arrival-approach diagonal: a live run logged this exact geometry at
+    // five separate sites. The truck is one sub-hex short of its exact
     // destination point but has NOT yet crossed into m_hexDest (a building's
     // entry angle is wrong from here, so bAtDest gets reset off after the
     // distance test already passed it) - and the route hex the pathfinder
     // handed it sits one full hex further on, diagonally off the corner it
-    // is about to cut. bCorner sees a genuine corner-cut candidate; bArrival
-    // exempts it anyway, via the distance clause, not the corner-entry one.
-    // Exempt by design pending a witness of an actual overlap there.
+    // is about to cut. bCorner sees a genuine corner-cut candidate, and the
+    // old distance clause of bArrival exempted it.
+    //
+    // It is NOT an arrival. The step does not enter m_hexDest; it enters the
+    // hex to the LEFT of it, and it leaves the truck's lane (heading (-1,0)
+    // rides even y, and (21,23) is odd y - the oncoming lane) a whole hex
+    // short of the destination. Deferring one sub-hex along the heading to
+    // (21,24) - pavement, guaranteed by the block's own OnPavement(_ahead)
+    // guard - reaches the same route hex (10,11) on the next tick, in lane.
+    // So the diagonal was never required, and bArrival is now the entry
+    // clause alone: this case is CORRECTED, not exempted.
     {
         static CVehicle v;
         v = CVehicle();
@@ -704,18 +721,55 @@ int main() {
         theVehicleHex.Set(v.m_ptTail, &v);
 
         g_roadExempt = 0;
+        g_roadTurns = 0;
         g_lastExempt[0] = '\0';
+        g_lastTurn[0] = '\0';
         g_bldgHex = v.m_hexDest;   // a building sits at the destination hex...
         g_bldgAngleOK = FALSE;     // ...and this angle can't enter it yet
+        g_recovery = 0;
         BOOL got = v.GetNextHex(FALSE);
         g_bldgAngleOK = TRUE;      // armed only for this one fixture
         g_bldgHex = CHexCoord(-1, -1);
 
         theVehicleHex.Set(v.m_ptHead, nullptr);
         theVehicleHex.Set(v.m_ptTail, nullptr);
-        check((got != FALSE) && (v.m_ptNext == CSubHex(21, 23)) && (g_roadExempt == 1) &&
-                  (std::strstr(g_lastExempt, "corner-cut") != nullptr),
-              "arrival-approach diagonal: exempted via the distance clause, step (-1,-1) unchanged");
+        check((got != FALSE) && (v.m_ptNext == CSubHex(21, 24)),
+              "arrival-approach diagonal: deferred one sub-hex along the heading, not cut");
+        check((g_roadExempt == 0) && (g_roadTurns == 1) &&
+                  (std::strstr(g_lastTurn, "corner-deferred") != nullptr),
+              "arrival-approach diagonal: corrected, and logged as corner-deferred not exempt");
+        check(g_recovery == 0,
+              "arrival-approach diagonal: the deferral is a step, not a recovery path");
+        // and it stays in lane: heading (-1,0) rides even y
+        check((v.m_ptNext.y & 1) == 0,
+              "arrival-approach diagonal: the deferred step keeps the -X lane");
+
+        // DEFERRING MUST NOT COST THE ARRIVAL. Advance the hull onto the
+        // deferred sub-hex and ask again from the same scene: the route hex
+        // (10,11) is now SQUARELY adjacent, so the corner predicate is false
+        // and the ordinary step takes it - one tick later than the diagonal
+        // would have, at the same sub-hex, without ever leaving the lane.
+        v.m_ptTail = v.m_ptHead;            // (22,24)
+        v.m_ptHead = CSubHex(21, 24);       // the deferred step, now taken
+        v.m_ptNext = v.m_ptHead;
+        theVehicleHex.Set(v.m_ptHead, &v);
+        theVehicleHex.Set(v.m_ptTail, &v);
+        g_roadTurns = 0;
+        g_roadExempt = 0;
+        g_recovery = 0;
+        g_bldgHex = v.m_hexDest;
+        g_bldgAngleOK = FALSE;              // the angle is still refused from here
+        BOOL got2 = v.GetNextHex(FALSE);
+        g_bldgAngleOK = TRUE;
+        g_bldgHex = CHexCoord(-1, -1);
+        theVehicleHex.Set(v.m_ptHead, nullptr);
+        theVehicleHex.Set(v.m_ptTail, nullptr);
+        check((got2 != FALSE) && (v.m_ptNext == CSubHex(21, 23)),
+              "arrival-approach diagonal: the next tick reaches the route hex the diagonal wanted");
+        check(g_recovery == 0,
+              "arrival-approach diagonal: and reaches it by stepping, not by a recovery path");
+        check(CHexCoord(v.m_ptNext) == v.m_hexNext,
+              "arrival-approach diagonal: two in-lane steps land in the route hex (10,11)");
     }
 
     // Staggered arrival: B decides a tick after A, from the scene A's step left.
@@ -784,6 +838,75 @@ int main() {
         CSubHex straightOn = OneStep(g_cross, g_cross.t[1], 63, 0);
         check(turnOff != turnOn, "turning-versus-straight: the turning truck is corrected");
         check(straightOff == straightOn, "turning-versus-straight: the straight truck is not");
+    }
+
+    // [ROAD-DIAG]: the corner cut the junction block never looks at. Same scene
+    // twice - a vehicle heading -X out of a paved hex whose route hex is up-left,
+    // where the sub-hex straight ahead is NOT paved and the diagonal's two
+    // axis-aligned neighbours are not both paved either. That step drives across
+    // the inside of the bend, and NOTHING corrects it: once as a military vehicle
+    // (outside the transport/crane class test entirely) and once as a truck (the
+    // OnPavement(_ahead) guard bails out before the corner predicate is reached).
+    // The probe names both; no existing line does.
+    {
+        g_traffic = 63;
+        ClearMap();
+        theMap.hex[11][12].type = CHex::road;   // the hex the vehicle stands in
+        theMap.hex[10][11].type = CHex::road;   // the route hex, diagonally off it
+        // hex 10,12 and hex 11,11 stay plain: the inside of the bend
+
+        for (int military = 1; military >= 0; --military) {
+            static CVehicle v;
+            v = CVehicle();
+            v.id = 40 + military;
+            v.m_ptHead = CSubHex(22, 24);
+            v.m_ptTail = CSubHex(23, 24);        // heading (-1,0)
+            v.m_ptNext = v.m_ptHead;
+            v.m_ptDest = CSubHex(16, 16);        // far away: bAtDest stays FALSE
+            v.m_hexDest = CHexCoord(8, 8);
+            v.m_hexNext = CHexCoord(10, 11);     // diagonally up-left
+            v.m_cMode = CVehicle::moving;
+            theVehicleHex.Set(v.m_ptHead, &v);
+            theVehicleHex.Set(v.m_ptTail, &v);
+
+            g_isTransport = military ? FALSE : TRUE;
+            g_roadDiag = 0;
+            g_roadTurns = 0;
+            g_lastDiag[0] = 0;
+            g_recovery = 0;
+            BOOL got = v.GetNextHex(FALSE);
+            g_isTransport = TRUE;                // armed only for this fixture
+
+            theVehicleHex.Set(v.m_ptHead, nullptr);
+            theVehicleHex.Set(v.m_ptTail, nullptr);
+
+            check((got != FALSE) && (v.m_ptNext == CSubHex(21, 23)) && (g_recovery == 0),
+                  military ? "road-diag: a military vehicle takes the corner-cutting diagonal"
+                           : "road-diag: a truck takes it too when the sub-hex ahead is unpaved");
+            check(g_roadTurns == 0,
+                  military ? "road-diag: no [ROAD-TURN] correction is even considered for it"
+                           : "road-diag: the correction block bails out before the corner test");
+            check(g_roadDiag == 1,
+                  military ? "road-diag: the probe names the military cut"
+                           : "road-diag: the probe names the unpaved-ahead cut");
+            check(std::strstr(g_lastDiag,
+                              military ? "reason not-transport" : "reason offpavement") != nullptr,
+                  military ? "road-diag: reason not-transport" : "road-diag: reason offpavement");
+            check(std::strstr(g_lastDiag,
+                              military ? "class military" : "class transport") != nullptr,
+                  military ? "road-diag: class military" : "road-diag: class transport");
+            std::printf("road-diag %s\n", g_lastDiag);
+        }
+    }
+
+    // the probe is a probe: an ordinary step on fully paved road must not trip it
+    {
+        g_roadDiag = 0;
+        OneStep(g_cross, g_cross.t[0], 63, 0);
+        check(g_roadDiag == 0, "road-diag: a straight step through a paved crossroads is silent");
+        g_roadDiag = 0;
+        OneStep(g_bends[0], g_bends[0].t[0], 63, 0);
+        check(g_roadDiag == 0, "road-diag: a corrected step on a fully paved bend is silent");
     }
 
     std::printf("%d checks, %d failures\n", checks, failures);
