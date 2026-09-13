@@ -463,7 +463,22 @@ namespace { const int kFrameMsgTypes = 128;
            uint64_t g_frameMsgUs[kFrameMsgTypes] = {0};
            int      g_frameMsgTop = -1;
            int      g_frameInvalHexes = -1;
-           uint64_t g_frameInvalUs    = 0; }
+           uint64_t g_frameInvalUs    = 0;
+           int      g_frameSearches   = 0;
+           uint64_t g_frameSearchUs   = 0;
+           uint64_t g_frameSearchMax  = 0; }
+
+// Sizes the "budget/amortise the A* per frame" fix candidate. Budgeting can only
+// help if a slow frame holds MANY searches to spread across later frames. If the
+// frame is dominated by ONE expensive search, budgeting defers work rather than
+// smoothing it, and that single search's cost is the floor no budget can go under.
+void NoteFrameSearch( uint64_t us )
+{
+    if ( !g_enabled ) return;
+    g_frameSearches++;
+    g_frameSearchUs += us;
+    if ( us > g_frameSearchMax ) g_frameSearchMax = us;
+}
 
 // The render-bound slow frames are 54% of the judder burden and their mechanism is
 // dirty-hex VOLUME (7.03x per frame) with per-hex cost flat. What is NOT established
@@ -602,6 +617,10 @@ void FrameMark()
                 if ( g_frameInvalHexes >= 0 )
                     fprintf( s_fp, "  invalhex=%d  invalms=%.1f", g_frameInvalHexes,
                              (double)g_frameInvalUs / 1000.0 );
+                if ( g_frameSearches > 0 )
+                    fprintf( s_fp, "  srch=%d  srchms=%.1f  srchmax=%.1f", g_frameSearches,
+                             (double)g_frameSearchUs / 1000.0,
+                             (double)g_frameSearchMax / 1000.0 );
                 fprintf( s_fp, "\n" );
                 fflush( s_fp );
             }
@@ -611,6 +630,9 @@ void FrameMark()
         g_frameMsgTop     = -1;
         g_frameInvalHexes = -1;
         g_frameInvalUs    = 0;
+        g_frameSearches   = 0;
+        g_frameSearchUs   = 0;
+        g_frameSearchMax  = 0;
     }
 
     g_frames++;

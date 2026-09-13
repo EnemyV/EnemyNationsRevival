@@ -118,6 +118,7 @@ CHexCoord* CPathMgr::GetPath( CVehicle* pVehicle, CHexCoord& hexFrom, CHexCoord&
     Perf::CounterInc( "mpath.calls" );
     Perf::CounterAdd( "mpath.nodes", m_iNextSlot );  // cells created this search
 #endif
+    if ( _qMain ) Perf::NoteFrameSearch( Perf::ElapsedUs( _qWork ) );
     Perf::CounterAddElapsedUs( _qMain ? "mpath.work.main.us" : "mpath.work.ai.us", _qWork );
     LeaveCriticalSection( &m_cs );
     return phcPath;

@@ -103,6 +103,10 @@ namespace Perf
     // per-FRAME invalidate sample for [SLOWFRAME]: dirty-hex count and the cost of
     // the invalidate pass, so dirty-set SIZE and frame TIME can be paired per frame.
     void NoteFrameInval( int dirtyHexes, uint64_t invalUs );
+    // per-FRAME main-thread A* tally for [SLOWFRAME]: how many searches a slow frame
+    // contains and the cost of its single WORST one. A per-frame budget can only
+    // spread MANY searches; it cannot split ONE - an A* is atomic.
+    void NoteFrameSearch( uint64_t us );
 
     // RAII scoped timer for a NAMED counter. (Audit note: this is functionally the
     // same shape as ScopeCounter; kept separate only because it early-outs on
