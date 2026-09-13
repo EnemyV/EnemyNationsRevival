@@ -2592,6 +2592,15 @@ static void SetVehDest( CMsgVehSetDest* pMsg )
         Perf::CounterInc( pVeh->GetOwner( )->IsAI( ) ? "vsd.ai" : "vsd.human" );
         if ( pVeh->m_cMode == CVehicle::stop )
             Perf::CounterInc( bSameHex ? "vsd.samedest.stopped" : "vsd.newdest.stopped" );
+        // discriminates the suspected LEAK in the AI dedupe: CAIUnit::SetDestination's
+        // building and sub-hex overloads (caiunit.cpp:1016, 1070) short-circuit the whole
+        // 30s guard on !bInBldg, so a vehicle parked INSIDE a building is deduped not at
+        // all - while the CHexCoord overload (:1127) gives that case a 5s cooldown. If the
+        // leak is real, samedest is dominated by in-building vehicles. Sampled at handler
+        // time, which can differ from producer time for a vehicle in motion; for a parked
+        // truck - the population this is about - it is stable.
+        if ( pVeh->IsInBuilding( ) )
+            Perf::CounterInc( bSameHex ? "vsd.samedest.inbldg" : "vsd.newdest.inbldg" );
     }
 
     pVeh->SetEvent( CVehicle::none );
