@@ -767,12 +767,25 @@ void CUnit::DecDamagePoints (int iDamage, DWORD dwKiller)
             iDamage += (iTotalTime * iDamage) / iDone;
         }
 
-    // Meat Shield edict: this player's buildings take less damage (0.90 = -10%). Live/toggleable.
-    if (GetUnitType () == CUnit::building)
+    // Buildings take reduced damage from two independent sources, multiplied together:
+    //   - the Meat Shield edict (0.90 = -10%), live/toggleable, and
+    //   - the Blast Shielding research (0.80 = -20%), permanent once discovered.
+    // Both are applied HERE rather than baked into max hit points, so they cover buildings
+    // that already exist and they leave GetData()->GetDamagePoints() -- the denominator for
+    // the damage percent, the repair math and the MP damage-level sync -- untouched.
+    // NOTE the iDamage > 0 guard: a NEGATIVE iDamage is a REPAIR (netapi.cpp passes
+    // -m_iRepair), and scaling that by a damage-reduction multiplier would make armor slow
+    // our own repairs down. Only incoming damage is reduced.
+    if ((iDamage > 0) && (GetUnitType () == CUnit::building))
         {
-        float fDmg = GetOwner()->GetEdictBldgDmgMult ();
+        float fDmg = GetOwner()->GetEdictBldgDmgMult () * GetOwner()->GetBldgArmorMult ();
         if (fDmg < 1.0f)
+            {
             iDamage = (int)(iDamage * fDmg + 0.5f);
+            // never let rounding zero out a real hit -- that would make a building immortal
+            if (iDamage < 1)
+                iDamage = 1;
+            }
         }
 
     m_iDamagePoints -= iDamage;

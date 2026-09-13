@@ -85,6 +85,10 @@ namespace AltOutput
         int         (*m_pfnRatioIn)(CPlayer*);   // eRatioConsume: optional PER-TIER input ratio override
                                                  // (units of input per 1 output). nullptr = use m_iRatioIn.
                                                  // Coal Liquefaction uses this to drop 3:1 -> 2:1 at tier 2.
+        bool        m_bTerrainScaled;            // eMultiTrickle: the m_aMulti lumber and food lines are
+                                                 // the yield at a PERFECT site, scaled per building by the
+                                                 // host's own forest / soil quality (Scrounging). false =
+                                                 // the table lines are the rates. See MultiLinesFor.
     };
 
     // The matching def for this building's type, or nullptr. Type-only -- does NOT check the
@@ -102,7 +106,13 @@ namespace AltOutput
     // Available(), produce the secondary output per the def's mode and credit it. No-op
     // otherwise. fAccum is a per-building runtime fractional accumulator (carries the
     // leftover sub-unit yield between calls); pass the building's own accumulator field.
-    void Convert( CBuilding* pBldg, int iAmount, float& fAccum );
+    // fThrottle scales an eFlatTrickle ONLY (it is ignored by every other mode, whose input
+    // quantity is already GetProd-derived and therefore already throttled). Defaults to 1.0f
+    // so every existing caller is byte-for-byte unchanged. It is applied to the float
+    // accumulation rather than to iAmount because iAmount is opers elapsed, which is
+    // frames*speedMul and can legitimately be 1 -- scaling and truncating that to an int
+    // would floor small ticks to zero and silently lose production.
+    void Convert( CBuilding* pBldg, int iAmount, float& fAccum, float fThrottle = 1.0f );
 
     // eMultiTrickle helper (Desperate Measures / Scrounging). Like Convert's eFlatTrickle
     // branch but for SEVERAL outputs at once: each active m_aMulti line credits its own
@@ -116,6 +126,31 @@ namespace AltOutput
     // and emits whole units (food/gas -> global pools, else the building's store). iAmount = opers
     // elapsed. No toggle/Available gate here -- the caller decides when to credit.
     void CreditTrickle( CBuilding* pBldg, int iAmount, float* afAccum, const AltMat* pMats, int nMats );
+
+    // The per-minute output lines a MULTI-TRICKLE def actually yields at THIS building, written
+    // into pOut (which must hold kMaxMulti entries); returns how many lines were written. For an
+    // ordinary def these are just the def's table lines. For a TERRAIN-SCALED def (Scrounging) the
+    // table's lumber and food lines are the yield at a perfect site, and this scales them by the
+    // warehouse's own forest coverage / soil fertility -- so a treeless, barren site scrounges
+    // only the flat scrap lines. Everything that credits or DISPLAYS a multi-trickle rate must go
+    // through here, or the info window will quote numbers the sim never produces.
+    int MultiLinesFor( CBuilding* pBldg, const AltOutputDef* pDef, AltMat* pOut );
 }
+
+// Power a Moho-revived (exhausted IRON) mine draws while running, flat and independent of
+// the mine's spec power. Deliberately steep -- a power plant only makes 120, so each Moho
+// mine eats a sixth of one, which is the price of pulling iron out of dead rock. Lives here
+// because it is consumed TWICE: CMineBuilding::FrackTick (the sim draw) and
+// SDL2BuildingWindow (the operating-cost readout). Those were separately hardcoded and could
+// silently disagree, making the panel quote a draw the sim never took.
+const int MOHO_POWER_DRAW = 20;
+
+// Power a Fracking-revived (exhausted OIL well) draws while running: the well's spec power
+// +50%, then doubled for running a dead well hot. Unlike Moho this DOES scale with the
+// well, so it has to be a function rather than a constant. Consumed in the same two places
+// -- CMineBuilding::FrackTick (the sim) and SDL2BuildingWindow (the readout) -- which had
+// drifted apart: the panel quoted a flat 2x while the sim charged this, so a base-10 well
+// was billed 32 power and displayed as 20.
+inline int FrackPowerDraw( int iBasePower ) { return ( ( ( ( iBasePower * 3 ) / 2 ) + 1 ) * 2 ); }
 
 #endif // ENATIONS_ALTOUTPUT_H

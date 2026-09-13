@@ -95,6 +95,9 @@ void CPlayer::ctor( )
     m_iPwrNeed        = 1;
     m_iPwrHave        = 0;
     m_iPplNeedBldg    = 1;
+    m_iPplNeedLast    = -1;   // no finished tick yet -- Desperate Measures drafts the flat base
+    m_iDespDraftLast  = 0;
+    m_iDespDraftTick  = 0;
     m_iPplBldg        = 0;
     m_iPplVeh         = 0;
     m_fPplMult        = 1.0;
@@ -608,6 +611,50 @@ void CPlayer::AddGas( int iNum )
     m_aiMade[CMaterialTypes::gas] += iNum;
 }
 
+// Desperate Measures (EDICT_DESPERATE_MEASURES): how many workers the rocket conscripts this
+// tick. The edict's scrounge rate scales with this, so an empire with idle population gets more
+// out of it -- at the same resources-per-worker rate, it just runs bigger.
+//
+//   draft = DESPERATE_BASE_DRAFT + DESPERATE_EXCESS_PCT% of the spare workforce left after it
+//
+// The whole difficulty is making that percentage HOLD STILL. The draft is itself part of the
+// workforce need, so a naive pct of "spare = have - need" chases its own tail: draft up -> spare
+// down -> draft down -> spare up, oscillating every tick and flickering the output with it. Two
+// things are required, and neither alone is enough:
+//
+//   1. Read LAST tick's FINISHED need. The live m_iPplNeedBldg is a partial sum while the
+//      buildings are still accumulating, so its mid-tick value depends on where the rocket
+//      happens to sit in the iteration order -- jitter even with no feedback at all.
+//   2. Add our own previous draft back before taking the cut. What is left is the spare
+//      workforce as it would be if this edict were not running -- a quantity the draft does not
+//      appear in. The draft therefore computes the same answer every tick while the rest of the
+//      economy holds, which is the fixed point we want, rather than orbiting one.
+//
+// The flat base comes out of the spare FIRST, so the scaling half can never by itself push the
+// colony into a workforce deficit. A colony with no slack pays exactly the flat base, i.e. what
+// this edict has always cost.
+int CPlayer::GetDesperateDraft( ) const
+{
+
+    ASSERT_STRICT_VALID( this );
+
+    // No finished tick to read yet (new game, or the first tick after a load -- these are
+    // runtime-only). Reading a zeroed need here would score the ENTIRE workforce as spare and
+    // spike the draft for one tick.
+    if ( m_iPplNeedLast < 0 )
+        return ( DESPERATE_BASE_DRAFT );
+
+    // spare workforce as if this edict were not drafting (point 2 above)
+    LONG lSpare = m_iPplBldg - ( m_iPplNeedLast - m_iDespDraftLast );
+
+    // the flat base is taken out of the spare before the percentage
+    lSpare -= DESPERATE_BASE_DRAFT;
+    if ( lSpare <= 0 )
+        return ( DESPERATE_BASE_DRAFT );
+
+    return ( DESPERATE_BASE_DRAFT + (int)( ( lSpare * DESPERATE_EXCESS_PCT ) / 100 ) );
+}
+
 void CPlayer::StartLoop( )
 {
 
@@ -658,6 +705,16 @@ void CPlayer::StartLoop( )
         // the just-finished accumulation cycle (they aren't cleared until below).
         SampleHistory( );
     }
+
+    // Desperate Measures reads the workforce as of a FINISHED tick, so snapshot here -- after
+    // the edict upkeep fold-in above (so it matches the need m_fPplMult was just computed from)
+    // and before the reset below wipes it. The draft total rolls over the same way: what the
+    // rocket(s) drew this tick becomes next tick's add-back. (The upkeep pct also scaled the
+    // draft inside m_iPplNeedBldg while the add-back is the raw figure; the difference is
+    // upkeepPct * draft, which only makes the spare estimate slightly conservative.)
+    m_iPplNeedLast   = m_iPplNeedBldg;
+    m_iDespDraftLast = m_iDespDraftTick;
+    m_iDespDraftTick = 0;
 
     // [PWRLOOP]/[PPLLOOP] (015 R12) INSTRUMENT ONLY, read HERE because this is the last
     // point at which the finished economic loop's totals still exist - the reset below is
@@ -847,7 +904,15 @@ void CPlayer::Research( int iNumSec )
     CRsrchStatus* pRs      = &GetRsrch( GetRsrchItem( ) );
     ASSERT( !pRs->m_bDiscovered );
 
-    int iNum = m_iRsrchHave * iNumSec * 2;
+    // Research Speed line: +10% points per level (100% at none .. 150% at level 5).
+    // 64-bit intermediate because the scaled product is 1.5x what this line used to
+    // compute, and the 32-bit version of this arithmetic has overflowed before (see
+    // the m_iPtsDiscovered note below). At 100% the result is bit-identical to the old
+    // expression, so saves and pre-line games are unaffected.
+    long long llNum = ( (long long)m_iRsrchHave * iNumSec * 2 * GetRsrchSpeedPct( ) ) / 100;
+    if ( llNum > 0x7FFFFFFF ) llNum = 0x7FFFFFFF;   // unreachable in practice, but this
+    if ( llNum < 0 )          llNum = 0;            // line has overflowed before (see below)
+    int iNum = (int)llNum;
     pRs->m_iPtsDiscovered += iNum;
 
     // did we discover it
@@ -988,11 +1053,36 @@ void CPlayer::UpdateRacialAttributes( int iRsrch )
         m_bRange = m_iRsrchItem - CRsrchArray::range_1 + 1;
         m_bRange = __minmax( 0, 3, m_bRange );
         break;
+    // range_4 is appended at the END of the enum (not contiguous after range_3), so map it
+    // explicitly -- the subtraction above would give a nonsense level. The level-4 range
+    // bonus is a diminishing step in CUnit::AssignData (the >>(4-lvl) form would shift by 0).
+    case CRsrchArray::range_4:
+        m_bRange = 4;
+        break;
     case CRsrchArray::atk_1:
     case CRsrchArray::atk_2:
     case CRsrchArray::atk_3:
         m_bAttack = m_iRsrchItem - CRsrchArray::atk_1 + 1;
         m_bAttack = __minmax( 0, 3, m_bAttack );
+        break;
+    // atk_4..atk_8 are appended at the END of the enum -- same reason as range_4 above.
+    // atk_4 was appended in an earlier batch than atk_5..8, so the two groups are NOT
+    // contiguous with each other and each level is mapped by hand. The per-level bonus
+    // (diminishing, floored at +2 percentage points) is a table in CUnit::AssignData.
+    case CRsrchArray::atk_4:
+        m_bAttack = 4;
+        break;
+    case CRsrchArray::atk_5:
+        m_bAttack = 5;
+        break;
+    case CRsrchArray::atk_6:
+        m_bAttack = 6;
+        break;
+    case CRsrchArray::atk_7:
+        m_bAttack = 7;
+        break;
+    case CRsrchArray::atk_8:
+        m_bAttack = 8;
         break;
     case CRsrchArray::def_1:
     case CRsrchArray::def_2:
@@ -1182,6 +1272,22 @@ BOOL CPlayer::CanRsrch( int iIndex )
     for ( int iNum = 0, *piNum = pRi->m_piBldgsRequired; iNum < pRi->m_iNumBldgsRequired; iNum++, piNum++ )
         if ( !GetExists( *piNum ) )
             return ( FALSE );
+
+    // Research Speed 1: gated on how much research the colony has ALREADY completed,
+    // not on a precursor topic (the prereq array is AND-only and cannot express "any
+    // N of them"). Only PAID topics count -- the free ones load pre-discovered, so
+    // counting them would grant 5 of the 10 before the game even starts. Loop bound is
+    // GetRsrchSize() (the player's own array), not num_types, so a save still being
+    // resized up cannot walk off the end.
+    if ( iIndex == CRsrchArray::rsrch_speed_1 )
+    {
+        int iDone = 0;
+        for ( int iOn = 1; iOn < GetRsrchSize( ); iOn++ )
+            if ( GetRsrch( iOn ).m_bDiscovered && ( theRsrch[iOn].m_iPtsRequired > 0 ) )
+                iDone++;
+        if ( iDone < RSRCH_SPEED_MIN_TOPICS )
+            return ( FALSE );
+    }
 
     // Pontoon Bridges: ONE-OF building gate (light factory line / refinery /
     // heavy factory) - the prereq array is AND-only, so the OR lives here

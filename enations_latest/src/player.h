@@ -241,6 +241,14 @@ class CPlayer : public CObject
         ASSERT_STRICT_VALID( this );
         m_iPplNeedBldg += iAdd;
     }
+    // Desperate Measures: the worker draft this tick, and the running total of what the edict
+    // actually drew (recorded by the rocket so next tick can add it back — see GetDesperateDraft).
+    int  GetDesperateDraft( ) const;
+    void AddDesperateDraft( int iAdd )
+    {
+        ASSERT_STRICT_VALID( this );
+        m_iDespDraftTick += iAdd;
+    }
     void AddPplBldg( int iAdd )
     {
         ASSERT_STRICT_VALID( this );
@@ -542,10 +550,76 @@ class CPlayer : public CObject
         return ( iBonus );
     }
 
+    // Blast Shielding (bldg_armor, bldg_armor_2, bldg_armor_3): damage taken by our
+    // BUILDINGS as a fraction of base -- 80 / 78 / 76 percent by tier, i.e. a 20 / 22 / 24
+    // percent reduction, or 1.25x / 1.28x / 1.32x effective building hit points. Tier 1 is
+    // the entry grant; tiers 2-3 add a flat 2 points each, matching the attack line's floor.
+    // These are TOTALS -- the tier is a single lookup, not a stack. Read straight off the
+    // research flags and applied at damage time in
+    // CUnit::DecDamagePoints (projbase.cpp), alongside the Meat Shield edict, so it protects
+    // buildings that ALREADY EXIST -- unlike the range/attack techs, which bake into a unit
+    // once in CUnit::AssignData. Tier 1 sits far from tiers 2-3 in the enum (they were
+    // appended in different batches), so each needs its OWN size guard: an old save whose
+    // research array predates tiers 2-3 must still read tier 1 correctly.
+    float GetBldgArmorMult( )
+    {
+        int iTier = 0;
+        if ( ( m_aRsrch.GetSize( ) > CRsrchArray::bldg_armor ) &&
+             GetRsrch( CRsrchArray::bldg_armor ).m_bDiscovered )
+            iTier = 1;
+        if ( m_aRsrch.GetSize( ) > CRsrchArray::bldg_armor_3 )
+        {
+            if ( GetRsrch( CRsrchArray::bldg_armor_2 ).m_bDiscovered )
+                iTier = 2;
+            if ( GetRsrch( CRsrchArray::bldg_armor_3 ).m_bDiscovered )
+                iTier = 3;
+        }
+        static const float afArmor[4] = { 1.00f, 0.80f, 0.78f, 0.76f };
+        if ( iTier < 0 ) iTier = 0;
+        if ( iTier > 3 ) iTier = 3;
+        return ( afArmor[iTier] );
+    }
+
+    // Nuclear Uprate (nuke_power_1..5): output of this player's NUCLEAR power plants
+    // (CStructureData::power_3) as a percent of base -- +10 per level, 100 at none to 150 at
+    // level 5. Consumed in CPowerBuilding::BuildPower. Coal plants, oil plants and the rocket
+    // generate exactly as before. The five levels are contiguous at the enum end, so one
+    // size guard covers the whole line for pre-line saves.
+    int GetNukePowerPct( )
+    {
+        int iLevels = 0;
+        if ( m_aRsrch.GetSize( ) > CRsrchArray::nuke_power_5 )
+            for ( int iOn = CRsrchArray::nuke_power_1; iOn <= CRsrchArray::nuke_power_5; iOn++ )
+                if ( GetRsrch( iOn ).m_bDiscovered )
+                    iLevels++;
+        static const int aiNukePct[6] = { 100, 110, 120, 130, 140, 150 };
+        if ( iLevels < 0 ) iLevels = 0;
+        if ( iLevels > 5 ) iLevels = 5;
+        return ( aiNukePct[iLevels] );
+    }
+
+    // Research points earned as a percent of base by highest Research Speed level
+    // researched: +10% per level, 100% at none to 150% at level 5. Consumed in
+    // CPlayer::Research (the single points-accrual site). The five levels are
+    // contiguous at the enum end; the GetSize guard keeps pre-line saves safe.
+    int GetRsrchSpeedPct( )
+    {
+        int iLevels = 0;
+        if ( m_aRsrch.GetSize( ) > CRsrchArray::rsrch_speed_5 )
+            for ( int iOn = CRsrchArray::rsrch_speed_1; iOn <= CRsrchArray::rsrch_speed_5; iOn++ )
+                if ( GetRsrch( iOn ).m_bDiscovered )
+                    iLevels++;
+        static const int aiRsrchPct[6] = { 100, 110, 120, 130, 140, 150 };
+        if ( iLevels < 0 ) iLevels = 0;
+        if ( iLevels > 5 ) iLevels = 5;
+        return ( aiRsrchPct[iLevels] );
+    }
+
     // Gas consumption as a percent of base by highest Fuel Efficiency level researched.
-    // Diminishing to 70% (30% saving) at level 10, then +1% per level to 62% (38%) at 18.
-    // Unlocked after gas_turbine; see CPlayer::Operate. Levels 1-10 contiguous; 11-12, 13-16
-    // and 17-18 were appended at the enum end for save parity, so they're counted separately.
+    // Diminishing to 70% (30% saving) at level 10, then +1% per level to 62% (38%) at 18,
+    // then +2% per level to 52% (48%) at 23. Unlocked after gas_turbine; see CPlayer::Operate.
+    // Levels 1-10 contiguous; 11-12, 13-16, 17-18 and 19-23 were appended at the enum end for
+    // save parity, so they're counted separately.
     int GetFuelPct( )
     {
         int iLevels = 0;
@@ -565,10 +639,16 @@ class CPlayer : public CObject
             iLevels++;
         if ( m_aRsrch.GetSize( ) > CRsrchArray::fuel_efficiency_18 && GetRsrch( CRsrchArray::fuel_efficiency_18 ).m_bDiscovered )
             iLevels++;
-        // Cumulative gas% by level (5/4/4/3/3/3/2/2/2/2 to level 10, then +1 each to 18).
-        static const int aiGasPct[19] = { 100, 95, 91, 87, 84, 81, 78, 76, 74, 72, 70, 69, 68, 67, 66, 65, 64, 63, 62 };
+        if ( m_aRsrch.GetSize( ) > CRsrchArray::fuel_efficiency_23 )
+            for ( int iOn = CRsrchArray::fuel_efficiency_19; iOn <= CRsrchArray::fuel_efficiency_23; iOn++ )
+                if ( GetRsrch( iOn ).m_bDiscovered )
+                    iLevels++;
+        // Cumulative gas% by level (5/4/4/3/3/3/2/2/2/2 to level 10, then +1 each to 18,
+        // then +2 each to 23).
+        static const int aiGasPct[24] = { 100, 95, 91, 87, 84, 81, 78, 76, 74, 72, 70, 69, 68, 67, 66, 65, 64, 63, 62,
+                                          60, 58, 56, 54, 52 };
         if ( iLevels < 0 )  iLevels = 0;
-        if ( iLevels > 18 ) iLevels = 18;
+        if ( iLevels > 23 ) iLevels = 23;
         return ( aiGasPct[iLevels] );
     }
 
@@ -613,7 +693,9 @@ class CPlayer : public CObject
                 iTier = iOn - CRsrchArray::fracking_1 + 1;   // highest discovered (tiers chain)
         if ( m_aRsrch.GetSize( ) > CRsrchArray::fracking_6 && GetRsrch( CRsrchArray::fracking_6 ).m_bDiscovered )
             iTier = 6;   // tier 6 sits at the enum end (unrelated topics between fracking_5 and it)
-        static const int aiOil[7] = { 0, 5, 7, 9, 11, 13, 15 };
+        if ( m_aRsrch.GetSize( ) > CRsrchArray::fracking_7 && GetRsrch( CRsrchArray::fracking_7 ).m_bDiscovered )
+            iTier = 7;   // tier 7 likewise appended separately -- test it on its own too
+        static const int aiOil[8] = { 0, 5, 7, 9, 11, 13, 15, 17 };
         return ( aiOil[iTier] );
     }
 
@@ -653,9 +735,26 @@ class CPlayer : public CObject
     BOOL CanCharcoal( ) { return ( m_aRsrch.GetSize( ) > CRsrchArray::charcoal_1 && GetRsrch( CRsrchArray::charcoal_1 ).m_bDiscovered ); }
 
     // Moho Mining: gates the per-building toggle on an EXHAUSTED iron mine (Fracking-style
-    // iron trickle). Tech-gated on the existing mine_2 topic. Flat ~10 iron/min (no tiers).
+    // iron trickle). The BASE capability is still granted by the DAT mine_2 topic at 10
+    // iron/min -- conceptually tier 1, unchanged, so existing saves keep what they had.
+    // moho_2..moho_6 are the paid upgrade line: +1 iron/min each, to 15 at the top.
     BOOL CanMoho( )          { return ( m_aRsrch.GetSize( ) > CRsrchArray::mine_2 && GetRsrch( CRsrchArray::mine_2 ).m_bDiscovered ); }
-    int  GetMohoIronPerMin( ) { return ( CanMoho( ) ? 10 : 0 ); }
+    int  GetMohoIronPerMin( )
+    {
+        if ( !CanMoho( ) )
+            return ( 0 );
+        int iTier = 1;   // mine_2 on its own = the base tier (10 iron/min)
+        // The five upgrades are contiguous at the enum end, so the highest discovered one
+        // wins by simple subtraction. Guarded on GetSize so pre-line saves stay at tier 1.
+        if ( m_aRsrch.GetSize( ) > CRsrchArray::moho_6 )
+            for ( int iOn = CRsrchArray::moho_2; iOn <= CRsrchArray::moho_6; iOn++ )
+                if ( GetRsrch( iOn ).m_bDiscovered )
+                    iTier = iOn - CRsrchArray::moho_2 + 2;
+        static const int aiIron[7] = { 0, 10, 11, 12, 13, 14, 15 };
+        if ( iTier < 1 ) iTier = 1;
+        if ( iTier > 6 ) iTier = 6;
+        return ( aiIron[iTier] );
+    }
 
     // Charcoal kiln THROUGHPUT -- the percent of harvested lumber fed into the kiln, then
     // converted at the fixed 2 lumber -> 1 coal. Operator steer (2026-06-28): charcoal is
@@ -813,6 +912,14 @@ class CPlayer : public CObject
     LONG  m_iPwrNeed;      // power needed by all buildings
     LONG  m_iPwrHave;      // power presently generated
     LONG  m_iPplNeedBldg;  // people needed by all buildings
+    // Desperate Measures needs to know the SPARE workforce, which the live m_iPplNeedBldg above
+    // cannot answer: mid-tick it is a partial sum (its value depends on where the rocket falls in
+    // the building iteration order), and it already contains the edict's own draft, so a
+    // percentage of it would feed back on itself. Both are runtime-only, snapshotted in StartLoop
+    // where the tick's total is final; -1 = no finished total yet (fresh game / just-loaded save).
+    LONG  m_iPplNeedLast;   // last tick's FINISHED m_iPplNeedBldg (-1 = none yet)
+    LONG  m_iDespDraftLast; // workers Desperate Measures drafted last tick (added back as spare)
+    LONG  m_iDespDraftTick; // accumulating this tick (N rockets each add their draft)
     LONG  m_iPplBldg;      // people presently have EXCEPT in vehicles
     LONG  m_iPplVeh;       // people in vehicles (Have+Veh == Total)
     LONG  m_iFood;         // food on hand

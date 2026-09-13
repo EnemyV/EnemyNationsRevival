@@ -1947,12 +1947,22 @@ RepairDone:;
         if ( ( GetData( )->GetType( ) == CStructureData::rocket )
              && GetOwner( )->IsEdictActive( EDICT_DESPERATE_MEASURES ) )
         {
-            // +100 draft workers; fixed 10 lumber / 5 iron / 5 food / 5 coal per minute.
-            // Keep in sync with the "Cost: 100 workers" line in g_aEdicts (edicts.cpp).
-            GetOwner( )->AddPplNeedBldg( GetData( )->GetPeople( ) + 100 );
-            static const AltOutput::AltMat aDesperate[4] =
-                { { CMaterialTypes::lumber, 10 }, { CMaterialTypes::iron, 5 },
-                  { CMaterialTypes::food, 5 },    { CMaterialTypes::coal, 5 } };
+            // The draft is the flat base plus a STABLE cut of the colony's spare workforce
+            // (see CPlayer::GetDesperateDraft for why "stable" is the hard part), and the
+            // scrounge scales with it -- so the exchange rate stays 10 lumber / 5 iron / 5 food /
+            // 5 coal per DESPERATE_RATE_PER workers however large the draft grows. An empire
+            // with idle population runs the edict bigger, not more efficiently.
+            // Keep the base rates in sync with the g_aEdicts blurb (edicts.cpp).
+            int iDraft = GetOwner( )->GetDesperateDraft( );
+            GetOwner( )->AddPplNeedBldg( GetData( )->GetPeople( ) + iDraft );
+            GetOwner( )->AddDesperateDraft( iDraft );   // next tick adds this back in as spare
+
+            AltOutput::AltMat aDesperate[4];
+            for ( int i = 0; i < 4; i++ )
+            {
+                aDesperate[i] = DESPERATE_BASE_RATES[i];
+                aDesperate[i].m_iPerMin = ( aDesperate[i].m_iPerMin * iDraft ) / DESPERATE_RATE_PER;
+            }
             AltOutput::CreditTrickle( this, (int)theGame.GetOpersElapsed( ), m_afAltAccum, aDesperate, 4 );
         }
         else
@@ -2883,6 +2893,15 @@ void CPowerBuilding::BuildPower( )
 
     float fPower = GetFrameProd( 1 );
 
+    // Nuclear Uprate (nuke_power_1..5): each level adds 10 percent to the output of THIS
+    // player's Nuclear Power Plants. Only power_3 is uprated -- coal plants, oil plants and
+    // the rocket stay at 100 and their generation below is byte-identical to before. A
+    // nuclear plant burns no material, so in practice it always takes the no-fuel branch;
+    // the multiplier is applied at BOTH AddPwrHave sites anyway so the two cannot drift.
+    const int iNukePct = ( GetData( )->GetType( ) == CStructureData::power_3 )
+                             ? GetOwner( )->GetNukePowerPct( )
+                             : 100;
+
     // Coal Liquefaction mode (bug #43): when this coal plant's alt-output toggle is ON and
     // the tech is researched, it STOPS feeding the colony power grid and instead converts
     // its coal into oil (the conversion runs below via AltOutput::Convert). So while the
@@ -2896,6 +2915,8 @@ void CPowerBuilding::BuildPower( )
         // No-fuel plant (solar/rocket): can't liquefy coal it doesn't burn, so it always
         // generates power normally regardless of the toggle.
         int iAddPwr = (int)( (float)pBp->GetPower( ) * fPower );   // [PWRNEG]: base expression
+        if ( iNukePct != 100 )
+            iAddPwr = ( iAddPwr * iNukePct ) / 100;   // Nuclear Uprate, power_3 only
         const int iPrePwr = GetOwner( )->GetPwrHave( );
         GetOwner( )->AddPwrHave( iAddPwr );
         if ( EnTrafficLogOn( ) )
@@ -2925,6 +2946,8 @@ void CPowerBuilding::BuildPower( )
     if ( !bCoalLiq )
     {
         int iAddPwr = (int)( (float)pBp->GetPower( ) * fPower );   // [PWRNEG]: base expression
+        if ( iNukePct != 100 )
+            iAddPwr = ( iAddPwr * iNukePct ) / 100;   // Nuclear Uprate, power_3 only
         const int iPrePwr = GetOwner( )->GetPwrHave( );
         GetOwner( )->AddPwrHave( iAddPwr );
         if ( EnTrafficLogOn( ) )
@@ -3081,18 +3104,31 @@ void CMineBuilding::FrackTick( )
 {
     ASSERT_STRICT( GetData( )->GetUnionType( ) == CStructureData::UTmine );
 
-    // Running an exhausted mine HOT. Moho Mining (iron mine) draws a flat 16 power -- a big,
-    // deliberate drain (a power plant only makes 120). Fracking (oil well) draws 2*(1.5x + 1).
+    // Running an exhausted mine HOT. Moho Mining (iron mine) draws MOHO_POWER_DRAW, flat -- a
+    // big, deliberate drain (a power plant only makes 120). Fracking (oil well) 2*(1.5x + 1).
     // (A normal stopped building draws only half power.) Plus the building's people.
     if ( GetData( )->GetType( ) == CStructureData::iron )
-        GetOwner( )->AddPwrNeed( 16 );                                                  // Moho: flat 16
+        GetOwner( )->AddPwrNeed( MOHO_POWER_DRAW );                                     // Moho: flat, see altoutput.h
     else
-        GetOwner( )->AddPwrNeed( ( ( ( GetData( )->GetPower( ) * 3 ) / 2 ) + 1 ) * 2 );  // Fracking: 2*(1.5x + 1)
+        GetOwner( )->AddPwrNeed( FrackPowerDraw( GetData( )->GetPower( ) ) );            // Fracking: see altoutput.h
     GetOwner( )->AddPplNeedBldg( GetData( )->GetPeople( ) );
 
-    // Credit the flat oil trickle. eFlatTrickle scales the per-minute rate by the opers
-    // elapsed this call; the building's m_fAltAccum carries the sub-unit remainder.
-    AltOutput::Convert( this, (int)theGame.GetOpersElapsed( ), m_fAltAccum );
+    // Credit the flat trickle. eFlatTrickle scales the per-minute rate by the opers elapsed
+    // this call; the building's m_fAltAccum carries the sub-unit remainder.
+    //
+    // A revived mine used to be the ONLY producer in the game immune to damage, workforce
+    // shortage and power shortage: BuildMine credits through GetProd (building.inl) while this
+    // branch credited raw opers, so the same iron mine was throttled while it had ore and
+    // unthrottled once it ran dry. Operator call: treat it like any other producer. This is the
+    // exact multiplier CBuilding::GetProd applies, passed as a throttle so the arithmetic stays
+    // in float (see AltOutput::Convert). Note FrackTick also books GetPeople() as demand above,
+    // so the workforce is deliberately counted on both sides -- that is the chosen behaviour,
+    // not an oversight.
+    float fThrottle = m_fDamPerfMult * GetOwner( )->GetPplMult( );
+    if ( GetOwner( )->GetPwrMult( ) < 1 )
+        fThrottle *= GetData( )->GetNoPower( ) +
+                     ( 1.0f - GetData( )->GetNoPower( ) ) * GetOwner( )->GetPwrMult( );
+    AltOutput::Convert( this, (int)theGame.GetOpersElapsed( ), m_fAltAccum, fThrottle );
 }
 
 void CFarmBuilding::BuildFarm( )
