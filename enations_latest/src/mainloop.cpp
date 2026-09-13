@@ -21,6 +21,7 @@
 #include "en_harness.h"   // EnHarness_ServiceMainLoop() — main-loop-safe harness ops (save)
 #include "event.h"
 #include "GameWindow.h"
+#include <typeinfo>   // typeid: per-window r.draw attribution
 #include "Perf.h"
 #include "SDL2CreateStatus.h"
 #include "SDL2Compositor.h"
@@ -617,6 +618,19 @@ BOOL CConquerApp::CheckYield( )
     return ( FALSE );
 }
 
+// typeid().name() is "class CFoo" on MSVC; the space would break perf.log's
+// space-separated key=value line, so point past the last space. The returned
+// pointer is into the compiler's static type-name storage, so it stays valid
+// for the life of the process, which is what Perf::ScopeCounter requires.
+static const char* EnDrawTag( const CWndAnim* pWnd )
+{
+    if ( pWnd == NULL ) return "draw.null";
+    const char* n = typeid( *pWnd ).name( );
+    if ( n == NULL ) return "draw.?";
+    const char* sp = strrchr( n, ' ' );
+    return sp ? sp + 1 : n;
+}
+
 // PER-TYPE MESSAGE HISTOGRAM (WinFable's round-4 instrument). Counters are out:
 // ~30 CNetCmd types x 2 drains x 3 metrics would blow MAX_COUNTERS=160, so this
 // accumulates into a fixed array and writes its own sink. g_enMsgDrain says WHICH
@@ -857,9 +871,17 @@ void CConquerApp::_RenderScreens( )
         }
         {
             Perf::ScopeCounter _cd( "r.draw" );    // draw pass (UpdateRect walk + capture)
+            // ATTRIBUTION (2026-09-13): r.draw is the largest identified render item
+            // (190 ms/s on the host) and the sprite layer accounts for only 5.4% of it,
+            // so 94.6% of it had no name. The rr.* counters live inside ReRender, NOT
+            // Draw, so none of them can see this loop. One counter per concrete window
+            // class via RTTI attributes every window without touching any window class.
             for ( CWndAnim* pWnd : theAnimList )
                 if ( pWnd->RenderingThisFrame( ) )
+                {
+                    Perf::ScopeCounter _cw( EnDrawTag( pWnd ) );
                     pWnd->Draw( );
+                }
         }
 
         // Item 5 (dirty-rects) de-risk probe: how many hexes were invalidated this
