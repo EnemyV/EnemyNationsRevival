@@ -6,6 +6,9 @@
 //---------------------------------------------------------------------------
 
 
+#ifdef _WIN32
+#include <share.h>   // _SH_DENYNO: let other processes read the wait log live
+#endif
 #include "enprobes.h"
 #include "Perf.h"      // pq.* path-request burst counters
 #include "stdafx.h"
@@ -2696,7 +2699,16 @@ static void EnsureWaitLogOpen() {
     char *p = NULL;
     size_t n = 0;
     if ((_dupenv_s(&p, &n, "EN_WAIT_LOG") == 0) && (p != NULL)) {
-        fopen_s(&s_waitLogFp, p, "w");
+#ifdef _WIN32
+        // fopen_s opens EXCLUSIVELY by design, so no other process can read this log
+        // while the game runs - which is what made a live junction histogram impossible.
+        // _fsopen is the same open with sharing left on; Perf.cpp's plain fopen already
+        // defaults to _SH_DENYNO, which is why perf.log and slowframe.log have always
+        // been readable mid-session and this one was not.
+        s_waitLogFp = _fsopen(p, "w", _SH_DENYNO);
+#else
+        s_waitLogFp = fopen(p, "w");   // POSIX fopen does not deny sharing
+#endif
         free(p);
     }
 }
