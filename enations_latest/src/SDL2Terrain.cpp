@@ -4086,8 +4086,12 @@ void SDL2Terrain::Render( SDL_Renderer* r, const CAnimAtr& aa )
         // IncVisible is a hot per-hex inline and a counter there would serialize the sim);
         // the per-interval DELTA is the churn rate. map.burst counts the full-rebuild
         // path, which is the frame-spike candidate.
-        Perf::GaugeSet( "fog.gen", (int64_t)g_enFogVisGen );
-        Perf::GaugeSet( "map.dirs.full", (int64_t)( s_mapFull[0] + s_mapFull[1] + s_mapFull[2] + s_mapFull[3] ) );
+        if ( Perf::IsEnabled( ) )   // the sum below is argument work (class-B 7)
+        {
+            Perf::GaugeSet( "fog.gen", (int64_t)g_enFogVisGen );
+            Perf::GaugeSet( "map.dirs.full",
+                            (int64_t)( s_mapFull[0] + s_mapFull[1] + s_mapFull[2] + s_mapFull[3] ) );
+        }
         if ( !anyCur && !fPreview )
             Perf::CounterInc( "map.burst" );
         BuildMapUnderlay( r, aa, buildDir, s_loadGen, g_enFogVisGen, !anyCur && !fPreview, fPreview ? 2 : 16 );

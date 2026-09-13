@@ -1032,9 +1032,12 @@ void CAnimAtr::Scroll( int iDelX, int iDelY )
     // rebuild.cnt are rebuild/zoom/rotation counters, not pan, and t.incpan never
     // emits at all (0 lines in a 3000-second log). This is unambiguous - if the
     // view pans, this runs. Inert unless EN_PERF is set.
-    Perf::CounterInc( "view.scroll" );
-    Perf::CounterAdd( "view.scroll.px", (int64_t)( ( iDelX < 0 ? -iDelX : iDelX ) +
-                                                   ( iDelY < 0 ? -iDelY : iDelY ) ) );
+    if ( Perf::IsEnabled( ) )   // the abs arithmetic below is argument work (class-B 7)
+    {
+        Perf::CounterInc( "view.scroll" );
+        Perf::CounterAdd( "view.scroll.px", (int64_t)( ( iDelX < 0 ? -iDelX : iDelX ) +
+                                                       ( iDelY < 0 ? -iDelY : iDelY ) ) );
+    }
     CRect rectDst = m_dibwnd.GetDIB( )->Scroll( iDelX, iDelY );
 
     if ( !rectDst.IsRectEmpty( ) )

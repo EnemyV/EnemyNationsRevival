@@ -1318,7 +1318,7 @@ BOOL CVehicle::GetNextHex(BOOL bNew) {
                     // deliberately NOT corrected - but this is the geometry QA
                     // reports as a corner cut, so name it instead of leaving the
                     // exempted case silent.
-                    if (bCorner) {
+                    if (bCorner && WaitLogEnabled()) {
                         // @WinFable: "the log does not say whether the clipped hex was
                         // occupied; a suppressed step that is occupied still falls through
                         // to CanEnter". occ = the ID of whatever else holds the sub-hex we

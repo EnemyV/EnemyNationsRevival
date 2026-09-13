@@ -624,6 +624,10 @@ BOOL CConquerApp::CheckYield( )
 // for the life of the process, which is what Perf::ScopeCounter requires.
 static const char* EnDrawTag( const CWndAnim* pWnd )
 {
+    // GATE FIRST (@WinFable 23:28Z, class-B residual 1): typeid( ).name( ) plus strrchr
+    // ran per rendering window per frame BEFORE ScopeCounter's own ctor gate, so the
+    // probe cost something with EN_PERF unset. A probe must not change behaviour.
+    if ( !Perf::IsEnabled( ) ) return "";
     if ( pWnd == NULL ) return "draw.null";
     const char* n = typeid( *pWnd ).name( );
     if ( n == NULL ) return "draw.?";
@@ -746,10 +750,11 @@ void CConquerApp::ProcessAllMessages( DWORD dwBudgetMs )
         // which would have read as "no messages in the drain" rather than as a broken
         // probe. Runtime-gated on Perf::IsEnabled() only, per the audit.
         {
-            const int      _mhTy = (int)( (CNetCmd*)pBuf )->GetType( );
+            const bool     _mhOn = Perf::IsEnabled( );   // gate GetType too (class-B 5)
+            const int      _mhTy = _mhOn ? (int)( (CNetCmd*)pBuf )->GetType( ) : -1;
             const uint64_t _mhT0 = Perf::NowIfEnabled( );
             theGame.ProcessMessage((CNetCmd *) pBuf);
-            if ( Perf::IsEnabled( ) && _mhTy >= 0 && _mhTy < kMsgTypes )
+            if ( _mhOn && _mhTy >= 0 && _mhTy < kMsgTypes )
             {
                 const long long _us = (long long)Perf::ElapsedUs( _mhT0 );
                 MsgStat& st = g_msgStat[ g_enMsgDrain ? 1 : 0 ][ _mhTy ];
@@ -981,9 +986,10 @@ void CConquerApp::GraphicsEnginePump( )
         Perf::GaugeSet( "msg.backlog", iBacklog );
         Perf::CounterInc( dwBudget == 400 ? "msg.tier400"
                                           : ( dwBudget == 200 ? "msg.tier200" : "msg.tier100" ) );
-        const DWORD dwDrainT0 = timeGetTime( );
+        const bool  _msgOn    = Perf::IsEnabled( );   // gate the clock pair (class-B 2)
+        const DWORD dwDrainT0 = _msgOn ? timeGetTime( ) : 0;
         ProcessAllMessages( dwBudget );
-        if ( timeGetTime( ) - dwDrainT0 >= dwBudget )
+        if ( _msgOn && timeGetTime( ) - dwDrainT0 >= dwBudget )
             Perf::CounterInc( "msg.capped" );
     }
 
@@ -1720,16 +1726,20 @@ void CConquerApp::GraphicsEnginePump( )
         {
             Perf::ScopeNamed _mt( "msg.tail.us" );
             g_enMsgDrain = 1;
-            const DWORD _mtBack = theGame.m_messagePointerList.GetCount( );
-            Perf::GaugeSet( "msg.tail.backlog", (int64_t)_mtBack );
-            const DWORD _mt0 = timeGetTime( );
+            // gate GetCount and the clock pair (class-B 3 and 4): both were probe-only
+            // work that ran with EN_PERF unset.
+            const bool  _mtOn = Perf::IsEnabled( );
+            if ( _mtOn )
+                Perf::GaugeSet( "msg.tail.backlog",
+                                (int64_t)theGame.m_messagePointerList.GetCount( ) );
+            const DWORD _mt0 = _mtOn ? timeGetTime( ) : 0;
             const uint64_t _mtq = Perf::NowIfEnabled( );
             ProcessAllMessages( 100 );
             // [SLOWFRAME] msg= is SEC_MSG, the HEAD drain only; this drain is inside
             // SEC_SIM but outside SEC_MSG, so without this note the per-frame drain
             // share cannot be computed from the slow-frame line at all.
             Perf::NoteFrameMsgTail( Perf::ElapsedUs( _mtq ) );
-            if ( timeGetTime( ) - _mt0 >= 100 )
+            if ( _mtOn && timeGetTime( ) - _mt0 >= 100 )
                 Perf::CounterInc( "msg.tail.capped" );
             g_enMsgDrain = 0;
             EnMsgHistoDump( );
