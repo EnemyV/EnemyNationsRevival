@@ -1952,6 +1952,141 @@ void CWndArea::MaterialChange( CUnit const* pUnit )
     m_WndStatic.UpdateStat( );
 }
 
+// #38 THE PER-SITE BUILD VERDICT. One body, two callers: the hover (one hex under the
+// cursor) and the drag-place line (N sites in one gesture). They MUST agree - a line that
+// queued sites the hover calls unbuildable, or refused sites the hover calls fine, is a
+// rules drift the player reads as the preview lying - so the rule half of the 1996 hover
+// block lives here verbatim and nothing duplicates it.
+//
+// What is NOT here: the status-bar strings. Only the hover has a status bar to write, and
+// keeping the strings at the call site is what makes this a pure per-site verdict. The
+// numbers those strings need (the farm multiplier, the mine quantity/density) come back in
+// the verdict, so the caller never recomputes them - LandMult / TotalQuantity / TotalDensity
+// are called exactly as often as they were before.
+struct CBuildVerdict
+{
+    enum KIND { plain, farm_kind, mine_kind };        // which special-case block ran
+    enum QUALITY { good, warn, bad };                 // how good a site it is
+
+    int  m_iFound;          // FoundationCost's cost, or < 0 for "cannot build here"
+    int  m_iWhy;            // FoundationCost's reason code (read when it refused)
+    int  m_iCurType;        // SetBldgCur's cursor type: 0 = ok, 1 = cannot, 2 = poor site
+    int  m_iKind;
+    int  m_iQuality;
+    BOOL m_bRefused;        // FoundationCost (or the rocket exit test) refused OUTRIGHT:
+                            // the hover returns early on this, BEFORE any farm/mine test,
+                            // so no farm/mine numbers were measured.
+    int  m_iMul;            // farm/lumber: the land multiplier
+    int  m_iQuan, m_iDen;   // mine: the scaled quantity and density
+
+    // A site the drag may queue. Both halves matter: m_bRefused covers the early refusal
+    // (where m_iFound can still be >= 0, when only the rocket exit test failed) and
+    // m_iFound covers the farm/mine overrides, which write -1 into it.
+    BOOL CanBuild( ) const { return ( ( !m_bRefused ) && ( m_iFound >= 0 ) ); }
+};
+
+static void BuildSiteVerdict( CHexCoord const& hexUL, int iBuild, int iDir, BOOL bBuildOk,
+                              CBuildVerdict& v )
+{
+    v.m_iWhy     = 0;
+    v.m_iKind    = CBuildVerdict::plain;
+    v.m_iQuality = CBuildVerdict::good;
+    v.m_iMul     = 0;
+    v.m_iQuan    = 0;
+    v.m_iDen     = 0;
+
+    v.m_iFound = theMap.FoundationCost( hexUL, iBuild, iDir, NULL, NULL, &v.m_iWhy );
+
+    // NOTE: m_iFound is deliberately NOT forced to -1 here. The 1996 hover left it as
+    // FoundationCost returned it on this path, so a site that failed only the rocket exit
+    // test still reports a cost - and rocket_pos re-tests the exits at button-up anyway.
+    // CanBuild() is the test that does not care which half refused.
+    v.m_bRefused = ( v.m_iFound < 0 ) || ( !bBuildOk );
+    if ( v.m_bRefused )
+    {
+        v.m_iCurType = 1;
+        v.m_iQuality = CBuildVerdict::bad;
+        return;
+    }
+
+    v.m_iCurType = v.m_iFound < 0 ? 1 : 0;
+    switch ( iBuild )
+    {
+    case CStructureData::farm:
+    case CStructureData::lumber: {
+        v.m_iKind = CBuildVerdict::farm_kind;
+        v.m_iMul  = CFarmBuilding::LandMult( hexUL, iBuild, iDir );
+        if ( ( v.m_iMul < 2 ) || ( v.m_iFound < 0 ) )
+        {
+            v.m_iFound   = -1;
+            v.m_iCurType = 1;
+            v.m_iQuality = CBuildVerdict::bad;
+        }
+        else if ( v.m_iMul < 5 )
+        {
+            v.m_iCurType = 2;
+            v.m_iQuality = CBuildVerdict::warn;
+        }
+        break;
+    }
+
+    case CStructureData::coal:
+    case CStructureData::iron:
+    case CStructureData::oil_well:
+    case CStructureData::copper: {
+        v.m_iKind = CBuildVerdict::mine_kind;
+        CStructureData const* pData = theStructures.GetData( iBuild );
+        int                   iSize = pData->GetCX( ) * pData->GetCY( );
+        int                   qMul  = CMineBuilding::TotalQuantity( hexUL, iBuild, iDir );
+        int                   iDiv;
+        switch ( iBuild )
+        {
+        case CStructureData::coal:
+            iDiv = MAX_MINERAL_COAL_QUANTITY;
+            break;
+        case CStructureData::iron:
+            iDiv = MAX_MINERAL_IRON_QUANTITY;
+            break;
+        case CStructureData::oil_well:
+            iDiv = MAX_MINERAL_OIL_QUANTITY;
+            break;
+        case CStructureData::copper:
+            iDiv = MAX_MINERAL_XIL_QUANTITY;
+            break;
+        default:
+            iDiv = MAX_MINERAL_QUANTITY;
+            break;
+        }
+
+        int iQuan = ( qMul * 1000 ) / ( iDiv * iSize );
+        if ( qMul > 0 )
+            iQuan = __max( 1, iQuan );
+        int dMul = CMineBuilding::TotalDensity( hexUL, iBuild, iDir );
+        int iDen = ( dMul * 100 ) / ( MAX_MINERAL_DENSITY * iSize );
+        if ( dMul > 0 )
+            iDen = __max( 1, iDen );
+        v.m_iQuan = iQuan;
+        v.m_iDen  = iDen;
+
+        if ( ( qMul < 2 ) || ( v.m_iFound < 0 ) || ( dMul < 1 ) )
+        {
+            v.m_iFound   = -1;
+            v.m_iCurType = 1;
+            v.m_iQuality = CBuildVerdict::bad;
+        }
+        else if ( ( iQuan < 400 / ( iSize / 2 ) ) && ( iDen < 40 / ( iSize / 2 ) ) )
+        {
+            v.m_iCurType = 2;
+            v.m_iQuality = CBuildVerdict::warn;
+        }
+        break;
+    }
+
+    default:
+        break;
+    }
+}
+
 void CWndArea::OnMouseMove( UINT nFlags, CPoint point )
 {
 
@@ -2123,9 +2258,14 @@ void CWndArea::OnMouseMove( UINT nFlags, CPoint point )
          ( m_iMode == rocket_pos ) )
     {
         CHexCoord _hexBuild = ToBuildUL( hexcoord );
-        int       iWhy;
-        m_iFound = theMap.FoundationCost( _hexBuild, m_iBuild, GetBuildDir( ), NULL, NULL, &iWhy );
-        if ( ( m_iFound < 0 ) || ( !bBuildOk ) )
+
+        // #38: the verdict is shared with the drag-place line (BuildSiteVerdict above), so
+        // the two cannot drift. The strings stay here - only the hover has a status bar.
+        CBuildVerdict v;
+        BuildSiteVerdict( _hexBuild, m_iBuild, GetBuildDir( ), bBuildOk, v );
+        int iWhy = v.m_iWhy;
+        m_iFound = v.m_iFound;
+        if ( v.m_bRefused )
         {
             theMap.SetBldgCur( _hexBuild, m_iBuild, GetBuildDir( ), 1 );
             if ( ( iWhy > 0 ) && ( iWhy <= 9 ) && ( !m_sHelpCantBuild[iWhy - 1].empty( ) ) )
@@ -2139,24 +2279,20 @@ void CWndArea::OnMouseMove( UINT nFlags, CPoint point )
             return;
         }
 
-        int iCurType = m_iFound < 0 ? 1 : 0;
+        int iCurType = v.m_iCurType;
         switch ( m_iBuild )
         {
         case CStructureData::farm:
         case CStructureData::lumber: {
-            int                   iMul = CFarmBuilding::LandMult( _hexBuild, m_iBuild, GetBuildDir( ) );
-            std::string           sText = "(" + IntToStr( iMul ) + ") ";
+            std::string           sText = "(" + IntToStr( v.m_iMul ) + ") ";
             CStatInst::IMPORTANCE iImp;
-            if ( ( iMul < 2 ) || ( m_iFound < 0 ) )
+            if ( v.m_iQuality == CBuildVerdict::bad )
             {
-                m_iFound = -1;
-                iCurType = 1;
                 sText += m_sHelpNoFarm;
                 iImp = CStatInst::critical;
             }
-            else if ( iMul < 5 )
+            else if ( v.m_iQuality == CBuildVerdict::warn )
             {
-                iCurType = 2;
                 sText += m_sHelpBadFarm;
                 iImp = CStatInst::warn;
             }
@@ -2173,49 +2309,16 @@ void CWndArea::OnMouseMove( UINT nFlags, CPoint point )
         case CStructureData::iron:
         case CStructureData::oil_well:
         case CStructureData::copper: {
-            CStructureData const* pData = theStructures.GetData( m_iBuild );
-            int                   iSize = pData->GetCX( ) * pData->GetCY( );
-            int                   qMul  = CMineBuilding::TotalQuantity( _hexBuild, m_iBuild, GetBuildDir( ) );
-            int                   iDiv;
-            switch ( m_iBuild )
-            {
-            case CStructureData::coal:
-                iDiv = MAX_MINERAL_COAL_QUANTITY;
-                break;
-            case CStructureData::iron:
-                iDiv = MAX_MINERAL_IRON_QUANTITY;
-                break;
-            case CStructureData::oil_well:
-                iDiv = MAX_MINERAL_OIL_QUANTITY;
-                break;
-            case CStructureData::copper:
-                iDiv = MAX_MINERAL_XIL_QUANTITY;
-                break;
-            default:
-                iDiv = MAX_MINERAL_QUANTITY;
-                break;
-            }
-
-            int iQuan = ( qMul * 1000 ) / ( iDiv * iSize );
-            if ( qMul > 0 )
-                iQuan = __max( 1, iQuan );
-            int dMul = CMineBuilding::TotalDensity( _hexBuild, m_iBuild, GetBuildDir( ) );
-            int iDen = ( dMul * 100 ) / ( MAX_MINERAL_DENSITY * iSize );
-            if ( dMul > 0 )
-                iDen = __max( 1, iDen );
-
-            std::string           sText = "(" + IntToStr( iQuan, 10, true ) + ", " + IntToStr( iDen ) + ") ";
+            std::string           sText = "(" + IntToStr( v.m_iQuan, 10, true ) + ", " +
+                                          IntToStr( v.m_iDen ) + ") ";
             CStatInst::IMPORTANCE iImp;
-            if ( ( qMul < 2 ) || ( m_iFound < 0 ) || ( dMul < 1 ) )
+            if ( v.m_iQuality == CBuildVerdict::bad )
             {
-                m_iFound = -1;
-                iCurType = 1;
                 sText += m_sHelpNoMine;
                 iImp = CStatInst::critical;
             }
-            else if ( ( iQuan < 400 / ( iSize / 2 ) ) && ( iDen < 40 / ( iSize / 2 ) ) )
+            else if ( v.m_iQuality == CBuildVerdict::warn )
             {
-                iCurType = 2;
                 sText += m_sHelpBadMine;
                 iImp = CStatInst::warn;
             }
