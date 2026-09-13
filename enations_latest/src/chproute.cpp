@@ -774,6 +774,56 @@ void CHPRouter::DoRouting( CAIMsg* pMsg )
     FillPriorities( );
 }
 
+//
+// BUGS #107 - can this hull turn toward that hex?
+//
+// Measured: when the human router re-issues a destination to a vehicle that
+// reported err_veh_goto / err_veh_traffic, the staging search hands back a hex
+// BEHIND the hull about 95% of the time - it has no facing criterion at all, it
+// simply accepts the first hex the outward spiral likes.  A multi-hex hull
+// cannot reverse: CVehicle::GetNextHex clamps the step to 2 eighth-rotations
+// (3 for boats) per move (vehmove.cpp ~948), so the clamp writes a sideways
+// step instead, and on a one-axis deck that turns into an endless circle.
+// One-hex hulls are exempt from the clamp entirely (vehmove.cpp ~941).
+//
+// Units: bearings here are eighths 0..7 - _CalcBaseDir (declared vehicle.h:664,
+// defined vehicle.inl:119) is the same aiBaseDir lookup GetAngle feeds the
+// clamp with - while CVehicle::GetDir is in 128ths (base.h:76-77, FULL_ROT 128
+// / EIGHTH_ROT 16) and is interpolated mid-turn, so it is rounded to the
+// nearest eighth before the two are compared.
+//
+// Takes values, not a CVehicle* - see EnStagingFacing in chproute.hpp for why.
+//
+static BOOL EnStagingFacesHull( int iDir128, CHexCoord const& hexHead, BOOL bOneHex, BOOL bBoat,
+                                CHexCoord const& hex )
+{
+    // a one-hex hull has no turn clamp - every hex faces it
+    if ( bOneHex )
+        return ( TRUE );
+
+    int iDX = CHexCoord::Diff( hex.X( ) - hexHead.X( ) );
+    int iDY = CHexCoord::Diff( hex.Y( ) - hexHead.Y( ) );
+
+    // degenerate - the hex the head is already standing on, no bearing to take
+    if ( iDX == 0 && iDY == 0 )
+        return ( TRUE );
+
+    // reduce the wrapped delta to the unit compass step aiBaseDir is indexed by:
+    // head = the one step taken toward the target, tail = the origin
+    CPoint ptHead( ( iDX > 0 ) ? 1 : ( ( iDX < 0 ) ? -1 : 0 ), ( iDY > 0 ) ? 1 : ( ( iDY < 0 ) ? -1 : 0 ) );
+    CPoint ptTail( 0, 0 );
+
+    int iWant = _CalcBaseDir( ptHead, ptTail );                     // eighths, 0..7
+    int iHave = ( ( iDir128 + EIGHTH_ROT / 2 ) / EIGHTH_ROT ) & 7;  // 128ths -> eighths
+
+    // minimal signed turn, normalised exactly the way GetAngle does it
+    int iTurn = iWant - iHave;
+    iTurn += ( iTurn > 4 ) ? -8 : ( ( iTurn <= -4 ) ? 8 : 0 );
+
+    int iMax = bBoat ? 3 : 2;
+    return ( ( iTurn <= iMax ) && ( iTurn >= -iMax ) );
+}
+
 void CHPRouter::VehicleErrorResponse( CAIMsg* pMsg )
 {
     ASSERT_VALID( this );
@@ -795,12 +845,27 @@ void CHPRouter::VehicleErrorResponse( CAIMsg* pMsg )
         // the unit is already responding to an error message
         CHexCoord hexGo( 0, 0 );
         CHexCoord hexAt( 0, 0 );
+        // BUGS #107: the hull facing, copied out as VALUES while the lock is held.
+        // pVeh is never dereferenced after LeaveCriticalSection - the sim thread
+        // destroys vehicles while this AI worker runs - so everything the staging
+        // filter needs is read here, beside the two hexes already being read.
+        int       iDir128     = 0;
+        CHexCoord hexHead;
+        BOOL      bOneHex     = FALSE;
+        BOOL      bBoat       = FALSE;
+        BOOL      bHaveFacing = FALSE;
         EnterCriticalSection( &cs );
         CVehicle* pVeh = theVehicleMap.GetVehicle( pUnit->GetID( ) );
         if ( pVeh != NULL )
         {
             hexAt = pVeh->GetHexHead( );
             hexGo = pVeh->GetHexDest( );
+
+            iDir128     = pVeh->GetDir( );  // CVehicle::GetDir - 128ths, not CTurret's
+            hexHead     = pVeh->GetHexHead( );
+            bOneHex     = ( pVeh->GetData( )->GetVehFlags( ) & CTransportData::FL1hex ) != 0;
+            bBoat       = pVeh->GetData( )->IsBoat( );
+            bHaveFacing = TRUE;
         }
         LeaveCriticalSection( &cs );
         if ( !hexAt.X( ) && !hexAt.Y( ) )
@@ -812,7 +877,12 @@ void CHPRouter::VehicleErrorResponse( CAIMsg* pMsg )
                IsShip( pUnit->GetID( ) ) ? "ship" : "veh", pUnit->GetID( ), hexAt.X( ), hexAt.Y( ), hexGo.X( ),
                hexGo.Y( ), (unsigned)pUnit->GetStatus( ) );
 
-        if ( GetStagingHex( pUnit, NULL, hexDest ) )
+        // BUGS #107: hand the hull facing to the staging search so it skips the hexes
+        // the hull cannot turn toward.  Every deck clamp measured on this path is owned
+        // by the human router, so this is the only caller that is changed; with a NULL
+        // facing (the vehicle is already gone) the search behaves exactly as before.
+        EnStagingFacing facing = { iDir128, hexHead, bOneHex, bBoat };
+        if ( GetStagingHex( pUnit, NULL, hexDest, bHaveFacing ? &facing : NULL ) )
             SetDestination( pUnit->GetID( ), hexDest );
     }
 }
@@ -6330,7 +6400,8 @@ void CHPRouter::Load( CArchive& ar )
     }
 }
 
-BOOL CHPRouter::GetStagingHex( CAIUnit* paiTruck, CAIUnit* paiBldg, CHexCoord& hexDest )
+BOOL CHPRouter::GetStagingHex( CAIUnit* paiTruck, CAIUnit* paiBldg, CHexCoord& hexDest,
+                              EnStagingFacing const* pFacing )
 {
     int       iWidth  = 2;
     int       iHeight = 2;
@@ -6413,6 +6484,12 @@ BOOL CHPRouter::GetStagingHex( CAIUnit* paiTruck, CAIUnit* paiBldg, CHexCoord& h
     BOOL bIsTruck   = IsTruck( paiTruck->GetID( ) );
     BOOL bPlainRoad = TRUE;
 
+    // BUGS #107: with a facing supplied, a hex the hull cannot turn toward is no longer
+    // accepted outright - it is kept here as the fallback and the spiral carries on.
+    // Declared ahead of TryAgain so the road pass inherits the truck pass's fallback.
+    CHexCoord hexFallback;
+    BOOL      bHaveFallback = FALSE;
+
 TryAgain:
 
     // a spiral search outward from the building's exit
@@ -6474,6 +6551,29 @@ TryAgain:
                 if ( pGameHex->GetType( ) == CHex::coastline )
                     continue;
 
+                // BUGS #107: this is the spiral's single accept point and both passes
+                // reach it (the road pass re-enters the same loop through TryAgain), so
+                // the facing filter belongs here - after GetNearRoad, which has already
+                // moved hcAt onto the neighbour it chose, the hex the vehicle is really
+                // sent to.  A hex the hull cannot turn toward (the measured ~95% case,
+                // behind the hull) is remembered once and skipped; the search keeps its
+                // first-hit determinism for everything it does accept.
+                if ( pFacing != NULL &&
+                     !EnStagingFacesHull( pFacing->iDir128, pFacing->hexHead, pFacing->bOneHex, pFacing->bBoat,
+                                          hcAt ) )
+                {
+                    if ( !bHaveFallback )
+                    {
+                        hexFallback   = hcAt;
+                        bHaveFallback = TRUE;
+                    }
+                    // GetNearRoad may have moved hcAt off this row, and the inner loop
+                    // only rewrites hcAt.X - put Y back so the rest of the row scans the
+                    // hexes it would have scanned without the filter.
+                    hcAt.Y( hexNearBy.Wrap( hcFrom.Y( ) + iY ) );
+                    continue;
+                }
+
                 hexDest = hcAt;
                 return ( TRUE );
             }
@@ -6487,6 +6587,16 @@ TryAgain:
     {
         bPlainRoad = FALSE;
         goto TryAgain;
+    }
+
+    // BUGS #107: both passes are spent.  If the filter turned something down, hand it
+    // back now - exactly the hex, and exactly the TRUE, the unfiltered search would have
+    // returned.  Filtering can therefore never turn a success into a failure, and with no
+    // facing (or nothing rejected) the untouched hexDest / FALSE contract below stands.
+    if ( bHaveFallback )
+    {
+        hexDest = hexFallback;
+        return ( TRUE );
     }
 
     return ( FALSE );

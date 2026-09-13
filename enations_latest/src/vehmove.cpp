@@ -452,6 +452,16 @@ void CVehicle::ArrivedDest() {
         case route : {
             if (m_route.IsEmpty())
                 break;
+            // BUGS #99: a NULL cursor on a live route means "start from the head" - the
+            // same answer SetEvent(route) already gives (unit.cpp, case route:
+            // if (m_pos == NULL) m_pos = m_route.GetHeadPosition()), and the same heal
+            // AddRoute applies after a route edit. #99 makes a saved NULL cursor load back
+            // as NULL, so mirror that policy here and the GetAt below is always on a valid
+            // node: CObList::GetAt is an unchecked ((Node*)pos)->val deref, ASSERT_VALID is
+            // a no-op in Release, and the pR != NULL test sits AFTER the deref. Provable
+            // no-op whenever m_pos is non-NULL.
+            if (m_pos == NULL)
+                m_pos = m_route.GetHeadPosition();
             // handle this stop
             CRoute *pR = m_route.GetAt(m_pos);
             ASSERT_VALID (pR);
@@ -3686,7 +3696,36 @@ void CVehicle::PostArrivedOrBlocked() {
 
     m_bFlags |= told_ai_stop;
 
-    if (m_ptDest == m_ptHead) {
+    // BUGS #100: a vehicle standing in its destination hex on ANOTHER sub-hex is
+    // reported ARRIVED, not permanently blocked. The callers decide "we are there"
+    // with a HEX test (vehicle.cpp deploy_it: m_hexDest.SameHex(m_ptHead)); this
+    // function decided with the exact SUB test alone, so an AI owner was sent
+    // CMsgVehGoto::ToErr and abandoned a destination it had already reached, and a
+    // human transport's router was sent MsgErrGoto. This is the NOTIFICATION only:
+    // it does not perform ArrivedDest, building entry, route advance or load/unload.
+    // The policy for what each owner kind is told is unchanged - AI: CMsgVehDest,
+    // hp-router transport: MsgArrived, human non-transport: nothing.
+    if ((m_ptDest == m_ptHead) || m_hexDest.SameHex(m_ptHead)) {
+        // [ARRIVEMISS] (015 R13, re-sited R16) INSTRUMENT ONLY. Before the #100 fix
+        // above, this sat at the top of the BLOCKED branch and fired when
+        // m_hexDest.SameHex(m_ptHead) was TRUE there. Those cases now take THIS arm,
+        // so the probe moved with them: same fields, plus a trailing `fixed 1`, and
+        // gated on !(m_ptDest == m_ptHead) so it counts ONLY the same-hex-other-sub
+        // cases the fix redirects - an exact-sub arrival never logs. The blocked
+        // branch can no longer be same-hex, so it carries no [ARRIVEMISS] line at
+        // all. It changes nothing the game reads. Unthrottled on purpose, the count
+        // is the datum.
+        if (EnTrafficLogOn() && !(m_ptDest == m_ptHead)) {
+            EnTrafficLog("[ARRIVEMISS] veh %lu plyr %d ai %d transport %d vtype %d event %d "
+                         "mode %d at %d,%d dest %d,%d hexdest %d,%d hpctl %d why %s fixed 1",
+                         (unsigned long) GetID(), GetOwner()->GetPlyrNum(),
+                         GetOwner()->IsAI() ? 1 : 0, GetData()->IsTransport() ? 1 : 0,
+                         GetData()->GetType(), (int) m_iEvent, (int) m_cMode,
+                         m_ptHead.x, m_ptHead.y, m_ptDest.x, m_ptDest.y,
+                         m_hexDest.X(), m_hexDest.Y(), IsHpControl() ? 1 : 0,
+                         g_pszPostWhy != NULL ? g_pszPostWhy : "?");
+        }
+
         // tell the AI
         if (GetOwner()->IsAI()) {
 #if EN_AI_PROBES_ECON && defined(_WIN32)

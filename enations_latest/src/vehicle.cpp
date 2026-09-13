@@ -1252,7 +1252,18 @@ void CVehicle::Load() {
 
     // take a look at where we are going to figure out what to load up
     // this is generally only a problem if loading at a warehouse
-    POSITION pos = m_pos;
+    // BUGS #99: this walk is a cycle over the route that stops when it returns to the
+    // cursor it started from - with m_pos NULL the (pos == m_pos) test can never fire
+    // (pos is re-seated to the head every time it runs off the tail), so a NULL cursor
+    // spins forever unless an unload stop happens to be found. #99 makes a saved NULL
+    // cursor load back as NULL, so take the same heal SetEvent(route) uses (unit.cpp,
+    // case route: if (m_pos == NULL) m_pos = m_route.GetHeadPosition()) and treat the
+    // head as the cursor for this walk. posStart == m_pos whenever m_pos is non-NULL,
+    // so the loop below is unchanged in every pre-existing case.
+    POSITION posStart = m_pos;
+    if (posStart == NULL)
+        posStart = m_route.GetHeadPosition();
+    POSITION pos = posStart;
     CBuilding *pBldgDest = NULL;
     while (TRUE) {
         if (pos == NULL)
@@ -1262,7 +1273,7 @@ void CVehicle::Load() {
             if (pos == NULL)
                 pos = m_route.GetHeadPosition();
         }
-        if ((pos == m_pos) || (pos == NULL))
+        if ((pos == posStart) || (pos == NULL))
             break;
 
         // only care about unloads
@@ -1762,7 +1773,9 @@ void CVehicle::StopShooting(CUnit *pNewTarget) {
             pBldg->_SetTarget(pNewTarget);
             if (pBldg->GetOwner()->IsAI()) {
                 CMsgOutOfLos msg(pBldg, this);
-                theGame.PostToClient(GetOwner(), &msg, sizeof(msg));
+                // BUGS #104: the out-of-LOS message names the BUILDING as the attacker (ai.cpp gates delivery on attacker-owner agreement),
+                // so it must go to the building's owner, as the vehicle branch above does; it was posted to the victim's owner and always rejected.
+                theGame.PostToClient(pBldg->GetOwner(), &msg, sizeof(msg));
             }
         }
     }

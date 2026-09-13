@@ -40,9 +40,14 @@ const char GameLogFile[] = "ENations.log";
 // (was runtime-only + backfilled flat on load, so the workforce graph didn't restore).
 // Release 7: CVehicleBuilding::m_iNum (the vehicle-build queue count) is now serialized,
 // so a factory's remaining build queue survives save/load (was lost -> queue truncated).
-#define         VER_RELEASE     7
+// Release 8: the vehicle route cursor's NO-CURSOR case now writes an out-of-range
+// SENTINEL (0xFFFF in the WORD index field) instead of the shipped N-1 (BUGS #99), and
+// it is read back as a NULL cursor only when the loaded save's release is >= 8. Older
+// saves keep the shipped N-1 rule exactly - a release-7 save storing N-1 still restores
+// the last route entry as the cursor.
+#define         VER_RELEASE     8
 
-// 3.00.015: open lane. No save-format change (VER_RELEASE stays 7).
+// 3.00.015: open lane. Save format bumped 7 -> 8 (BUGS #99 route-cursor sentinel).
 #define         VER_STRING                              "3.00.015"
 #define         RES_VER_STRING                          "3.00.015\0"
 

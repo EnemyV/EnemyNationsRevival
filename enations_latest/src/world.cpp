@@ -1394,6 +1394,10 @@ void CWndWorld::_NewDir() {
 
     sTitle = strPrintf( sTitle.c_str(), m_sDir[m_pWndArea->GetAA().m_iDir].c_str() );
     SetWindowText(sTitle.c_str());
+    // BUGS #110: the SDL2 panel does not hear SetWindowText (see CommandCenterChange
+    // above); push the facing direction to it too or the panel keeps the empty title it was created with.
+    if (m_sdlPanel)
+        m_sdlPanel->SetTitle(sTitle.c_str());
 
     int iBytesPerPixel = m_dibwnd.GetDIB()->GetBytesPerPixel();
 

@@ -6241,6 +6241,13 @@ void CFlag::Serialize( CArchive& ar )
     }
 }
 
+// BUGS #99 (save format Release 8): the "no cursor" sentinel for the serialized route
+// cursor. The cursor index goes on the wire as a WORD, and so does the route count, so
+// the largest index a real cursor can take is 0xFFFE - 0xFFFF is out of range for every
+// possible route and is therefore safe as a sentinel. It is (WORD)-1, and it round-trips
+// byte-for-byte through CArchive's raw WORD write/read.
+static const WORD wROUTE_POS_NONE = (WORD)-1;
+
 void CVehicle::Serialize( CArchive& ar )
 {
 
@@ -6255,16 +6262,44 @@ void CVehicle::Serialize( CArchive& ar )
         ar << (WORD)m_route.GetCount( );
         POSITION pos  = m_route.GetHeadPosition( );
         int      iPos = 0, iOn = 0;
+        // BUGS #88 probe (measure only, no behaviour change): the shipped iPos below compares
+        // the ALREADY-ADVANCED pos with m_pos, so a cursor on element k is stored as k-1.
+        // iTrue records the same index measured BEFORE the advance so the two can be
+        // differenced in the log. It is never written to the archive. -1 = the cursor never
+        // matched any element (m_pos NULL or stale), a case the shipped iPos cannot express.
+        int      iTrue = -1;
         TRAP( m_route.GetCount( ) > 0 );
         while ( pos != NULL )
         {
-            CRoute* pR = m_route.GetNext( pos );
-            pR->Serialize( ar );
+            if ( pos == m_pos )               // #88 probe: pre-advance compare
+                iTrue = iOn;                  // #88 probe
+            // BUGS #88: compare the cursor BEFORE GetNext advances pos. The shipped
+            // post-advance compare stored a cursor sitting on element k as k-1; only
+            // the head (k == 0) came out right, and only by accident - the shipped
+            // compare never matched there and iPos starts at 0. A stale non-NULL
+            // cursor (in no list node) matches nothing either way and still stores 0.
             if ( pos == m_pos )
                 iPos = iOn;
+            CRoute* pR = m_route.GetNext( pos );
+            pR->Serialize( ar );
             iOn++;
         }
+        // BUGS #88 / #99: the ONE case the pre-advance compare changes that is not a
+        // cursor sitting on an element - a NULL cursor. The shipped post-advance compare
+        // matched on the final iteration (GetNext leaves pos NULL, and NULL == NULL), so
+        // a NULL cursor on an N-element route stored N-1; pre-advance it stores 0. #88
+        // restored N-1 explicitly and left the policy question open as BUGS #99. #99
+        // decides it here: a NULL cursor means NO cursor, not "the last stop", so store
+        // the out-of-range sentinel. Written unconditionally - this build always stamps
+        // save counter 8 - and the loader below honours it only on a counter >= 8 save,
+        // so counter <= 7 saves keep the shipped N-1 rule exactly. The probe's iTrue
+        // stays -1 here while iPos is now the sentinel.
+        if ( m_pos == NULL )
+            iPos = (int)wROUTE_POS_NONE;
         ar << (WORD)iPos;
+        if ( m_route.GetCount( ) > 0 )        // #88 probe: EnTrafficLog self-gates on EN_TRAFFIC_LOG
+            EnTrafficLog( "[ROUTECUR] save veh %lu count %d saved %d true %d",
+                          (unsigned long)GetID( ), (int)m_route.GetCount( ), iPos, iTrue );
 
         ar << m_ptDest;
         ar << m_hexDest;
@@ -6340,8 +6375,17 @@ void CVehicle::Serialize( CArchive& ar )
 
         // get m_pos
         ar >> wNR;
+        const WORD wCurIdx = wNR;   // #88 probe: index AS READ, before the walk decrements wNR
         m_pos = NULL;
-        if ( m_route.GetCount( ) > 0 )
+        // BUGS #99: on a counter >= 8 save the sentinel means "no cursor" - leave m_pos
+        // NULL and skip the walk entirely. Counter <= 7 saves cannot carry it (their
+        // writer stored N-1 for a NULL cursor), so they take the walk unchanged and a
+        // stored N-1 still restores the last entry, exactly as today. If a sentinel ever
+        // did arrive in a counter <= 7 save it still would not crash: wNR is unsigned, so
+        // the walk below never satisfies wNR <= 0 within a route of N < 0xFFFF entries -
+        // it runs off the tail and leaves m_pos NULL, the same answer the slow way.
+        const bool bNoRoutePos = ( theGame.m_dwVer >= 8 ) && ( wNR == wROUTE_POS_NONE );
+        if ( !bNoRoutePos && ( m_route.GetCount( ) > 0 ) )
         {
             POSITION pos = m_route.GetHeadPosition( );
             while ( pos != NULL )
@@ -6355,6 +6399,9 @@ void CVehicle::Serialize( CArchive& ar )
                 m_route.GetNext( pos );
             }
         }
+        if ( m_route.GetCount( ) > 0 )        // #88 probe: EnTrafficLog self-gates on EN_TRAFFIC_LOG
+            EnTrafficLog( "[ROUTECUR] load veh %lu count %d idx %d",
+                          (unsigned long)GetID( ), (int)m_route.GetCount( ), (int)wCurIdx );
 
         ar >> m_ptDest;
         ar >> m_hexDest;
