@@ -6793,6 +6793,11 @@ int CHPRouter::CountSpecialUnits( int iTypeUnit )
 void CHPRouter::SetDestination( DWORD dwID, CHexCoord& hexDest )
 {
     CMsgVehSetDest msg( dwID, hexDest, CVehicle::moving );
+    // producer attribution for the veh_set_dest flood. This path carries NO dedupe
+    // of any kind - no window, no same-location drop, no state - and the comment
+    // above says it exists specifically to bypass CAIUnit::SetDestination, which
+    // does. 23 call sites, trucks and ships. Inert unless EN_PERF is set.
+    Perf::CounterInc( "vsd.src.hprtr" );
     theGame.PostToClient( m_iPlayer, (CNetCmd*)&msg, sizeof( CMsgVehSetDest ) );
 }
 
