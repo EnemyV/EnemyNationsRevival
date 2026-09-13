@@ -74,6 +74,14 @@ foreach ($opt in @('/Od', '/O2')) {
     if ($LASTEXITCODE -ne 0) { $failed = 1 }
 }
 
+# The DRAG-PLACE suite (#38 step 6) extracts its bodies from area.cpp the same way, so it
+# gets the same treatment: both optimisations, and the source lint on the working tree.
+foreach ($opt in @('/Od', '/O2')) {
+    Write-Host "--- drag-place $opt ---"
+    python (Join-Path $here 'run-drag-place.py') --opt $opt
+    if ($LASTEXITCODE -ne 0) { $failed = 1 }
+}
+
 if ($failed -ne 0) { Write-Host '[orders] FAILURES'; exit 1 }
 Write-Host '[orders] all suites pass (/Od and /O2)'
 exit 0

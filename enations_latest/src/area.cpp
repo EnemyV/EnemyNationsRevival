@@ -1419,6 +1419,11 @@ CWndArea::CWndArea( )
     m_phexRoadPath  = NULL;
     m_ppUnderSprite = NULL;
     m_iNumRoadHex   = 0;
+
+    m_bBuildDrag = FALSE;   // #38 drag-place
+    m_nDragSites = 0;
+    m_iDragCx    = 0;
+    m_iDragCy    = 0;
 }
 
 void CWndArea::PostNcDestroy( )
@@ -1952,6 +1957,283 @@ void CWndArea::MaterialChange( CUnit const* pUnit )
     m_WndStatic.UpdateStat( );
 }
 
+// #38 THE PER-SITE BUILD VERDICT. One body, two callers: the hover (one hex under the
+// cursor) and the drag-place line (N sites in one gesture). They MUST agree - a line that
+// queued sites the hover calls unbuildable, or refused sites the hover calls fine, is a
+// rules drift the player reads as the preview lying - so the rule half of the 1996 hover
+// block lives here verbatim and nothing duplicates it.
+//
+// What is NOT here: the status-bar strings. Only the hover has a status bar to write, and
+// keeping the strings at the call site is what makes this a pure per-site verdict. The
+// numbers those strings need (the farm multiplier, the mine quantity/density) come back in
+// the verdict, so the caller never recomputes them - LandMult / TotalQuantity / TotalDensity
+// are called exactly as often as they were before.
+struct CBuildVerdict
+{
+    enum KIND { plain, farm_kind, mine_kind };        // which special-case block ran
+    enum QUALITY { good, warn, bad };                 // how good a site it is
+
+    int  m_iFound;          // FoundationCost's cost, or < 0 for "cannot build here"
+    int  m_iWhy;            // FoundationCost's reason code (read when it refused)
+    int  m_iCurType;        // SetBldgCur's cursor type: 0 = ok, 1 = cannot, 2 = poor site
+    int  m_iKind;
+    int  m_iQuality;
+    BOOL m_bRefused;        // FoundationCost (or the rocket exit test) refused OUTRIGHT:
+                            // the hover returns early on this, BEFORE any farm/mine test,
+                            // so no farm/mine numbers were measured.
+    int  m_iMul;            // farm/lumber: the land multiplier
+    int  m_iQuan, m_iDen;   // mine: the scaled quantity and density
+
+    // A site the drag may queue. Both halves matter: m_bRefused covers the early refusal
+    // (where m_iFound can still be >= 0, when only the rocket exit test failed) and
+    // m_iFound covers the farm/mine overrides, which write -1 into it.
+    BOOL CanBuild( ) const { return ( ( !m_bRefused ) && ( m_iFound >= 0 ) ); }
+};
+
+static void BuildSiteVerdict( CHexCoord const& hexUL, int iBuild, int iDir, BOOL bBuildOk,
+                              CBuildVerdict& v )
+{
+    v.m_iWhy     = 0;
+    v.m_iKind    = CBuildVerdict::plain;
+    v.m_iQuality = CBuildVerdict::good;
+    v.m_iMul     = 0;
+    v.m_iQuan    = 0;
+    v.m_iDen     = 0;
+
+    v.m_iFound = theMap.FoundationCost( hexUL, iBuild, iDir, NULL, NULL, &v.m_iWhy );
+
+    // NOTE: m_iFound is deliberately NOT forced to -1 here. The 1996 hover left it as
+    // FoundationCost returned it on this path, so a site that failed only the rocket exit
+    // test still reports a cost - and rocket_pos re-tests the exits at button-up anyway.
+    // CanBuild() is the test that does not care which half refused.
+    v.m_bRefused = ( v.m_iFound < 0 ) || ( !bBuildOk );
+    if ( v.m_bRefused )
+    {
+        v.m_iCurType = 1;
+        v.m_iQuality = CBuildVerdict::bad;
+        return;
+    }
+
+    v.m_iCurType = v.m_iFound < 0 ? 1 : 0;
+    switch ( iBuild )
+    {
+    case CStructureData::farm:
+    case CStructureData::lumber: {
+        v.m_iKind = CBuildVerdict::farm_kind;
+        v.m_iMul  = CFarmBuilding::LandMult( hexUL, iBuild, iDir );
+        if ( ( v.m_iMul < 2 ) || ( v.m_iFound < 0 ) )
+        {
+            v.m_iFound   = -1;
+            v.m_iCurType = 1;
+            v.m_iQuality = CBuildVerdict::bad;
+        }
+        else if ( v.m_iMul < 5 )
+        {
+            v.m_iCurType = 2;
+            v.m_iQuality = CBuildVerdict::warn;
+        }
+        break;
+    }
+
+    case CStructureData::coal:
+    case CStructureData::iron:
+    case CStructureData::oil_well:
+    case CStructureData::copper: {
+        v.m_iKind = CBuildVerdict::mine_kind;
+        CStructureData const* pData = theStructures.GetData( iBuild );
+        int                   iSize = pData->GetCX( ) * pData->GetCY( );
+        int                   qMul  = CMineBuilding::TotalQuantity( hexUL, iBuild, iDir );
+        int                   iDiv;
+        switch ( iBuild )
+        {
+        case CStructureData::coal:
+            iDiv = MAX_MINERAL_COAL_QUANTITY;
+            break;
+        case CStructureData::iron:
+            iDiv = MAX_MINERAL_IRON_QUANTITY;
+            break;
+        case CStructureData::oil_well:
+            iDiv = MAX_MINERAL_OIL_QUANTITY;
+            break;
+        case CStructureData::copper:
+            iDiv = MAX_MINERAL_XIL_QUANTITY;
+            break;
+        default:
+            iDiv = MAX_MINERAL_QUANTITY;
+            break;
+        }
+
+        int iQuan = ( qMul * 1000 ) / ( iDiv * iSize );
+        if ( qMul > 0 )
+            iQuan = __max( 1, iQuan );
+        int dMul = CMineBuilding::TotalDensity( hexUL, iBuild, iDir );
+        int iDen = ( dMul * 100 ) / ( MAX_MINERAL_DENSITY * iSize );
+        if ( dMul > 0 )
+            iDen = __max( 1, iDen );
+        v.m_iQuan = iQuan;
+        v.m_iDen  = iDen;
+
+        if ( ( qMul < 2 ) || ( v.m_iFound < 0 ) || ( dMul < 1 ) )
+        {
+            v.m_iFound   = -1;
+            v.m_iCurType = 1;
+            v.m_iQuality = CBuildVerdict::bad;
+        }
+        else if ( ( iQuan < 400 / ( iSize / 2 ) ) && ( iDen < 40 / ( iSize / 2 ) ) )
+        {
+            v.m_iCurType = 2;
+            v.m_iQuality = CBuildVerdict::warn;
+        }
+        break;
+    }
+
+    default:
+        break;
+    }
+}
+
+// #38 DRAG-PLACE, THE LINE. The sites a drag from hexFrom to hexTo lays down, as footprint
+// UL anchors. One axis only - the DOMINANT one, x when the hex deltas tie, which is the
+// same choice and the same tie-break the road preview makes (SetRoadIcons) - and one
+// footprint per step along it: cx hexes going east/west, cy going north/south, with cx/cy
+// already carrying the dir swap CGameMap::SetBldgCur applies to the placement cursor. So
+// the footprints abut and never overlap, which is legal: FoundationCost's bldg_next only
+// refuses an abutting building when the two differ in altitude by more than 10.
+//
+// The deltas go through CHexCoord::Diff, the house wrap-aware subtract, so a drag ACROSS
+// THE SEAM lays a contiguous line the short way round instead of a map-wide one; each site
+// is wrapped, so what comes out is a canonical hex an order can carry.
+//
+// Returns the number of sites written, always >= 1 while nMax >= 1: a zero-length drag is
+// one site, which is exactly a plain Shift-place.
+static int BuildDragLine( CHexCoord const& hexFrom, CHexCoord const& hexTo, int cx, int cy,
+                          CHexCoord* pSites, int nMax )
+{
+    if ( ( pSites == NULL ) || ( nMax <= 0 ) )
+        return ( 0 );
+    if ( cx < 1 )
+        cx = 1;
+    if ( cy < 1 )
+        cy = 1;
+
+    int dx = CHexCoord::Diff( hexTo.X( ) - hexFrom.X( ) );
+    int dy = CHexCoord::Diff( hexTo.Y( ) - hexFrom.Y( ) );
+
+    int iStepX = 0;
+    int iStepY = 0;
+    int nSteps = 0;
+    if ( abs( dx ) >= abs( dy ) )
+    {
+        iStepX = ( dx >= 0 ) ? cx : -cx;
+        nSteps = abs( dx ) / cx;
+    }
+    else
+    {
+        iStepY = ( dy >= 0 ) ? cy : -cy;
+        nSteps = abs( dy ) / cy;
+    }
+
+    int nOn = 0;
+    for ( int iOn = 0; ( iOn <= nSteps ) && ( nOn < nMax ); iOn++ )
+    {
+        CHexCoord hexSite( hexFrom.X( ) + iStepX * iOn, hexFrom.Y( ) + iStepY * iOn );
+        hexSite.Wrap( );
+        pSites[nOn++] = hexSite;
+    }
+    return ( nOn );
+}
+
+// #38 DRAG-PLACE: re-lay the candidate line for the cursor at `point` and judge every site
+// through the SHARED verdict (BuildSiteVerdict) - the same body the hover uses for the one
+// hex under the cursor, so the line cannot promise a site the hover would refuse. Called
+// on every mouse-move of the drag and once more from the release.
+void CWndArea::UpdateBuildDrag( CPoint point )
+{
+
+    m_nDragSites = 0;
+    if ( !m_bBuildDrag )
+        return;
+    if ( ( m_iBuild <= 0 ) || ( m_iBuild > theStructures.GetNumBuildings( ) ) )
+        return;
+    CStructureData const* pData = theStructures.GetData( m_iBuild );
+    if ( pData == NULL )
+        return;
+
+    // the footprint, swapped for the facing exactly as SetBldgCur swaps it
+    const int iDir = GetBuildDir( );
+    m_iDragCx      = ( iDir & 1 ) ? pData->GetCY( ) : pData->GetCX( );
+    m_iDragCy      = ( iDir & 1 ) ? pData->GetCX( ) : pData->GetCY( );
+    if ( ( m_iDragCx <= 0 ) || ( m_iDragCy <= 0 ) )
+        return;
+
+    // Both ends go through ToBuildUL, the placement anchor the hover and the click both
+    // use, so the line is a line of real placements rather than of cursor hexes.
+    CHexCoord hexNow = m_aa.WindowToHex( point );
+    hexNow.Wrap( );
+    CHexCoord hexFrom( m_hexDragDn );
+    CHexCoord hexFromUL = ToBuildUL( hexFrom );
+    CHexCoord hexToUL   = ToBuildUL( hexNow );
+
+    m_nDragSites = BuildDragLine( hexFromUL, hexToUL, m_iDragCx, m_iDragCy, m_ahexDrag, MAX_DRAG_PLACE );
+    for ( int iOn = 0; iOn < m_nDragSites; iOn++ )
+    {
+        CBuildVerdict v;
+        BuildSiteVerdict( m_ahexDrag[iOn], m_iBuild, iDir, TRUE, v );
+        m_abDragOk[iOn] = v.CanBuild( ) ? 1 : 0;
+    }
+}
+
+// #38 DRAG-PLACE: the gesture is over (committed, cancelled, or the window lost it). The
+// preview reads m_nDragSites, so zeroing it is what takes the line off the map.
+//
+// Every way out goes through here: the commit, a refused single placement (bad_loc), the
+// no-crane bail and Esc / deselect / SelectOff (all via BldgCurOff), losing activation, a
+// press starting a new gesture, and a move that arrives without the button or Shift. That
+// last one is also the backstop for a button-up this window never saw - a release outside
+// the SDL panel, say: the line is still drawn until the next move over the area map, and
+// that move ends it, so a stale gesture cannot outlive the cursor coming back.
+void CWndArea::EndBuildDrag( )
+{
+
+    m_bBuildDrag = FALSE;
+    m_nDragSites = 0;
+}
+
+// #38 DRAG-PLACE PREVIEW, published for the SDL2 terrain overlay pass. Free functions
+// declared extern at the use site, the way g_enEditHex is: SDL2Terrain.cpp is the GPU hot
+// TU and must not pull area.h (MFC) in. The state lives on the area window that owns the
+// drag; these find it from the view being rendered, so a second area map onto the same
+// world does not draw another window's gesture.
+static CWndArea* DragPlaceWindow( CAnimAtr const* paa )
+{
+    for ( POSITION pos = theAreaList.GetHeadPosition( ); pos != NULL; )
+    {
+        CWndArea* pArea = theAreaList.GetNext( pos );
+        if ( ( pArea != NULL ) && ( &pArea->GetAA( ) == paa ) && ( pArea->GetDragPlaceCount( ) > 0 ) )
+            return ( pArea );
+    }
+    return ( NULL );
+}
+
+int g_enDragPlaceCount( CAnimAtr const* paa, int* pcx, int* pcy )
+{
+    CWndArea* pArea = DragPlaceWindow( paa );
+    if ( pArea == NULL )
+        return ( 0 );
+    if ( ( pcx != NULL ) && ( pcy != NULL ) )
+        pArea->GetDragPlaceSize( *pcx, *pcy );
+    return ( pArea->GetDragPlaceCount( ) );
+}
+
+BOOL g_enDragPlaceSite( CAnimAtr const* paa, int iOn, CHexCoord& hexUL )
+{
+    CWndArea* pArea = DragPlaceWindow( paa );
+    if ( ( pArea == NULL ) || ( iOn < 0 ) || ( iOn >= pArea->GetDragPlaceCount( ) ) )
+        return ( FALSE );
+    hexUL = pArea->GetDragPlaceSite( iOn );
+    return ( pArea->GetDragPlaceOk( iOn ) );
+}
+
 void CWndArea::OnMouseMove( UINT nFlags, CPoint point )
 {
 
@@ -2065,6 +2347,23 @@ void CWndArea::OnMouseMove( UINT nFlags, CPoint point )
     if ( m_iMode == road_set )
         SetRoadIcons( hexcoord );
 
+    // #38 DRAG-PLACE: keep the candidate line in step with the cursor. Placed BEFORE the
+    // build block below, which returns early for an unbuildable hex under the cursor - the
+    // line must keep updating while the cursor is over a site it cannot use, because the
+    // sites BEHIND the cursor are still good and the player is still dragging.
+    //
+    // The drag lives only while both the button and Shift are held: releasing Shift (or any
+    // re-entry that is not a real drag move, e.g. the synthetic OnMouseMove a footprint
+    // rotation makes) cancels the gesture, so a line is never queued after its preview
+    // stopped describing it.
+    if ( m_bBuildDrag )
+    {
+        if ( ( m_iMode != build_loc ) || ( !( nFlags & MK_LBUTTON ) ) || ( !( nFlags & MK_SHIFT ) ) )
+            EndBuildDrag( );
+        else
+            UpdateBuildDrag( point );
+    }
+
     // if not visible then it's not there
     if ( pUnit != NULL )
         if ( ( ( pUnit->GetUnitType( ) == CUnit::building ) && ( !pUnit->IsVisible( ) ) ) ||
@@ -2123,9 +2422,14 @@ void CWndArea::OnMouseMove( UINT nFlags, CPoint point )
          ( m_iMode == rocket_pos ) )
     {
         CHexCoord _hexBuild = ToBuildUL( hexcoord );
-        int       iWhy;
-        m_iFound = theMap.FoundationCost( _hexBuild, m_iBuild, GetBuildDir( ), NULL, NULL, &iWhy );
-        if ( ( m_iFound < 0 ) || ( !bBuildOk ) )
+
+        // #38: the verdict is shared with the drag-place line (BuildSiteVerdict above), so
+        // the two cannot drift. The strings stay here - only the hover has a status bar.
+        CBuildVerdict v;
+        BuildSiteVerdict( _hexBuild, m_iBuild, GetBuildDir( ), bBuildOk, v );
+        int iWhy = v.m_iWhy;
+        m_iFound = v.m_iFound;
+        if ( v.m_bRefused )
         {
             theMap.SetBldgCur( _hexBuild, m_iBuild, GetBuildDir( ), 1 );
             if ( ( iWhy > 0 ) && ( iWhy <= 9 ) && ( !m_sHelpCantBuild[iWhy - 1].empty( ) ) )
@@ -2139,24 +2443,20 @@ void CWndArea::OnMouseMove( UINT nFlags, CPoint point )
             return;
         }
 
-        int iCurType = m_iFound < 0 ? 1 : 0;
+        int iCurType = v.m_iCurType;
         switch ( m_iBuild )
         {
         case CStructureData::farm:
         case CStructureData::lumber: {
-            int                   iMul = CFarmBuilding::LandMult( _hexBuild, m_iBuild, GetBuildDir( ) );
-            std::string           sText = "(" + IntToStr( iMul ) + ") ";
+            std::string           sText = "(" + IntToStr( v.m_iMul ) + ") ";
             CStatInst::IMPORTANCE iImp;
-            if ( ( iMul < 2 ) || ( m_iFound < 0 ) )
+            if ( v.m_iQuality == CBuildVerdict::bad )
             {
-                m_iFound = -1;
-                iCurType = 1;
                 sText += m_sHelpNoFarm;
                 iImp = CStatInst::critical;
             }
-            else if ( iMul < 5 )
+            else if ( v.m_iQuality == CBuildVerdict::warn )
             {
-                iCurType = 2;
                 sText += m_sHelpBadFarm;
                 iImp = CStatInst::warn;
             }
@@ -2173,49 +2473,16 @@ void CWndArea::OnMouseMove( UINT nFlags, CPoint point )
         case CStructureData::iron:
         case CStructureData::oil_well:
         case CStructureData::copper: {
-            CStructureData const* pData = theStructures.GetData( m_iBuild );
-            int                   iSize = pData->GetCX( ) * pData->GetCY( );
-            int                   qMul  = CMineBuilding::TotalQuantity( _hexBuild, m_iBuild, GetBuildDir( ) );
-            int                   iDiv;
-            switch ( m_iBuild )
-            {
-            case CStructureData::coal:
-                iDiv = MAX_MINERAL_COAL_QUANTITY;
-                break;
-            case CStructureData::iron:
-                iDiv = MAX_MINERAL_IRON_QUANTITY;
-                break;
-            case CStructureData::oil_well:
-                iDiv = MAX_MINERAL_OIL_QUANTITY;
-                break;
-            case CStructureData::copper:
-                iDiv = MAX_MINERAL_XIL_QUANTITY;
-                break;
-            default:
-                iDiv = MAX_MINERAL_QUANTITY;
-                break;
-            }
-
-            int iQuan = ( qMul * 1000 ) / ( iDiv * iSize );
-            if ( qMul > 0 )
-                iQuan = __max( 1, iQuan );
-            int dMul = CMineBuilding::TotalDensity( _hexBuild, m_iBuild, GetBuildDir( ) );
-            int iDen = ( dMul * 100 ) / ( MAX_MINERAL_DENSITY * iSize );
-            if ( dMul > 0 )
-                iDen = __max( 1, iDen );
-
-            std::string           sText = "(" + IntToStr( iQuan, 10, true ) + ", " + IntToStr( iDen ) + ") ";
+            std::string           sText = "(" + IntToStr( v.m_iQuan, 10, true ) + ", " +
+                                          IntToStr( v.m_iDen ) + ") ";
             CStatInst::IMPORTANCE iImp;
-            if ( ( qMul < 2 ) || ( m_iFound < 0 ) || ( dMul < 1 ) )
+            if ( v.m_iQuality == CBuildVerdict::bad )
             {
-                m_iFound = -1;
-                iCurType = 1;
                 sText += m_sHelpNoMine;
                 iImp = CStatInst::critical;
             }
-            else if ( ( iQuan < 400 / ( iSize / 2 ) ) && ( iDen < 40 / ( iSize / 2 ) ) )
+            else if ( v.m_iQuality == CBuildVerdict::warn )
             {
-                iCurType = 2;
                 sText += m_sHelpBadMine;
                 iImp = CStatInst::warn;
             }
@@ -3991,6 +4258,19 @@ void CWndArea::OnLButtonDown( UINT nFlags, CPoint point )
     // set these up so we know the down came from here
     case build_ready:
         m_iMode = build_loc;
+        // #38 DRAG-PLACE: a press WITH SHIFT arms the line gesture (the road drag's shape:
+        // record the origin, take the mouse). Without Shift nothing is armed and the button
+        // means what it always did. A press that never moves lays ONE site - BuildDragLine
+        // returns a single site for a zero-length drag - so a plain Shift-click is
+        // unchanged; only a drag of at least one footprint queues more than one.
+        EndBuildDrag( );   // a press never inherits the previous gesture's line
+        if ( nFlags & MK_SHIFT )
+        {
+            m_bBuildDrag = TRUE;
+            m_hexDragDn  = hexcoord;
+            m_hexDragDn.Wrap( );
+            CaptureMouse( );
+        }
         break;
     case rocket_ready:
         m_iMode = rocket_pos;
@@ -4235,7 +4515,10 @@ void CWndArea::OnLButtonUp( UINT nFlags, CPoint point )
     // local player. Debug asserted (player.h:1042); Release marched into the
     // null-deref (mac2 .ips 2026-07-02). No player → the click has no meaning.
     if ( theGame._GetMe( ) == NULL )
+    {
+        EndBuildDrag( );   // #38: the button is up, so no gesture survives this return
         return;
+    }
 
     CSubHex _sub = m_aa.WindowToSubHex( point );
     _sub.Wrap( );
@@ -4272,6 +4555,15 @@ void CWndArea::OnLButtonUp( UINT nFlags, CPoint point )
         // rocket_pos, where Shift keeps its 1996 meaning (bail back out of placement).
         const BOOL bQueueBuild = ( m_iMode == build_loc ) && ( nFlags & MK_SHIFT ) && ( m_pUnit != NULL ) &&
                                  ( m_pUnit->GetUnitType( ) == CUnit::vehicle );
+
+        // #38 DRAG-PLACE: re-lay the line from THE RELEASE POINT, so what gets queued is
+        // exactly the line the player last saw (the up can arrive at a pixel no move event
+        // reported). More than one site = this release is a drag; exactly one = the drag
+        // never left its first footprint, which is a plain Shift-place and goes down the
+        // single-site path below, m_iFound gate and all.
+        if ( bQueueBuild && m_bBuildDrag )
+            UpdateBuildDrag( point );
+        const BOOL bDragBuild = bQueueBuild && m_bBuildDrag && ( m_nDragSites > 1 );
         if ( ( nFlags & MK_SHIFT ) && ( !bQueueBuild ) && ( m_pUnit != NULL ) &&
              ( m_pUnit->GetUnitType( ) == CUnit::vehicle ) )
         {
@@ -4283,10 +4575,13 @@ void CWndArea::OnLButtonUp( UINT nFlags, CPoint point )
 
         hex = ToBuildUL( hex );
 
-        // make sure not on water or another city
-        if ( m_iFound < 0 )
+        // make sure not on water or another city. A DRAG skips its unbuildable sites one by
+        // one instead of failing as a whole - the hex under the cursor at the release is
+        // often past the last site that fits, and the sites behind it are still good.
+        if ( ( m_iFound < 0 ) && ( !bDragBuild ) )
         {
         bad_loc:
+            EndBuildDrag( );   // #38: a refused placement ends the gesture with it
             theGame.Event( m_iMode == rocket_pos ? EVENT_ROCKET_CANT : EVENT_CONST_CANT, EVENT_BAD, m_iBuild );
             m_iMode = ( m_iMode == rocket_pos ) ? rocket_ready : build_ready;
             return;
@@ -4339,6 +4634,34 @@ void CWndArea::OnLButtonUp( UINT nFlags, CPoint point )
 
         CVehicle* pVehBuild = (CVehicle*)m_pUnit;
 
+        // #38 DRAG-PLACE COMMIT: the whole previewed line, in drag order. Every site was
+        // judged by BuildSiteVerdict - the hover's own body - so an unbuildable one is
+        // SKIPPED and the rest of the line still queues; the host still validates each
+        // placement when the order is dispatched, exactly as it does for a single one.
+        // NextOrder() is called ONCE, after the appends: it starts an idle crane on the
+        // first site and is a no-op on a busy one, and calling it per site would dispatch
+        // the first, then refuse N-1 times for nothing.
+        if ( bDragBuild )
+        {
+            if ( HasMoveStops( pVehBuild ) )
+                StopRoute( pVehBuild );   // #38: one list, one meaning
+            const int nSites = m_nDragSites;
+            for ( int iOn = 0; iOn < nSites; iOn++ )
+            {
+                if ( !m_abDragOk[iOn] )
+                    continue;
+                CHexCoord hexSite( m_ahexDrag[iOn] );
+                pVehBuild->AddOrder( hexSite, CRoute::build, m_iBuild, GetBuildDir( ) );
+            }
+            EndBuildDrag( );   // the preview comes off now the orders carry their own ghosts
+            pVehBuild->NextOrder( );
+            if ( pVehBuild->m_pSdlRoute != NULL )
+                pVehBuild->m_pSdlRoute->RefreshRoute( );
+            m_iMode = build_ready;   // still armed, same crane, same building type
+            SetButtonState( );
+            return;
+        }
+
         // #38 QUEUE: the site passed the same check a plain placement makes (m_iFound
         // above), so append the order and STAY armed - same crane still selected, same
         // building type still on the cursor - so the next click places the next one.
@@ -4356,6 +4679,11 @@ void CWndArea::OnLButtonUp( UINT nFlags, CPoint point )
             SetButtonState( );
             return;
         }
+
+        // #38: this release is a plain (or single-site Shift) placement, so the gesture is
+        // over either way. The bad_loc / no-crane exits above go through BldgCurOff or
+        // return in modes the preview does not draw in, so this is the last one left.
+        EndBuildDrag( );
 
         CHexCoord hexDest( hex );
         BuildBldgDest( pVehBuild, m_iBuild, GetBuildDir( ), hexDest );
@@ -5632,6 +5960,7 @@ void CWndArea::OnActivate( UINT nState, CWnd* pWndOther, BOOL bMinimized )
     m_bPanBtnDown = FALSE;
     m_bRmbCmdDown = FALSE;
     m_bLineMove   = FALSE;
+    EndBuildDrag( );   // #38 drag-place is a drag gesture too
     ReleaseMouse( );
     ::ClipCursor( NULL );
 
@@ -7485,6 +7814,8 @@ void CWndArea::OnCloseWin( )
 void CWndArea::BldgCurOff( )
 {
 
+    EndBuildDrag( );   // #38: leaving placement mode (Esc/OnDeselect, SelectOff, a
+                       // completed placement) drops any drag-place line with it
     theMap.ClrBldgCur( );
     m_iBuild = -1;
     m_iMode  = normal;

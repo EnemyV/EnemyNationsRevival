@@ -1083,6 +1083,12 @@ static void AppendFootprintHatch( const CAnimAtr& aa, CHexCoord hexUL, int cx, i
 // put one. Dimmer, cooler, and static (phase 0) so the eye reads it as background.
 static const SDL_Color kQueuedGhostCol = { 120, 190, 255, 120 };
 
+// #38 DRAG-PLACE: an invalid site in the line, in the placement cursor's own cannot-build
+// red (DrawPlacementCursor's bad_cur below), because that is what the player has already
+// learnt to read as "not there". A VALID site borrows the queued-ghost blue: the line is a
+// picture of the orders it is about to become.
+static const SDL_Color kDragBadCol = { 225, 45, 45, 200 };
+
 static void DrawPlacementCursor( const CAnimAtr& aa, int phase, std::vector<SDL_Vertex>& verts );
 
 // #38 QUEUED BUILD GHOSTS. Every build order on every crane I own draws its own
@@ -1200,6 +1206,34 @@ static void AppendQueuedBuildGhosts( const CAnimAtr& aa, std::vector<SDL_Vertex>
     }
 }
 
+// #38 DRAG-PLACE LINE PREVIEW: the sites a Shift+drag in build mode is about to queue,
+// while the button is still down. Deliberately its OWN pass beside AppendQueuedBuildGhosts
+// rather than folded into it: that one reads committed orders off every crane I own, this
+// one reads one gesture in flight on one window, and keeping them separate is also what
+// lets a second in-flight preview land beside them without a merge fight.
+//
+// Allocates nothing: the sites live in a fixed array on the area window and the vertex
+// buffer is the caller's.
+static void AppendDragPlacePreview( const CAnimAtr& aa, std::vector<SDL_Vertex>& verts )
+{
+    // area.cpp publishes these (this TU is the GPU hot path and must not include area.h /
+    // MFC), the same way g_enEditHex is declared at its use sites.
+    extern int  g_enDragPlaceCount( CAnimAtr const* paa, int* pcx, int* pcy );
+    extern BOOL g_enDragPlaceSite( CAnimAtr const* paa, int iOn, CHexCoord& hexUL );
+
+    int       cx = 0, cy = 0;
+    const int nSites = g_enDragPlaceCount( &aa, &cx, &cy );
+    if ( ( nSites <= 0 ) || ( cx <= 0 ) || ( cy <= 0 ) )
+        return;
+
+    for ( int iOn = 0; iOn < nSites; ++iOn )
+    {
+        CHexCoord hexUL;
+        const BOOL bOk = g_enDragPlaceSite( &aa, iOn, hexUL );
+        AppendFootprintHatch( aa, hexUL, cx, cy, bOk ? kQueuedGhostCol : kDragBadCol, 0, verts );
+    }
+}
+
 // Draw the build/rocket placement footprint LIVE, every frame, in window space —
 // the original (1996) redrew the cursor area each frame, so the hatch animated for
 // free; our cached terrain texture is frozen between rebuilds, so the hatch must be
@@ -1225,6 +1259,7 @@ static void DrawBuildCursorOverlay( SDL_Renderer* r, const CAnimAtr& aa )
 
     // #38: the planned sites first, so a live placement cursor draws OVER them.
     AppendQueuedBuildGhosts( aa, verts );
+    AppendDragPlacePreview( aa, verts );
 
     DrawPlacementCursor( aa, phase, verts );
 
