@@ -200,7 +200,48 @@ static void TestClampAndDrag() {
 }
 
 // ---------------------------------------------------------------------------
-// 5. Press-and-hold auto-repeat clock.
+// 5. SDL2Listbox's gutter rect (SDL2UI.cpp ScrollbarRect) reaches the box's
+//    full inner height, not just the painted rows. m_rect.h is rarely a whole
+//    multiple of m_itemHeight (Pick Your Player: h=366, row=24 -> a 6px
+//    remainder left over), and the pre-fix bar was VisibleRows()*m_itemHeight
+//    tall, leaving that remainder as a strip of m_colBg background showing
+//    under the down arrow -- QA: "white box at the bottom of the Pick Your
+//    Player box". This fixture links only the header (never SDL2UI.cpp), so
+//    the bar-rect formula below is kept in sync by hand with the production
+//    one in SDL2UI.cpp::ScrollbarRect.
+// ---------------------------------------------------------------------------
+static SDL_Rect ListboxGutterRect(SDL_Rect box, int scrollbarW) {
+    // Mirrors SDL2UI.cpp::ScrollbarRect: spans the box's full inner height,
+    // inside the 1px bevel on each side -- NOT VisibleRows()*itemHeight.
+    return SDL_Rect{ box.x + box.w - scrollbarW, box.y + 1,
+                     scrollbarW - 1, box.h - 2 };
+}
+
+static void CheckGutterReachesBottomBevel(SDL_Rect box, int itemHeight, int items) {
+    const int scrollbarW = 12;
+    const int view = box.h / itemHeight;              // VisibleRows(): whole rows only
+    const int bevelRow = box.y + box.h - 1;            // the box's bottom 1px bevel row
+    const int barBottomPx = bevelRow - 1;              // bottom-most gutter pixel: flush against the bevel
+
+    SDL_Rect bar = ListboxGutterRect(box, scrollbarW);
+    CHECK_EQ(bar.y + bar.h - 1, barBottomPx);          // gutter reaches the bevel, no gap below it
+
+    Metrics m = Layout(bar, items, view, 0);
+    CHECK_EQ(m.down.y + m.down.h - 1, barBottomPx);    // down arrow flush with the bevel
+    CHECK(HitTest(m, bar.x + bar.w / 2, barBottomPx) == HitArrowDown);  // not HitNone
+}
+
+static void TestListboxGutterFullHeight() {
+    // Pick Your Player list box: h=366 over a 24px row -- 15 whole rows, 6px
+    // left over.
+    CheckGutterReachesBottomBevel(SDL_Rect{ 100, 50, 200, 366 }, 24, 40);
+    // A second, unrelated remainder: h=100 over a 22px row -- 4 whole rows,
+    // 12px left over. Different box, different font metrics, same invariant.
+    CheckGutterReachesBottomBevel(SDL_Rect{ 100, 50, 200, 100 }, 22, 10);
+}
+
+// ---------------------------------------------------------------------------
+// 6. Press-and-hold auto-repeat clock.
 // ---------------------------------------------------------------------------
 static void TestRepeat() {
     Repeat r;
@@ -237,6 +278,7 @@ int main() {
     TestArrowsAndTrack();
     TestHitPartition();
     TestClampAndDrag();
+    TestListboxGutterFullHeight();
     TestRepeat();
     int rc = microtest::Summary();
     std::printf("[ui_scrollbar] %s\n", rc == 0 ? "PASS" : "FAIL");
