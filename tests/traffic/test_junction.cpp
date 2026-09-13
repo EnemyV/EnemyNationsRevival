@@ -549,6 +549,193 @@ bool RunStaggered(const BendCase &c, int traffic, CSubHex req[2][TICKS], int &cl
     return true;
 }
 
+// ------------------------------------------ L, T and X: every approach ----
+//
+// The bends above are WinAstra's witness geometry. This section is the whole
+// junction family, built as REAL ORTHOGONAL ROADS - one junction hex plus
+// three-hex arms, grass everywhere else - and driven from every approach:
+//   L   two arms, all four orientations
+//   T   a bar and a stem, from both bar ends and from the stem, turning both ways
+//   X   four arms, turning left, right and straight from each of them
+// Two hull states for each (in-arm, out-arm) pair, both IN LANE:
+//   "along"  - the truck travels down the in-arm towards the junction. This is
+//              the approach bodies 1 and 2 already correct, and it must STAY
+//              corrected.
+//   "across" - the truck stands in the in-arm hex beside the junction with its
+//              hull already on the OUTGOING axis, so the sub-hex straight ahead
+//              is the unpaved corner between the two arms. On ea59494f the
+//              junction block bails out at OnPavement(_ahead) before the corner
+//              test is reached, and the raw diagonal - out of this arm into the
+//              other one, across that unpaved corner - is taken unexamined.
+//              These are the checks that fail against --baseline-ref ea59494f.
+// Both lane parities are covered: a lane is fixed by its direction of travel, so
+// driving every arm in both directions drives both parities of every arm.
+
+const int JX = 11, JY = 10;                      // the junction hex
+
+struct ArmSet { const char *name; int n; int d[4][2]; };
+const ArmSet g_armSets[7] = {
+    {"L-WS", 2, {{-1,0},{0, 1},{0,0},{0,0}}},
+    {"L-ES", 2, {{ 1,0},{0, 1},{0,0},{0,0}}},
+    {"L-WN", 2, {{-1,0},{0,-1},{0,0},{0,0}}},
+    {"L-EN", 2, {{ 1,0},{0,-1},{0,0},{0,0}}},
+    {"T-stemS", 3, {{-1,0},{1,0},{0, 1},{0,0}}},
+    {"T-stemN", 3, {{-1,0},{1,0},{0,-1},{0,0}}},
+    {"X",      4, {{-1,0},{1,0},{0,-1},{0,1}}},
+};
+
+// -2 the junction hex, -1 not road, otherwise the arm the hex belongs to
+int ArmIndex(const ArmSet &S, int hx, int hy) {
+    if ((hx == JX) && (hy == JY))
+        return -2;
+    for (int a = 0; a < S.n; ++a)
+        for (int k = 1; k <= 3; ++k)
+            if ((hx == JX + S.d[a][0]*k) && (hy == JY + S.d[a][1]*k))
+                return a;
+    return -1;
+}
+void PaveShape(const ArmSet &S) {
+    ClearMap();
+    theMap.hex[JX][JY].type = CHex::road;
+    for (int a = 0; a < S.n; ++a)
+        for (int k = 1; k <= 3; ++k)
+            theMap.hex[JX + S.d[a][0]*k][JY + S.d[a][1]*k].type = CHex::road;
+}
+
+const int DRIVE_TICKS = 4;
+struct DriveResult {
+    bool recovered;     // a step came from a recovery path, not the step arithmetic
+    bool offPavement;   // a requested step targets grass
+    bool cornerCut;     // a requested diagonal crosses an unpaved corner
+    bool opposing;      // a requested step lands in the outgoing arm's wrong lane
+    bool revisit;       // the hull returns to a sub-hex it already left
+    bool reached;       // the head gets inside an outgoing-arm hex
+    bool firstDiagonal; // the step out of the bend is a diagonal
+};
+
+DriveResult RunApproach(const ArmSet &S, int in, int out, bool across) {
+    DriveResult r = {false, false, false, false, false, false, false};
+    PaveShape(S);
+    const int *di = S.d[in], *dov = S.d[out];
+    int Hx = JX + di[0], Hy = JY + di[1];
+    // The hull sits in the in-arm hex beside the junction, IN ITS OWN LANE, at the
+    // leading edge of that hex for the way it points. Only the heading differs:
+    // "along" points down the arm at the junction, "across" points on the OUTGOING
+    // axis - which in the in-arm means pointing at the unpaved corner.
+    int tdx = across ? dov[0] : -di[0];
+    int tdy = across ? dov[1] : -di[1];
+    int hxs, hys;
+    if (tdx != 0) { hxs = Hx*2 + ((tdx > 0) ? 1 : 0); hys = Hy*2 + ((tdx > 0) ? 1 : 0); }
+    else          { hys = Hy*2 + ((tdy > 0) ? 1 : 0); hxs = Hx*2 + ((tdy > 0) ? 0 : 1); }
+    int Fx = JX + dov[0]*3, Fy = JY + dov[1]*3;
+    int destX = Fx*2 + ((dov[0] != 0) ? ((dov[0] > 0) ? 1 : 0) : ((dov[1] > 0) ? 0 : 1));
+    int destY = Fy*2 + ((dov[1] != 0) ? ((dov[1] > 0) ? 1 : 0) : ((dov[0] > 0) ? 1 : 0));
+
+    static CVehicle v;
+    v = CVehicle();
+    v.id = 70;
+    v.m_ptHead = CSubHex(hxs, hys);
+    v.m_ptTail = CSubHex(hxs - tdx, hys - tdy);
+    v.m_ptNext = v.m_ptHead;
+    v.m_ptDest = CSubHex(destX, destY);
+    v.m_hexDest = CHexCoord(destX >> 1, destY >> 1);
+    v.m_hexNext = CHexCoord(JX + dov[0], JY + dov[1]);
+    v.m_cMode = CVehicle::moving;
+    theVehicleHex.Set(v.m_ptHead, &v);
+    theVehicleHex.Set(v.m_ptTail, &v);
+
+    CSubHex seen[DRIVE_TICKS + 2];
+    int nSeen = 0;
+    seen[nSeen++] = v.m_ptHead;
+    int ri = 0;
+    g_recovery = 0;
+    g_traffic = 63;
+    for (int t = 0; t < DRIVE_TICKS; ++t) {
+        if (!v.GetNextHex(FALSE)) { r.recovered = true; break; }
+        CSubHex n = v.m_ptNext;
+        if (n == v.m_ptHead)
+            break;
+        int sx = CSubHex::Diff(n.x - v.m_ptHead.x), sy = CSubHex::Diff(n.y - v.m_ptHead.y);
+        if (!v.OnPavement(n))
+            r.offPavement = true;
+        if ((sx != 0) && (sy != 0)) {
+            CSubHex _sideX(v.m_ptHead.x + sx, v.m_ptHead.y), _sideY(v.m_ptHead.x, v.m_ptHead.y + sy);
+            _sideX.Wrap(); _sideY.Wrap();
+            if ((!v.OnPavement(_sideX)) || (!v.OnPavement(_sideY)))
+                r.cornerCut = true;
+            if (t == 0)
+                r.firstDiagonal = true;
+        }
+        // only the OUTGOING arm carries a lane for this truck: the junction hex is
+        // shared by both arms and the in-arm is behind us
+        if (ArmIndex(S, n.x >> 1, n.y >> 1) == out) {
+            BOOL inLane = (dov[0] != 0) ? ((n.y & 1) == ((dov[0] > 0) ? 1 : 0))
+                                        : ((n.x & 1) == ((dov[1] > 0) ? 0 : 1));
+            if (!inLane)
+                r.opposing = true;
+        }
+        for (int k = 0; k < nSeen; ++k)
+            if (seen[k] == n)
+                r.revisit = true;
+        seen[nSeen++] = n;
+
+        theVehicleHex.Set(v.m_ptHead, nullptr);
+        theVehicleHex.Set(v.m_ptTail, nullptr);
+        v.m_ptTail = v.m_ptHead;
+        v.m_ptHead = n;
+        v.m_ptNext = n;
+        theVehicleHex.Set(v.m_ptHead, &v);
+        theVehicleHex.Set(v.m_ptTail, &v);
+
+        if (ArmIndex(S, v.m_ptHead.x >> 1, v.m_ptHead.y >> 1) == out)
+            r.reached = true;
+        if (v.m_hexNext.SameHex(v.m_ptHead)) {
+            if (ri + 1 >= 3)
+                break;                       // route exhausted: stop rather than stall
+            ++ri;
+            v.m_hexNext = CHexCoord(JX + dov[0]*(ri + 1), JY + dov[1]*(ri + 1));
+        }
+    }
+    if (g_recovery != 0)
+        r.recovered = true;
+    theVehicleHex.Set(v.m_ptHead, nullptr);
+    theVehicleHex.Set(v.m_ptTail, nullptr);
+    return r;
+}
+
+void CheckApproaches() {
+    for (int si = 0; si < 7; ++si) {
+        const ArmSet &S = g_armSets[si];
+        for (int in = 0; in < S.n; ++in)
+            for (int out = 0; out < S.n; ++out) {
+                if (in == out)
+                    continue;
+                bool perp = ((S.d[in][0] == 0) != (S.d[out][0] == 0));
+                for (int mode = 0; mode < (perp ? 2 : 1); ++mode) {
+                    bool across = (mode == 1);
+                    DriveResult r = RunApproach(S, in, out, across);
+                    char line[200];
+                    const char *how = across ? "across" : "along";
+                    const char *what[7] = {
+                        "every step comes from the step arithmetic",
+                        "no requested step targets grass",
+                        "no requested step cuts an unpaved corner",
+                        "no requested step takes the opposing lane",
+                        "the hull never returns to a sub-hex it left",
+                        "the truck reaches the outgoing arm",
+                        "the step out of the bend is axis-aligned"};
+                    bool bad[7] = {r.recovered, r.offPavement, r.cornerCut, r.opposing,
+                                   r.revisit, !r.reached, r.firstDiagonal};
+                    for (int k = 0; k < (across ? 7 : 6); ++k) {
+                        std::snprintf(line, sizeof(line), "%s %s in%d out%d: %s",
+                                      S.name, how, in, out, what[k]);
+                        check(!bad[k], line);
+                    }
+                }
+            }
+    }
+}
+
 int main() {
     std::printf("bend  truck   tick  pre-fix      post-fix\n");
     for (int b = 0; b < 4; ++b) {
@@ -952,6 +1139,86 @@ int main() {
         g_roadDiag = 0;
         OneStep(g_bends[0], g_bends[0].t[0], 63, 0);
         check(g_roadDiag == 0, "road-diag: a corrected step on a fully paved bend is silent");
+    }
+
+    // every approach of every L, T and X
+    CheckApproaches();
+
+    // one named bend-turn line, so QA can grep the reason keyword
+    {
+        g_roadTurns = 0;
+        g_lastTurn[0] = 0;
+        RunApproach(g_armSets[0], 1, 0, true);      // L-WS, south arm across to west
+        check(g_roadTurns >= 1, "bend: the corrected step is logged as a ROAD-TURN");
+        check(std::strstr(g_lastTurn, "reason bend-turn") != nullptr,
+              "bend: the reason keyword is bend-turn");
+        std::printf("bend %s\n", g_lastTurn);
+    }
+
+    // THE GRASS INSIDE THE BEND IS NOT REACHABLE, and this is the proof rather
+    // than the assertion. The residual report's case (c) is a diagonal whose own
+    // target is the unpaved hex inside the bend - bCorner failing on
+    // OnPavement(_turn) alone, with body 2 inapplicable because the route hex is
+    // diagonal. For that to happen the diagonal has to land in the hex BETWEEN the
+    // truck's hex and the route hex, and the step arithmetic above cannot produce
+    // such a step: every diagonal it asks for lands either in the truck's own hex
+    // or in m_hexNext, both of which are road wherever a road turn is being made.
+    // Driven here over a fully paved map so no pavement guard can interfere, for
+    // every sub-hex position within a hex, every hull direction and every route hex
+    // within two on each axis.
+    {
+        // bit 16 CLEARED: the junction block is switched off, so m_ptNext is the raw
+        // step the corner test would have examined as _turn - which is what this
+        // sweep is about. With the block on, body 2's own pavement-checked turn-lane
+        // diagonal would be counted instead.
+        g_traffic = 63 & ~16;
+        ClearMap();
+        for (int x = 0; x < HEXES; ++x)
+            for (int y = 0; y < HEXES; ++y)
+                theMap.hex[x][y].type = CHex::road;
+        int strayDiagonals = 0, sampled = 0;
+        const int dirs[4][2] = {{1,0},{-1,0},{0,1},{0,-1}};
+        for (int sx = 0; sx < 2; ++sx)
+          for (int sy = 0; sy < 2; ++sy)
+            for (int d = 0; d < 4; ++d)
+              for (int rdx = -2; rdx <= 2; ++rdx)
+                for (int rdy = -2; rdy <= 2; ++rdy) {
+                    if ((rdx == 0) && (rdy == 0))
+                        continue;
+                    static CVehicle v;
+                    v = CVehicle();
+                    v.id = 72;
+                    v.m_ptHead = CSubHex(22 + sx, 20 + sy);
+                    v.m_ptTail = CSubHex(22 + sx - dirs[d][0], 20 + sy - dirs[d][1]);
+                    v.m_ptNext = v.m_ptHead;
+                    v.m_hexNext = CHexCoord(11 + rdx, 10 + rdy);
+                    v.m_ptDest = CSubHex(2, 2);            // far away: bAtDest stays FALSE
+                    v.m_hexDest = CHexCoord(1, 1);
+                    v.m_cMode = CVehicle::moving;
+                    theVehicleHex.Set(v.m_ptHead, &v);
+                    theVehicleHex.Set(v.m_ptTail, &v);
+                    g_recovery = 0;
+                    BOOL got = v.GetNextHex(FALSE);
+                    theVehicleHex.Set(v.m_ptHead, nullptr);
+                    theVehicleHex.Set(v.m_ptTail, nullptr);
+                    if ((got == FALSE) || (g_recovery != 0))
+                        continue;                          // a recovery path, not a step
+                    int stepX = CSubHex::Diff(v.m_ptNext.x - v.m_ptHead.x);
+                    int stepY = CSubHex::Diff(v.m_ptNext.y - v.m_ptHead.y);
+                    if ((stepX == 0) || (stepY == 0))
+                        continue;
+                    ++sampled;
+                    if ((!v.m_ptNext.SameHex(v.m_ptHead)) &&
+                        (!v.m_ptNext.SameHex(v.m_hexNext)))
+                        ++strayDiagonals;
+                }
+        std::printf("diagonal-target sweep: %d diagonals, %d landing outside own/route hex\n",
+                    sampled, strayDiagonals);
+        check(sampled > 0, "diagonal-target sweep: the sweep actually produced diagonals");
+        check(strayDiagonals == 0,
+              "diagonal-target sweep: no diagonal lands in the hex between - case (c) is unreachable");
+        g_traffic = 63;
+        g_recovery = 0;
     }
 
     checkRoadDiagGuarded();

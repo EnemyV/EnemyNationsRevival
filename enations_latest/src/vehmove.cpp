@@ -1237,9 +1237,23 @@ BOOL CVehicle::GetNextHex(BOOL bNew) {
             _ahead.Wrap();
             _turn.Wrap();
             CHexCoord _hexHere(m_ptHead);
-            if (OnPavement(m_ptHead) && OnPavement(_ahead) &&
-                (!(theMap._GetHex(m_ptHead)->GetUnits() & CHex::bridge)) &&
-                (!(theMap._GetHex(_ahead)->GetUnits() & CHex::bridge))) {
+            // THE ROAD AHEAD OPEN, versus the arm ENDING here. These used to be one
+            // guard, so a head standing on pavement whose next sub-hex along the
+            // heading is not pavement - the last sub-hex of a bend, of a T taken
+            // from the stem, of the outer corner of a crossroads - left the block
+            // before either correction was reached, and its raw diagonal into the
+            // other arm went unexamined. Bodies 1 and 2 still require the road to
+            // continue straight ahead, exactly as before; body 3 below is the case
+            // where it does not.
+            // A BRIDGE DECK IS NOT AN ARM THAT ENDS. OnPavement() answers TRUE for a
+            // bridge, so testing it alone would let body 3 run on a span, where the
+            // bridge exclusion above says InLane governs instead. bAheadRoad is the
+            // "the road really does stop here" test; bAheadOpen is the old guard.
+            BOOL bAheadRoad = OnPavement(_ahead);
+            BOOL bAheadOpen = bAheadRoad &&
+                              (!(theMap._GetHex(_ahead)->GetUnits() & CHex::bridge));
+            if (OnPavement(m_ptHead) &&
+                (!(theMap._GetHex(m_ptHead)->GetUnits() & CHex::bridge))) {
                 int oldX = xStep, oldY = yStep;
                 int rx = CHexCoord::Diff(m_hexNext.X() - _hexHere.X());
                 int ry = CHexCoord::Diff(m_hexNext.Y() - _hexHere.Y());
@@ -1292,7 +1306,7 @@ BOOL CVehicle::GetNextHex(BOOL bNew) {
                 //    that is squarely adjacent IS turnable from here and is left
                 //    alone. Requiring the hex ahead to be a different one keeps the
                 //    deferral to a single sub-hex and cannot loop.
-                BOOL bCorner = bInLane && (iCross != 0) && (rx != 0) && (ry != 0) &&
+                BOOL bCorner = bAheadOpen && bInLane && (iCross != 0) && (rx != 0) && (ry != 0) &&
                                (!_ahead.SameHex(m_ptHead)) && OnPavement(_turn);
                 const char *pszWhy = NULL;
 
@@ -1317,7 +1331,7 @@ BOOL CVehicle::GetNextHex(BOOL bNew) {
                 // 2. the turn itself: put it in the outgoing arm's lane. Only a
                 //    single-axis outgoing arm has a lane, and only a missing cross
                 //    component is filled in - an existing one is already a turn.
-                else if (((rx == 0) != (ry == 0)) && ((rx != hx) || (ry != hy)) &&
+                else if (bAheadOpen && ((rx == 0) != (ry == 0)) && ((rx != hx) || (ry != hy)) &&
                          ((rx != 0) ? ((xStep == rx) && (yStep == 0))
                                     : ((yStep == ry) && (xStep == 0)))) {
                     int nx = xStep, ny = yStep;
@@ -1338,6 +1352,61 @@ BOOL CVehicle::GetNextHex(BOOL bNew) {
                         xStep = nx;
                         yStep = ny;
                         pszWhy = "turn-lane";
+                    }
+                }
+
+                // 3. THE ARM ENDS HERE - the L bend, the T taken from the stem, the
+                //    outer corner of a crossroads. The sub-hex straight ahead is not
+                //    pavement at all, so the guard above used to end the block before
+                //    the corner test was reached, and the raw diagonal - out of this
+                //    arm straight into the other one, ACROSS THE UNPAVED CORNER HEX
+                //    between them - was taken with no examination of any kind.
+                //    REMOVING THE PAVEMENT GUARD IS NOT THE FIX: deferring along the
+                //    heading here is exactly what the guard was stopping, and would
+                //    drive the truck onto that grass. The step taken instead is
+                //    AXIS-ALIGNED, along the OUTGOING axis - the axis the hull is not
+                //    on - in the route hex's direction, and it is checked for pavement
+                //    before it is taken. If it is not pavement the step is left
+                //    exactly as it was: this body never invents an off-road move.
+                //    NO LANE PARITY IS ASKED OF THIS STEP, and that is deliberate.
+                //    A one-axis step cannot reach m_hexNext, which is a different hex
+                //    on BOTH axes here, so it always lands in the hex the two arms
+                //    SHARE - and a shared hex is in neither arm's lane. Requiring the
+                //    outgoing arm's parity of it rejects every real geometry there is:
+                //    driven over the orthogonal L, T and X, all twelve in-lane bends
+                //    fail that test, because the incoming lane hugs the opposite side
+                //    of the corner from the outgoing one. The parity fix and body 2
+                //    put the truck in the outgoing lane on the tick AFTER, from inside
+                //    the shared hex, and the fixture drives that out and asserts it.
+                //    IT CANNOT OSCILLATE. The step moves one sub-hex along a NON-ZERO
+                //    component of the route direction (rx and ry are both non-zero
+                //    here), so the sub-hex distance to m_hexNext on that axis falls by
+                //    exactly one and never rises, and it cannot fire twice in the same
+                //    place: after it the hull is on the outgoing axis, and the sub-hex
+                //    ahead of the hull is then the one this step just proved to be
+                //    pavement.
+                //    A BRIDGE IS NOT AN ARM THAT ENDS - bAheadRoad, not bAheadOpen -
+                //    so a span keeps the exclusion the guard above always gave it.
+                //    The diagonal that lands ON the unpaved corner rather than beside
+                //    it - bCorner failing on OnPavement(_turn) alone - is NOT handled
+                //    here, because the step arithmetic above cannot produce it: every
+                //    diagonal it asks for lands in the truck's own hex or in m_hexNext,
+                //    and the only head/route geometry that would reach the hex between
+                //    them carries |xStep| + |yStep| >= 5, which the "we may be REAL
+                //    off" test rejects before this block runs. The fixture sweeps that
+                //    exhaustively rather than asserting it.
+                else if (bInLane && (rx != 0) && (ry != 0) &&
+                         (xStep != 0) && (yStep != 0) &&
+                         (!bAheadRoad) && (!_ahead.SameHex(m_ptHead))) {
+                    int tdx = (hx != 0) ? 0 : rx;
+                    int tdy = (hx != 0) ? ry : 0;
+                    CSubHex _bend(m_ptHead.x + tdx, m_ptHead.y + tdy);
+                    _bend.Wrap();
+                    if (OnPavement(_bend) &&
+                        (!(theMap._GetHex(_bend)->GetUnits() & CHex::bridge))) {
+                        xStep = tdx;
+                        yStep = tdy;
+                        pszWhy = "bend-turn";
                     }
                 }
 
