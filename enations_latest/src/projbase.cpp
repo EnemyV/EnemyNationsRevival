@@ -1520,7 +1520,26 @@ void CUnit::Shoot (CUnit * pUnit, int iLOS)
 
     // figure the number of shots
 
-    div_t dtShoot = div ( m_dwReloadMod, GetFireRate () * AVG_SPEED_MUL );
+    // #87: GetFireRate() is meant to be > 0 here (callers gate on == 0 to mean "can't
+    // shoot", so Shoot() is only ever reached when it looked nonzero) -- but a NaN
+    // upstream (mainloop.cpp's power/workforce-ratio divide) can cast to a NEGATIVE
+    // fire rate that still isn't exactly 0, slips the caller gates, and then
+    // `iFireRate * AVG_SPEED_MUL` overflows back to exactly 0 here, turning `div` into
+    // a divide by zero. The fire-rate value can never legitimately be <= 0 at this
+    // point, so clamp it at the divide instead of trusting the upstream computation.
+    int iFireRate = GetFireRate ();
+    if ( iFireRate <= 0 )
+        {
+#if EN_GAMEPLAY_PROBES
+        char szFr[128];
+        sprintf_s (szFr, sizeof (szFr), "[SHOOT-FIRERATE] unit=%lu type=%d GetFireRate()=%d clamped to 1\n",
+            GetID (), GetUnitType (), iFireRate);
+        OutputDebugStringA (szFr);
+#endif
+        iFireRate = 1;
+        }
+
+    div_t dtShoot = div ( m_dwReloadMod, iFireRate * AVG_SPEED_MUL );
     m_dwReloadMod = dtShoot.rem;
     if ( dtShoot.quot == 0 )
         {
