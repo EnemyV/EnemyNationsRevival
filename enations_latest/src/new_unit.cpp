@@ -15,6 +15,7 @@
 #include "SDL2BuildTransport.h"
 #include "SDL2BuildingWindow.h"
 #include "altoutput.h"   // Coal-Liq mode-aware power-plant status text (#43)
+#include "econprod.h"    // #13 input-starvation gate for the production bar (display only)
 #include "event.h"
 #include "lastplnt.h"
 #include "player.h"
@@ -197,8 +198,31 @@ void CMaterialBuilding::ShowStatusText( std::string& str )
 // CBuilding::BuildMaterials / CMineBuilding::BuildMine / CFarmBuilding::BuildFarm).
 int CMaterialBuilding::GetProductionPer( ) const
 {
-    int iTime = GetData( )->GetBldMaterials( )->GetTime( );
+    CBuildMaterials const* pBm   = GetData( )->GetBldMaterials( );
+    int                    iTime = pBm->GetTime( );
     if ( iTime <= 0 ) return ( -1 );
+
+    // #13 (DISPLAY ONLY -- the sim is deliberately untouched): CBuilding::BuildMaterials
+    // advances m_iBuildDone off power+people with NO input gate (mainloop.cpp:2686-2690),
+    // so an iron-starved smelter swept this bar to 100% and then produced NOTHING: at
+    // batch completion iNum = GetStore( i ) / GetInput( i ) truncates to 0, bOut fires and
+    // the whole batch is thrown away (mainloop.cpp:2717-2790). Whenever a required input
+    // store cannot fund ONE batch the honest progress is therefore 0 -- the same input rule
+    // as this class's ShowStatusText "Idle" gate above, so the label and the bar now agree
+    // instead of contradicting each other.
+    // The sim keeps advancing on purpose: reaching the completion branch starved is what
+    // raises EVENT_MANUF_HALTED and MsgOutMat (the resupply request to the router/AI), and
+    // it is what keeps an intermittently-fed converter's throughput unchanged.
+    // Exception, mirroring the sim's own bBioFuel skip (mainloop.cpp:2677): with an
+    // alt-output conversion active the building does not consume its primary inputs at all,
+    // so the gate must not apply there.
+    CBuilding* self = (CBuilding*)this;   // IsFlag / AltOutput::Available are non-const
+    if ( !( self->IsFlag( CUnit::alt_oil ) && AltOutput::Available( self ) ) )
+        if ( enecon::MatBarStalled( CMaterialTypes::GetNumTypes( ),
+                                    [pBm]( int iIn ) { return pBm->GetInput( iIn ); },
+                                    [this]( int iIn ) { return GetStore( iIn ); } ) )
+            return ( 0 );
+
     int iPer = (int)( ( (long long)m_iBuildDone * 100 ) / iTime );
     return ( iPer > 100 ? 100 : iPer );
 }
