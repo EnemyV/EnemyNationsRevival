@@ -40,6 +40,7 @@ $srcLogic   = Join-Path $here 'test_ai_staging.cpp'
 $srcData    = Join-Path $here 'test_ai_data.cpp'
 $srcPaths   = Join-Path $here 'test_ai_paths.cpp'
 $srcStopgap = Join-Path $here 'test_ai_stopgap.cpp'
+$srcPick    = Join-Path $here 'test_ai_rsrchpick.cpp'
 $exeLogic   = Join-Path $outDir 'ai_tests.exe'
 $exeData    = Join-Path $outDir 'ai_data_tests.exe'
 $exePaths   = Join-Path $outDir 'ai_path_tests.exe'
@@ -47,6 +48,7 @@ $exeStopgap = Join-Path $outDir 'ai_stopgap_tests.exe'
 $srcClaim   = Join-Path $here 'test_ai_claim.cpp'
 $exeClaimOd = Join-Path $outDir 'ai_claim_tests_Od.exe'
 $exeClaimO2 = Join-Path $outDir 'ai_claim_tests_O2.exe'
+$exePick    = Join-Path $outDir 'ai_rsrchpick_tests.exe'
 $caigmgr    = Join-Path $here '..\..\enations_latest\src\caigmgr.cpp'
 $cairoute   = Join-Path $here '..\..\enations_latest\src\cairoute.cpp'
 $caiunit    = Join-Path $here '..\..\enations_latest\src\caiunit.hpp'
@@ -61,6 +63,7 @@ $clStopgap = "cl /nologo /EHsc /std:c++17 /W4 `"$srcStopgap`" /Fo`"$outDir\ai_st
 # of code changes behaviour if anything in it is UB.
 $clClaimOd = "cl /nologo /EHsc /std:c++17 /W4 /Od `"$srcClaim`" /Fo`"$outDir\ai_claim_Od.obj`" /Fe`"$exeClaimOd`""
 $clClaimO2 = "cl /nologo /EHsc /std:c++17 /W4 /O2 `"$srcClaim`" /Fo`"$outDir\ai_claim_O2.obj`" /Fe`"$exeClaimO2`""
+$clPick    = "cl /nologo /EHsc /std:c++17 /W4 `"$srcPick`" /Fo`"$outDir\ai_rsrchpick.obj`" /Fe`"$exePick`""
 
 # compile + run logic suite
 cmd /c "`"$vcvars`" >nul 2>&1 && $clLogic && `"$exeLogic`""
@@ -122,5 +125,19 @@ foreach ($pair in @(@($clClaimOd, $exeClaimOd, 'Od'), @($clClaimO2, $exeClaimO2,
     if ($rc -ne 0) { $claimExit = $rc }
 }
 
-if ($logicExit -ne 0 -or $dataExit -ne 0 -or $pathsExit -ne 0 -or $stopgapExit -ne 0 -or $claimExit -ne 0) { exit 1 }
+# compile + run the research cheapest-fallback pick test (bug #73): RNG mirror +
+# the shipped enaipick::PickFilled helper + a caigmgr.cpp source lint.
+$pickExit = 0
+cmd /c "`"$vcvars`" >nul 2>&1 && $clPick"
+if ($LASTEXITCODE -ne 0) { exit 2 }
+if (Test-Path $caigmgr) {
+    & $exePick (Resolve-Path $caigmgr).Path
+    $pickExit = $LASTEXITCODE
+    if ($pickExit -eq 2) { Write-Host "[ai_rsrchpick] SKIP (cannot open $caigmgr)"; $pickExit = 0 }
+} else {
+    & $exePick
+    $pickExit = $LASTEXITCODE
+}
+
+if ($logicExit -ne 0 -or $dataExit -ne 0 -or $pathsExit -ne 0 -or $stopgapExit -ne 0 -or $claimExit -ne 0 -or $pickExit -ne 0) { exit 1 }
 exit 0
