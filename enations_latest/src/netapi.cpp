@@ -4038,7 +4038,15 @@ void CGame::ProcessMessage(CNetCmd* pCmd )
                 if ( !pRs->m_bDiscovered )
                 {
                     CRsrchItem* pRi = &theRsrch.ElementAt( pMsg->m_iRsrch );
-                    pRs->m_iPtsDiscovered += ( pRi->m_iPtsRequired * theGame.m_iAi ) / 2;
+                    // m_iPtsRequired is 64-bit but m_iPtsDiscovered is a 32-bit LONG, so work
+                    // out the AI's free points wide and SATURATE. Letting this wrap would hand
+                    // RandNum( ) a negative argument in CPlayer::Research, which asserts -- the
+                    // exact failure the comments there record having hit before.
+                    long long llNew = (long long)pRs->m_iPtsDiscovered
+                                    + ( pRi->m_iPtsRequired * (long long)theGame.m_iAi ) / 2;
+                    if ( llNew > 0x7FFFFFFF ) llNew = 0x7FFFFFFF;
+                    if ( llNew < 0 )          llNew = 0;
+                    pRs->m_iPtsDiscovered = (LONG)llNew;
                 }
             }
         break;

@@ -261,7 +261,7 @@ void CRsrchArray::Open( )
         CRsrchItem* pFull = &ElementAt( bridge );
         CRsrchItem* pMid  = &ElementAt( medium_facilities );   // "Mid-sized Buildings"
 
-        pRi->m_iPtsRequired      = __max( 1, pFull->m_iPtsRequired / 2 );  // half of Bridge Building
+        pRi->m_iPtsRequired      = __max( 1LL, pFull->m_iPtsRequired / 2 );  // half of Bridge Building
         pRi->m_iScenarioReq      = pMid->m_iScenarioReq;                   // same gate as Mid-sized Buildings
         pRi->m_iNumRsrchRequired = 0;                                      // no research prereq
 
@@ -310,7 +310,7 @@ void CRsrchArray::Open( )
         static const int aiExtra[4] = {
             (int)manf_1, (int)const_2, (int)const_3, (int)nuclear };
 
-        int iPts = ElementAt( bridge ).m_iPtsRequired;
+        long long iPts = ElementAt( bridge ).m_iPtsRequired;
         for ( int iOn = 0; iOn < 4; iOn++ )
         {
             CRsrchItem* pRi = &ElementAt( bridge_2 + iOn );
@@ -355,7 +355,7 @@ void CRsrchArray::Open( )
         static const int aiExtra[3] = {
             (int)manf_1, (int)manf_2, (int)nuclear };
 
-        int iPts = ElementAt( cargo_handling ).m_iPtsRequired;
+        long long iPts = ElementAt( cargo_handling ).m_iPtsRequired;
         for ( int iOn = 0; iOn < 3; iOn++ )
         {
             CRsrchItem* pRi = &ElementAt( cargo_handling_2 + iOn );
@@ -466,8 +466,8 @@ void CRsrchArray::Open( )
             fuel_efficiency_19, fuel_efficiency_20, fuel_efficiency_21, fuel_efficiency_22,
             fuel_efficiency_23 };
 
-        int iBase = ElementAt( gas_turbine ).m_iPtsRequired;   // B = gas_turbine cost
-        int iPts  = iBase;                                     // level 1 = B
+        long long iBase = ElementAt( gas_turbine ).m_iPtsRequired;   // B = gas_turbine cost
+        long long iPts  = iBase;                               // level 1 = B
         for ( int iOn = 0; iOn < 23; iOn++ )
         {
             CRsrchItem* pRi = &ElementAt( aiIdx[iOn] );
@@ -545,7 +545,7 @@ void CRsrchArray::Open( )
         static const int aiExtra[10] = {
             -1, -1, -1, -1, -1, (int)atk_3, -1, -1, -1, -1 };
 
-        int iBase = ElementAt( gas_turbine ).m_iPtsRequired;   // B, same base as Fuel Efficiency
+        long long iBase = ElementAt( gas_turbine ).m_iPtsRequired;   // B, same base as Fuel Efficiency
         for ( int iOn = 0; iOn < 10; iOn++ )
         {
             CRsrchItem* pRi = &ElementAt( vehicle_speed_1 + iOn );
@@ -599,7 +599,7 @@ void CRsrchArray::Open( )
             "Fluidic drives are fielded. Our vehicles move 1% faster.",
             "Gyroscopic stabilizers are perfected. Our vehicles reach their top speed." };
 
-        int iBase = ElementAt( gas_turbine ).m_iPtsRequired;   // B, same base as Fuel Efficiency
+        long long iBase = ElementAt( gas_turbine ).m_iPtsRequired;   // B, same base as Fuel Efficiency
         for ( int iOn = 0; iOn < 2; iOn++ )
         {
             CRsrchItem* pRi = &ElementAt( vehicle_speed_11 + iOn );
@@ -728,7 +728,7 @@ void CRsrchArray::Open( )
         static const int aiFrIdx[7] = {
             fracking_1, fracking_2, fracking_3, fracking_4, fracking_5, fracking_6, fracking_7 };
 
-        int iPts = ElementAt( gas_turbine ).m_iPtsRequired;
+        long long iPts = ElementAt( gas_turbine ).m_iPtsRequired;
         for ( int iOn = 0; iOn < 7; iOn++ )
         {
             CRsrchItem* pRi = &ElementAt( aiFrIdx[iOn] );
@@ -785,7 +785,7 @@ void CRsrchArray::Open( )
         // raised from farm_1 (an early ag tech) to gas_turbine so every tier costs more, and the
         // T1 entry gate now also requires ADVANCED MANUFACTURING (manf_3) -- the same high gate
         // coal-liquefaction sits behind -- so Biomass Digestion can't be reached early.
-        int iPts = ElementAt( gas_turbine ).m_iPtsRequired;
+        long long iPts = ElementAt( gas_turbine ).m_iPtsRequired;
         for ( int iOn = 0; iOn < 6; iOn++ )
         {
             CRsrchItem* pRi = &ElementAt( biofuel_1 + iOn );
@@ -902,7 +902,7 @@ void CRsrchArray::Open( )
         static const int aiChIdx[5] = {
             charcoal_1, charcoal_2, charcoal_3, charcoal_4, charcoal_5 };
 
-        int iPts = ElementAt( gas_turbine ).m_iPtsRequired;
+        long long iPts = ElementAt( gas_turbine ).m_iPtsRequired;
         for ( int iOn = 0; iOn < 5; iOn++ )
         {
             CRsrchItem* pRi = &ElementAt( aiChIdx[iOn] );
@@ -1071,7 +1071,7 @@ void CRsrchArray::Open( )
         // so a future append cannot silently shift the line.
         static const int aiMoIdx[5] = { moho_2, moho_3, moho_4, moho_5, moho_6 };
 
-        int iPts = ElementAt( mine_2 ).m_iPtsRequired;   // basis: the topic that grants base Moho
+        long long iPts = ElementAt( mine_2 ).m_iPtsRequired;   // basis: the topic that grants base Moho
         for ( int iOn = 0; iOn < 5; iOn++ )
         {
             CRsrchItem* pRi = &ElementAt( aiMoIdx[iOn] );
@@ -1186,7 +1186,7 @@ void CRsrchArray::Open( )
             "The fast neutron cores are online. They burn what the old piles threw away and our nuclear plants give more power still.",
             "The fuel cycle is closed. Nothing leaves our nuclear plants but electricity, and they give more power than we thought those piles had in them." };
 
-        int iPts = ElementAt( nuclear ).m_iPtsRequired;   // basis: the topic that unlocks the plant
+        long long iPts = ElementAt( nuclear ).m_iPtsRequired;   // basis: the topic that unlocks the plant
         for ( int iOn = 0; iOn < 5; iOn++ )
         {
             CRsrchItem* pRi = &ElementAt( aiNkIdx[iOn] );
@@ -1292,14 +1292,17 @@ void CRsrchArray::Open( )
     // drive the emitter. Tiers 2-6 each cost RESONANCE_COST_MULT x the tier below and chain it,
     // giving 1.488M / 4.464M / 13.392M / 40.176M / 120.528M / 361.584M.
     //
-    // CEILING -- read this before raising RESONANCE_COST_MULT. m_iPtsRequired is an int, and
-    // CPlayer::Research compares against m_iPtsRequired * 2, so the usable ceiling is INT_MAX/2
-    // (RSRCH_PTS_CEILING below), not INT_MAX: above it the comparison goes negative and the
-    // topic completes instantly or never. At 5x this line ran 1.488M .. 4.65 BILLION and the top
-    // tier blew straight through that, so the multiplier is 3x, which lands the whole ladder
-    // comfortably under it -- the top tier is ~361M, the same order as the existing end-game
-    // techs (atk_8 is 9.92M). The ladder is still computed in 64-bit and clamped as a backstop,
-    // so a future retune degrades to a squashed top tier rather than to UB.
+    // CEILING -- read this before raising RESONANCE_COST_MULT. m_iPtsRequired is now 64-bit, so
+    // the cost itself no longer overflows, but the topic still has to be REACHED: the accumulator
+    // CPlayer::Research adds into, CRsrchStatus::m_iPtsDiscovered, is a 32-bit LONG (and is
+    // serialized + sent in CNetSaveInfo at that width, so it cannot be widened without a save and
+    // protocol bump). It therefore tops out near 2^31, and the guaranteed-completion branch needs
+    // it to pass m_iPtsRequired * 2 -- which puts the real ceiling at INT_MAX/2, RSRCH_PTS_CEILING
+    // below. A cost above that can only ever complete through the random branch, and one above
+    // ~2^31 can never complete at all. At 5x this line ran 1.488M .. 4.65 BILLION and sailed past
+    // both, so the multiplier is 3x: the whole ladder lands under the ceiling with the top tier at
+    // ~361M, the same order as the existing end-game techs (atk_8 is 9.92M). The clamp stays as a
+    // backstop so a future retune degrades to a squashed top tier rather than an unwinnable one.
     // The AI's frozen research path doesn't author these, though its cheapest-available
     // fallback can still reach them.
     {
@@ -1351,7 +1354,7 @@ void CRsrchArray::Open( )
 
             if ( iOn > 0 )
                 llPts *= RESONANCE_COST_MULT;
-            pRi->m_iPtsRequired      = (int)( ( llPts > RSRCH_PTS_CEILING ) ? RSRCH_PTS_CEILING : llPts );
+            pRi->m_iPtsRequired      = ( llPts > RSRCH_PTS_CEILING ) ? RSRCH_PTS_CEILING : llPts;
             pRi->m_iNumBldgsRequired = 0;
 
             // Count the real prereqs and take the LATEST scenario any of them needs -- the

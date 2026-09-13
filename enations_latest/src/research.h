@@ -47,7 +47,13 @@ public:
 		CRsrchItem ();
 		virtual ~CRsrchItem ();
 
-	int				m_iPtsRequired;					// points required to discover
+	// 64-bit: the in-code tier ladders multiply up fast, and CPlayer::Research evaluates
+	// m_iPtsRequired * 2, so a 32-bit field overflowed that product to NEGATIVE and completed
+	// the topic on its first tick. NOT serialized (rebuilt from the DAT + the in-code setup on
+	// every load), so widening it is save- and wire-safe. The PRACTICAL ceiling is still ~2^31
+	// though: m_iPtsDiscovered, the accumulator that has to climb to this, is a 32-bit LONG and
+	// is both serialized and on the wire. See RSRCH_PTS_CEILING in research.cpp.
+	long long		m_iPtsRequired;					// points required to discover
 	int *			m_piRsrchRequired;			// other items that must be researched first
 	int				m_iNumRsrchRequired;
 	int *			m_piBldgsRequired;			// buildings that must be built first

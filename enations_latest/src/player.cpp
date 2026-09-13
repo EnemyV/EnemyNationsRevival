@@ -820,7 +820,8 @@ void CPlayer::Research( int iNumSec )
     {
         if ( !m_bAutoRsrchPending )
         {
-            int iBest = 0, iMinCost = 0x7FFFFFFF;
+            int       iBest    = 0;
+            long long iMinCost = 0x7FFFFFFFFFFFFFFFLL;   // 64-bit: m_iPtsRequired is
             for ( int i = 1; i < theRsrch.GetSize( ); ++i )   // cheapest available; lowest index wins ties
                 if ( CanRsrch( i ) && theRsrch.ElementAt( i ).m_iPtsRequired < iMinCost )
                 {
