@@ -982,9 +982,12 @@ int SDL2Listbox::ContentW() const {
 
 SDL_Rect SDL2Listbox::ScrollbarRect() const {
     if (!HasScrollbar()) return SDL_Rect{ 0, 0, 0, 0 };
-    // Spans exactly the painted rows, so the bar's extent equals the list's.
+    // Spans the box's full inner height (inside the 1px bevel on each side), not
+    // just the painted rows: m_rect.h is rarely a multiple of m_itemHeight, and a
+    // bar sized to VisibleRows()*m_itemHeight left a sub-row strip of m_colBg
+    // background showing under the down arrow at the bottom of the gutter.
     return SDL_Rect{ m_rect.x + m_rect.w - kScrollbarW, m_rect.y + 1,
-                     kScrollbarW - 1, VisibleRows() * m_itemHeight };
+                     kScrollbarW - 1, m_rect.h - 2 };
 }
 
 // The gutter split into its up arrow, track and down arrow, with the thumb placed
