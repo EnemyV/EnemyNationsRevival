@@ -11,6 +11,7 @@
 
 #include "netcmd.h"
 
+#include "edicts.h"
 #include "building.inl"
 #include "lastplnt.h"
 #include "player.h"
@@ -1271,6 +1272,14 @@ void CMsgVehDest::AssertValid( ) const
     ASSERT_HEX_COORD( &m_hexDest );
 }
 
+void CNetEdictToggle::AssertValid( ) const
+{
+
+    ASSERT( m_bMsg == edict_toggle );
+    ASSERT( ( 0 <= m_iEdict ) && ( m_iEdict < EDICT_COUNT ) );
+    ASSERT( ( m_bOn == 0 ) || ( m_bOn == 1 ) );
+}
+
 void CNetHexRetype::AssertValid( ) const
 {
 
@@ -1523,6 +1532,10 @@ void CNetCmd::AssertMsgValid( ) const
     case research_disc:
         break;
 
+    case edict_toggle:
+        ( (CNetEdictToggle*)this )->AssertValid( );
+        break;
+
     case hex_retype:
         ( (CNetHexRetype*)this )->AssertValid( );
         break;
@@ -1590,6 +1603,10 @@ BOOL CNetCmd::FitsBuffer( int cbAvail ) const
     case err_build_road:       cbNeed = sizeof( CMsgBuildRoad ); break;
     case road_new:             cbNeed = sizeof( CMsgRoadNew ); break;
     case road_done:            cbNeed = sizeof( CMsgRoadDone ); break;
+    // MUST be listed: an unlisted type falls through to `default: cbNeed = sizeof( CNetCmd )`,
+    // so a truncated 12-byte datagram would pass validation and the RX cast would read
+    // m_iPlyrNum/m_iEdict/m_bOn off the end of the buffer (BUGS #98).
+    case edict_toggle:         cbNeed = sizeof( CNetEdictToggle ); break;
     // MUST be listed: an unlisted type falls through to `default: cbNeed = sizeof( CNetCmd )`,
     // so a truncated 12-byte datagram would pass validation and the RX cast would read
     // m_iX/m_iY/m_iType off the end of the buffer.

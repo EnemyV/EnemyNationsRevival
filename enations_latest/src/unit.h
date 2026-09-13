@@ -517,7 +517,17 @@ class CUnit : public CUnitTile
         // flag was added and went stale once serialization covered the flags word. The
         // stale note cost an investigation and nearly a needless save-format change on
         // 2026-08-02; verified against the serialize code before rewriting it.)
-        alt_oil         = 0x0800
+        alt_oil         = 0x0800,
+
+        // The OR of every flag above -- kept last, derived, so CUnit::AssertValid's
+        // flag-mask check (new_unit.cpp) can assert against ~all_flags instead of a
+        // hand-written mask that silently goes stale each time a flag is added
+        // (BUGS #89: alt_oil shipped without the mask being widened, so the assert
+        // rejected a valid, in-use flag under STRICTER_ASSERTS). Never remove the
+        // assert -- if a new flag is added, add it here and the assert stays correct.
+        all_flags       = dying | selected | stopped | event | destroying | scenario
+                        | repair_stop | abandoned | dead | unit_set_damage | show_bldg
+                        | alt_oil
     };
     void         SetFlag( UNIT_FLAGS fl ) { m_unitFlags = (UNIT_FLAGS)( (int)m_unitFlags | (int)fl ); }
     void         ClrFlag( UNIT_FLAGS fl ) { m_unitFlags = (UNIT_FLAGS)( (int)m_unitFlags & ~(int)fl ); }

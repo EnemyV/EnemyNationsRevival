@@ -610,16 +610,25 @@ void SDL2RouteWindow::OnDelete() {
     while (n > 0 && pos) { m_pVeh->GetRouteList().GetNext(pos); n--; }
 
     if (pos) {
-        if (pos == m_pVeh->GetRoutePos()) {
-            POSITION pos_next = pos;
-            m_pVeh->GetRouteList().GetNext(pos_next);
+        bool bWasCursor = (pos == m_pVeh->GetRoutePos());
+        POSITION pos_succ = pos;
+        m_pVeh->GetRouteList().GetNext(pos_succ);   // successor before delete, or NULL if pos was the tail
+
+        CRoute* pR = m_pVeh->GetRouteList().GetAt(pos);
+        m_pVeh->GetRouteList().RemoveAt(pos);
+        delete pR;
+
+        if (bWasCursor) {
+            // pos_succ is still a live node (it is not the one just freed); only when
+            // there was no successor (pos was the tail, including the single-element
+            // case where pos was head and tail both) do we need a fallback, and that
+            // fallback must be read AFTER the delete -- reading it before would return
+            // the node just freed when pos was also the head (e.g. a one-element list).
+            POSITION pos_next = pos_succ;
             if (!pos_next)
                 pos_next = m_pVeh->GetRouteList().GetHeadPosition();
             m_pVeh->SetRoutePos(pos_next);
         }
-        CRoute* pR = m_pVeh->GetRouteList().GetAt(pos);
-        m_pVeh->GetRouteList().RemoveAt(pos);
-        delete pR;
     }
 
     if (m_selectedIndex >= (int)m_pVeh->GetRouteList().GetCount())

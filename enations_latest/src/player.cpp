@@ -1392,6 +1392,13 @@ void CPlayer::Serialize( CArchive& ar )
         ar >> m_iPwrHave;
         ar >> m_iPplNeedBldg;
         ar >> m_iPplBldg;
+        // #82/#87: a pre-fix or otherwise corrupted save can carry m_iPplBldg near INT_MIN
+        // or INT_MAX (the runaway-accumulator symptom; its write-site origin is still
+        // unexplained -- see BUGS #82). Loaded unclamped it feeds `iPplTotal * 60` in
+        // PeopleAndFood (signed overflow before the float cast) and the m_fPplMult divide
+        // in StartLoop before either runs even once. This does not repair or explain the
+        // bad value -- it only stops an already-bad number from propagating once loaded.
+        m_iPplBldg = __minmax( 1, 1000000, m_iPplBldg );
         ar >> m_iPplVeh;
         ar >> m_iFood;
         ar >> m_iFoodProd;
