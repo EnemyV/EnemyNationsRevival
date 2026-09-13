@@ -7,6 +7,7 @@
 
 
 #include "enprobes.h"
+#include "en_logpath.h"   // EnLogPath - msgtype.log beside the other probe sinks
 #include "ai.h"
 #include "altoutput.h"
 #include "edicts.h"     // EDICT_DESPERATE_MEASURES (rocket scrounge edict)
@@ -175,7 +176,7 @@ int CConquerApp::Run( )
             }
 #endif
 
-            uint64_t _perfPumpStart = Perf::IsEnabled() ? Perf::Now() : 0;
+            uint64_t _perfPumpStart = Perf::IsEnabled() ? Perf::NowIfEnabled() : 0;
 
             // SPIKE SPLIT: [SLOWFRAME] showed SEC_PUMP is 74.5ms of an 85ms spike frame
             // (96% of spikes) while sim/render/present stay flat. SEC_PUMP covers the SDL
@@ -616,6 +617,39 @@ BOOL CConquerApp::CheckYield( )
     return ( FALSE );
 }
 
+// PER-TYPE MESSAGE HISTOGRAM (WinFable's round-4 instrument). Counters are out:
+// ~30 CNetCmd types x 2 drains x 3 metrics would blow MAX_COUNTERS=160, so this
+// accumulates into a fixed array and writes its own sink. g_enMsgDrain says WHICH
+// drain is running (0 = head, at the top of the pump; 1 = tail, mainloop's
+// ProcessAllMessages(100) after the Operate block) because they hold different
+// traffic. Whole body is inert unless Perf::IsEnabled().
+namespace {
+    const int kMsgTypes = 64;
+    struct MsgStat { long long n; long long us; long long maxUs; };
+    MsgStat g_msgStat[2][kMsgTypes] = {};
+    int     g_enMsgDrain = 0;
+    DWORD   g_msgDumpLast = 0;
+
+    void EnMsgHistoDump()
+    {
+        if ( !Perf::IsEnabled( ) ) return;
+        DWORD now = timeGetTime( );
+        if ( g_msgDumpLast != 0 && now - g_msgDumpLast < 10000 ) return;
+        g_msgDumpLast = now;
+        FILE* f = fopen( EnLogPath( "msgtype.log" ).c_str( ), "a" );
+        if ( f == NULL ) return;
+        for ( int d = 0; d < 2; ++d )
+            for ( int t = 0; t < kMsgTypes; ++t )
+                if ( g_msgStat[d][t].n > 0 )
+                    fprintf( f, "[MSGTYPE] t=%lu drain=%s type=%d n=%lld total_ms=%.1f max_ms=%.1f\n",
+                             (unsigned long)( now / 1000 ), d ? "tail" : "head", t,
+                             g_msgStat[d][t].n,
+                             (double)g_msgStat[d][t].us / 1000.0,
+                             (double)g_msgStat[d][t].maxUs / 1000.0 );
+        fclose( f );
+    }
+}
+
 void CConquerApp::ProcessAllMessages( DWORD dwBudgetMs )
 {
 
@@ -663,7 +697,15 @@ void CConquerApp::ProcessAllMessages( DWORD dwBudgetMs )
             // ProcessAllMessages under a 400ms budget). Name the message type.
             DWORD dwMsgT0  = timeGetTime( );
             int   iMsgType = (int)( (CNetCmd*)pBuf )->GetType( );
+            const uint64_t _mhT0 = Perf::NowIfEnabled( );
             theGame.ProcessMessage( (CNetCmd*)pBuf );
+            if ( Perf::IsEnabled( ) && iMsgType >= 0 && iMsgType < kMsgTypes )
+            {
+                const long long _us = (long long)Perf::ElapsedUs( _mhT0 );
+                MsgStat& st = g_msgStat[ g_enMsgDrain ? 1 : 0 ][ iMsgType ];
+                st.n++; st.us += _us;
+                if ( _us > st.maxUs ) st.maxUs = _us;
+            }
             DWORD dwMsgMs = timeGetTime( ) - dwMsgT0;
             if ( dwMsgMs > 40 )   // was 250: tests ONE message, but msg= is a SUM - never fired
             {
@@ -1354,7 +1396,7 @@ void CConquerApp::GraphicsEnginePump( )
         // got stuck waiting here?
         // take the critical section while we do our thing
         // ("got stuck waiting here?" is in the 1996 source - so measure it and answer.)
-        const uint64_t _qCs = Perf::Now( );
+        const uint64_t _qCs = Perf::NowIfEnabled( );
         EnterCriticalSection( &cs );
         Perf::CounterAddElapsedUs( "pump.cswait.us", _qCs );
 
@@ -1577,12 +1619,15 @@ void CConquerApp::GraphicsEnginePump( )
         // budget, i.e. frames this call cut short.
         {
             Perf::ScopeNamed _mt( "msg.tail.us" );
+            g_enMsgDrain = 1;
             const DWORD _mtBack = theGame.m_messagePointerList.GetCount( );
             Perf::GaugeSet( "msg.tail.backlog", (int64_t)_mtBack );
             const DWORD _mt0 = timeGetTime( );
             ProcessAllMessages( 100 );
             if ( timeGetTime( ) - _mt0 >= 100 )
                 Perf::CounterInc( "msg.tail.capped" );
+            g_enMsgDrain = 0;
+            EnMsgHistoDump( );
         }
     }  // if operate
 

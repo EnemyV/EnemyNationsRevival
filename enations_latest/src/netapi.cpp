@@ -3062,7 +3062,7 @@ static void UnitAttacked( CMsgUnitAttacked* pMsg )
                             // could never have exonerated it. flee.reject counts searches
                             // whose entire cost is thrown away.
                             Perf::CounterInc( "flee.calls" );
-                            const uint64_t _qFlee = Perf::Now( );
+                            const uint64_t _qFlee = Perf::NowIfEnabled( );
                             int length = 0;
                             CHexCoord *path = thePathMgr.GetPath(NULL, from, to, length,
                                 pVeh->GetData()->GetType(), FALSE, TRUE);
