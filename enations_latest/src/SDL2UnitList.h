@@ -2,6 +2,7 @@
 
 #include <SDL.h>
 #include <SDL_ttf.h>
+#include "SDL2Scrollbar.h"   // EnSb:: shared scrollbar geometry/chrome/hit-test
 #include <string>
 #include <vector>
 #include <functional>
@@ -40,9 +41,20 @@ public:
 
     static const int ITEM_HT = 64;
     static const int SB_WIDTH = 14;  // Scrollbar width
+    // One scrollbar-arrow click, in pixels. This list scrolls by PIXELS (a row is
+    // 64px tall), so a whole row per click would be a jump; 16px is a quarter row
+    // and a third of a wheel notch, which is what makes press-and-hold read as a
+    // smooth scroll rather than a series of hops.
+    static const int SB_ARROW_STEP = 16;
 
 private:
     TTF_Font* GetFont(int size);
+    // Scrollbar geometry (track, thumb, and the arrow buttons at the ends), derived
+    // from the live panel size + item count so Render() and HandleEvent() cannot
+    // disagree. Shared with SDL2Listbox/SDL2RouteWindow via SDL2Scrollbar.h.
+    EnSb::Metrics SbMetrics() const;
+    // The ONE place m_scrollY moves: arrows, pages, wheel, drag and auto-repeat.
+    void ScrollPixels(int dy);
     void RenderItem(SDL_Surface* dst, int idx, int x, int y, int w, bool selected);
     void RenderShadowText(SDL_Surface* dst, TTF_Font* font, const char* text,
                           int x, int y, int maxW, SDL_Color fg, SDL_Color shadow);
@@ -106,6 +118,7 @@ private:
     // Scrollbar drag state
     bool m_sbDragging = false;
     int  m_sbDragOffset = 0;
+    EnSb::Repeat m_sbRepeat;   // arrow held down; ticked at the top of Render()
 
     // Status bar height (from ICON_DAMAGE cyBack)
     int m_statBarHt = 14;
