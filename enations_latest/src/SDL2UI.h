@@ -2,6 +2,7 @@
 
 #include <SDL.h>
 #include <SDL_ttf.h>
+#include "SDL2Scrollbar.h"   // EnSb:: shared scrollbar geometry/chrome/hit-test
 #include <string>
 #include <vector>
 #include <functional>
@@ -341,9 +342,14 @@ private:
     // unadvertised (no bar), so a player with more saves than fit simply could
     // not reach them. The bar appears only when the list actually overflows, so
     // short lists are pixel-identical to before.
+    //
+    // The bar's geometry (track, thumb, and the two arrow buttons at the ends)
+    // comes from EnSb::Layout in SDL2Scrollbar.h, shared with SDL2RouteWindow and
+    // SDL2UnitList, and Render() plus every hit-test derive from the SAME call.
     static const int kScrollbarW = 12;
     bool m_sbDragging   = false;
     int  m_sbDragOffset = 0;   // grab point inside the thumb, in pixels
+    EnSb::Repeat m_sbRepeat;   // press-and-hold on an arrow; ticked from Render()
 
     // Scroll geometry. Render() and the click hit-test BOTH derive from these,
     // so the painted row -> item mapping and its inverse cannot drift apart.
@@ -351,9 +357,13 @@ private:
     int      MaxScroll() const;
     bool     HasScrollbar() const;
     int      ContentW() const;          // row width excluding the scrollbar gutter
-    SDL_Rect ScrollbarRect() const;
+    SDL_Rect ScrollbarRect() const;     // the whole gutter (track + both arrows)
+    EnSb::Metrics SbMetrics() const;    // gutter broken into arrows/track/thumb
     SDL_Rect ThumbRect() const;
     void     ClampScroll();
+    // Scroll by n rows (n may be negative) and clamp. The one place the offset
+    // moves for arrows, pages, the wheel and auto-repeat alike.
+    void     ScrollBy(int rows);
     // Exact inverse of the paint mapping: a y in widget coords -> item index,
     // or -1 when that y is not on a painted row.
     int      RowAtY(int y) const;

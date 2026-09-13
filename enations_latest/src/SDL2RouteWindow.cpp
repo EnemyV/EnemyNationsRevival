@@ -19,8 +19,15 @@
 static char THIS_FILE[] = __FILE__;
 #endif
 
+// Every open route window, so GameWindow::PollEvents can advance scrollbar arrow
+// auto-repeat for all of them once a frame. This window repaints only on demand
+// (unlike SDL2Listbox, whose Render runs every frame), so it has no per-frame hook
+// of its own and a held arrow would otherwise step exactly once.
+static std::vector<SDL2RouteWindow*> s_openRouteWindows;
+
 SDL2RouteWindow::SDL2RouteWindow(GameWindow* gw, CVehicle* pVeh, SDL2Panel* areaPanel)
     : m_gameWindow(gw), m_pVeh(pVeh) {
+    s_openRouteWindows.push_back(this);
 
     // Find a font
     m_fontPath = EnResolveFontPath();   // T-0073: one shared resolver, bundled font first
@@ -110,7 +117,35 @@ void SDL2RouteWindow::Layout() {
     (void)w;
 }
 
+// Scroll by rows (negative = up), clamped to the contents, repainting only when the
+// offset actually moved. Every scroll path goes through here.
+void SDL2RouteWindow::ScrollRows(int rows) {
+    const int off = EnSb::Clamp(m_scrollOffset + rows, (int)m_entries.size(), m_visibleRows);
+    if (off == m_scrollOffset) return;
+    m_scrollOffset = off;
+    Render();
+}
+
+// Per-frame auto-repeat tick for a held scrollbar arrow, for every open route window.
+// The global-button check self-heals a press whose button-up was delivered to another
+// window; without it a held arrow would keep scrolling after the mouse came up.
+void SDL2RouteWindow::TickScrollRepeats() {
+    if (s_openRouteWindows.empty()) return;
+    const Uint32 now  = SDL_GetTicks();
+    const bool   held = (SDL_GetGlobalMouseState(nullptr, nullptr) & SDL_BUTTON_LMASK) != 0;
+    for (size_t i = 0; i < s_openRouteWindows.size(); ++i) {
+        SDL2RouteWindow* rw = s_openRouteWindows[i];
+        if (!rw->m_sbRepeat.Active()) continue;
+        if (!held) { rw->m_sbRepeat.End(); continue; }
+        const int n = rw->m_sbRepeat.Steps(now);
+        if (n != 0) rw->ScrollRows(n * rw->m_sbRepeat.dir);
+    }
+}
+
 SDL2RouteWindow::~SDL2RouteWindow() {
+    for (size_t i = 0; i < s_openRouteWindows.size(); ++i)
+        if (s_openRouteWindows[i] == this) { s_openRouteWindows.erase(s_openRouteWindows.begin() + i); break; }
+
     if (m_fontSmall) TTF_CloseFont(m_fontSmall);
     if (m_bgGold)   SDL_FreeSurface(m_bgGold);
     if (m_borderH)  SDL_FreeSurface(m_borderH);
@@ -374,20 +409,21 @@ void SDL2RouteWindow::Render() {
     }
 
     // Scrollbar (interactive — see HandleEvent). Reserve a fixed column on the right;
-    // m_listInnerW excludes it so row hit-testing doesn't overlap the bar.
+    // m_listInnerW excludes it so row hit-testing doesn't overlap the bar. Geometry
+    // AND chrome come from EnSb (shared with SDL2Listbox/SDL2UnitList), which is what
+    // puts the up/down arrow buttons at the ends of the track and guarantees the
+    // hit-test in HandleEvent uses exactly the rects that were painted. This used to
+    // paint a 6px thumb in an 8px trough, with no arrows and no bevel.
     m_hasScrollbar = (entryCount > m_visibleRows);
     m_listInnerW   = m_hasScrollbar ? (listW - SB_COL_W) : listW;
     if (m_hasScrollbar) {
-        int sbX = listX + listW - SB_COL_W;
-        int sbH = listH * m_visibleRows / entryCount;
-        if (sbH < 10) sbH = 10;
-        int sbY = LIST_Y;
-        if (maxScroll > 0)
-            sbY = LIST_Y + (listH - sbH) * m_scrollOffset / maxScroll;
-        m_sbThumb = { sbX, sbY, 6, sbH };
-        SDL_Rect trough = { sbX, LIST_Y, SB_COL_W, listH };
-        SDL_FillRect(surf, &trough,   SDL_MapRGB(surf->format, 50, 42, 28));
-        SDL_FillRect(surf, &m_sbThumb, SDL_MapRGB(surf->format, 140, 120, 80));
+        SDL_Rect sbBar = { listX + listW - SB_COL_W, LIST_Y, SB_COL_W, listH };
+        m_sbMetrics = EnSb::Layout(sbBar, entryCount, m_visibleRows, m_scrollOffset);
+        EnSb::Draw(surf, m_sbMetrics, EnSb::GoldColors(), m_scrollOffset,
+                   entryCount, m_visibleRows);
+    } else {
+        m_sbMetrics = EnSb::Metrics();   // no bar drawn => nothing for the hit-test
+        m_sbRepeat.End();
     }
 
     // Draw buttons — beveled style matching game aesthetic
@@ -448,21 +484,36 @@ bool SDL2RouteWindow::HandleEvent(SDL_Event& event, int localX, int localY) {
                     return true;
                 }
 
-                // Scrollbar column: drag the thumb, or page on a trough click.
-                if (m_hasScrollbar &&
-                    localX >= m_listRect.x + m_listInnerW &&
-                    localX <  m_listRect.x + m_listRect.w &&
-                    localY >= m_listRect.y && localY < m_listRect.y + m_listRect.h) {
-                    if (localY >= m_sbThumb.y && localY < m_sbThumb.y + m_sbThumb.h) {
-                        m_sbDragging   = true;
-                        m_sbDragOffset = localY - m_sbThumb.y;
-                    } else {
-                        m_scrollOffset += (localY < m_sbThumb.y) ? -m_visibleRows : m_visibleRows;
-                        if (m_scrollOffset < 0)         m_scrollOffset = 0;
-                        if (m_scrollOffset > maxScroll) m_scrollOffset = maxScroll;
-                        Render();
+                // Scrollbar column: arrow buttons at the two ends, drag the thumb,
+                // page on a trough click. EnSb::HitTest partitions the whole gutter,
+                // so every pixel of the bar does what its chrome says it does.
+                if (m_hasScrollbar) {
+                    const EnSb::Hit hit = EnSb::HitTest(m_sbMetrics, localX, localY);
+                    if (hit != EnSb::HitNone) {
+                        switch (hit) {
+                            case EnSb::HitArrowUp:
+                                ScrollRows(-1);                            // one row now,
+                                m_sbRepeat.Begin(-1, SDL_GetTicks());      // then repeat
+                                break;
+                            case EnSb::HitArrowDown:
+                                ScrollRows(1);
+                                m_sbRepeat.Begin(1, SDL_GetTicks());
+                                break;
+                            case EnSb::HitPageUp:
+                                ScrollRows(-m_visibleRows);
+                                break;
+                            case EnSb::HitPageDown:
+                                ScrollRows(m_visibleRows);
+                                break;
+                            case EnSb::HitThumb:
+                                m_sbDragging   = true;
+                                m_sbDragOffset = localY - m_sbMetrics.thumb.y;
+                                break;
+                            default:
+                                break;
+                        }
+                        return true;
                     }
-                    return true;
                 }
 
                 // List rows: use the rendered list rect (minus the scrollbar column),
@@ -497,6 +548,7 @@ bool SDL2RouteWindow::HandleEvent(SDL_Event& event, int localX, int localY) {
         case SDL_MOUSEBUTTONUP:
             if (event.button.button == SDL_BUTTON_LEFT) {
                 m_sbDragging = false;
+                m_sbRepeat.End();
                 for (auto& btn : m_buttons) {
                     if (btn.pressed) {
                         btn.pressed = false;
@@ -514,23 +566,20 @@ bool SDL2RouteWindow::HandleEvent(SDL_Event& event, int localX, int localY) {
             return true;
 
         case SDL_MOUSEWHEEL:
-            if (event.wheel.y > 0 && m_scrollOffset > 0) {
-                m_scrollOffset--;
-                Render();
-            } else if (event.wheel.y < 0 && m_scrollOffset < maxScroll) {
-                m_scrollOffset++;
-                Render();
-            }
+            if (event.wheel.y > 0 && m_scrollOffset > 0)
+                ScrollRows(-1);
+            else if (event.wheel.y < 0 && m_scrollOffset < maxScroll)
+                ScrollRows(1);
             return true;
 
         case SDL_MOUSEMOTION:
             if (m_sbDragging && m_hasScrollbar) {
-                int trackH = m_listRect.h - m_sbThumb.h;
-                if (trackH > 0 && maxScroll > 0) {
-                    int newY = localY - m_sbDragOffset;
-                    m_scrollOffset = (newY - m_listRect.y) * maxScroll / trackH;
-                    if (m_scrollOffset < 0)         m_scrollOffset = 0;
-                    if (m_scrollOffset > maxScroll) m_scrollOffset = maxScroll;
+                // Same track/thumb rects the bar was painted from, so the thumb
+                // follows the cursor instead of drifting against its own chrome.
+                int off = EnSb::OffsetFromThumbTop(m_sbMetrics, localY - m_sbDragOffset,
+                                                   (int)m_entries.size(), m_visibleRows);
+                if (off != m_scrollOffset) {
+                    m_scrollOffset = off;
                     Render();
                 }
             }
