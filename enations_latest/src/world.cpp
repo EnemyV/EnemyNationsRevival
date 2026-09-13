@@ -14,6 +14,7 @@
 #include "lastplnt.h"
 #include "error.h"
 #include "Perf.h"   // radar render profiling + O(units) minimap
+#include "radarbake.h"   // RadarShouldBake - pure bake-cadence decision (table-tested)
 #include "area.h"
 #include "icons.h"
 #include "bitmaps.h"
@@ -1860,6 +1861,7 @@ void CWndWorld::ReRender( )
     // during exploration the fog generation counter naturally re-enables it. Unit dots
     // are NOT part of the bake (drawn live every frame), so they never gate.
     unsigned long long walkSig = 0;
+    unsigned long long viewSig = 0;
     bool bCtrMoved = false;
     // #4 (minimap/world-map lag on pan/zoom): the world map was EXCLUDED from this
     // input-detection by the radar-only gate, so it never noticed a center/zoom/dir
@@ -1871,24 +1873,37 @@ void CWndWorld::ReRender( )
     {
         extern unsigned g_enTerrainEditGen;   // defined in SDL2Terrain.cpp (runtime terrain edits)
         CMapLoc ctr = m_pWndArea->GetAA( ).GetCenter( );
-        bCtrMoved = ( ctr.x != m_ptLastBakeCtr.x || ctr.y != m_ptLastBakeCtr.y );
-        walkSig = ( (unsigned long long)g_enFogVisGen << 32 )
-                ^ (unsigned long long)g_enTerrainEditGen
-                ^ ( (unsigned long long)theBuildingMap.GetCount( ) << 12 )
-                ^ ( (unsigned long long)(unsigned)m_iResOn << 24 )
-                ^ ( (unsigned long long)(unsigned)m_iMode << 16 )                       // mode BUTTONS change what the bake draws
+        // VIEW signature -- what the CAMERA is looking at, and nothing else: centre,
+        // zoom, rotation, and the mode buttons (which change what the bake draws and are
+        // pressed by a human expecting an immediate response). This, and only this, picks
+        // the fast cadence. Mode-button presses and zoom changes must reflect IMMEDIATELY
+        // (user: "when I press buttons it takes a long time to update... the black viewbox
+        // takes too long"), so they are VIEW terms, not content terms.
+        viewSig = ( (unsigned long long)(unsigned)m_iMode << 16 )                       // mode BUTTONS change what the bake draws
                 ^ ( (unsigned long long)( m_pWndArea->GetAA( ).m_iZoom & 3 ) << 56 )    // zoom changes the view-rect box size
                 ^ ( (unsigned long long)(unsigned)ctr.x << 40 )
                 ^ ( (unsigned long long)(unsigned)ctr.y << 52 )
                 ^ ( (unsigned long long)( m_pWndArea->GetAA( ).m_iDir & 3 ) << 60 )
                 ^ 0x9E3779B97F4A7C15ull;   // non-zero so a fresh member (0) never matches
-        // Mode-button presses and zoom changes must reflect IMMEDIATELY (user: "when I
-        // press buttons it takes a long time to update... the black viewbox takes too
-        // long"): they were missing from the sig entirely (skipped until an unrelated
-        // input changed), and even in the sig they'd wait out the throttle. Treat them
-        // like a moving centre: fast path.
-        if ( !bCtrMoved && walkSig != m_qwLastWalkSig )
-            bCtrMoved = true;   // any input delta -> 140ms cadence; the gate still skips no-change frames
+        // WALK signature -- the view terms PLUS everything else the bake draws. Exactly the
+        // same bits as before the split (XOR is commutative), so the skip-gate below is
+        // bit-for-bit unchanged. These content terms must NEVER reach the cadence pick:
+        // g_enFogVisGen is bumped whenever a hex flips fog state (CHex::IncVisible /
+        // DecVisible, terrain.inl:220-222), which happens continuously as the LOCAL
+        // player's own units move -- spotting only runs for owners where IsMe() holds
+        // (unit.cpp:1076) -- with no click, key or camera movement involved. Promoting
+        // that into "the view moved" left the cadence below permanently on the moving
+        // branch, and the skip-gate below never got to skip anything either.
+        walkSig = viewSig
+                ^ ( (unsigned long long)g_enFogVisGen << 32 )
+                ^ (unsigned long long)g_enTerrainEditGen
+                ^ ( (unsigned long long)theBuildingMap.GetCount( ) << 12 )
+                ^ ( (unsigned long long)(unsigned)m_iResOn << 24 );
+        // The exact centre compare stays alongside the hash: viewSig packs ctr.x/ctr.y into
+        // overlapping bit ranges, so a pan could in principle collide, and scroll-follow
+        // (live dots sliding against a stale background) is the one case that must not miss.
+        bCtrMoved = ( ctr.x != m_ptLastBakeCtr.x || ctr.y != m_ptLastBakeCtr.y
+                      || viewSig != m_qwLastViewSig );
     }
     // SCROLL-FOLLOW vs in-place throttle. The radar image is anchored to the area-view
     // CENTRE: scrolling shifts the whole background, but the LIVE unit dots are drawn at
@@ -1898,15 +1913,28 @@ void CWndWorld::ReRender( )
     // 140ms cadence (never user-visible pre-gate); only IN-PLACE changes (fog ticks,
     // building count, highlight cycle) use the longer 320ms throttle.
     // World map: re-bake fast (140ms) WHILE the user is actively panning/zooming
-    // (bCtrMoved = any center/zoom/dir/mode delta, set above), else the cheap 1500ms
+    // (bCtrMoved: any center/zoom/dir/mode delta, set above), else the cheap 1500ms
     // idle cadence — the same responsive-on-input / cheap-when-idle split the radar uses
     // (#4). Bounds the expensive whole-map walk to the active-interaction window.
-    const DWORD kWalkThrottle = m_bIsRadar ? ( bCtrMoved ? 140u : 320u )
-                                           : ( bCtrMoved ? 140u : 1500u );
-    bool  bRebuildBg = !m_pdibRadarStatic ||
-                       ( ( dwRadarNow - m_dwLastRadarDraw >= kWalkThrottle ) &&
-                         // hit-flash animation must keep re-baking while active
-                         ( !m_bIsRadar || walkSig != m_qwLastWalkSig || m_bBldgHit ) );
+    // Frames since the last walk, for the optional frame floor. That floor is DISABLED
+    // (kRadarBakeMinFrames / kWorldMapBakeMinFrames are 1): the clock alone is the
+    // throttle. radarbake.h records why, and the counter is kept so re-enabling it is a
+    // constant change rather than new plumbing.
+    m_uFramesSinceBake++;
+    // The decision itself lives in radarbake.h as a pure function so it can be
+    // table-tested (tests/ui/test_radar_bake.cpp) -- the cadence pick is what regressed.
+    // bCtrMoved now means "the VIEW moved" and nothing else, so the two branches below
+    // are the ones the surrounding comments describe.
+    const bool bRebuildBg = RadarShouldBake( bCtrMoved,                          // the VIEW moved
+                                             walkSig != m_qwLastWalkSig,         // content changed (skip-gate)
+                                             (unsigned)( dwRadarNow - m_dwLastRadarDraw ),
+                                             m_uFramesSinceBake,
+                                             kRadarBakeMovingMs,
+                                             m_bIsRadar ? kRadarBakeIdleMs : kWorldMapBakeIdleMs,
+                                             m_bIsRadar ? kRadarBakeMinFrames : kWorldMapBakeMinFrames,
+                                             m_pdibRadarStatic == NULL,
+                                             m_bIsRadar != FALSE,
+                                             m_bBldgHit != FALSE );              // hit flash keeps re-baking
     Perf::CounterAdd( m_bIsRadar ? ( bRebuildBg ? "rr.bg" : "rr.fast" ) : ( bRebuildBg ? "rr.world.n" : "rr.world.blit" ), 1 );
 
     if ( !m_bIsRadar && !bRebuildBg )
@@ -2343,6 +2371,8 @@ void CWndWorld::ReRender( )
         m_dibwnd.GetDIB( )->BitBlt( m_pdibRadarStatic, m_dibwnd.GetDIB( )->GetRect( ), CPoint( 0, 0 ) );
         m_dwLastRadarDraw = dwRadarNow;
         m_qwLastWalkSig   = walkSig;   // inputs this bake rendered (skip-gate, see above)
+        m_qwLastViewSig   = viewSig;   // view this bake rendered (cadence pick, see above)
+        m_uFramesSinceBake = 0;        // restart the frame floor (see above)
         if ( m_pWndArea != NULL )      // centre this bake is anchored to (scroll-follow)
         {
             CMapLoc c = m_pWndArea->GetAA( ).GetCenter( );
