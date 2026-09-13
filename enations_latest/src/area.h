@@ -401,11 +401,18 @@ protected:
 	CHexCoord			m_hexRoadStart;//where the road starts
 
 	// #38 DRAG-PLACE (Shift+LMB-drag in build_loc lays a line of the armed building).
-	// m_hexDragDn is the CURSOR hex the press landed on, kept raw so a rotation mid-drag
-	// re-derives the footprint anchors; the sites are the line's footprint UL anchors,
-	// m_abDragOk their BuildSiteVerdict verdicts, and m_iDragCx/Cy the footprint size
-	// (dir-swapped, as the cursor is) that both the spacing and the preview use. Fixed
-	// arrays: the preview pass must not allocate, and the line is re-laid per mouse-move.
+	// m_hexDragDn is the CURSOR hex the press landed on, stored raw (not as an anchor) so
+	// every update re-derives the anchors from the facing and footprint then current, and
+	// so the line does not move when the view pans or zooms under it. The sites ARE those
+	// anchors, m_abDragOk their BuildSiteVerdict verdicts, and m_iDragCx/Cy the footprint
+	// size (dir-swapped, as the cursor is) that both the spacing and the preview use.
+	// Fixed arrays: the preview pass must not allocate, and the line is re-laid on every
+	// mouse-move of the drag.
+	//
+	// NOTE: rotating the footprint ([ / ]) mid-drag CANCELS the gesture rather than
+	// re-laying it - RotateBuildDir refreshes the preview through OnMouseMove(0, pt), and
+	// a synthetic move with no button or Shift in its flags is exactly what EndBuildDrag
+	// keys off. Nothing is queued, and the next press starts a fresh line.
 	BOOL					m_bBuildDrag;
 	CHexCoord			m_hexDragDn;
 	CHexCoord			m_ahexDrag[MAX_DRAG_PLACE];

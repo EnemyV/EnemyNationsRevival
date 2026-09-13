@@ -2185,6 +2185,13 @@ void CWndArea::UpdateBuildDrag( CPoint point )
 
 // #38 DRAG-PLACE: the gesture is over (committed, cancelled, or the window lost it). The
 // preview reads m_nDragSites, so zeroing it is what takes the line off the map.
+//
+// Every way out goes through here: the commit, a refused single placement (bad_loc), the
+// no-crane bail and Esc / deselect / SelectOff (all via BldgCurOff), losing activation, a
+// press starting a new gesture, and a move that arrives without the button or Shift. That
+// last one is also the backstop for a button-up this window never saw - a release outside
+// the SDL panel, say: the line is still drawn until the next move over the area map, and
+// that move ends it, so a stale gesture cannot outlive the cursor coming back.
 void CWndArea::EndBuildDrag( )
 {
 
