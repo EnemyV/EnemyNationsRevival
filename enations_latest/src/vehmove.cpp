@@ -1253,25 +1253,38 @@ BOOL CVehicle::GetNextHex(BOOL bNew) {
                 int iCross = (hx != 0) ? yStep : xStep;
 
                 // THE ONLY STEP THAT NEEDS FREEDOM HERE IS THE ARRIVAL MOVE: the
-                // step that enters the destination hex, or the last sub-hex before
-                // the destination point - which is where a building's entry angle
-                // has to be satisfied and a diagonal must stay available. The
-                // near-destination relaxation above (bCheckStreet off within three
-                // sub-hexes of m_ptDest) used to gate this block too, and three
-                // sub-hexes on each axis is a 7x7 neighbourhood - up to three hexes
-                // across - so it switched lane guidance off for a truck still a
-                // whole bend short of its destination. That is the corner cut QA
-                // still sees: two trucks with near destinations meeting at a bend
+                // step that ENTERS THE DESTINATION HEX, which is where a building's
+                // entry angle has to be satisfied and a diagonal must stay
+                // available. The near-destination relaxation above (bCheckStreet off
+                // within three sub-hexes of m_ptDest) used to gate this block too,
+                // and three sub-hexes on each axis is a 7x7 neighbourhood - up to
+                // three hexes across - so it switched lane guidance off for a truck
+                // still a whole bend short of its destination. That is the corner cut
+                // QA still sees: two trucks with near destinations meeting at a bend
                 // both ask for the same sub-hex. Guide the approach, exempt the
                 // arrival move.
-                // "Already inside the destination hex" is NOT a separate case: a
-                // hex's sub-hexes are exactly {2H,2H+1} on each axis (ToCoord is
-                // x>>1,y>>1), and SetHexDest/SetDestAndMode keep m_hexDest equal to
-                // m_ptDest's hex, so sharing a hex with m_hexDest already puts
-                // m_ptDest within 1 sub-hex of m_ptHead on each axis - the distance
-                // clause below already covers it.
-                BOOL bArrival = _turn.SameHex(m_hexDest) ||
-                                ((abs(xDest) <= 1) && (abs(yDest) <= 1));
+                // A DISTANCE CLAUSE IS NOT AN ARRIVAL. "within one sub-hex of
+                // m_ptDest on each axis" was the other half of this test, and it
+                // never named a step that arrives: we only reach this block with
+                // bAtDest FALSE, and the ONLY way to be that close with bAtDest FALSE
+                // is the building-entry reset above (:1053-1055) - a building sits on
+                // m_hexDest, we are not inside it, and the entry angle from here is
+                // refused, so we are REPOSITIONING along m_hexNext, not arriving.
+                // The step that does arrive lands on m_ptDest, and m_hexDest is
+                // always ToCoord(m_ptDest) (SetDestAndMode unit.cpp:3264, SetHexDest
+                // vehmove.cpp), so the entry clause already covers it. Everything the
+                // distance clause added was a step going somewhere ELSE - which is
+                // exactly the residual geometry the live log named: head one sub-hex
+                // below its destination point, route hex a full hex to the LEFT, and
+                // a diagonal that leaves the lane for the oncoming one. Deferring it
+                // one sub-hex along the heading reaches the same route hex on the
+                // next tick (the deferral target is pavement by the guard above) and
+                // stays in lane, so the diagonal was never required.
+                // "Already inside the destination hex" is NOT a separate case
+                // either: a hex's sub-hexes are exactly {2H,2H+1} on each axis
+                // (ToCoord is x>>1,y>>1), so a step that stays in our hex when our
+                // hex IS m_hexDest satisfies the entry clause as well.
+                BOOL bArrival = _turn.SameHex(m_hexDest);
 
                 // 1. in lane, stepping out of it, and the route hex is DIAGONALLY
                 //    adjacent - the corner. The turn cannot be taken from this hex
@@ -1492,6 +1505,65 @@ BOOL CVehicle::GetNextHex(BOOL bNew) {
                     }
                 }
             }
+    }
+
+    // PROBE, NO BEHAVIOUR. [ROAD-TURN]/[ROAD-TURN-EXEMPT] can only name a step
+    // the junction block LOOKED at, and that block covers one class of vehicle in
+    // one state: an owned, non-reversing, non-HP transport or crane whose hull is
+    // square, whose head and the sub-hex ahead of it are both paved, and which is
+    // not already at its destination. QA reports corner cutting it cannot name, so
+    // name the cut itself instead of the correction: any vehicle standing on
+    // pavement that takes a DIAGONAL sub-hex step whose two axis-aligned
+    // neighbours are not both paved has driven across a corner - off the arm and
+    // over whatever sits inside the bend. Emitted for every class and every
+    // exclusion, with a keyword saying which exclusion let it through, so the next
+    // run says whether QA is seeing the arrival residual, a military vehicle, a
+    // go-around out of FindSub, or an L-bend the block never examined.
+    // Placed after every rewrite of m_ptNext (the angle clamp, the building-X
+    // recovery, the terrain detour and FindSub all run above), so what it reports
+    // is the step actually taken, not the step first asked for.
+    {
+        int dxOut = CSubHex::Diff(m_ptNext.x - m_ptHead.x);
+        int dyOut = CSubHex::Diff(m_ptNext.y - m_ptHead.y);
+        if ((dxOut != 0) && (dyOut != 0) && OnPavement(m_ptHead)) {
+            CSubHex _sideX(m_ptHead.x + dxOut, m_ptHead.y);
+            CSubHex _sideY(m_ptHead.x, m_ptHead.y + dyOut);
+            _sideX.Wrap();
+            _sideY.Wrap();
+            if ((!OnPavement(_sideX)) || (!OnPavement(_sideY))) {
+                int hxOut = CSubHex::Diff(m_ptHead.x - m_ptTail.x);
+                int hyOut = CSubHex::Diff(m_ptHead.y - m_ptTail.y);
+                CSubHex _aheadOut(m_ptHead.x + hxOut, m_ptHead.y + hyOut);
+                _aheadOut.Wrap();
+                CSubHex _blockedOut;
+                const char *pszClass = GetData()->IsBoat() ? "boat"
+                                     : (GetData()->IsCrane() ? "crane"
+                                     : (GetData()->IsTransport() ? "transport" : "military"));
+                // the guard chain above, in its own order, first term that fired
+                const char *pszDiag =
+                    bAtDest                                  ? "atdest" :
+                    (!(TrafficOpts() & 16))                  ? "bit16-off" :
+                    m_bReversing                             ? "reversing" :
+                    (!m_cOwn)                                ? "unowned" :
+                    IsHpControl()                            ? "hpcontrol" :
+                    ((!(GetData()->IsTransport() || GetData()->IsCrane())) ||
+                     GetData()->IsBoat())                    ? "not-transport" :
+                    ((hxOut == 0) == (hyOut == 0))           ? "angled-hull" :
+                    MustKeepLane(_blockedOut)                ? "mustkeeplane" :
+                    ((!OnPavement(_aheadOut)) ||
+                     (theMap._GetHex(m_ptHead)->GetUnits() & CHex::bridge) ||
+                     (theMap._GetHex(_aheadOut)->GetUnits() & CHex::bridge))
+                                                             ? "offpavement" :
+                    m_ptNext.SameHex(m_hexDest)              ? "arrival" :
+                                                               "none-corrected";
+                WaitLog("[ROAD-DIAG] veh %d class %s head %d,%d tail %d,%d next %d,%d "
+                        "dest %d,%d hexnext %d,%d hexdest %d,%d reversing %d reason %s",
+                        GetID(), pszClass, m_ptHead.x, m_ptHead.y, m_ptTail.x, m_ptTail.y,
+                        m_ptNext.x, m_ptNext.y, m_ptDest.x, m_ptDest.y,
+                        m_hexNext.X(), m_hexNext.Y(), m_hexDest.X(), m_hexDest.Y(),
+                        m_bReversing ? 1 : 0, pszDiag);
+            }
+        }
     }
 
     CheckNextHex();
