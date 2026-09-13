@@ -1341,7 +1341,7 @@ BOOL CVehicle::GetNextHex(BOOL bNew) {
                     }
                 }
 
-                if ((oldX != xStep) || (oldY != yStep)) {
+                if (((oldX != xStep) || (oldY != yStep)) && WaitLogEnabled()) {
                     CSubHex _went(m_ptHead.x + xStep, m_ptHead.y + yStep);
                     _went.Wrap();
                     WaitLog("[ROAD-TURN] veh %d head %d,%d tail %d,%d next %d,%d dest %d,%d "
@@ -1522,7 +1522,7 @@ BOOL CVehicle::GetNextHex(BOOL bNew) {
     // Placed after every rewrite of m_ptNext (the angle clamp, the building-X
     // recovery, the terrain detour and FindSub all run above), so what it reports
     // is the step actually taken, not the step first asked for.
-    {
+    if (WaitLogEnabled()) {
         int dxOut = CSubHex::Diff(m_ptNext.x - m_ptHead.x);
         int dyOut = CSubHex::Diff(m_ptNext.y - m_ptHead.y);
         if ((dxOut != 0) && (dyOut != 0) && OnPavement(m_ptHead)) {
@@ -2605,34 +2605,50 @@ int TrafficOpts() {
 // Experimental probe for the wait/resume work: one line per event so a single
 // follower can be traced end to end. Inert unless EN_WAIT_LOG names a file.
 #if EN_TRAFFIC_PROBES
+static FILE *s_waitLogFp = NULL;
+static int   s_waitLogTried = 0;
+
+// One-time EN_WAIT_LOG lookup, shared by WaitLog() and WaitLogEnabled() so the
+// two can never disagree about whether the probe is live.
+static void EnsureWaitLogOpen() {
+
+    if (s_waitLogTried)
+        return;
+    s_waitLogTried = 1;
+    char *p = NULL;
+    size_t n = 0;
+    if ((_dupenv_s(&p, &n, "EN_WAIT_LOG") == 0) && (p != NULL)) {
+        fopen_s(&s_waitLogFp, p, "w");
+        free(p);
+    }
+}
+
+// Lets a call site skip building a probe's diagnostic work entirely when
+// EN_WAIT_LOG is not set, instead of building it and handing it to a WaitLog()
+// that only throws it away.
+BOOL WaitLogEnabled() {
+
+    EnsureWaitLogOpen();
+    return (s_waitLogFp != NULL) ? TRUE : FALSE;
+}
+
 void WaitLog(const char *fmt, ...) {
 
-    static FILE *s_fp = NULL;
-    static int s_tried = 0;
-
-    if (!s_tried) {
-        s_tried = 1;
-        char *p = NULL;
-        size_t n = 0;
-        if ((_dupenv_s(&p, &n, "EN_WAIT_LOG") == 0) && (p != NULL)) {
-            fopen_s(&s_fp, p, "w");
-            free(p);
-        }
-    }
-    if (s_fp == NULL)
+    EnsureWaitLogOpen();
+    if (s_waitLogFp == NULL)
         return;
 
     // Stamp every line with game time. Without it the log cannot answer whether
     // two vehicles are blocking each other AT THE SAME MOMENT, only whether they
     // ever did - and "ever did" is what made my earlier mutual-wait claim wrong.
-    fprintf(s_fp, "t=%lu ", (unsigned long) theGame.GettimeGetTime());
+    fprintf(s_waitLogFp, "t=%lu ", (unsigned long) theGame.GettimeGetTime());
 
     va_list va;
     va_start(va, fmt);
-    vfprintf(s_fp, fmt, va);
+    vfprintf(s_waitLogFp, fmt, va);
     va_end(va);
-    fputc('\n', s_fp);
-    fflush(s_fp);
+    fputc('\n', s_waitLogFp);
+    fflush(s_waitLogFp);
 }
 #endif
 

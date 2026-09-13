@@ -33,8 +33,10 @@ int  TrafficOpts ();   // EN_TRAFFIC bitmask: which traffic rules are live
 #endif
 #if EN_TRAFFIC_PROBES
 void WaitLog (const char *fmt, ...);   // wait/resume probe, inert unless EN_WAIT_LOG is set
+BOOL WaitLogEnabled ();                // same one-time EN_WAIT_LOG lookup as WaitLog; guard diagnostic work with this, not just the WaitLog call
 #else
 #define WaitLog(...) ((void)0)
+#define WaitLogEnabled() (FALSE)
 #endif
 
 const int MAX_NUM_RETRIES = 25;

@@ -12,6 +12,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <string>
 
 using BOOL = int;
 using DWORD = unsigned long;
@@ -149,6 +150,11 @@ void WaitLog(const char *fmt, ...) {
         std::snprintf(g_lastDiag, sizeof(g_lastDiag), "%s", line);
     }
 }
+// Always on here: the harness's own WaitLog stub above has no EN_WAIT_LOG file
+// to agree with, so this fixture exercises the guarded blocks unconditionally
+// (production gates them on the real WaitLogEnabled(), checked separately by
+// the fixture lint in main()).
+BOOL WaitLogEnabled() { return TRUE; }
 
 // production helpers arrive in the .inc; the class body below needs them first
 extern int aiBaseDir[9];
@@ -237,6 +243,45 @@ void check(bool ok, const char *msg) {
         ++failures;
         std::fprintf(stderr, "FAIL: check %d: %s\n", checks, msg);
     }
+}
+
+// Fixture lint, not a behaviour test: the runtime checks above prove the
+// [ROAD-DIAG] block still produces the right diagnosis, but this fixture's own
+// WaitLogEnabled() stub returns TRUE unconditionally, so no runtime check here
+// can tell "gated" from "ungated" - a stub that always says yes exercises the
+// block either way. Reading the extracted production source text directly and
+// requiring the WaitLogEnabled() guard to be the thing that opens the block's
+// scope is what actually proves the diagnostic work - not just WaitLog's own
+// output - is skipped when EN_WAIT_LOG is unset.
+void checkRoadDiagGuarded() {
+    std::FILE *f = std::fopen("junction_actual.inc", "rb");
+    check(f != nullptr, "fixture lint: junction_actual.inc readable");
+    if (f == nullptr)
+        return;
+    std::fseek(f, 0, SEEK_END);
+    long sz = std::ftell(f);
+    std::fseek(f, 0, SEEK_SET);
+    std::string text(static_cast<size_t>(sz), '\0');
+    size_t got = std::fread(&text[0], 1, static_cast<size_t>(sz), f);
+    std::fclose(f);
+    text.resize(got);
+
+    // Anchor on the block's first statement (unique text) and require nothing
+    // but the guard and its own opening brace between it and that statement.
+    const char *anchorText = "int dxOut = CSubHex::Diff(m_ptNext.x - m_ptHead.x);";
+    const char *guardText = "if (WaitLogEnabled())";
+    size_t anchor = text.find(anchorText);
+    check(anchor != std::string::npos, "fixture lint: [ROAD-DIAG] block found in extracted source");
+    if (anchor == std::string::npos)
+        return;
+    size_t guard = text.rfind(guardText, anchor);
+    bool guarded = false;
+    if (guard != std::string::npos) {
+        size_t brace = text.find('{', guard + std::strlen(guardText));
+        guarded = (brace != std::string::npos) && (brace < anchor) &&
+                  (text.find_first_not_of(" \t\r\n", brace + 1) == anchor);
+    }
+    check(guarded, "fixture lint: [ROAD-DIAG] block source begins with the WaitLogEnabled() guard");
 }
 
 void ClearMap() {
@@ -908,6 +953,8 @@ int main() {
         OneStep(g_bends[0], g_bends[0].t[0], 63, 0);
         check(g_roadDiag == 0, "road-diag: a corrected step on a fully paved bend is silent");
     }
+
+    checkRoadDiagGuarded();
 
     std::printf("%d checks, %d failures\n", checks, failures);
     return failures ? EXIT_FAILURE : EXIT_SUCCESS;
