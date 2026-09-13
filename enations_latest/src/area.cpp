@@ -4256,12 +4256,12 @@ void CWndArea::OnLButtonDown( UINT nFlags, CPoint point )
         // means what it always did. A press that never moves lays ONE site - BuildDragLine
         // returns a single site for a zero-length drag - so a plain Shift-click is
         // unchanged; only a drag of at least one footprint queues more than one.
+        EndBuildDrag( );   // a press never inherits the previous gesture's line
         if ( nFlags & MK_SHIFT )
         {
             m_bBuildDrag = TRUE;
             m_hexDragDn  = hexcoord;
             m_hexDragDn.Wrap( );
-            m_nDragSites = 0;
             CaptureMouse( );
         }
         break;
@@ -4548,6 +4548,15 @@ void CWndArea::OnLButtonUp( UINT nFlags, CPoint point )
         // rocket_pos, where Shift keeps its 1996 meaning (bail back out of placement).
         const BOOL bQueueBuild = ( m_iMode == build_loc ) && ( nFlags & MK_SHIFT ) && ( m_pUnit != NULL ) &&
                                  ( m_pUnit->GetUnitType( ) == CUnit::vehicle );
+
+        // #38 DRAG-PLACE: re-lay the line from THE RELEASE POINT, so what gets queued is
+        // exactly the line the player last saw (the up can arrive at a pixel no move event
+        // reported). More than one site = this release is a drag; exactly one = the drag
+        // never left its first footprint, which is a plain Shift-place and goes down the
+        // single-site path below, m_iFound gate and all.
+        if ( bQueueBuild && m_bBuildDrag )
+            UpdateBuildDrag( point );
+        const BOOL bDragBuild = bQueueBuild && m_bBuildDrag && ( m_nDragSites > 1 );
         if ( ( nFlags & MK_SHIFT ) && ( !bQueueBuild ) && ( m_pUnit != NULL ) &&
              ( m_pUnit->GetUnitType( ) == CUnit::vehicle ) )
         {
@@ -4559,10 +4568,13 @@ void CWndArea::OnLButtonUp( UINT nFlags, CPoint point )
 
         hex = ToBuildUL( hex );
 
-        // make sure not on water or another city
-        if ( m_iFound < 0 )
+        // make sure not on water or another city. A DRAG skips its unbuildable sites one by
+        // one instead of failing as a whole - the hex under the cursor at the release is
+        // often past the last site that fits, and the sites behind it are still good.
+        if ( ( m_iFound < 0 ) && ( !bDragBuild ) )
         {
         bad_loc:
+            EndBuildDrag( );   // #38: a refused placement ends the gesture with it
             theGame.Event( m_iMode == rocket_pos ? EVENT_ROCKET_CANT : EVENT_CONST_CANT, EVENT_BAD, m_iBuild );
             m_iMode = ( m_iMode == rocket_pos ) ? rocket_ready : build_ready;
             return;
@@ -4615,6 +4627,34 @@ void CWndArea::OnLButtonUp( UINT nFlags, CPoint point )
 
         CVehicle* pVehBuild = (CVehicle*)m_pUnit;
 
+        // #38 DRAG-PLACE COMMIT: the whole previewed line, in drag order. Every site was
+        // judged by BuildSiteVerdict - the hover's own body - so an unbuildable one is
+        // SKIPPED and the rest of the line still queues; the host still validates each
+        // placement when the order is dispatched, exactly as it does for a single one.
+        // NextOrder() is called ONCE, after the appends: it starts an idle crane on the
+        // first site and is a no-op on a busy one, and calling it per site would dispatch
+        // the first, then refuse N-1 times for nothing.
+        if ( bDragBuild )
+        {
+            if ( HasMoveStops( pVehBuild ) )
+                StopRoute( pVehBuild );   // #38: one list, one meaning
+            const int nSites = m_nDragSites;
+            for ( int iOn = 0; iOn < nSites; iOn++ )
+            {
+                if ( !m_abDragOk[iOn] )
+                    continue;
+                CHexCoord hexSite( m_ahexDrag[iOn] );
+                pVehBuild->AddOrder( hexSite, CRoute::build, m_iBuild, GetBuildDir( ) );
+            }
+            EndBuildDrag( );   // the preview comes off now the orders carry their own ghosts
+            pVehBuild->NextOrder( );
+            if ( pVehBuild->m_pSdlRoute != NULL )
+                pVehBuild->m_pSdlRoute->RefreshRoute( );
+            m_iMode = build_ready;   // still armed, same crane, same building type
+            SetButtonState( );
+            return;
+        }
+
         // #38 QUEUE: the site passed the same check a plain placement makes (m_iFound
         // above), so append the order and STAY armed - same crane still selected, same
         // building type still on the cursor - so the next click places the next one.
@@ -4632,6 +4672,11 @@ void CWndArea::OnLButtonUp( UINT nFlags, CPoint point )
             SetButtonState( );
             return;
         }
+
+        // #38: this release is a plain (or single-site Shift) placement, so the gesture is
+        // over either way. The bad_loc / no-crane exits above go through BldgCurOff or
+        // return in modes the preview does not draw in, so this is the last one left.
+        EndBuildDrag( );
 
         CHexCoord hexDest( hex );
         BuildBldgDest( pVehBuild, m_iBuild, GetBuildDir( ), hexDest );
