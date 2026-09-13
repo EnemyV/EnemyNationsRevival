@@ -460,6 +460,7 @@ public:
 		int						GetBldgType () const { return (m_iBldgType); }
 		void					SetBldgType (int iType) { m_iBldgType = iType; }
 		CHexCoord const & GetHexBldg () const { return (m_hexBldg); }
+		int						GetBuildDir () const { return ( (int) m_iBuildDir ); }
 		void					SetBuilding (CHexCoord const & hex, int iBldgType, int iBldgDir);
 		void					SetEvent (VEH_EVENT iEvent);
 
