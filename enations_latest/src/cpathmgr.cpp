@@ -32,6 +32,31 @@ CPathMgr thePathMgr;
 #define new DEBUG_NEW
 #define MAX_PATH_RANGE 80
 
+// ---------------------------------------------------------------------------
+// [PATHRES] `exit` reason (015 R19 instrument, declared in cpathmgr.h). Set at every
+// exit of _GetPath and cleared at its entry. THREAD-LOCAL, not a member and not a
+// global: GetPath() serialises the searches on m_cs but the reader (CVehicle::GetPath)
+// runs after the lock is dropped, so a shared slot would hand it another thread's
+// search. s_iPathCoastSkip counts the cells this search refused because of the
+// intermediate-coastline rule in GetCellCosts. That rule is NOT itself an exit - it is
+// one of the things that can STARVE a search - so 015 R20 reports it as a plain COUNT
+// that the caller prints in its own `coastskip` field. R19 appended it to the exit label
+// as a `_coast` suffix, which read as a causal claim the counter cannot support.
+// Instrument only: nothing here changes what the search does.
+// ---------------------------------------------------------------------------
+static thread_local const char* s_pszPathExitWhy = "none";
+static thread_local int         s_iPathCoastSkip = 0;
+
+const char* EnPathExitWhy( )
+{
+    return ( s_pszPathExitWhy != NULL ) ? s_pszPathExitWhy : "?";
+}
+
+int EnPathCoastSkip( )
+{
+    return s_iPathCoastSkip;
+}
+
 // lookup table of bit values that represent headings
 // that are valid for a given heading (offset to table)
 // used by BOOL CPathMgr::IsValidHeading(
@@ -98,6 +123,15 @@ CHexCoord* CPathMgr::_GetPath( CVehicle* pVehicle, CHexCoord& hexFrom, CHexCoord
 #endif
 #endif
 
+    // [PATHRES] exit reason (015 R19): cleared at entry, set at every exit below
+    s_pszPathExitWhy      = "running";
+    s_iPathCoastSkip      = 0;
+    const char* pszR19Brk = NULL;   // loop-break reason, NULL = the loop ended on a hit
+    BOOL        bR19Arena = FALSE;  // the cell arena filled (it forces the iHang exit)
+    BOOL        bR19Adj   = FALSE;  // AdjustDestination shortened the request
+    BOOL        bR19Veto  = FALSE;  // the final one-step veto threw a BUILT path away
+    BOOL        bR20VetoOcc = FALSE;// ...and the endpoint was OCCUPIED, not just impassable
+
     // BUGBUG count types of calls
     m_iPaths++;
     if ( pVehicle == NULL )
@@ -122,6 +156,7 @@ CHexCoord* CPathMgr::_GetPath( CVehicle* pVehicle, CHexCoord& hexFrom, CHexCoord
 #if EN_PATH_PROBES
         Perf::CounterInc( "mpath.trivial" );
 #endif
+        s_pszPathExitWhy = "nostart";   // hexFrom/hexTo off the map
         return ( NULL );
     }
 
@@ -141,6 +176,7 @@ CHexCoord* CPathMgr::_GetPath( CVehicle* pVehicle, CHexCoord& hexFrom, CHexCoord
 #if EN_PATH_PROBES
         Perf::CounterInc( "mpath.trivial" );
 #endif
+        s_pszPathExitWhy = "samehex";   // already standing on the destination
         return ( NULL );
     }
 
@@ -200,6 +236,7 @@ CHexCoord* CPathMgr::_GetPath( CVehicle* pVehicle, CHexCoord& hexFrom, CHexCoord
     // if range is > m_iMaxPath
     if ( !bDirectPath )
         AdjustDestination( );
+    bR19Adj = ( m_hexTo != hexTo );   // [PATHRES]: the request was clamped short before the search
 
 
     // set up hexFrom as first test cell
@@ -296,6 +333,7 @@ CHexCoord* CPathMgr::_GetPath( CVehicle* pVehicle, CHexCoord& hexFrom, CHexCoord
                 Perf::CounterInc( "mpath.arena_full" );
                 bProbeArenaFull = TRUE;
 #endif
+                bR19Arena = TRUE;   // [PATHRES]: names the iHang exit below `arena`, not `iterbound`
                 iHang = 1;  // cause early termination
                 break;
             }
@@ -351,6 +389,7 @@ CHexCoord* CPathMgr::_GetPath( CVehicle* pVehicle, CHexCoord& hexFrom, CHexCoord
 #if EN_PATH_PROBES
                         Perf::CounterInc( phexPath != NULL ? "mpath.ok" : "mpath.nopath" );
 #endif
+                        s_pszPathExitWhy = ( phexPath != NULL ) ? "ok_direct" : "nopath_direct";
                         return ( phexPath );
                     }
                     else
@@ -381,6 +420,7 @@ CHexCoord* CPathMgr::_GetPath( CVehicle* pVehicle, CHexCoord& hexFrom, CHexCoord
 #if EN_PATH_PROBES
                             Perf::CounterInc( phexPath != NULL ? "mpath.ok" : "mpath.nopath" );
 #endif
+                            s_pszPathExitWhy = ( phexPath != NULL ) ? "ok_early" : "nopath_early";
                             return ( phexPath );
                         }
                     }
@@ -439,6 +479,9 @@ CHexCoord* CPathMgr::_GetPath( CVehicle* pVehicle, CHexCoord& hexFrom, CHexCoord
 #if EN_PATH_PROBES
                         Perf::CounterInc( "mpath.blocked" );  // dest hex unenterable; partial path or NULL
 #endif
+                        // dest cell can't be entered: partial path back, or nothing when the
+                        // blocked cell was adjacent (the !iTicks branch just freed it)
+                        s_pszPathExitWhy = ( phexPath != NULL ) ? "blocked" : "blocked_adj";
                         return ( phexPath );
                     }
                 }
@@ -457,6 +500,7 @@ CHexCoord* CPathMgr::_GetPath( CVehicle* pVehicle, CHexCoord& hexFrom, CHexCoord
 #if EN_PATH_PROBES
             Perf::CounterInc( "mpath.exhausted" );  // open list empty pre-dest: unreachable-goal signature
 #endif
+            pszR19Brk = "exhausted";   // coast skips are COUNTED (coastskip), not put in the label
             if ( !bDirectPath )
                 pTest = GetClosestCell( );
 
@@ -481,6 +525,8 @@ CHexCoord* CPathMgr::_GetPath( CVehicle* pVehicle, CHexCoord& hexFrom, CHexCoord
             if ( !bProbeArenaFull )
                 Perf::CounterInc( "mpath.ihang" );
 #endif
+            // the node budget ran out - or the cell arena did, which forces this same exit
+            pszR19Brk = bR19Arena ? "arena" : "iterbound";
 
 #if PATH_TIMING
 #ifdef _LOGOUT
@@ -536,12 +582,17 @@ CHexCoord* CPathMgr::_GetPath( CVehicle* pVehicle, CHexCoord& hexFrom, CHexCoord
 #if EN_PATH_PROBES
         Perf::CounterInc( "mpath.nopath" );
 #endif
+        s_pszPathExitWhy = ( pszR19Brk != NULL ) ? pszR19Brk : "nopath";
         return ( NULL );
     }
 
     // a break from trying has occurred and the dest was reached
     if ( !iHang && pDestCell != NULL )
         pTest = pDestCell;
+
+    // [PATHRES] (015 R19): captured here because ClearArray() below wipes the cells.
+    // A pure read of the cell we are about to build the path from - no state changed.
+    BOOL const bR19AtDest = AtDestination( pTest );
 
 #if EN_PATH_PROBES
     // capture before ClearArray() wipes the cells
@@ -603,6 +654,13 @@ CHexCoord* CPathMgr::_GetPath( CVehicle* pVehicle, CHexCoord& hexFrom, CHexCoord
                 delete[] phexPath;
                 phexPath = NULL;
                 iPathLen = 0;
+                bR19Veto = TRUE;   // [PATHRES]: a built path thrown away by the final veto
+                // [PATHRES] (015 R20): reuses the SAME bUnits the test above already
+                // computed - deliberately NO second CanTravelHex call. R19 labelled both
+                // cases `veto_occ`; they are different failures. An OCCUPIED endpoint
+                // clears when the blocker moves; an unoccupied endpoint this vehicle
+                // simply cannot travel never clears, however long it waits.
+                bR20VetoOcc = ( bUnits & ( CHex::ul | CHex::ur | CHex::ll | CHex::lr ) ) ? TRUE : FALSE;
             }
         }
     }
@@ -634,6 +692,27 @@ CHexCoord* CPathMgr::_GetPath( CVehicle* pVehicle, CHexCoord& hexFrom, CHexCoord
         }
     }
 #endif
+
+    // ---------------------------------------------------------------------
+    // [PATHRES] `exit` (015 R19, relabelled R20): the reason this search ended, most
+    // specific first. The final one-step veto wins because it destroys a path that WAS
+    // built - `veto_occ` when the endpoint hex was OCCUPIED, `veto_pass` when it was
+    // unoccupied but impassable to this vehicle (R19 called both of those veto_occ).
+    // Then whatever broke the search loop (arena / node budget / empty open list); how
+    // many cells the intermediate-coastline rule refused on the way is the SEPARATE
+    // `coastskip` count now, not a `_coast` suffix on this label. Then the clamp, i.e.
+    // the search stopped on GetClosestCell instead of the asked-for hex (`_adjdest` when
+    // AdjustDestination had already shortened the request). Naming only - no branch
+    // above depends on any of it.
+    // ---------------------------------------------------------------------
+    if ( bR19Veto )
+        s_pszPathExitWhy = bR20VetoOcc ? "veto_occ" : "veto_pass";
+    else if ( pszR19Brk != NULL )
+        s_pszPathExitWhy = pszR19Brk;
+    else if ( !bR19AtDest )
+        s_pszPathExitWhy = bR19Adj ? "clamp_adjdest" : "clamp";
+    else
+        s_pszPathExitWhy = bR19Adj ? "ok_adjdest" : "ok";
 
     return ( phexPath );
 }
@@ -976,7 +1055,10 @@ void CPathMgr::GetCellCosts( int iPos, CCell* pFromCell, CCell* pToCell )
         {
             // but any vehicle on a bridge
             if ( !( pDestHex->GetUnits( ) & CHex::bridge ) )
+            {
+                s_iPathCoastSkip++;   // [PATHRES] `coastskip`: counted, not an exit - see EnPathCoastSkip
                 return;
+            }
         }
     }
     // BRIDGEBUG will need to create (CHex) pFromHex

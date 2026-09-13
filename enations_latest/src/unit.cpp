@@ -3087,6 +3087,27 @@ void CVehicle::SetDestAndMode( CSubHex sub, VEH_POS iMode )
                m_ptHead.y, sub.x, sub.y );
 #endif
     ASSERT_VALID( this );
+    // [REISSUE] (015 R11): joins the last FAILED search to the order that follows it -
+    // the half of the (e) question the census cannot answer, because "the target is
+    // unreachable" and "this bounded search missed" look identical until you can see
+    // whether the SAME destination comes back. Fires only while the vehicle still
+    // carries an unjoined non-full [PATHRES] (m_dwTrafReissue) and clears it, so one
+    // failed search yields at most ONE line however many dest changes follow; that
+    // clear is also what keeps the engine's own internal SetDest calls (route advance,
+    // SetRouteMode stop -> SetDestAndMode( m_ptNext, sub )) from turning this into a
+    // stream - and it is why a line here is NOT by itself proof of a player/router
+    // order: read newdest/olddest/mode. Emitted BEFORE any mutation, so olddest is the
+    // destination being replaced. Coordinates are SUB-hexes (hex = sub / 2), the same
+    // space as [GIVEUP] dest, NOT the hex space of [PATHRES] req/from/ret.
+    if ( EnTrafficLogOn( ) && ( m_dwTrafReissue != 0 ) )
+    {
+        CPlayer* pOwnRe = GetOwner( );
+        EnTrafficLog( "[REISSUE] veh %lu plyr %d seq %lu newdest %d,%d olddest %d,%d mode %d",
+                      (unsigned long)GetID( ), ( pOwnRe != NULL ) ? pOwnRe->GetPlyrNum( ) : -1,
+                      (unsigned long)m_dwTrafReissue, (int)sub.x, (int)sub.y,
+                      (int)m_ptDest.x, (int)m_ptDest.y, (int)iMode );
+        m_dwTrafReissue = 0;
+    }
     DeletePath( );
     m_hexLastDest = sub;
 
@@ -3162,6 +3183,7 @@ void CVehicle::SetDestAndMode( CSubHex sub, VEH_POS iMode )
                 // checked free - a foreign claim on the stale next tripped the
                 // AddSubOwned cross-claim TRAP (soak28 05:56). TestStuck and the
                 // HandleBlocked beam-over settle next=head the same way.
+                m_pszSelWhy = "setdest";   // [STEP] selector tag (015 R20)
                 m_ptNext = m_ptHead;
                 TakeOwnership( );
                 SetLoc( TRUE );
@@ -3253,8 +3275,147 @@ BOOL CVehicle::HavePath( ) const
     return ( FALSE );
 }
 
+// ---------------------------------------------------------------------------
+// T2b: CVehicle::GetPath return-class census (015 T2 item 1). GetPath has FOUR
+// exits and each of them stamps EXACTLY ONE class here, so for a given player the
+// ten cells sum to the number of GetPath calls - that is what makes them usable as
+// a denominator. Every classification is read off state the function has ALREADY
+// computed: nothing here runs a second pathfind, re-queries the map, or touches
+// anything the game reads. Split by search mode, because "vehicle-free found one
+// and vehicle-aware did not" is the whole question. bNoOcc is passed STRAIGHT into
+// CPathMgr::GetPath's `bVehBlock` parameter ("default (FALSE) means that path goes
+// thru vehicles, TRUE means vehicles will block", cpathmgr.h:134-135, used that way
+// at cpathmgr.cpp:1072), so the original T2b legend had the two modes BACKWARDS.
+// Corrected (015 R11 item 3):
+//   mode 0 = bNoOcc FALSE = vehicle-FREE  (a path may run through vehicles) - suffix `_free`
+//   mode 1 = bNoOcc TRUE  = vehicle-AWARE (an occupied hex is no-entry)     - suffix `_aware`
+// The counters live in vehicle.h / vehicle.cpp. Player numbers are handed out at
+// runtime with no compile-time ceiling, so EVERY access is range-checked against
+// EN_AI_TICK_PLYRS - the same rule as the rest of the traffic block.
+// ---------------------------------------------------------------------------
+enum EnTrafPathCls
+{
+    EN_PATHCLS_EMPTY = 0,
+    EN_PATHCLS_REPPART,
+    EN_PATHCLS_DEGEN,
+    EN_PATHCLS_ACCPART,
+    EN_PATHCLS_FULL
+};
+
+static void EnTrafStampPath( CVehicle* pVeh, int iCls, BOOL bNoOcc )
+{
+    if ( !EnTrafficLogOn( ) || ( pVeh == NULL ) )
+        return;
+    CPlayer* pOwn = pVeh->GetOwner( );
+    if ( ( pOwn == NULL ) || ( !pOwn->IsLocal( ) ) )
+        return;
+    int const iP = pOwn->GetPlyrNum( );
+    if ( ( iP < 0 ) || ( iP >= EN_AI_TICK_PLYRS ) )
+        return;
+    int const iM = bNoOcc ? 1 : 0;
+    switch ( iCls )
+    {
+    case EN_PATHCLS_EMPTY:   ++g_alTrafPathEmpty[iP][iM];   break;
+    case EN_PATHCLS_REPPART: ++g_alTrafPathRepPart[iP][iM]; break;
+    case EN_PATHCLS_DEGEN:   ++g_alTrafPathDegen[iP][iM];   break;
+    case EN_PATHCLS_ACCPART: ++g_alTrafPathAccPart[iP][iM]; break;
+    case EN_PATHCLS_FULL:    ++g_alTrafPathFull[iP][iM];    break;
+    default:                                                break;
+    }
+}
+
+// ---------------------------------------------------------------------------
+// [PATHRES] per-vehicle path RESULT record (015 R11, docs/plans/015-fix-plan.md 3.1
+// v2, from 015-winastra-traffic-brief-review.md (e)). The census above answers "how
+// many of each class"; it cannot answer "was THIS failed search followed by a give-up
+// and then by the same order again", and that join is the only thing that separates a
+// bounded-search miss from a target that is genuinely unreachable. So every GetPath
+// exit ALSO writes one line naming the vehicle, a per-vehicle sequence number, the raw
+// clock, the search mode, the hex that was ASKED for, the hex we started from, the
+// endpoint actually returned, and the exact exit taken. [GIVEUP] then prints the seq +
+// class of the last such record and [REISSUE] prints the seq of the last FAILED one,
+// so a jam reads end to end for one vehicle id. Everything printed is state GetPath
+// has ALREADY computed - no second pathfind, no map re-query, no control-flow change.
+//
+// RATE BOUND: full paths are the common case and would drown the log, so a `full`
+// result is printed ONLY when the previous result was not full (the recovery
+// transition). Every non-full result is always printed, because those are the ones a
+// give-up can be joined to. A gap in `seq` is therefore a run of suppressed successes.
+// The volume of this probe is bounded by the census path_* counters themselves, so
+// read those first before trusting any wall-clock number measured with it on.
+//
+// `retries`/`bc` are captured at function ENTRY, so they name the ladder rung the
+// search was issued FROM: the two blocked exits overwrite m_iNumRetries with
+// MAX_NUM_RETRIES on their way out and would otherwise all read the same value.
+// `len` is m_iPathLen AS OF THE EXIT - the repeated-partial branch has already freed
+// the path and zeroed it, so "len 0 with a real ret" is that branch's signature.
+// `ret` is the last hex of the path the search RETURNED (-1,-1 when nothing came
+// back), which for the repeated-partial exits is the endpoint captured before that
+// branch threw the path away. Local owners only, the same rule as the census stamp.
+// ---------------------------------------------------------------------------
+static const char* EnTrafPathClsName( int iCls )
+{
+    switch ( iCls )
+    {
+    case EN_PATHCLS_EMPTY:   return ( "empty" );
+    case EN_PATHCLS_REPPART: return ( "repeated_partial" );
+    case EN_PATHCLS_DEGEN:   return ( "degenerate" );
+    case EN_PATHCLS_ACCPART: return ( "accepted_partial" );
+    case EN_PATHCLS_FULL:    return ( "full" );
+    default:                 return ( "?" );
+    }
+}
+
+void CVehicle::EnTrafPathRes( CVehicle* pVeh, int iCls, BOOL bNoOcc, const char* pszReason,
+                             CHexCoord const& hexReq, CHexCoord const& hexFrom, int iRetX, int iRetY,
+                             int iLen, int iRetries, long lBc, const char* pszExit, int iCoastSkip )
+{
+    if ( !EnTrafficLogOn( ) || ( pVeh == NULL ) )
+        return;
+    CPlayer* pOwn = pVeh->GetOwner( );
+    if ( ( pOwn == NULL ) || ( !pOwn->IsLocal( ) ) )
+        return;
+
+    DWORD const dwSeq = ++pVeh->m_dwTrafPathSeq;
+    BOOL const  bFull = ( iCls == EN_PATHCLS_FULL );
+    // rate bound, evaluated BEFORE the previous-result flag is replaced
+    BOOL const  bEmit = ( !bFull ) || ( !pVeh->m_byTrafPrevFull );
+    pVeh->m_byTrafPrevFull = bFull ? 1 : 0;
+    // a failed search waiting to be joined to whatever order comes next ([REISSUE])
+    if ( !bFull )
+        pVeh->m_dwTrafReissue = dwSeq;
+    if ( !bEmit )
+        return;
+
+    const char* pszCls    = EnTrafPathClsName( iCls );
+    pVeh->m_dwTrafResSeq  = dwSeq;   // what [GIVEUP] will name
+    pVeh->m_pszTrafResCls = pszCls;
+    // `exit` (015 R19): CPathMgr's own exit literal for the search behind this record.
+    // `reason` names the branch of CVehicle::GetPath that CLASSIFIED the result; `exit`
+    // names the branch of CPathMgr::_GetPath that ENDED the search - a failure with
+    // reason nopath_blocked and exit iterbound is a search that ran out of budget, the
+    // same reason with exit veto_occ is a path that existed and was vetoed at the last
+    // hex. Captured on the calling thread right after GetPath returned.
+    // `coastskip` (015 R20): how many candidate cells THAT search refused under the
+    // intermediate-coastline rule - a COUNT beside the exit, not a `_coast` suffix on it.
+    // It is what can starve a search; it is not by itself the reason the search ended.
+    EnTrafficLog( "[PATHRES] veh %lu plyr %d ai %d seq %lu t %lu aware %d req %d,%d from %d,%d "
+                  "ret %d,%d len %d class %s reason %s retries %d bc %d exit %s coastskip %d",
+                  (unsigned long)pVeh->GetID( ), pOwn->GetPlyrNum( ), pOwn->IsAI( ) ? 1 : 0,
+                  (unsigned long)dwSeq, (unsigned long)timeGetTime( ), bNoOcc ? 1 : 0,
+                  (int)hexReq.X( ), (int)hexReq.Y( ), (int)hexFrom.X( ), (int)hexFrom.Y( ),
+                  iRetX, iRetY, iLen, pszCls, pszReason, iRetries, (int)lBc,
+                  ( pszExit != NULL ) ? pszExit : "?", iCoastSkip );
+}
+
 void CVehicle::GetPath( BOOL bNoOcc )
 {
+    m_bPathFail = 0;   // traffic probe: cleared each attempt, stamped on failure below
+    // [PATHRES] (015 R11): the ladder rung this search was issued FROM. Captured at
+    // entry because the two blocked exits overwrite m_iNumRetries with MAX_NUM_RETRIES
+    // before the record is written, which would make every failure read the same value.
+    int const  iTrafRetriesIn = m_iNumRetries;
+    long const lTrafBcIn      = m_iBlockCount;
 
 #ifdef _DEBUG
     ASSERT_VALID( this );
@@ -3282,6 +3443,13 @@ void CVehicle::GetPath( BOOL bNoOcc )
     if ( ( pBldg != NULL ) && ( pBldg->GetOwner( ) == GetOwner( ) ) )
         _hexDest = pBldg->GetExit( GetData( )->GetWheelType( ) );
 
+    // [PATHRES] `exit` (015 R19): the adjacency shortcut below builds a path WITHOUT
+    // running a search, so it must not inherit some earlier search's reason - it says so
+    // itself. The real search arm overwrites this with CPathMgr's thread-local exit
+    // literal for the search that just ran on THIS thread (cpathmgr.h EnPathExitWhy).
+    const char* pszTrafExit  = "faked";
+    int         iTrafCoast   = 0;   // [PATHRES] `coastskip`: 0 on the faked arm - no search ran
+
     // get the path (fake one up if same or adjoining)
     int xDif = CHexCoord::Diff( _hexDest.X( ) - _hexSrc.X( ) );
     int yDif = CHexCoord::Diff( _hexDest.Y( ) - _hexSrc.Y( ) );
@@ -3304,20 +3472,40 @@ void CVehicle::GetPath( BOOL bNoOcc )
         }
     }
     else
-        m_phexPath = thePathMgr.GetPath( this, _hexSrc, _hexDest, m_iPathLen, 0, bNoOcc );
+    {
+        m_phexPath  = thePathMgr.GetPath( this, _hexSrc, _hexDest, m_iPathLen, 0, bNoOcc );
+        pszTrafExit = EnPathExitWhy( );    // [PATHRES] `exit`: the search that just ran here
+        iTrafCoast  = EnPathCoastSkip( );  // [PATHRES] `coastskip`: cells THAT search refused
+    }
 
     // if we have no path we're stuck
     if ( ( m_iPathLen <= 0 ) || ( ( m_iPathLen > 1 ) && ( *m_phexPath == *( m_phexPath + m_iPathLen - 1 ) ) ) )
     {
+        // [PATHRES] endpoint (015 R11): the last hex of whatever DID come back. This
+        // arm is reached both with no path at all (m_phexPath NULL / m_iPathLen <= 0,
+        // printed as -1,-1) and with a path whose first hex equals its last, which is
+        // a real endpoint worth seeing. Read-only; nothing but the record uses them.
+        BOOL const bTrafHavePath = ( m_phexPath != NULL ) && ( m_iPathLen > 0 );
+        int const  iTrafRetX     = bTrafHavePath ? (int)( m_phexPath + m_iPathLen - 1 )->X( ) : -1;
+        int const  iTrafRetY     = bTrafHavePath ? (int)( m_phexPath + m_iPathLen - 1 )->Y( ) : -1;
         // in a building with no ownership: blocked's handler assumes owned
         // hexes (GrabHex TRAPs on road-clear - soak3/4 [BLKNOOWN] veh 53);
         // cant_deploy is the designed in-building wait state
         if ( !m_cOwn && theBuildingHex._GetBuilding( m_ptHead ) != NULL )
         {
+            EnTrafStampPath( this, EN_PATHCLS_EMPTY, bNoOcc );   // T2b exit 1 of 4
+            EnTrafPathRes( this, EN_PATHCLS_EMPTY, bNoOcc, "nopath_cantdeploy", _hexDest, _hexSrc,
+                           iTrafRetX, iTrafRetY, m_iPathLen, iTrafRetriesIn, lTrafBcIn, pszTrafExit,
+                           iTrafCoast );
             _SetRouteMode( cant_deploy );
             return;
         }
+        EnTrafStampPath( this, EN_PATHCLS_EMPTY, bNoOcc );       // T2b exit 2 of 4
+        EnTrafPathRes( this, EN_PATHCLS_EMPTY, bNoOcc, "nopath_blocked", _hexDest, _hexSrc,
+                       iTrafRetX, iTrafRetY, m_iPathLen, iTrafRetriesIn, lTrafBcIn, pszTrafExit,
+                       iTrafCoast );
         _SetRouteMode( blocked );
+        m_bPathFail   = bNoOcc ? 2 : 1;   // traffic probe: which search came back empty
         m_iNumRetries = MAX_NUM_RETRIES;
         m_iBlockCount = 6;
         return;
@@ -3332,25 +3520,52 @@ void CVehicle::GetPath( BOOL bNoOcc )
 
     // is it the same as last time?
     CHexCoord _newDest( *( m_phexPath + m_iPathLen - 1 ) );
+    // T2b: the repeated-partial branch below has TWO exits - its own cant_deploy
+    // return, and falling out of the function past it - and that fall-out is shared
+    // with the accepted-path case. This flag is the only way to keep "exactly one
+    // class per call" honest. Nothing the game reads is derived from it.
+    BOOL bRepPart = FALSE;
     if ( ( _newDest != _hexDest ) && ( _newDest == m_hexLastDest ) )
     {
+        bRepPart = TRUE;
         delete[] m_phexPath;
         m_phexPath = NULL;
         m_iPathOff = m_iPathLen = 0;
         // same in-building guard as the no-path case above
         if ( !m_cOwn && theBuildingHex._GetBuilding( m_ptHead ) != NULL )
         {
+            EnTrafStampPath( this, EN_PATHCLS_REPPART, bNoOcc );   // T2b exit 3 of 4
+            EnTrafPathRes( this, EN_PATHCLS_REPPART, bNoOcc, "samepath_cantdeploy", _hexDest, _hexSrc,
+                           (int)_newDest.X( ), (int)_newDest.Y( ), m_iPathLen, iTrafRetriesIn, lTrafBcIn,
+                           pszTrafExit, iTrafCoast );
             _SetRouteMode( cant_deploy );
             m_hexLastDest = _dest;
             return;
         }
         _SetRouteMode( blocked );
+        m_bPathFail   = bNoOcc ? 2 : 1;   // traffic probe: which search came back empty
         m_iNumRetries = MAX_NUM_RETRIES;
         m_iBlockCount = 6;
 #ifdef _LOGOUT
         logPrintf( LOG_PRI_USEFUL, LOG_VEH_MOVE, "Vehicle %d can't reach dest, same path as 2 ago", GetID( ) );
 #endif
     }
+    // T2b exit 4 of 4 - the fall-out. Whatever reaches here either came through the
+    // repeated-partial branch just above (flagged, because that branch zeroes
+    // m_iPathLen on its way past) or is an ACCEPTED path, and the accepted ones are
+    // told apart by state GetPath has already computed: m_iPathLen == 1 is the
+    // degenerate one-hex path, _newDest != _hexDest is GetPath's OWN "the search
+    // stopped short of the hex we asked for" test, and everything else is full.
+    // 015 R11: the same four-way test the if/else chain used, hoisted into ONE value so
+    // the census stamp and the [PATHRES] record can never disagree about the class.
+    int const iTrafCls4 = bRepPart                 ? EN_PATHCLS_REPPART
+                        : ( m_iPathLen <= 1 )      ? EN_PATHCLS_DEGEN
+                        : ( _newDest != _hexDest ) ? EN_PATHCLS_ACCPART
+                                                   : EN_PATHCLS_FULL;
+    EnTrafStampPath( this, iTrafCls4, bNoOcc );
+    EnTrafPathRes( this, iTrafCls4, bNoOcc, bRepPart ? "samepath_blocked" : "accepted",
+                   _hexDest, _hexSrc, (int)_newDest.X( ), (int)_newDest.Y( ), m_iPathLen,
+                   iTrafRetriesIn, lTrafBcIn, pszTrafExit, iTrafCoast );
     m_hexLastDest = _dest;
 }
 
@@ -3555,8 +3770,31 @@ void CVehicle::_SetRouteMode( VEH_MODE iMode )
 
     ASSERT_VALID( this );
 
-    BOOL bOld = ( m_cMode == moving );
-    m_cMode   = iMode;
+    BOOL     bOld    = ( m_cMode == moving );
+    VEH_MODE modeWas = m_cMode;   // [FOLLOW] traffic probe: old->new on the followed vehicle
+    m_cMode          = iMode;
+
+    // EN_TRAFFIC_VEH=<id>: every mode transition of one vehicle, so a narrow-street
+    // dance reads as a sequence (docs/plans/015-focus-investigation.md 1.3)
+    if ( EnTrafficLogOn( ) && ( GetID( ) == EnTrafficFollowId( ) ) && ( modeWas != iMode ) )
+        EnTrafficLog( "[FOLLOW] veh %lu mode %d->%d ev %d retries %d bc %ld head %d,%d next %d,%d dest %d,%d",
+                      (unsigned long)GetID( ), (int)modeWas, (int)iMode, (int)m_iEvent, m_iNumRetries,
+                      (long)m_iBlockCount, m_ptHead.x, m_ptHead.y, m_ptNext.x, m_ptNext.y, m_ptDest.x, m_ptDest.y );
+
+    // [NONOTIFY_CHG] (015 R12) INSTRUMENT ONLY: does a vehicle that fell through
+    // PostArrivedOrBlocked's blocked branch with NOBODY told ever leave the mode it was
+    // left in? m_byTrafNoNotify is set at that fall-through (vehmove.cpp) and cleared by
+    // the FIRST mode change that actually changes m_cMode, so one fall-through yields at
+    // most one line. CAVEAT: _SetRouteMode is NOT the only writer of m_cMode -
+    // new_unit.cpp:5140/5875 (construct/reset), new_unit.cpp:6481 (deserialize) and
+    // vehmove.cpp:3266 (the remote-mode net message) assign it directly and are invisible
+    // here.
+    if ( EnTrafficLogOn( ) && m_byTrafNoNotify && ( modeWas != iMode ) )
+    {
+        EnTrafficLog( "[NONOTIFY_CHG] veh %lu plyr %d from %d to %d", (unsigned long)GetID( ),
+                      GetOwner( ) != NULL ? GetOwner( )->GetPlyrNum( ) : -1, (int)modeWas, (int)iMode );
+        m_byTrafNoNotify = 0;
+    }
 
 #if EN_AI_PROBES_ECON && defined(_WIN32)
     // blocked/moving-without-ownership tripwire: catches the breaker BEFORE
@@ -3602,6 +3840,7 @@ void CVehicle::_SetRouteMode( VEH_MODE iMode )
         CBuilding* pBldg = theBuildingHex._GetBuilding( m_ptHead );
         if ( pBldg != NULL )
         {
+            m_pszSelWhy = "exitloc";   // [STEP] selector tag: GetExitLoc writes m_ptNext
             GetExitLoc( pBldg, GetData( )->GetType( ), m_ptNext, m_ptHead, m_ptTail );
             // if the exit isn't passable find another
             CheckExit( );

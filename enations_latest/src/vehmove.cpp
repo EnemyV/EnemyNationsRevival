@@ -30,6 +30,95 @@ static char BASED_CODE THIS_FILE[] = __FILE__;
 
 const int MAX_TIMES_CIRCLE = 16;
 
+// [ENTERWRONG] caller tag (traffic probe): the three sites that push a vehicle into a
+// building it was not heading for set this around their EnterBuilding() call so the
+// log names the mechanism (shove / giveup / checksub); everything else logs "other".
+static const char *g_pszEnterWhy = NULL;
+
+// [NONOTIFY] caller tag (015 R12 traffic probe). CVehicle::PostArrivedOrBlocked has NO
+// arm for a human non-transport vehicle on its blocked branch, so such a vehicle is told
+// nothing at all. Every caller in THIS file that can reach that fall-through sets this
+// around its call so the log names the mechanism; NULL prints "?". The three
+// PostArrivedOrBlocked calls in vehicle.cpp are in another translation unit, so this is
+// no longer a file-static: vehicle.cpp declares it extern and tags its three calls the
+// same way (stopbackup / cantdeploy30s / deployed). INSTRUMENT ONLY: nothing reads it
+// but the log lines ([NONOTIFY] and [ARRIVEMISS]).
+const char *g_pszPostWhy = NULL;
+
+// One [STEP] line: a committed head advance, a next-collapsed-to-head recovery, or a
+// RELOCATION - a head write that happens OUTSIDE the ArrivedNextHex commit (the 6-minute
+// stuck hop, Turn180, the AI beam-over, the MP SetFromMsg apply), tagged `<tag>_relocate`
+// so a teleport can never be read as a step. Bounded to the EN_TRAFFIC_VEH list so the log
+// cannot flood - with the var unset EnTrafficVehListed() is false for every id and this is
+// two loads and a branch. `from`/`to` are the sub the head LEFT and the sub it now
+// occupies; on a sel=reset line they are the abandoned m_ptNext and the head it was
+// collapsed back to; on a `_relocate` line they are the OLD head and the new one. `hex` is
+// the hex of `to` and `bridge` is 1 when that hex carries a bridge (the same GetUnits() &
+// CHex::bridge test chproute.cpp NeedsTransport uses). `tail`/`dest`/`ev` (015 R20) are
+// read off the vehicle AS IT STANDS at the call, i.e. after the change. Everything printed
+// is state the caller has already computed: no map search, no path work, no writes.
+// 015 R20: no longer file-static - vehicle.cpp's stuck hop calls it too (vehicle.h).
+void EnTrafStepLog (CVehicle * pVeh, const char * pszWhy,
+                    CSubHex const & subFrom, CSubHex const & subTo, int iDir, int iMode)
+{
+    if ((pVeh == NULL) || (!EnTrafficLogOn ()) || (!EnTrafficVehListed (pVeh->GetID ())))
+        return;
+    if (subFrom == subTo)
+        return;			// nothing moved and nothing was abandoned - not a witness
+    CPlayer * pOwn = pVeh->GetOwner ();
+    CHexCoord hexTo (subTo.ToCoord ());
+    CHex * pGameHex = theMap._GetHex (subTo);
+    CSubHex const & subTail = pVeh->GetPtTail ();
+    CSubHex const & subDest = pVeh->GetPtDest ();
+    EnTrafficLog ("[STEP] veh %lu plyr %d ai %d vtype %d mode %d from %d,%d to %d,%d dir %d "
+                  "sel %s hex %d,%d bridge %d tail %d,%d dest %d,%d ev %d",
+                  (unsigned long) pVeh->GetID (),
+                  (pOwn != NULL) ? pOwn->GetPlyrNum () : -1,
+                  ((pOwn != NULL) && pOwn->IsAI ()) ? 1 : 0,
+                  (pVeh->GetData () != NULL) ? pVeh->GetData ()->GetType () : -1,
+                  iMode, subFrom.x, subFrom.y, subTo.x, subTo.y, iDir,
+                  (pszWhy != NULL) ? pszWhy : "?",
+                  (int) hexTo.X (), (int) hexTo.Y (),
+                  ((pGameHex != NULL) && (pGameHex->GetUnits () & CHex::bridge)) ? 1 : 0,
+                  subTail.x, subTail.y, subDest.x, subDest.y, (int) pVeh->GetEvent ());
+}
+
+
+// [CLAMP] (015 R21, BUGS #107): which turn the PATH actually demanded at the instant the
+// U-turn clamp overrode it - the sideways step seen on a deck is WRITTEN by that override.
+// One line per clamp, emitted BEFORE m_ptNext is rewritten, under the same EN_TRAFFIC_LOG
+// gate and the same bounded EN_TRAFFIC_VEH list as [STEP]. `dir` is the vehicle heading
+// m_iDir (0..63, FULL_ROT units); `want` is the UNCLAMPED value the code clamps, a DELTA
+// off the current head/tail baseline in eighth-rotation steps (GetAngle's -3..4, or the
+// forced +-4 the U-turn arm picks when next == tail); `req` is that same request stated
+// ABSOLUTELY - the base direction 0..7 of the still-unclamped m_ptNext off the head
+// (CalcNextBaseDir); `max` is the per-hull limit iMax (3 boat, 2 otherwise) and `got` is
+// what Rotate() is about to be handed. `hex`/`bridge` are the HEAD's hex and the same
+// GetUnits() & CHex::bridge test [STEP] prints, so a clamp taken on a bridge deck is
+// readable without joining two lines. INSTRUMENT ONLY: reads state the caller already
+// holds - no map search, no path work, no writes, and nothing the game reads.
+static void EnTrafClampLog (CVehicle * pVeh, int iWant, int iMax, int iGot)
+{
+    if ((pVeh == NULL) || (!EnTrafficLogOn ()) || (!EnTrafficVehListed (pVeh->GetID ())))
+        return;
+    CPlayer * pOwn = pVeh->GetOwner ();
+    CSubHex const & subHead = pVeh->GetPtHead ();
+    CSubHex const & subDest = pVeh->GetPtDest ();
+    CHexCoord hexHead (subHead.ToCoord ());
+    CHex * pGameHex = theMap._GetHex (subHead);
+    EnTrafficLog ("[CLAMP] veh %lu plyr %d ai %d vtype %d dir %d want %d max %d got %d "
+                  "head %d,%d dest %d,%d hex %d,%d bridge %d ev %d req %d",
+                  (unsigned long) pVeh->GetID (),
+                  (pOwn != NULL) ? pOwn->GetPlyrNum () : -1,
+                  ((pOwn != NULL) && pOwn->IsAI ()) ? 1 : 0,
+                  (pVeh->GetData () != NULL) ? pVeh->GetData ()->GetType () : -1,
+                  (int) pVeh->GetDir (), iWant, iMax, iGot,
+                  subHead.x, subHead.y, subDest.x, subDest.y,
+                  (int) hexHead.X (), (int) hexHead.Y (),
+                  ((pGameHex != NULL) && (pGameHex->GetUnits () & CHex::bridge)) ? 1 : 0,
+                  (int) pVeh->GetEvent (), pVeh->CalcNextBaseDir ());
+}
+
 
 // the vehicle is moving
 void CVehicle::Move() {
@@ -250,6 +339,23 @@ void CVehicle::ArrivedNextHex() {
         }
     }
 
+    // [DOORSTEP] (docs/plans/015-focus-investigation.md 1.2): logged at the PHYSICAL
+    // step, not at CanEnter, which FindSub/CheckExit/the deploy ladder call
+    // speculatively. Building under the head before the advance, for the "came from
+    // it" exclusion below. Runtime-gated, no behaviour change.
+    CBuilding *pBldgWas = EnTrafficLogOn() ? theBuildingHex._GetBuilding(m_ptHead) : NULL;
+
+    // R10 denominator `steps` (015 T2 item 4): THIS is the site where the head sub
+    // actually advances, so it is the only honest place to count a physical sub-step.
+    // Placement (SetLocation / the exit slot), carried movement (MoveCargo) and the
+    // stuck teleport (TestStuck) all move a vehicle without ever reaching here, and
+    // FL1hex vehicles can arrive with next == head, which is not a step either.
+    const BOOL bHeadAdvances = (m_ptNext != m_ptHead);
+
+    // [STEP] (015 R19): the sub the head is about to leave. Same site, same condition as
+    // the `steps` denominator - this IS the committed-movement witness.
+    CSubHex const subStepFrom = m_ptHead;
+
     // set new values
     if (GetData()->GetVehFlags() & CTransportData::FL1hex) {
         ASSERT (m_ptHead == m_ptTail);
@@ -261,6 +367,34 @@ void CVehicle::ArrivedNextHex() {
             theVehicleHex.ReleaseHex(m_ptTail, this);
         m_ptTail = m_ptHead;
         m_ptHead = m_ptNext;
+    }
+
+    if (bHeadAdvances)
+        EnTrafStepLog(this, m_pszSelWhy, subStepFrom, m_ptHead, (int) m_iDir, (int) m_cMode);
+
+    if (bHeadAdvances && EnTrafficLogOn()) {
+        CPlayer *pOwnStep = GetOwner();
+        if ((pOwnStep != NULL) && pOwnStep->IsLocal()) {
+            int const iPStep = pOwnStep->GetPlyrNum();
+            if ((iPStep >= 0) && (iPStep < EN_AI_TICK_PLYRS))
+                ++g_alTrafSteps[iPStep];   // census-only counter, same bound/range rule as the AI ones
+        }
+    }
+
+    // the head just landed on a building hex that is neither where it came from, nor
+    // its destination, nor its construction site: a doorway it had no business in
+    if (EnTrafficLogOn()) {
+        CBuilding *pBldgNow = theBuildingHex._GetBuilding(m_ptHead);
+        CBuilding *pBldgDest = theBuildingHex._GetBuilding(m_hexDest);
+        if ((pBldgNow != NULL) && (pBldgNow != pBldgWas) && (pBldgNow != pBldgDest) && (pBldgNow != m_pBldg))
+            EnTrafficLog("[DOORSTEP] veh %lu vtype %d plyr %d ai %d mode %d ev %d retries %d bc %ld head %d,%d "
+                         "bldg %lu type %d owner %d dest %d,%d destbldg %lu",
+                         (unsigned long) GetID(), GetData()->GetType(), GetOwner()->GetPlyrNum(),
+                         GetOwner()->IsAI() ? 1 : 0, (int) m_cMode, (int) m_iEvent, m_iNumRetries,
+                         (long) m_iBlockCount, m_ptHead.x, m_ptHead.y,
+                         (unsigned long) pBldgNow->GetID(), pBldgNow->GetData()->GetType(),
+                         pBldgNow->GetOwner() != NULL ? pBldgNow->GetOwner()->GetPlyrNum() : -1,
+                         m_ptDest.x, m_ptDest.y, pBldgDest != NULL ? (unsigned long) pBldgDest->GetID() : 0UL);
     }
 
     // if we're attacking and we can hit - stop
@@ -303,9 +437,11 @@ void CVehicle::ArrivedDest() {
     // we do NOT tell the router if it's a damaged vehicle arriving at a repair center
     if ((!GetOwner()->IsMe()) || (m_iEvent != repair_self) || (pBldgDest == NULL) ||
         ((pBldgDest->GetData()->GetUnionType() != CStructureData::UTrepair) &&
-         (pBldgDest->GetData()->GetUnionType() != CStructureData::UTshipyard)))
+         (pBldgDest->GetData()->GetUnionType() != CStructureData::UTshipyard))) {
+        g_pszPostWhy = "arriveddest";   // [NONOTIFY] caller tag
         PostArrivedOrBlocked();
-    else
+        g_pszPostWhy = NULL;
+    } else
         m_bFlags |= told_ai_stop;
 
     // may need to update window
@@ -578,8 +714,11 @@ BOOL CVehicle::FindNextHex() {
 
                 // grab the hex
                 theVehicleHex.GrabHex(m_ptNext, this);
-            } else
+            } else {
+                EnTrafStepLog(this, "reset", m_ptNext, m_ptHead, (int) m_iDir, (int) m_cMode);
+                m_pszSelWhy = "reset_atdest";
                 m_ptNext = m_ptHead;
+            }
         }
 
         // gas it up
@@ -608,6 +747,8 @@ BOOL CVehicle::FindNextHex() {
         logPrintf(LOG_PRI_USEFUL, LOG_VEH_MOVE, "Vehicle %d FindNext failed n,h,t sub (%d,%d),(%d,%d),(%d,%d)", GetID(),
                   m_ptNext.x, m_ptNext.y, m_ptHead.x, m_ptHead.y, m_ptTail.x, m_ptTail.y);
 #endif
+        EnTrafStepLog(this, "reset", m_ptNext, m_ptHead, (int) m_iDir, (int) m_cMode);
+        m_pszSelWhy = "reset_findnext";
         m_ptNext = m_ptHead;
         return (FALSE);
     }
@@ -722,6 +863,7 @@ BOOL CVehicle::GetNextHex(BOOL bNew) {
 
     // if we are circling lets force it out
     if ((m_iTimesOn > MAX_TIMES_CIRCLE) && (MyRand() & 0x0100)) {
+        m_pszSelWhy = "circle";   // [STEP] selector tag
         if (GetData()->GetVehFlags() & CTransportData::FL1hex)
             m_ptNext = Rotate(RandNum(7) - 4);
         else
@@ -750,7 +892,9 @@ BOOL CVehicle::GetNextHex(BOOL bNew) {
     if ((m_bFlags & at_end_of_path) && ((abs(xStep) <= 1) && (abs(yStep) <= 1))) {
         m_bFlags &= ~at_end_of_path;
         _SetRouteMode(stop);
+        g_pszPostWhy = "endpath_fig";   // [NONOTIFY] caller tag: at_end_of_path, within one sub of m_hexNext
         PostArrivedOrBlocked();
+        g_pszPostWhy = NULL;
         return (FALSE);
     }
 
@@ -781,6 +925,8 @@ BOOL CVehicle::GetNextHex(BOOL bNew) {
 
         // going to load on a carrier
         if (m_iEvent == load) {
+            EnTrafStepLog(this, "reset", m_ptNext, m_ptHead, (int) m_iDir, (int) m_cMode);
+            m_pszSelWhy = "reset_load";   // [STEP] selector tag
             m_hexDest = m_ptDest = m_ptNext = m_ptHead;
             return (TRUE);
         }
@@ -790,6 +936,8 @@ BOOL CVehicle::GetNextHex(BOOL bNew) {
         if (pBldgDest != NULL) {
             // can't enter another's building
             if (!CanEnterBldg(pBldgDest)) {
+                EnTrafStepLog(this, "reset", m_ptNext, m_ptHead, (int) m_iDir, (int) m_cMode);
+                m_pszSelWhy = "reset_bldg";   // [STEP] selector tag
                 m_hexDest = m_ptDest = m_ptNext = m_ptHead;
                 return (TRUE);
             } else
@@ -855,7 +1003,9 @@ BOOL CVehicle::GetNextHex(BOOL bNew) {
 
                     // if we already tried twice then lets just stop
                     _SetRouteMode(stop);
+                    g_pszPostWhy = "endpath_retry";   // [NONOTIFY] caller tag: m_hexNext impassable, 2 fig_step tries spent
                     PostArrivedOrBlocked();
+                    g_pszPostWhy = NULL;
                     return (FALSE);
                 }
 
@@ -933,6 +1083,7 @@ BOOL CVehicle::GetNextHex(BOOL bNew) {
     ASSERT ((bAtDest) || (xStep != 0) || (yStep != 0));
 
     // figure out the next pt
+    m_pszSelWhy = "steer";   // [STEP] selector tag: the ordinary path-following step
     m_ptNext.x = m_ptHead.x + xStep;
     m_ptNext.y = m_ptHead.y + yStep;
     m_ptNext.Wrap();
@@ -946,10 +1097,16 @@ BOOL CVehicle::GetNextHex(BOOL bNew) {
         else
             iDir = GetAngle(m_ptNext, m_ptHead, m_ptHead, m_ptTail);
         int iMax = GetData()->IsBoat() ? 3 : 2;
-        if (iDir > iMax)
+        if (iDir > iMax) {
+            EnTrafClampLog (this, iDir, iMax, iMax);   // [CLAMP] probe: the demanded turn, before Rotate() replaces it
+            m_pszSelWhy = "steer_turnclamp";   // [STEP] selector tag
             m_ptNext = Rotate(iMax);
-        else if (iDir < -iMax)
+        }
+        else if (iDir < -iMax) {
+            EnTrafClampLog (this, iDir, iMax, -iMax);   // [CLAMP] probe: same witness on the negative arm
+            m_pszSelWhy = "steer_turnclamp";   // [STEP] selector tag
             m_ptNext = Rotate(-iMax);
+        }
     }
 
     // stop X, cutting a building
@@ -966,6 +1123,7 @@ BOOL CVehicle::GetNextHex(BOOL bNew) {
                 BadNews:
 
                 // try closest angle
+                m_pszSelWhy = "steer_corner";   // [STEP] selector tag
                 if (GetData()->GetVehFlags() & CTransportData::FL1hex)
                     m_ptNext = Rotate(0x07 & (m_iDir / EIGHTH_ROT + ((MyRand() & 0x1000) ? -1 : 1)));
                 else {
@@ -991,12 +1149,19 @@ BOOL CVehicle::GetNextHex(BOOL bNew) {
 
             // ok - lets see if another direction is better
             CSubHex _old(m_ptNext);
-            FindSub();
+            const char *pszSelWas = m_pszSelWhy;
+            FindSub(FALSE, EN_SUBTAG_GNH_SPEED);
+            // [STEP] (015 R20): tag the WINNING candidate, not the attempt. FindSub can
+            // fail outright or re-pick the sub already there; R19 stamped findsub_speed
+            // before the call, so those two cases lied about who chose m_ptNext.
             if (m_ptNext != _old) {
+                m_pszSelWhy = "findsub_speed";   // [STEP] selector tag: it really did change it
                 // if not faster switch it back
                 int iSpeedNew = theMap.GetTerrainCost(_hexHead, m_ptNext, CalcNextBaseDir(), GetData()->GetWheelType());
-                if ((iSpeedNext != 0) && ((iSpeedNew == 0) || (iSpeedNew > iSpeedNext)))
+                if ((iSpeedNext != 0) && ((iSpeedNew == 0) || (iSpeedNew > iSpeedNext))) {
+                    m_pszSelWhy = pszSelWas;   // reverted: the earlier selector still owns m_ptNext
                     m_ptNext = _old;
+                }
             }
         }
     }
@@ -1004,13 +1169,17 @@ BOOL CVehicle::GetNextHex(BOOL bNew) {
     // can we enter it?
     if (!CanEnter(m_ptNext)) {
         // try to find a new one
-        if (!FindSub()) {
+        // [STEP] (015 R20): same rule as the speed site - tag only on an actual change
+        CSubHex const _subSelWas(m_ptNext);
+        if (!FindSub(FALSE, EN_SUBTAG_GNH_CANTENTER)) {
 #ifdef _LOGOUT
             logPrintf(LOG_PRI_VERBOSE, LOG_VEH_MOVE, "Vehicle %d CanEnter/FindSub failed", GetID());
 #endif
             MakeBlocked();
             return (FALSE);
         }
+        if (m_ptNext != _subSelWas)
+            m_pszSelWhy = "findsub_cantenter";   // [STEP] selector tag
 
         // If we were circling
         // we only insist on closer if we are not on or going to a building/bridge
@@ -1025,14 +1194,20 @@ BOOL CVehicle::GetNextHex(BOOL bNew) {
                 yDif = CSubHex::Diff(m_hexNext.Y() * 2 - m_ptHead.y);
                 int iOld = ((xDif >= 0) ? xDif : -(xDif + 1)) + ((yDif >= 0) ? yDif : -(yDif + 1));
                 if ((iOld <= iNew) && (iNew != 0)) {
+                    EnTrafStepLog(this, "reset", m_ptNext, m_ptHead, (int) m_iDir, (int) m_cMode);
                     m_ptNext = m_ptHead;
-                    if (!FindSub(TRUE)) {
+                    // [STEP] (015 R20): next was just collapsed onto head so FindSub tries
+                    // every direction; tag it only if it actually moved next off head.
+                    CSubHex const _subCloserWas(m_ptNext);
+                    if (!FindSub(TRUE, EN_SUBTAG_GNH_CLOSER)) {
 #ifdef _LOGOUT
                         logPrintf(LOG_PRI_VERBOSE, LOG_VEH_MOVE, "Vehicle %d moving away from next", GetID());
 #endif
                         MakeBlocked();
                         return (FALSE);
                     }
+                    if (m_ptNext != _subCloserWas)
+                        m_pszSelWhy = "findsub_closer";   // [STEP] selector tag
                 }
             }
     }
@@ -1116,13 +1291,102 @@ void CVehicle::SetHexDest() {
     ASSERT (m_hexDest.SameHex(m_ptDest));
 }
 
+// ---------------------------------------------------------------------------
+// [SUBATTEMPT] instrument (015 T2 items 1+2) - NO behaviour change. Names for the
+// tag/gate ids declared in vehicle.h; kept next to FindSub so a new gate cannot be
+// added without a name.
+// ---------------------------------------------------------------------------
+char const *EnSubTagName(int iTag) {
+    static char const *s_apszTag[EN_SUBTAG_NUM] = {
+        "other", "tns_first", "tns_repath", "tns_closer",
+        "gnh_speed", "gnh_cantenter", "gnh_closer", "msgnexthex"
+    };
+    return ((iTag >= 0) && (iTag < EN_SUBTAG_NUM)) ? s_apszTag[iTag] : "?";
+}
+
+char const *EnSubGateName(int iGate) {
+    static char const *s_apszGate[EN_SUBGATE_NUM] = {
+        "none", "oldnext", "notcloser", "occupied", "bldgentry",
+        "terrdir", "samebldg", "diagpair", "zerocost", "costthresh"
+    };
+    return ((iGate >= 0) && (iGate < EN_SUBGATE_NUM)) ? s_apszGate[iGate] : "?";
+}
+
+// One [SUBATTEMPT] line. Called ONLY on a failure transition (see FindSub) so the
+// volume is bounded by mode changes, not by frames.
+static void EnLogSubAttempt(CVehicle const *pVeh, int iPlyr, int iAi, EnSubAttempt const &r) {
+    char szDirs[512];
+    int iOff = 0;
+    szDirs[0] = 0;
+    for (int i = 0; (i < (int) r.bNumDir) && (i < EN_SUB_MAXDIR); i++) {
+        int iLeft = (int) sizeof(szDirs) - iOff;
+        if (iLeft <= 1)
+            break;
+        int iPut;
+        if (r.acGate[i] == EN_SUBGATE_OCCUPIED)
+            iPut = snprintf(szDirs + iOff, iLeft, " | d%d %d,%d %s occ %lu mode %d self %d",
+                            (int) r.acDir[i], (int) r.asCandX[i], (int) r.asCandY[i],
+                            EnSubGateName(r.acGate[i]), (unsigned long) r.adwOccId[i],
+                            (int) r.acOccMode[i], (int) r.abOccSelf[i]);
+        else if (r.acGate[i] == EN_SUBGATE_DIAGPAIR)
+            iPut = snprintf(szDirs + iOff, iLeft, " | d%d %d,%d %s occ %lu",
+                            (int) r.acDir[i], (int) r.asCandX[i], (int) r.asCandY[i],
+                            EnSubGateName(r.acGate[i]), (unsigned long) r.adwOccId[i]);
+        else
+            iPut = snprintf(szDirs + iOff, iLeft, " | d%d %d,%d %s",
+                            (int) r.acDir[i], (int) r.asCandX[i], (int) r.asCandY[i],
+                            EnSubGateName(r.acGate[i]));
+        if ((iPut < 0) || (iPut >= iLeft))
+            break;
+        iOff += iPut;
+    }
+
+    EnTrafficLog("[SUBATTEMPT] veh %lu plyr %d ai %d seq %lu t %lu tag %s okrun %lu closer %d result %d "
+                 "wheel %d vtype %d head %d,%d tail %d,%d oldnext %d,%d hexnext %d,%d dest %d,%d sel %d,%d "
+                 "dirs %d%s",
+                 (unsigned long) pVeh->GetID(), iPlyr, iAi,
+                 (unsigned long) r.dwSeq, (unsigned long) r.dwTimeMs, EnSubTagName(r.bTag),
+                 (unsigned long) r.dwOkRun, (int) r.bCloser, (int) r.bResult,
+                 r.iWheel, r.iVehType,
+                 (int) r.sHeadX, (int) r.sHeadY, (int) r.sTailX, (int) r.sTailY,
+                 (int) r.sOldNextX, (int) r.sOldNextY, (int) r.sHexNextX, (int) r.sHexNextY,
+                 (int) r.sDestX, (int) r.sDestY, (int) r.sSelX, (int) r.sSelY,
+                 (int) r.bNumDir, szDirs);
+}
+
 // look for the next m_ptNext
 //   return TRUE if found
 // bCloser - new location must be closer
-BOOL CVehicle::FindSub(BOOL bCloser) {
+// iTag - EN_SUBTAG_*, the calling rung ([SUBATTEMPT] instrument only)
+BOOL CVehicle::FindSub(BOOL bCloser, int iTag) {
 
     // save off the old m_ptNext so we don't pick it again
     CSubHex shOldNext(m_ptNext);
+
+    // [SUBATTEMPT] (015 T2 item 1): build the record for THIS attempt as the real
+    // selector runs. Everything below is reads of state the loop already computes -
+    // it never re-runs FindSub/GetPath, never draws a random number, and never
+    // touches m_ptNext, the retry counts or the path witnesses.
+    const bool   bSubLog = EnTrafficLogOn();
+    EnSubAttempt rec     = {};
+    int          iRecN   = 0;
+    if (bSubLog) {
+        rec.dwTimeMs  = timeGetTime();
+        rec.bTag      = (BYTE) iTag;
+        rec.bCloser   = (BYTE) (bCloser ? 1 : 0);
+        rec.iWheel    = GetData() != NULL ? GetData()->GetWheelType() : -1;
+        rec.iVehType  = GetData() != NULL ? GetData()->GetType() : -1;
+        rec.sHeadX    = (short) m_ptHead.x;
+        rec.sHeadY    = (short) m_ptHead.y;
+        rec.sTailX    = (short) m_ptTail.x;
+        rec.sTailY    = (short) m_ptTail.y;
+        rec.sOldNextX = (short) shOldNext.x;
+        rec.sOldNextY = (short) shOldNext.y;
+        rec.sHexNextX = (short) m_hexNext.X();
+        rec.sHexNextY = (short) m_hexNext.Y();
+        rec.sDestX    = (short) m_hexDest.X();
+        rec.sDestY    = (short) m_hexDest.Y();
+    }
 
     BOOL bRtn = FALSE;
     BOOL bOk = FALSE;
@@ -1164,27 +1428,66 @@ BOOL CVehicle::FindSub(BOOL bCloser) {
         else
             _next = Rotate(iDir);
 
+        // [SUBATTEMPT]: open this direction's slot. iSlot < 0 = probe off (or the
+        // record is full), and every EN_SUBGATE_* store below is guarded on it.
+        int iSlot = -1;
+        if (bSubLog && (iRecN < EN_SUB_MAXDIR)) {
+            iSlot                 = iRecN++;
+            rec.acDir[iSlot]      = (signed char) iDir;
+            rec.asCandX[iSlot]    = (short) _next.x;
+            rec.asCandY[iSlot]    = (short) _next.y;
+            rec.acGate[iSlot]     = (signed char) EN_SUBGATE_NONE;
+            rec.acOccMode[iSlot]  = (signed char) -1;
+        }
+
         // don't even consider the last m_ptNext at all
-        if (_next == shOldNext)
+        if (_next == shOldNext) {
+            if (iSlot >= 0)
+                rec.acGate[iSlot] = (signed char) EN_SUBGATE_OLDNEXT;
             continue;
+        }
 
         // must be closer to m_hexNext
         if (bCloser) {
             int xDif = CSubHex::Diff(m_hexNext.X() * 2 - _next.x);
             int yDif = CSubHex::Diff(m_hexNext.Y() * 2 - _next.y);
             int iNewDist = ((xDif >= 0) ? xDif : -(xDif + 1)) + ((yDif >= 0) ? yDif : -(yDif + 1));
-            if (iOldDist <= iNewDist)
+            if (iOldDist <= iNewDist) {
+                if (iSlot >= 0)
+                    rec.acGate[iSlot] = (signed char) EN_SUBGATE_NOTCLOSER;
                 continue;
+            }
         }
 
         // must be able to enter
-        if (!CanEnter(_next))
+        if (!CanEnter(_next)) {
+            // CanEnter folds three different refusals into one FALSE. Split them for
+            // the record with the SAME side-effect-free lookups CanEnter itself makes
+            // (a hex-map read and a pure predicate) - only when the probe is on and
+            // only after CanEnter has already said no, so nothing extra runs in the
+            // normal path and no state is touched.
+            if (iSlot >= 0) {
+                CVehicle *pOcc = theVehicleHex._GetVehicle(_next);
+                if (pOcc != NULL) {
+                    rec.acGate[iSlot]    = (signed char) EN_SUBGATE_OCCUPIED;
+                    rec.adwOccId[iSlot]  = (DWORD) pOcc->GetID();
+                    rec.acOccMode[iSlot] = (signed char) pOcc->m_cMode;
+                    rec.abOccSelf[iSlot] = (BYTE) ((pOcc == this) ? 1 : 0);
+                } else if (!CanEnterBldg(theBuildingHex._GetBuilding(_next)))
+                    rec.acGate[iSlot] = (signed char) EN_SUBGATE_BLDGENTRY;
+                else
+                    rec.acGate[iSlot] = (signed char) EN_SUBGATE_TERRDIR;
+            }
             continue;
+        }
 
         // test for going back into building
         if (pBldgOn != NULL)
-            if (theBuildingHex._GetBuilding(_next) == pBldgOn)
+            if (theBuildingHex._GetBuilding(_next) == pBldgOn) {
+                if (iSlot >= 0)
+                    rec.acGate[iSlot] = (signed char) EN_SUBGATE_SAMEBLDG;
                 continue;
+            }
 
         // test for X
         if ((_next.x != m_ptHead.x) && (_next.y != m_ptHead.y)) {
@@ -1192,15 +1495,26 @@ BOOL CVehicle::FindSub(BOOL bCloser) {
             CUnit *pBlk = theVehicleHex._GetVehicle(_sub);
             if (pBlk != NULL) {
                 CSubHex _sub(m_ptHead.x, _next.y);
-                if (pBlk == theVehicleHex._GetVehicle(_sub))
+                if (pBlk == theVehicleHex._GetVehicle(_sub)) {
+                    // the SAME vehicle holds both corner subs (not "either corner is
+                    // occupied" - WinAstra review 10)
+                    if (iSlot >= 0) {
+                        rec.acGate[iSlot]    = (signed char) EN_SUBGATE_DIAGPAIR;
+                        rec.adwOccId[iSlot]  = (DWORD) pBlk->GetID();
+                        rec.abOccSelf[iSlot] = (BYTE) ((pBlk == (CUnit *) this) ? 1 : 0);
+                    }
                     continue;
+                }
             }
         }
 
         CHexCoord _hexNext(_next.ToCoord());
         int iSpeed = theMap.GetTerrainCost(_hexNext, _hexHead, CalcNextBaseDir(), GetData()->GetWheelType());
-        if (iSpeed == 0)
+        if (iSpeed == 0) {
+            if (iSlot >= 0)
+                rec.acGate[iSlot] = (signed char) EN_SUBGATE_ZEROCOST;
             continue;
+        }
 
         // if we have nothing we aren't too picky - mostly can it travel at all
         if (!bOk) {
@@ -1211,6 +1525,10 @@ BOOL CVehicle::FindSub(BOOL bCloser) {
                 bOk = TRUE;
                 bRtn = TRUE;
             }
+            // positive cost alone is NOT acceptance: the first winner must also beat
+            // the strict initial threshold, and this is the only place that can say so
+            else if (iSlot >= 0)
+                rec.acGate[iSlot] = (signed char) EN_SUBGATE_COSTTHRESH;
         }
 
             // ok, we now see if we try a different path. This goes on random numbers
@@ -1239,6 +1557,33 @@ BOOL CVehicle::FindSub(BOOL bCloser) {
                                                 (abs (CSubHex::Diff (m_ptNext.y - m_ptHead.y)) < 2));
         }
 #endif
+
+    // [SUBATTEMPT] (015 T2 items 1+2): publish the record, then emit AT MOST ONE line
+    // and only on the transition INTO failure - the first failure ever, or the first
+    // failure after a run of successes. A repeating failure logs nothing more; that
+    // keeps the volume tied to state changes instead of frames, which is what made
+    // the earlier per-frame drafts unusable.
+    if (bSubLog) {
+        rec.bResult = (BYTE) (bRtn ? 1 : 0);
+        rec.bNumDir = (BYTE) iRecN;
+        rec.sSelX   = (short) m_ptNext.x;
+        rec.sSelY   = (short) m_ptNext.y;
+        rec.dwSeq   = m_subAttempt.dwSeq + 1;
+        rec.dwOkRun = bRtn ? (m_subAttempt.dwOkRun + 1)   // extend the success run
+                           : m_subAttempt.dwOkRun;        // the run that ends here
+
+        BOOL bEmit = (!bRtn) && ((m_subAttempt.dwSeq == 0) || (m_subAttempt.bResult != 0));
+
+        m_subAttempt = rec;
+        if (!bRtn)
+            m_subAttempt.dwOkRun = 0;   // next success starts a fresh run
+
+        if (bEmit) {
+            CPlayer *pOwn = GetOwner();
+            EnLogSubAttempt(this, pOwn != NULL ? pOwn->GetPlyrNum() : -1,
+                            (pOwn != NULL) && pOwn->IsAI() ? 1 : 0, rec);
+        }
+    }
 
     return (bRtn);
 }
@@ -1453,6 +1798,7 @@ void CVehicle::EnterBuilding() {
     // same-owner shove) kept its mode after ReleaseOwnership, and Operate's
     // deploy_it resume set moving with NO ownership (soak51 MOVNOOWN veh 223,
     // caller Operate+0x9DE). cant_deploy re-enters the designed deploy ladder.
+    VEH_MODE modeWas = m_cMode;   // [ENTERWRONG] wants the outdoor mode, not the cant_deploy below
     if (m_cMode == moving || m_cMode == blocked || m_cMode == traffic || m_cMode == contention ||
         m_cMode == deploy_it)
         _SetRouteMode(cant_deploy);
@@ -1470,6 +1816,59 @@ void CVehicle::EnterBuilding() {
         { char szE[80]; sprintf(szE, "[ENTERFOREIGN] veh %lu bldg %lu\n", (unsigned long)GetID(), (unsigned long)pBldg->GetID()); OutputDebugStringA(szE); }
 #endif
 
+        // [ENTERWRONG] (015 investigation 1.2): swallowed by a building that is neither
+        // the destination nor the construction site. Must run before m_hexDest is
+        // rewritten below. g_pszEnterWhy names the caller class.
+        if (EnTrafficLogOn()) {
+            CBuilding *pBldgDest = theBuildingHex._GetBuilding(m_hexDest);
+            if ((pBldg != pBldgDest) && (pBldg != m_pBldg)) {
+                EnTrafficLog("[ENTERWRONG] why %s veh %lu vtype %d plyr %d ai %d mode %d ev %d retries %d bc %ld "
+                             "head %d,%d bldg %lu type %d owner %d dest %d,%d destbldg %lu",
+                             g_pszEnterWhy != NULL ? g_pszEnterWhy : "other",
+                             (unsigned long) GetID(), GetData()->GetType(), GetOwner()->GetPlyrNum(),
+                             GetOwner()->IsAI() ? 1 : 0, (int) modeWas, (int) m_iEvent, m_iNumRetries,
+                             (long) m_iBlockCount, m_ptHead.x, m_ptHead.y,
+                             (unsigned long) pBldg->GetID(), pBldg->GetData()->GetType(),
+                             pBldg->GetOwner() != NULL ? pBldg->GetOwner()->GetPlyrNum() : -1,
+                             m_ptDest.x, m_ptDest.y, pBldgDest != NULL ? (unsigned long) pBldgDest->GetID() : 0UL);
+
+                m_dwEnteredWrongAt = theGame.GettimeGetTime();
+                if (m_dwEnteredWrongAt == 0)
+                    m_dwEnteredWrongAt = 1;   // 0 means "no stamp"
+            }
+        }
+
+        // [ENTERDEST] (015 R17) INSTRUMENT ONLY. The positive witness [ENTERWRONG] and
+        // [DOORSTEP] cannot give: the vehicle entered the building standing on its OWN
+        // destination hex. Same gate and same site as [ENTERWRONG], and it must stay ABOVE
+        // the m_hexDest/m_ptDest rewrite and the MaterialChange/unload below, so the cargo
+        // it ARRIVED with is the cargo printed. mat/amt are the truck's material load read
+        // through CUnit::GetStore(i) (unit.h:560, unit.inl:152) - the same m_aiStore array
+        // CHPRouter::GetVehicleCargo copies into m_iStore (chproute.cpp:3059) before an
+        // unload. mat is the material type holding the most, amt that type's amount;
+        // mat -1 amt 0 = carrying nothing. Nothing the game reads changes.
+        if (EnTrafficLogOn()) {
+            CBuilding *pBldgDest = theBuildingHex._GetBuilding(m_hexDest);
+            if (pBldg == pBldgDest) {
+                int iMatOn = -1, iMatAmt = 0;
+                for (int iMatInd = 0; iMatInd < CMaterialTypes::GetNumTypes(); ++iMatInd) {
+                    int const iHas = GetStore(iMatInd);
+                    if (iHas > iMatAmt) {
+                        iMatAmt = iHas;
+                        iMatOn = iMatInd;
+                    }
+                }
+                EnTrafficLog("[ENTERDEST] veh %lu vtype %d plyr %d ai %d transport %d hpctl %d "
+                             "bldg %lu btype %d mat %d amt %d at %d,%d",
+                             (unsigned long) GetID(), GetData()->GetType(), GetOwner()->GetPlyrNum(),
+                             GetOwner()->IsAI() ? 1 : 0, GetData()->IsTransport() ? 1 : 0,
+                             IsHpControl() ? 1 : 0,
+                             (unsigned long) pBldg->GetID(), pBldg->GetData()->GetType(),
+                             iMatOn, iMatAmt, m_ptHead.x, m_ptHead.y);
+            }
+        }
+
+        m_pszSelWhy = "exitloc";   // [STEP] selector tag: GetExitLoc writes m_ptNext
         GetExitLoc(pBldg, GetData()->GetType(), m_ptNext, m_ptHead, m_ptTail);
         CheckExit();
 
@@ -1488,8 +1887,11 @@ void CVehicle::EnterBuilding() {
         // entering the dest IS the arrival; the stop-mode backup never runs for
         // an in-building vehicle, so an AI owner was never told (truck waited
         // for the sweep rescue). Humans/HP-router keep their own path.
-        if ((!(m_bFlags & told_ai_stop)) && GetOwner()->IsAI())
+        if ((!(m_bFlags & told_ai_stop)) && GetOwner()->IsAI()) {
+            g_pszPostWhy = "enterdest";   // [NONOTIFY] caller tag (AI-only: cannot reach the fall-through)
             PostArrivedOrBlocked();
+            g_pszPostWhy = NULL;
+        }
     }
 
     MaterialChange();
@@ -1509,11 +1911,26 @@ void CVehicle::ExitBuilding() {
     m_pBldg = NULL;
 
     CBuilding *pBldg = theBuildingHex._GetBuilding(m_ptHead);
+
+    // [EXITWRONG] (traffic probe): the vehicle that [ENTERWRONG] logged is leaving; dwell_ms
+    // is the answer to "does it get stuck in there". Stamp cleared whether or not logging is on.
+    if (m_dwEnteredWrongAt != 0) {
+        if (EnTrafficLogOn())
+            EnTrafficLog("[EXITWRONG] veh %lu vtype %d plyr %d ai %d dwell_ms %lu mode %d ev %d head %d,%d bldg %lu dest %d,%d",
+                         (unsigned long) GetID(), GetData()->GetType(), GetOwner()->GetPlyrNum(),
+                         GetOwner()->IsAI() ? 1 : 0,
+                         (unsigned long) (theGame.GettimeGetTime() - m_dwEnteredWrongAt),
+                         (int) m_cMode, (int) m_iEvent, m_ptHead.x, m_ptHead.y,
+                         pBldg != NULL ? (unsigned long) pBldg->GetID() : 0UL, m_ptDest.x, m_ptDest.y);
+        m_dwEnteredWrongAt = 0;
+    }
+
     if (pBldg != NULL) {
         // leaving a building
         pBldg->VehicleLeaving(this);
 
         if (!m_cOwn) {
+            m_pszSelWhy = "exitloc";   // [STEP] selector tag: GetExitLoc writes m_ptNext
             GetExitLoc(pBldg, GetData()->GetType(), m_ptNext, m_ptHead, m_ptTail);
             CheckExit();
             m_hexNext = m_ptNext;
@@ -1624,7 +2041,11 @@ void CVehicle::UnloadCarrier() {
             CVehicle *pVehOn = m_lstCargo.RemoveHead();
             pVehOn->m_pTransport = NULL;
             pVehOn->m_ptNext = pVehOn->m_ptHead = pVehOn->m_ptTail = m_ptHead;
+            // [ENTERWRONG] caller tag: cargo keeps its pre-pickup m_hexDest, so every
+            // legitimate seaport unload would otherwise log as "other"
+            g_pszEnterWhy = "unload";
             pVehOn->EnterBuilding();
+            g_pszEnterWhy = NULL;
             pVehOn->AtNewLoc();
 
             if (pVehOn->GetData()->IsPeople())
@@ -1884,7 +2305,11 @@ void CVehicle::MakeBlocked() {
 BOOL CVehicle::TryNewSub(BOOL bNoNewPath) {
 
     // see if we can find one
-    FindSub();
+    // [STEP] (015 R20): tag only on an actual change - FindSub may leave m_ptNext alone
+    CSubHex const _subSelWas(m_ptNext);
+    FindSub(FALSE, EN_SUBTAG_TNS_FIRST);
+    if (m_ptNext != _subSelWas)
+        m_pszSelWhy = "findsub_newsub";   // [STEP] selector tag
     if (!CanEnter(m_ptNext))
         return (FALSE);
 
@@ -1901,8 +2326,12 @@ BOOL CVehicle::TryNewSub(BOOL bNoNewPath) {
             GetPath(TRUE);
 
             // see if we can find one using the new path
+            EnTrafStepLog(this, "reset", m_ptNext, m_ptHead, (int) m_iDir, (int) m_cMode);
             m_ptNext = m_ptHead;        // so tries all directions
-            FindSub();
+            CSubHex const _subRepathWas(m_ptNext);   // [STEP] (015 R20): tag only on change
+            FindSub(FALSE, EN_SUBTAG_TNS_REPATH);
+            if (m_ptNext != _subRepathWas)
+                m_pszSelWhy = "findsub_repath";   // [STEP] selector tag
             if (!CanEnter(m_ptNext))
                 return (FALSE);
         }
@@ -1917,9 +2346,13 @@ BOOL CVehicle::TryNewSub(BOOL bNoNewPath) {
         xDif = CSubHex::Diff(m_hexNext.X() * 2 - m_ptHead.x);
         yDif = CSubHex::Diff(m_hexNext.Y() * 2 - m_ptHead.y);
         int iOld = ((xDif >= 0) ? xDif : -(xDif + 1)) + ((yDif >= 0) ? yDif : -(yDif + 1));
-        if ((iOld <= iNew) && (iNew != 0))
-            if (!FindSub(TRUE))
+        if ((iOld <= iNew) && (iNew != 0)) {
+            CSubHex const _subTnsCloserWas(m_ptNext);   // [STEP] (015 R20): tag only on change
+            if (!FindSub(TRUE, EN_SUBTAG_TNS_CLOSER))
                 return (FALSE);
+            if (m_ptNext != _subTnsCloserWas)
+                m_pszSelWhy = "findsub_tnscloser";   // [STEP] selector tag
+        }
     }
 
     // set it up to go
@@ -1928,6 +2361,12 @@ BOOL CVehicle::TryNewSub(BOOL bNoNewPath) {
     theVehicleHex.GrabHex(m_ptNext, this);
     SetHexDest();
     _SetRouteMode(moving);
+
+    if (EnTrafficLogOn() && (GetID() == EnTrafficFollowId()))
+        EnTrafficLog("[FOLLOW] veh %lu newsub next %d,%d head %d,%d hexnext %d,%d retries %d bc %ld timeson %d",
+                     (unsigned long) GetID(), m_ptNext.x, m_ptNext.y, m_ptHead.x, m_ptHead.y,
+                     m_hexNext.X(), m_hexNext.Y(), m_iNumRetries, (long) m_iBlockCount, m_iTimesOn);
+
     ASSERT_VALID (this);
     return (TRUE);
 }
@@ -2115,6 +2554,7 @@ void CVehicle::HandleBlocked() {
                 int xDif = CMapLoc::Diff(m_pUnitTarget->GetMapLoc().x - m_maploc.x) / (MAX_HEX_HT - 1);
                 int yDif = CMapLoc::Diff(m_pUnitTarget->GetMapLoc().y - m_maploc.y) / (MAX_HEX_HT - 1);
                 if ((abs(xDif) <= 3) && (abs(yDif) <= 3)) {
+                    m_pszSelWhy = "blocked_turret";   // [STEP] selector tag
                     m_ptNext.x = m_ptHead.x - __minmax(-1, 1, xDif);
                     m_ptNext.y = m_ptHead.y - __minmax(-1, 1, yDif);
                     m_ptNext.Wrap();
@@ -2220,7 +2660,9 @@ void CVehicle::HandleBlocked() {
                 // if a vehicle is in the way in a building - take it's ownership
             if (pVehInWay->GetOwner() == GetOwner())
                 if (theBuildingHex._GetBuilding(pVehInWay->m_ptHead) != NULL) {
+                    g_pszEnterWhy = "shove";   // [ENTERWRONG] caller tag
                     pVehInWay->EnterBuilding();
+                    g_pszEnterWhy = NULL;
                     pVehInWay = theVehicleHex._GetVehicle(m_ptNext);
 
                     if (pVehInWay == NULL) {
@@ -2396,6 +2838,7 @@ void CVehicle::HandleBlocked() {
     // we try a new route picked at random
     if (m_iNumRetries == 10) {
         m_iNumRetries++;
+        EnTrafStepLog(this, "reset", m_ptNext, m_ptHead, (int) m_iDir, (int) m_cMode);
         m_ptNext = m_ptHead;
         if (TryNewSub(bGotPath)) {
 #ifdef _LOGOUT
@@ -2417,6 +2860,7 @@ void CVehicle::HandleBlocked() {
         m_iNumRetries++;
         if ((!(GetData()->GetVehFlags() & CTransportData::FL1hex)) && (!GetData()->IsBoat())) {
             int iDir = (MyRand() & 0x1000) ? 3 : -3;
+            m_pszSelWhy = "blocked_turn3";   // [STEP] selector tag
             m_ptNext = Rotate(iDir);
             if (TryNewSub(bGotPath)) {
 #ifdef _LOGOUT
@@ -2424,6 +2868,7 @@ void CVehicle::HandleBlocked() {
 #endif
                 return;
             }
+            m_pszSelWhy = "blocked_turn3";   // [STEP] selector tag
             m_ptNext = Rotate(-iDir);
             if (TryNewSub(TRUE)) {
 #ifdef _LOGOUT
@@ -2549,6 +2994,7 @@ void CVehicle::HandleBlocked() {
             for (int iDir = -3; iDir <= 3; iDir++) {
                 CSubHex _next = Rotate(iDir);
                 if (CanEnter(_next)) {
+                    m_pszSelWhy = "blocked_sweep";   // [STEP] selector tag
                     m_ptNext = _next;
 #ifdef _LOGOUT
                     logPrintf(LOG_PRI_VERBOSE, LOG_VEH_MOVE, "Vehicle %d turn (-)3 try 2", GetID());
@@ -2562,6 +3008,7 @@ void CVehicle::HandleBlocked() {
                 CSubHex _next = ::Rotate(iDir, m_ptTail, m_ptHead);
                 if (CanEnter(_next)) {
                     Turn180();
+                    m_pszSelWhy = "blocked_turn180";   // [STEP] selector tag
                     m_ptNext = _next;
                     TryNextHex();
 #ifdef _LOGOUT
@@ -2618,9 +3065,15 @@ void CVehicle::HandleBlocked() {
                         logPrintf(LOG_PRI_CRITICAL, LOG_VEH_MOVE, "Vehicle %d at sub (%d,%d) transport to sub (%d,%d)",
                                   GetID(), m_ptHead.x, m_ptHead.y, _head.x, _head.y);
 #endif
+                        CSubHex const _subHeadWas = m_ptHead;   // [STEP] (015 R20)
                         ReleaseOwnership();
+                        m_pszSelWhy = "blocked_beam";   // [STEP] selector tag
                         m_ptNext = m_ptHead = _head;
                         m_ptTail = _tail;
+                        // [STEP] (015 R20): the beam-over TELEPORTS the head - it never
+                        // reaches the ArrivedNextHex commit, so record it as a relocation.
+                        EnTrafStepLog(this, "blocked_beam_relocate", _subHeadWas, m_ptHead,
+                                      (int) m_iDir, (int) m_cMode);
                         TakeOwnership();
                         m_iNumRetries = 0;
                         TryNextHex();
@@ -2642,29 +3095,54 @@ void CVehicle::HandleBlocked() {
 #endif
 
         GiveUp:
-#if EN_AI_PROBES_ECON && defined(_WIN32)
-        // give-up rate meter: root-cause instrument for the post-knot-trio
-        // throughput regression (total is exact; detail lines throttled)
-        if (GetOwner()->IsAI()) {
-            static DWORD s_dwGiveupTotal = 0;
-            ++s_dwGiveupTotal;
+        // [GIVEUP] give-up meter for ALL local owners (docs/plans/015-focus-investigation.md
+        // 1.3). Supersedes the EN_AI_PROBES_ECON AI-only ODS meter that lived here: that
+        // one never counted the human trucks the narrow-street complaint is about.
+        // Totals are exact per owner class; detail lines are throttled to one per 2 s.
+        if (EnTrafficLogOn()) {
+            static unsigned long s_ulGiveupHuman = 0, s_ulGiveupAI = 0;
             static DWORD s_dwNextGuLog = 0;
+            if (GetOwner()->IsAI())
+                ++s_ulGiveupAI;
+            else
+                ++s_ulGiveupHuman;
             if (theGame.GettimeGetTime() >= s_dwNextGuLog) {
                 s_dwNextGuLog = theGame.GettimeGetTime() + 2000;
-                char szG[144];
-                sprintf(szG, "[GIVEUP] total %lu veh %lu vtype %d retries %d bc %ld at %d,%d dest %d,%d\n",
-                        (unsigned long)s_dwGiveupTotal, (unsigned long)GetID(), GetData()->GetType(),
-                        m_iNumRetries, (long)m_iBlockCount, m_ptHead.x, m_ptHead.y, m_ptDest.x, m_ptDest.y);
-                OutputDebugStringA(szG);
+                CBuilding *pBldgOn = theBuildingHex._GetBuilding(_hexHead);
+                // 015 R11: pathseq/pathcls name the LAST [PATHRES] record this vehicle
+                // wrote, so a give-up joins back to the search that produced it - and,
+                // through the [REISSUE] line that follows, forward to the next order.
+                // "none" = this vehicle has emitted no [PATHRES] yet (the probe was off,
+                // or every GetPath it ever ran returned a full path, which the rate
+                // bound keeps silent). pathcls is the CLASS of that record, not of this
+                // give-up: a give-up after a `full` record is a real signal, not a bug.
+                EnTrafficLog("[GIVEUP] total_h %lu total_ai %lu veh %lu vtype %d plyr %d ai %d retries %d bc %ld "
+                             "at %d,%d dest %d,%d onbldg %lu stagnant_ms %lu pathfail %d "
+                             "pathseq %lu pathcls %s",
+                             s_ulGiveupHuman, s_ulGiveupAI, (unsigned long) GetID(), GetData()->GetType(),
+                             GetOwner()->GetPlyrNum(), GetOwner()->IsAI() ? 1 : 0, m_iNumRetries, (long) m_iBlockCount,
+                             m_ptHead.x, m_ptHead.y, m_ptDest.x, m_ptDest.y,
+                             pBldgOn != NULL ? (unsigned long) pBldgOn->GetID() : 0UL,
+                             m_dwStagnantSince != 0 ? (unsigned long) (theGame.GettimeGetTime() - m_dwStagnantSince) : 0UL,
+                             (int) m_bPathFail, (unsigned long) m_dwTrafResSeq,
+                             (m_pszTrafResCls != NULL) ? m_pszTrafResCls : "none");
             }
         }
-#endif
         m_dwStagnantSince = 0;   // one give-up per stagnation window
         _SetRouteMode(stop);
-        if (theBuildingHex._GetBuilding(_hexHead) != NULL)
+        if (theBuildingHex._GetBuilding(_hexHead) != NULL) {
+            g_pszEnterWhy = "giveup";   // [ENTERWRONG] caller tag
             EnterBuilding();
+            g_pszEnterWhy = NULL;
+        }
 
+        // [NONOTIFY] caller tag. NOTE this caller DOES notify the owner right below via
+        // theGame.Event(EVENT_GOTO_CANT, ...) - but only when GetOwner()->IsMe(). So a
+        // [NONOTIFY] line with why=giveup is silent only for a human who is NOT me (an
+        // ally/remote human in MP); the player at this keyboard did get the event.
+        g_pszPostWhy = "giveup";
         PostArrivedOrBlocked();
+        g_pszPostWhy = NULL;
 
         if (GetOwner()->IsMe())
             theGame.Event(EVENT_GOTO_CANT, EVENT_NOTIFY, this);
@@ -2719,10 +3197,21 @@ void CVehicle::Turn180() {
         bSpotting = TRUE;
     }
 
+    CSubHex const _subHeadWas = m_ptHead;   // [STEP] (015 R20)
     CSubHex _tmp = m_ptTail;
     m_ptTail = m_ptHead;
+    m_pszSelWhy = "turn180";   // [STEP] selector tag
     m_ptHead = m_ptNext = _tmp;;
     m_iDir = CalcDir();
+
+    // [STEP] (015 R20): the head/tail swap moves the head outside the ArrivedNextHex
+    // commit - a relocation, not a step. Emitted after CalcDir so `dir` is the new one.
+    EnTrafStepLog(this, "turn180_relocate", _subHeadWas, m_ptHead, (int) m_iDir, (int) m_cMode);
+
+    if (EnTrafficLogOn() && (GetID() == EnTrafficFollowId()))
+        EnTrafficLog("[FOLLOW] veh %lu turn180 head %d,%d tail %d,%d retries %d bc %ld",
+                     (unsigned long) GetID(), m_ptHead.x, m_ptHead.y, m_ptTail.x, m_ptTail.y,
+                     m_iNumRetries, (long) m_iBlockCount);
 
     // set who they can now see/shoot
     if (bSpotting) {
@@ -2873,8 +3362,10 @@ void CVehicle::MsgSetNextHex(CMsgVehLoc *pMsg) {
             TRAP(pVehNext == NULL);
         }
 
-        if ((pVehNext == NULL) || (pVehNext == this))
+        if ((pVehNext == NULL) || (pVehNext == this)) {
+            m_pszSelWhy = "msgnext";   // [STEP] selector tag (MP: the host chose it)
             theVehicleHex.GrabHex(m_ptNext = pMsg->m_ptNext, this);
+        }
         else
 
             // can't move to next
@@ -2921,7 +3412,7 @@ void CVehicle::MsgSetNextHex(CMsgVehLoc *pMsg) {
                     case 1 :        // 50% chance it looks for a different next
                     case 2 : {
                         CSubHex _tmp(pVehNext->m_ptNext);
-                        pVehNext->FindSub();
+                        pVehNext->FindSub(FALSE, EN_SUBTAG_MSGNEXTHEX);
                         if ((pVehNext->m_ptNext != _tmp) && (CanEnter(pVehNext->m_ptNext))) {
                             pVehNext->SetMoveParams(FALSE);
                             pVehNext->CheckNextHex();
@@ -2956,13 +3447,20 @@ void CVehicle::MsgSetNextHex(CMsgVehLoc *pMsg) {
 
 void CVehicle::SetFromMsg(CMsgVehLoc *pMsg, BOOL bWorld) {
 
+    CSubHex const _subHeadWas = m_ptHead;   // [STEP] (015 R20)
     m_ptDest = pMsg->m_ptDest;
+    m_pszSelWhy = "setfrommsg";   // [STEP] selector tag (MP: state copied from the host)
     m_ptNext = pMsg->m_ptNext;
     m_ptHead = pMsg->m_ptHead;
     m_ptTail = pMsg->m_ptTail;
     m_hexNext = pMsg->m_hexNext;
     m_hexDest = pMsg->m_hexDest;
     m_iDir = pMsg->m_iDir;
+
+    // [STEP] (015 R20): the MP apply path overwrites head/tail wholesale - a relocation
+    // handed down by the host, not a step this client took. After m_iDir/m_ptDest so
+    // `dir` and `dest` are the applied values.
+    EnTrafStepLog(this, "setfrommsg_relocate", _subHeadWas, m_ptHead, (int) m_iDir, (int) m_cMode);
     if (GetTurret() != NULL)
         GetTurret()->SetDir(pMsg->m_iTurretDir);
     m_iXadd = pMsg->m_iXadd;
@@ -3059,6 +3557,7 @@ void CVehicle::CantInBldg(CBuilding const *pBldg) {
     TRAP();
 
     ReleaseOwnership();
+    m_pszSelWhy = "exitloc";   // [STEP] selector tag: GetExitLoc writes m_ptNext
     GetExitLoc(pBldg, GetData()->GetType(), m_ptNext, m_ptHead, m_ptTail);
     CheckExit();
     SetLoc(TRUE);
@@ -3093,6 +3592,8 @@ void CVehicle::StartTravel(BOOL bGetPath) {
 
     // get m_ptNext
     if ((m_ptNext == m_ptHead) || (theVehicleHex._GetVehicle(m_ptNext) != this)) {
+        EnTrafStepLog(this, "reset", m_ptNext, m_ptHead, (int) m_iDir, (int) m_cMode);
+        m_pszSelWhy = "reset_starttravel";   // [STEP] selector tag
         m_ptNext = m_ptHead;
         if (!GetNextHex(TRUE))
             if (m_cMode == moving) {
@@ -3110,6 +3611,8 @@ void CVehicle::StartTravel(BOOL bGetPath) {
         if ((m_ptNext != m_ptHead) && (theVehicleHex._GetVehicle(m_ptNext) == this))
             theVehicleHex.ReleaseHex(m_ptNext, this);
         ZeroMoveParams();
+        EnTrafStepLog(this, "reset", m_ptNext, m_ptHead, (int) m_iDir, (int) m_cMode);
+        m_pszSelWhy = "reset_arrived";   // [STEP] selector tag
         m_ptNext = m_ptHead;
         return;
     }
@@ -3253,6 +3756,23 @@ void CVehicle::PostArrivedOrBlocked() {
                   GetID(), m_ptHead.x, m_ptHead.y);
 #endif
         theGame.m_pHpRtr->MsgErrGoto(this);
+    } else {
+        // [NONOTIFY] (015 R12) INSTRUMENT ONLY. The two arms above are the whole of this
+        // function's blocked-branch notification: an AI owner gets CMsgVehGoto, a transport
+        // gets the HP router. A HUMAN NON-TRANSPORT vehicle gets NOTHING - it is left in
+        // whatever mode the caller set (stop, at every tagged caller) with nobody told.
+        // This arm adds no message and no game state, only the log line and the probe flag
+        // that [NONOTIFY_CHG] (unit.cpp, _SetRouteMode) clears. Unthrottled on purpose:
+        // the question is how often this happens at all.
+        if (EnTrafficLogOn()) {
+            EnTrafficLog("[NONOTIFY] veh %lu vtype %d plyr %d event %d mode %d at %d,%d dest %d,%d "
+                         "hexdest %d,%d retries %d bc %ld why %s",
+                         (unsigned long) GetID(), GetData()->GetType(), GetOwner()->GetPlyrNum(),
+                         (int) m_iEvent, (int) m_cMode, m_ptHead.x, m_ptHead.y, m_ptDest.x, m_ptDest.y,
+                         m_hexDest.X(), m_hexDest.Y(), m_iNumRetries, (long) m_iBlockCount,
+                         g_pszPostWhy != NULL ? g_pszPostWhy : "?");
+            m_byTrafNoNotify = 1;
+        }
     }
 }
 
@@ -3272,7 +3792,9 @@ static void feCheckSub(CSubHex const &_sub, void *pData) {
         pVeh->ReleaseOwnership();
         pVeh->_SetRouteMode(CVehicle::stop);
         pVeh->ForceAtDest();
+        g_pszEnterWhy = "checksub";   // [ENTERWRONG] caller tag (ArrivedDest enters the building)
         pVeh->ArrivedDest();
+        g_pszEnterWhy = NULL;
     }
 
     // see if any illegal holds

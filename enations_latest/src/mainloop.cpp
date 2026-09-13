@@ -50,6 +50,31 @@ static char BASED_CODE THIS_FILE[] = __FILE__;
 
 extern BOOL bDoSubclass;
 
+// ---------------------------------------------------------------------------
+// [PWRNEG] (015 R12) INSTRUMENT ONLY. CPlayer::AddPwrHave is an unbounded `+=` inline
+// (player.h) and every call site in the game is in this file. This helper is called
+// AFTER the add with the values bracketing that one call, so `add != post - pre` means
+// something else wrote m_iPwrHave in between. It logs and returns; it touches nothing.
+// A CROSSING (pre >= 0, post < 0) always prints. A merely negative add is bounded to
+// one line per site per second through the caller's own static DWORD.
+// ---------------------------------------------------------------------------
+static void EnPwrNegLog( char const* pszSite, CPlayer* pPlyr, int iPre, int iAdd, int iPost,
+                         char const* pszSrc, DWORD* pdwNext )
+{
+    const bool bCross = ( iPre >= 0 ) && ( iPost < 0 );
+    if ( !bCross && ( iAdd >= 0 ) )
+        return;
+    if ( !bCross )
+    {
+        const DWORD dwNow = timeGetTime( );
+        if ( dwNow < *pdwNext )
+            return;
+        *pdwNext = dwNow + 1000;
+    }
+    EnTrafficLog( "[PWRNEG] site %s plyr %d pre %d add %d post %d src %s", pszSite,
+                  pPlyr != NULL ? pPlyr->GetPlyrNum( ) : -1, iPre, iAdd, iPost, pszSrc );
+}
+
 
 // Contenders for the last-player-standing win: every player still in m_lstAll
 // EXCEPT declared observers. This is the 1996 predicate (GetAll().GetCount())
@@ -157,6 +182,30 @@ int CConquerApp::Run( )
             // Profiling: one "frame" == one outer loop iteration. Cheap no-op
             // unless EN_PERF is set; flushes a perf.log line each interval.
             Perf::FrameMark();
+
+            // Traffic census (docs/plans/015-focus-investigation.md 1.3): one [CENSUS]
+            // line per local player every 30 s into traffic.log. No-op unless
+            // EN_TRAFFIC_LOG is set, the same runtime switch as the probes.
+            if ( EnTrafficLogOn( ) )
+            {
+                static DWORD s_dwNextCensus = 0;
+                DWORD        dwTick         = GetTickCount( );
+                if ( dwTick >= s_dwNextCensus )
+                {
+                    s_dwNextCensus = dwTick + 30000;
+                    std::string sCensus;
+                    CVehicle::TrafficCensus( sCensus );
+                    size_t iStart = 0;
+                    while ( iStart < sCensus.size( ) )
+                    {
+                        size_t iEnd = sCensus.find( '\n', iStart );
+                        if ( iEnd == std::string::npos )
+                            iEnd = sCensus.size( );
+                        EnTrafficLog( "[CENSUS] %s", sCensus.substr( iStart, iEnd - iStart ).c_str( ) );
+                        iStart = iEnd + 1;
+                    }
+                }
+            }
 
 #if EN_PERF_PROBES && defined(_WIN32)
             {
@@ -1255,7 +1304,18 @@ void CConquerApp::GraphicsEnginePump( )
 
 #ifdef _CHEAT
                 if ( _bMaxPower )
-                    theGame.GetMe( )->AddPwrHave( 64000 );
+                {
+                    CPlayer*  pPlyrPwr = theGame.GetMe( );
+                    const int iAddPwr  = 64000;
+                    const int iPrePwr  = pPlyrPwr->GetPwrHave( );
+                    pPlyrPwr->AddPwrHave( iAddPwr );
+                    if ( EnTrafficLogOn( ) )   // [PWRNEG] instrument
+                    {
+                        static DWORD s_dwNextPwrCheat = 0;
+                        EnPwrNegLog( "cheat", pPlyrPwr, iPrePwr, iAddPwr, pPlyrPwr->GetPwrHave( ),
+                                     "cheat", &s_dwNextPwrCheat );
+                    }
+                }
 #endif
 
                 // update if the power needs have changed || it's low
@@ -1847,7 +1907,20 @@ RepairDone:;
 
     // special case - rockets generate free power
     if ( GetData( )->GetType( ) == CStructureData::rocket )
-        GetOwner( )->AddPwrHave( (int)( 15.0 * GetFrameProd( 1 ) ) );
+    {
+        const float fFrameProd = GetFrameProd( 1 );   // [PWRNEG]: same expression, one local
+        const int   iAddPwr    = (int)( 15.0 * fFrameProd );
+        const int   iPrePwr    = GetOwner( )->GetPwrHave( );
+        GetOwner( )->AddPwrHave( iAddPwr );
+        if ( EnTrafficLogOn( ) )
+        {
+            static DWORD s_dwNextPwrRocket = 0;
+            char         szSrc[64];
+            sprintf( szSrc, "frameprod=%g", (double)fFrameProd );
+            EnPwrNegLog( "rocket", GetOwner( ), iPrePwr, iAddPwr, GetOwner( )->GetPwrHave( ),
+                         szSrc, &s_dwNextPwrRocket );
+        }
+    }
 
     // ok its built - now it has to operate
     switch ( GetData( )->GetUnionType( ) ) // union is like building class
@@ -2822,7 +2895,17 @@ void CPowerBuilding::BuildPower( )
     {
         // No-fuel plant (solar/rocket): can't liquefy coal it doesn't burn, so it always
         // generates power normally regardless of the toggle.
-        GetOwner( )->AddPwrHave( (int)( (float)pBp->GetPower( ) * fPower ) );
+        int iAddPwr = (int)( (float)pBp->GetPower( ) * fPower );   // [PWRNEG]: base expression
+        const int iPrePwr = GetOwner( )->GetPwrHave( );
+        GetOwner( )->AddPwrHave( iAddPwr );
+        if ( EnTrafficLogOn( ) )
+        {
+            static DWORD s_dwNextPwrNoFuel = 0;
+            char         szSrc[64];
+            sprintf( szSrc, "power=%d fpower=%g", pBp->GetPower( ), (double)fPower );
+            EnPwrNegLog( "plant_nofuel", GetOwner( ), iPrePwr, iAddPwr, GetOwner( )->GetPwrHave( ),
+                         szSrc, &s_dwNextPwrNoFuel );
+        }
         return;
     }
 
@@ -2840,7 +2923,19 @@ void CPowerBuilding::BuildPower( )
     // where the burned coal becomes oil instead of power AND the plant DRAWS 2 power to run the
     // conversion (operator).
     if ( !bCoalLiq )
-        GetOwner( )->AddPwrHave( (int)( (float)pBp->GetPower( ) * fPower ) );
+    {
+        int iAddPwr = (int)( (float)pBp->GetPower( ) * fPower );   // [PWRNEG]: base expression
+        const int iPrePwr = GetOwner( )->GetPwrHave( );
+        GetOwner( )->AddPwrHave( iAddPwr );
+        if ( EnTrafficLogOn( ) )
+        {
+            static DWORD s_dwNextPwrPlant = 0;
+            char         szSrc[64];
+            sprintf( szSrc, "power=%d fpower=%g", pBp->GetPower( ), (double)fPower );
+            EnPwrNegLog( "plant", GetOwner( ), iPrePwr, iAddPwr, GetOwner( )->GetPwrHave( ),
+                         szSrc, &s_dwNextPwrPlant );
+        }
+    }
     else
         GetOwner( )->AddPwrNeed( 2 );
 

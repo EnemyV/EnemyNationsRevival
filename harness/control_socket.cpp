@@ -366,6 +366,13 @@ std::string            g_gameStateResult;
 std::atomic<bool>      g_gameStatePending{false};
 std::atomic<bool>      g_gameStateDone{false};
 
+// Pending `traffic` request (HarnessDumpTraffic): per-local-player vehicle census,
+// read-only, serviced on the render thread like gamestate.
+std::mutex             g_trafficMutex;
+std::string            g_trafficResult;
+std::atomic<bool>      g_trafficPending{false};
+std::atomic<bool>      g_trafficDone{false};
+
 // Pending screenshot request, serviced on the render thread.
 std::mutex              g_shotMutex;
 std::string            g_shotPath;
@@ -870,6 +877,18 @@ void handle_command(const std::string& line, en_socket_t conn) {
         if (!g_gameStateDone.load()) out = "err gamestate timeout (not in-game?)\n";
         en_send(conn, out.c_str(), out.size());
         return;
+    } else if (strcmp(cmd, "traffic") == 0) {
+        // traffic — READ-ONLY per-local-player vehicle census (moving/blocked/stop/
+        // cantdeploy/traffic, in-building, in-a-building-that-is-not-my-destination,
+        // blocked-retry histogram, max stagnation ms). Same text as the [CENSUS] lines
+        // traffic.log gets under EN_TRAFFIC_LOG; this verb needs no env switch.
+        g_trafficDone=false; g_trafficPending=true;
+        for (int i = 0; i < 400 && !g_trafficDone.load(); ++i) { en_sleep_poll(); }
+        std::string out;
+        { std::lock_guard<std::mutex> lk(g_trafficMutex); out = g_trafficResult; }
+        if (!g_trafficDone.load()) out = "err traffic timeout (not in-game?)\n";
+        en_send(conn, out.c_str(), out.size());
+        return;
     } else if (strcmp(cmd, "quit") == 0) {
         SDL_Event e; SDL_zero(e); e.type=SDL_QUIT; SDL_PushEvent(&e);
     } else if (strcmp(cmd, "wins") == 0) {
@@ -1143,6 +1162,13 @@ void EnHarness_Service() {
     if (g_researchPending.exchange(false)) {
         g_researchOK = HarnessGrantResearch();
         g_researchDone = true;
+        return;
+    }
+    if (g_trafficPending.exchange(false)) {
+        std::string out;
+        HarnessDumpTraffic(out);
+        { std::lock_guard<std::mutex> lk(g_trafficMutex); g_trafficResult = out; }
+        g_trafficDone = true;
         return;
     }
     if (g_gameStatePending.exchange(false)) {

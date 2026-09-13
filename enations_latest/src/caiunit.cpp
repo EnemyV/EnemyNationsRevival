@@ -16,6 +16,7 @@
 #include "logging.h"  // dave's logging system
 #include "stdafx.h"
 #include "enprobes.h"   // probe gates - was relying on a transitive include
+#include "vehicle.h"    // EnTrafficLogOn + EN_AI_TICK_PLYRS + the R10 order counters
 #if EN_AI_PROBES_ECON && defined(_WIN32)
 #include <intrin.h>  // _ReturnAddress for the [CRANEORD] caller tag
 #endif
@@ -29,6 +30,29 @@ extern CException* pException;  // standard exception for yielding
 
 extern CAIData*         pGameData;  // pointer to game data interface
 extern CRITICAL_SECTION cs;         // used by threads
+
+// ---------------------------------------------------------------------------
+// R10 order denominators (015 T2 item 4) - INSTRUMENT ONLY, called immediately
+// before the PostToServer that actually hands the order to the engine, so an
+// order dropped by the 30 s dedupe or by the same-location rule is never counted.
+// bWake separates the truck "wake" order (the destination IS where the unit
+// already stands, posted on purpose so the engine answers with an instant
+// arrival) from an order that asks for real movement: mixing the two would make
+// an order rate look healthy while nothing is being asked to move. Player
+// numbers are runtime-assigned, so the index is range-checked like every other
+// per-player probe. These run on the AI threads.
+// ---------------------------------------------------------------------------
+static inline void EnTrafOrderPosted( int iPlyr, BOOL bWake )
+{
+    if ( !EnTrafficLogOn( ) )
+        return;
+    if ( ( iPlyr < 0 ) || ( iPlyr >= EN_AI_TICK_PLYRS ) )
+        return;
+    if ( bWake )
+        ++g_alTrafOrdersWake[iPlyr];
+    else
+        ++g_alTrafOrdersOk[iPlyr];
+}
 
 #define new DEBUG_NEW
 
@@ -1022,6 +1046,14 @@ void CAIUnit::SetDestination( CAIUnit* pCAIBldg )
         logPrintf( LOG_PRI_ALWAYS, LOG_AI_MISC, "\nCAIUnit::SetDestination() player %d unit %ld going to %d,%d \n",
                    m_iOwner, m_dwID, hex.X( ), hex.Y( ) );
 #endif
+#if EN_AI_PROBES_ECON && defined(_WIN32)
+        // same probe the CHexCoord overload carries, tagged -A: only ONE of the three
+        // SetDestination bodies was instrumented, so a truck ordered through the
+        // building overload posted nothing and read as an idle truck in the log.
+        if ( pGameData->IsTruck( m_dwID ) )
+        { char szZ[80]; sprintf( szZ, "[SETDEST-A] truck %lu %s\n", (unsigned long)m_dwID, hex == hexVeh ? "WAKE" : "POSTED" ); OutputDebugStringA( szZ ); }
+#endif
+        EnTrafOrderPosted( m_iOwner, hex == hexVeh );   // R10 orders_ok / orders_wake
         theGame.PostToServer( (CNetCmd*)&msg, sizeof( CMsgVehSetDest ) );
         return;
     }
@@ -1091,7 +1123,13 @@ void CAIUnit::SetDestination( CSubHex& subHexDest )
     CMsgVehSetDest msg( m_dwID, hex, CVehicle::moving );
     msg.m_sub = subHexDest;
 
+#if EN_AI_PROBES_ECON && defined(_WIN32)
+    // same probe as the CHexCoord overload, tagged -B (sub-hex orders: loads/pickups)
+    if ( pGameData->IsTruck( m_dwID ) )
+    { char szZ[80]; sprintf( szZ, "[SETDEST-B] truck %lu %s\n", (unsigned long)m_dwID, subHexDest == subHexVeh ? "WAKE" : "POSTED" ); OutputDebugStringA( szZ ); }
+#endif
     // CMsgVehSetDest msg( m_dwID, subHexDest, CVehicle::moving );
+    EnTrafOrderPosted( m_iOwner, subHexDest == subHexVeh );   // R10 orders_ok / orders_wake
     theGame.PostToServer( (CNetCmd*)&msg, sizeof( CMsgVehSetDest ) );
 }
 
@@ -1160,6 +1198,7 @@ void CAIUnit::SetDestination( CHexCoord& m_hex )
 
     // CMsgVehSetDest (DWORD dwID, CHexCoord const & hex, int iMode);
     CMsgVehSetDest msg( m_dwID, m_hex, CVehicle::moving );
+    EnTrafOrderPosted( m_iOwner, m_hex == hexVeh );   // R10 orders_ok / orders_wake
     theGame.PostToServer( (CNetCmd*)&msg, sizeof( CMsgVehSetDest ) );
 }
 

@@ -43,6 +43,34 @@ static char BASED_CODE THIS_FILE[] = __FILE__;
 #endif
 #define new DEBUG_NEW
 
+// ---------------------------------------------------------------------------
+// [PPLADD] (015 R12) INSTRUMENT ONLY. CPlayer::AddPplBldg / AddPplVeh are unbounded
+// `+=` inlines (player.h) and all four call sites in the game are in this file, all on
+// destroy paths. Called AFTER the add with the values bracketing that one call. Prints
+// on an implausible add (outside +/-10000) or on a stock CROSSING - 0 downward, or 1e9
+// upward, which is the #82 signature (m_iPplBldg seen at ~2,137,000,000). A crossing
+// always prints; the merely-implausible adds are bounded to one per site per second
+// through the caller's own static DWORD. It logs and returns; it touches nothing.
+// ---------------------------------------------------------------------------
+static void EnPplAddLog( char const* pszSite, CPlayer* pPlyr, char const* pszField, int iPre,
+                         int iAdd, int iPost, char const* pszSrc, DWORD* pdwNext )
+{
+    const bool bCross = ( ( iPre >= 0 ) && ( iPost < 0 ) )
+                     || ( ( iPre <= 1000000000 ) && ( iPost > 1000000000 ) );
+    const bool bWild  = ( iAdd < -10000 ) || ( iAdd > 10000 );
+    if ( !bCross && !bWild )
+        return;
+    if ( !bCross )
+    {
+        const DWORD dwNow = timeGetTime( );
+        if ( dwNow < *pdwNext )
+            return;
+        *pdwNext = dwNow + 1000;
+    }
+    EnTrafficLog( "[PPLADD] site %s plyr %d field %s pre %d add %d post %d src %s", pszSite,
+                  pPlyr != NULL ? pPlyr->GetPlyrNum( ) : -1, pszField, iPre, iAdd, iPost, pszSrc );
+}
+
 
 CUnitShowStat uShowStat;
 
@@ -2236,7 +2264,21 @@ CBuilding::~CBuilding( )
             GetOwner( )->AddBldgsHave( -1 );
 
         // remove from # total
-        GetOwner( )->AddPplBldg( -( GetOwner( )->GetPplMult( ) * GetData( )->GetPeople( ) ) );
+        {   // [PPLADD] instrument: the SAME expression, computed once into a local
+            const float fPplMult = GetOwner( )->GetPplMult( );
+            const int   iPeople  = GetData( )->GetPeople( );
+            const int   iAddPpl  = (int)-( fPplMult * iPeople );   // same implicit conversion as before, made explicit
+            const int   iPrePpl  = GetOwner( )->GetPplBldg( );
+            GetOwner( )->AddPplBldg( iAddPpl );
+            if ( EnTrafficLogOn( ) )
+            {
+                static DWORD s_dwNextPplBldgDtor = 0;
+                char         szSrc[64];
+                sprintf( szSrc, "people=%d pplmult=%g", iPeople, (double)fPplMult );
+                EnPplAddLog( "bldg_dtor", GetOwner( ), "pplbldg", iPrePpl, iAddPpl,
+                             GetOwner( )->GetPplBldg( ), szSrc, &s_dwNextPplBldgDtor );
+            }
+        }
 
         // scenario 4 & 5 - we need to undo the extra visibility
         if ( ( theGame.GetScenario( ) == 4 ) || ( theGame.GetScenario( ) == 5 ) )
@@ -2527,7 +2569,21 @@ void CBuilding::RemoveUnit( )
         return;
 
     // remove from # total
-    GetOwner( )->AddPplBldg( -( GetOwner( )->GetPplMult( ) * GetData( )->GetPeople( ) ) );
+    {   // [PPLADD] instrument: the SAME expression, computed once into a local
+        const float fPplMult = GetOwner( )->GetPplMult( );
+        const int   iPeople  = GetData( )->GetPeople( );
+        const int   iAddPpl  = (int)-( fPplMult * iPeople );   // same implicit conversion as before, made explicit
+        const int   iPrePpl  = GetOwner( )->GetPplBldg( );
+        GetOwner( )->AddPplBldg( iAddPpl );
+        if ( EnTrafficLogOn( ) )
+        {
+            static DWORD s_dwNextPplBldgRem = 0;
+            char         szSrc[64];
+            sprintf( szSrc, "people=%d pplmult=%g", iPeople, (double)fPplMult );
+            EnPplAddLog( "bldg_remove", GetOwner( ), "pplbldg", iPrePpl, iAddPpl,
+                         GetOwner( )->GetPplBldg( ), szSrc, &s_dwNextPplBldgRem );
+        }
+    }
 
     // mark as not built
     if ( m_iConstDone == -1 )
@@ -4945,6 +5001,7 @@ void CVehicle::ctor( )
     m_iUnitType = CUnit::vehicle;
 
     m_ptDest = m_ptTail = m_ptNext = m_ptHead = CSubHex( 0, 0 );
+    m_pszSelWhy = NULL;   // [STEP] selector provenance (015 R20): no selector has run yet
     m_hexDest = m_hexLastDest = m_hexNext = CHexCoord( 0, 0 );
     m_iDir = m_maploc.x = m_maploc.y = m_iSpeed = 0;
     m_iDestMode                                 = sub;
@@ -4969,6 +5026,8 @@ void CVehicle::ctor( )
 
     m_hexStagnant     = CHexCoord( 0, 0 );
     m_dwStagnantSince = 0;
+    m_dwEnteredWrongAt = 0;
+    m_bPathFail        = 0;   // traffic probe: no path failure recorded yet
 #if EN_PATH_PROBES
     m_hexLastClamp    = CHexCoord( -1, -1 );  // no prior clamp
 #endif
@@ -5167,7 +5226,20 @@ CVehicle::~CVehicle( )
             theGame.m_pHpRtr->MsgDeleteUnit( this );
 
         // remove from # driving vehicles, # total
-        GetOwner( )->AddPplVeh( -GetData( )->GetPeople( ) );
+        {   // [PPLADD] instrument: the SAME expression, computed once into a local
+            const int iPeople = GetData( )->GetPeople( );
+            const int iAddPpl = -iPeople;
+            const int iPrePpl = GetOwner( )->GetPplVeh( );
+            GetOwner( )->AddPplVeh( iAddPpl );
+            if ( EnTrafficLogOn( ) )
+            {
+                static DWORD s_dwNextPplVehDtor = 0;
+                char         szSrc[64];
+                sprintf( szSrc, "people=%d", iPeople );
+                EnPplAddLog( "veh_dtor", GetOwner( ), "pplveh", iPrePpl, iAddPpl,
+                             GetOwner( )->GetPplVeh( ), szSrc, &s_dwNextPplVehDtor );
+            }
+        }
         ASSERT( GetOwner( )->GetPplVeh( ) >= 0 );
 
         if ( theGame.GetScenario( ) == 6 )
@@ -5384,7 +5456,20 @@ void CVehicle::RemoveUnit( )
         return;
 
     // remove from # driving vehicles, # total
-    GetOwner( )->AddPplVeh( -GetData( )->GetPeople( ) );
+    {   // [PPLADD] instrument: the SAME expression, computed once into a local
+        const int iPeople = GetData( )->GetPeople( );
+        const int iAddPpl = -iPeople;
+        const int iPrePpl = GetOwner( )->GetPplVeh( );
+        GetOwner( )->AddPplVeh( iAddPpl );
+        if ( EnTrafficLogOn( ) )
+        {
+            static DWORD s_dwNextPplVehRem = 0;
+            char         szSrc[64];
+            sprintf( szSrc, "people=%d", iPeople );
+            EnPplAddLog( "veh_remove", GetOwner( ), "pplveh", iPrePpl, iAddPpl,
+                         GetOwner( )->GetPplVeh( ), szSrc, &s_dwNextPplVehRem );
+        }
+    }
 
     if ( GetOwner( )->IsMe( ) )
     {

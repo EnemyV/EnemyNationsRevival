@@ -33,6 +33,134 @@ extern CPathMgr         thePathMgr;  // the pathfinding object (no yield)
 
 WORD wPatrols, wBuildings;
 
+// ---------------------------------------------------------------------------
+// Per-AI seek-scan counters (declared in vehicle.h, printed by
+// CVehicle::TrafficCensus). Player numbers are handed out at runtime with no
+// compile-time ceiling, so nothing may index these without the range check in
+// the helpers below - same rule as ai.cpp's g_alAiManageTicks.
+// ---------------------------------------------------------------------------
+volatile long g_alAiScansRun[EN_AI_TICK_PLYRS]        = { 0 };
+volatile long g_alAiScansSkipBudget[EN_AI_TICK_PLYRS] = { 0 };
+volatile long g_alAiScanMsTotal[EN_AI_TICK_PLYRS]     = { 0 };
+volatile long g_alAiScanMsMax[EN_AI_TICK_PLYRS]       = { 0 };
+volatile long g_alAiWalksStarted[EN_AI_TICK_PLYRS]    = { 0 };
+volatile long g_alAiWalksDone[EN_AI_TICK_PLYRS]       = { 0 };
+volatile long g_alAiScanCandTotal[EN_AI_TICK_PLYRS]   = { 0 };
+volatile long g_alAiScanCandMax[EN_AI_TICK_PLYRS]     = { 0 };
+volatile long g_alAiScanOpForTotal[EN_AI_TICK_PLYRS]  = { 0 };
+volatile long g_alAiScanOpForMax[EN_AI_TICK_PLYRS]    = { 0 };
+volatile long g_alAiSeekTargets[EN_AI_TICK_PLYRS]     = { 0 };
+volatile long g_alAiSeekLoops[EN_AI_TICK_PLYRS]       = { 0 };
+
+static inline BOOL EnAiPlyrOk( int iPlyr ) { return ( iPlyr >= 0 ) && ( iPlyr < EN_AI_TICK_PLYRS ); }
+
+static inline void EnAiWalkStart( int iPlyr )
+{
+    if ( EnAiPlyrOk( iPlyr ) )
+    {
+        ++g_alAiWalksStarted[iPlyr];
+        g_alAiSeekTargets[iPlyr] = 0;
+    }
+}
+
+static inline void EnAiWalkDone( int iPlyr )
+{
+    if ( EnAiPlyrOk( iPlyr ) )
+        ++g_alAiWalksDone[iPlyr];
+}
+
+static inline void EnAiScanRun( int iPlyr, DWORD dwMs )
+{
+    if ( !EnAiPlyrOk( iPlyr ) )
+        return;
+    ++g_alAiScansRun[iPlyr];
+    g_alAiScanMsTotal[iPlyr] += (long)dwMs;
+    if ( (long)dwMs > g_alAiScanMsMax[iPlyr] )
+        g_alAiScanMsMax[iPlyr] = (long)dwMs;
+}
+
+static inline void EnAiScanSkipBudget( int iPlyr )
+{
+    if ( EnAiPlyrOk( iPlyr ) )
+        ++g_alAiScansSkipBudget[iPlyr];
+}
+
+// Per-walk seek-scan budget in ms, read ONCE from the environment (same shape
+// as EnTrafficLogOn in vehicle.cpp). Unset or 0 = the budget check is a no-op,
+// which is the default: the soak measures the row-hold change on its own first,
+// then turns this on with a measured number without a rebuild.
+static DWORD EnSeekWalkBudgetMs( )
+{
+    static long s_lMs = -1;
+    if ( s_lMs < 0 )
+    {
+        char szBuf[16] = { 0 };
+        s_lMs = ( GetEnvironmentVariableA( "EN_SEEK_WALK_BUDGET_MS", szBuf, sizeof( szBuf ) ) > 0 ) ? atol( szBuf ) : 0;
+        if ( s_lMs < 0 )
+            s_lMs = 0;
+    }
+    return (DWORD)s_lMs;
+}
+
+static inline void EnAiSeekTargets( int iPlyr, int iCount )
+{
+    if ( EnAiPlyrOk( iPlyr ) )
+        g_alAiSeekTargets[iPlyr] = (long)iCount;
+}
+
+// census `seekloops`: SeekOpfor wedges caught by the [SEEKLOOP] instrument below.
+// One bump per wedge (not per loop turn), same range-checked access rule.
+static inline void EnAiSeekLoop( int iPlyr )
+{
+    if ( EnAiPlyrOk( iPlyr ) )
+        ++g_alAiSeekLoops[iPlyr];
+}
+
+// ---------------------------------------------------------------------------
+// [SEEKLOOP] - INSTRUMENT ONLY, no state and no control flow is changed (015
+// arrival-storm root cause, discussion repo
+// docs/plans/015-arrival-storm-rootcause-fable.md section 5).
+//
+// SeekOpfor's `goto SeekNDestroy` re-scans after rejecting the scan's own
+// result, so it spins forever whenever GetOpForUnitScan keeps handing back an
+// id the engine ID maps refuse. This names that id through the UNFILTERED
+// lookups CBuildingMap::_GetBldg / CVehicleMap::_GetVehicle (building.inl:349,
+// vehicle.inl:59) - the filtered GetBldg/GetVehicle return NULL for anything
+// carrying CUnit::dying, so only the unfiltered pair can say WHY they said no.
+// Fires once per wedge (the second rejection of the SAME id inside one
+// SeekOpfor call), so cost is irrelevant.
+//
+// The lookups AND every dereference of what they return happen under `cs`; the
+// two emits are deliberately done after the leave, so no file or debugger I/O
+// is performed while the global game lock is held.
+// ---------------------------------------------------------------------------
+static void EnAiSeekLoopReport( int iPlyr, DWORD dwSeeker, unsigned uTask, int iInWalk, char cReason,
+                                DWORD dwTarget, unsigned uTgtType )
+{
+    char szS[320];
+
+    EnterCriticalSection( &cs );
+    CBuilding* pB = theBuildingMap._GetBldg( dwTarget );
+    CVehicle*  pV = theVehicleMap._GetVehicle( dwTarget );
+    sprintf( szS,
+             "[SEEKLOOP] plyr %d seeker %lu task %u inwalk %d reason %c target %lu ttype %u "
+             "bldg %d bflags %x bowner %d veh %d vflags %x vowner %d",
+             iPlyr, (unsigned long)dwSeeker, uTask, iInWalk, cReason, (unsigned long)dwTarget, uTgtType,
+             ( pB != NULL ) ? 1 : 0, ( pB != NULL ) ? (unsigned)pB->GetFlags( ) : 0u,
+             ( pB != NULL && pB->GetOwner( ) != NULL ) ? pB->GetOwner( )->GetPlyrNum( ) : -1,
+             ( pV != NULL ) ? 1 : 0, ( pV != NULL ) ? (unsigned)pV->GetFlags( ) : 0u,
+             ( pV != NULL && pV->GetOwner( ) != NULL ) ? pV->GetOwner( )->GetPlyrNum( ) : -1 );
+    LeaveCriticalSection( &cs );
+
+    EnAiSeekLoop( iPlyr );
+    EnTrafficLog( "%s", szS );   // EnTrafficLog stamps the tick and adds the newline
+    {
+        char szO[336];
+        sprintf( szO, "%s\n", szS );
+        OutputDebugStringA( szO );
+    }
+}
+
 //
 // upon creation, the task manager will process the goals associated
 // with this player, and create a private list of the tasks needed
@@ -46,6 +174,9 @@ CAITaskMgr::CAITaskMgr( BOOL bRestart, int iPlayer, CAIGoalMgr* pGoalMgr )
     m_bRepairFirst        = FALSE;
     m_bPartialPick        = FALSE;
     m_iCraneAssignCnt     = 0;
+    m_iWalkSeekTargets    = 0;
+    m_bInWalk             = FALSE;
+    m_dwWalkScanMs        = 0;
 
     ASSERT_VALID( pGoalMgr );
     m_pGoalMgr = pGoalMgr;
@@ -68,6 +199,12 @@ CAITaskMgr::CAITaskMgr( BOOL bRestart, int iPlayer, CAIGoalMgr* pGoalMgr )
 void CAITaskMgr::Manage( CAIMsg* pMsg )
 {
     ASSERT_VALID( this );
+
+    // Backstop for a throw out of a walk (GetOpForUnit can throw
+    // ERR_CAI_BAD_NEW): a leaked in-walk flag would gate every later
+    // message-path scan behind a budget that is already spent.
+    m_bInWalk      = FALSE;
+    m_dwWalkScanMs = 0;
 
     // STAGGERED GAME-START AGGRESSION (operator spec 2026-07-03): AI player N
     // holds its combat reactions + initial unit assignment until N game-SECONDS
@@ -501,6 +638,13 @@ TryAgain:
 //
 void CAITaskMgr::AssignUnits( void )
 {
+    // one AssignUnits pass = one walk. started running away from done is the
+    // stall this instrument exists to show.
+    EnAiWalkStart( m_iPlayer );
+    m_iWalkSeekTargets = 0;
+    m_bInWalk          = TRUE;
+    m_dwWalkScanMs     = 0;
+
     if ( m_pGoalMgr->m_plUnits != NULL )
     {
 #if THREADS_ENABLED
@@ -578,6 +722,10 @@ void CAITaskMgr::AssignUnits( void )
             }
         }
     }
+
+    m_bInWalk      = FALSE;
+    m_dwWalkScanMs = 0;
+    EnAiWalkDone( m_iPlayer );
 }
 
 //
@@ -2612,6 +2760,14 @@ void CAITaskMgr::SeekOpfor( CAIUnit* pUnit, CAITask* pTask )
 {
     CHexCoord hexDest, hexSeek;
 
+    // census `tgtheld`: seek units already holding a target. Published as it
+    // counts (not at walk end) so a walk that never finishes still reports.
+    if ( pUnit->GetDataDW( ) )
+    {
+        ++m_iWalkSeekTargets;
+        EnAiSeekTargets( m_iPlayer, m_iWalkSeekTargets );
+    }
+
 #ifdef _LOGOUT
     int iTargetType     = 0;
     int iTargetTypeUnit = 0;
@@ -2632,6 +2788,12 @@ void CAITaskMgr::SeekOpfor( CAIUnit* pUnit, CAITask* pTask )
 #endif
 
 
+    // [SEEKLOOP] instrument state (015 section 5): the id rejected on the
+    // previous turn of this call's SeekNDestroy loop, and how many turns in a
+    // row it has been the same id. Read/written only by the probe below.
+    DWORD dwSeekRej = 0;
+    int   iSeekRejN = 0;
+
 SeekNDestroy:
 
     // non-zero means an opfor unit is selected for attack
@@ -2646,6 +2808,18 @@ SeekNDestroy:
                        "\nCAITaskMgr::SeekOpfor() player %d unit %ld target %ld not found in m_plUnits ",
                        pUnit->GetOwner( ), pUnit->GetID( ), pUnit->GetDataDW( ) );
 #endif
+            // [SEEKLOOP] reason A: the scan's own id is not in this AI's opfor
+            // list any more. Instrument only - nothing below is changed.
+            {
+                DWORD dwR = pUnit->GetDataDW( );
+                if ( dwR == dwSeekRej && ++iSeekRejN == 2 )
+                    EnAiSeekLoopReport( m_iPlayer, pUnit->GetID( ),
+                                        ( pTask != NULL ) ? (unsigned)pTask->GetID( ) : 0u,
+                                        m_bInWalk ? 1 : 0, 'A', dwR,
+                                        (unsigned)pUnit->GetParam( CAI_TARGETTYPE ) );
+                dwSeekRej = dwR;
+            }
+
             // prior target is gone, reset and pick another
             pUnit->SetDataDW( 0 );
             pUnit->SetParam( CAI_TARGETTYPE, 0xFFFE );
@@ -2806,6 +2980,18 @@ SeekNDestroy:
         }
         LeaveCriticalSection( &cs );
 
+        // [SEEKLOOP] reason B: the id resolved in neither ID map (the filtered
+        // GetBldg/GetVehicle above). Instrument only - nothing below is changed.
+        {
+            DWORD dwR = pUnit->GetDataDW( );
+            if ( dwR == dwSeekRej && ++iSeekRejN == 2 )
+                EnAiSeekLoopReport( m_iPlayer, pUnit->GetID( ),
+                                    ( pTask != NULL ) ? (unsigned)pTask->GetID( ) : 0u,
+                                    m_bInWalk ? 1 : 0, 'B', dwR,
+                                    (unsigned)pUnit->GetParam( CAI_TARGETTYPE ) );
+            dwSeekRej = dwR;
+        }
+
         // unit is gone, reset and pick another
         pUnit->SetDataDW( 0 );
         pUnit->SetParam( CAI_TARGETTYPE, 0xFFFE );
@@ -2848,10 +3034,29 @@ SeekNDestroy:
             }
         }
 
+        // This walk has already spent its scan budget: decline the scan and
+        // write NOTHING - no task, goal, param, status or DataDW - so the unit
+        // is left exactly as it was and the no-target tail below (which would
+        // unassign it and stand it down to patrol) is unreachable on a skip.
+        // Only inside a walk: message-path callers are never budgeted.
+        DWORD const dwBudget = EnSeekWalkBudgetMs( );
+        if ( m_bInWalk && dwBudget && m_dwWalkScanMs > dwBudget )
+        {
+            EnAiScanSkipBudget( m_iPlayer );
+            return;
+        }
+
         if ( nClasses )
         {
             int iClassSel = -1;
-            dwOpForUnit   = m_pGoalMgr->GetOpForUnitScan( aiHow, aiKind, nClasses, pUnit, &iClassSel );
+            // raw timeGetTime, NOT theGame.GettimeGetTime: the cached value is
+            // written once per frame by the main loop, so it reads a zero delta
+            // for exactly the case being measured (a stalled main loop).
+            DWORD dwScanT0 = timeGetTime( );
+            dwOpForUnit    = m_pGoalMgr->GetOpForUnitScan( aiHow, aiKind, nClasses, pUnit, &iClassSel );
+            DWORD dwScanMs = timeGetTime( ) - dwScanT0;
+            m_dwWalkScanMs += dwScanMs;
+            EnAiScanRun( m_iPlayer, dwScanMs );
             if ( dwOpForUnit )
             {
                 pUnit->SetDataDW( dwOpForUnit );

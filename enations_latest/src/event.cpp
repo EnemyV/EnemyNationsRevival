@@ -365,7 +365,14 @@ void CGame::_Event (int ID, int iTyp, char const * psText, int iVoice)
 	TRAP (ID == EVENT_PLAYER_JOINED);
 	TRAP (ID == EVENT_HPR_SEAPORTS);
 	TRAP (ID == EVENT_HPR_CARGOSHIP);
-	TRAP (ID == EVENT_HPR_NOREACH);
+	// A router that cannot reach a seaport is a normal outcome, not a fault: the six
+	// TRAPs above stay as they are, but this one fired often enough to be a nuisance
+	// breakpoint in Debug. Logged instead (traffic plan R9).
+	if (ID == EVENT_HPR_NOREACH)
+		{
+		EN_TRAP_REMOVED ("Event: HPR_NOREACH - router cannot reach a seaport; 1996 curiosity breakpoint turned into a [HPR_NOREACH] log line (traffic plan R9)");
+		EnTrafficLog ("[HPR_NOREACH]");
+		}
 
 	int iRes = aiRes [ID];
 	int iSfx = aiSfx [ID];

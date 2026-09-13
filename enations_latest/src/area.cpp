@@ -7797,9 +7797,20 @@ void HarnessDumpUnits( std::string& out )
         // above are view-relative, so two clients' dumps are not comparable - the
         // hex IS. Costs nothing: GetHexHead() is already in hand for the projection.
         CHexCoord hexV = pVeh->GetHexHead( );
-        snprintf( line, sizeof( line ), "%lu %d %d %s %s %d %d\n",
+        // Traffic probe fields (docs/plans/015-focus-investigation.md 1.3), appended
+        // AFTER the original seven so positional parsers keep working: route mode,
+        // event, dest hex, in-building flag. Lets a seat name a vanished truck (inbldg
+        // 1 = undrawn) without a screenshot. Two more on the tail: the current
+        // opponent (0 = none) and hit points, so "stuck, or under fire / dying?"
+        // is answerable from one dump without a second probe.
+        CHexCoord hexD = pVeh->GetHexDest( );
+        snprintf( line, sizeof( line ), "%lu %d %d %s %s %d %d %d %d %d %d %d %lu %d\n",
                   (unsigned long) dwID, (int) pt.x, (int) pt.y, kind,
-                  bMine ? "me" : "other", hexV.X( ), hexV.Y( ) );
+                  bMine ? "me" : "other", hexV.X( ), hexV.Y( ),
+                  (int) pVeh->GetRouteMode( ), (int) pVeh->GetEvent( ), hexD.X( ), hexD.Y( ),
+                  pVeh->IsInBuilding( ) ? 1 : 0,
+                  pVeh->GetOppo( ) != NULL ? (unsigned long) pVeh->GetOppo( )->GetID( ) : 0UL,
+                  pVeh->GetDamagePoints( ) );
         body += line;
     }
 
@@ -7877,9 +7888,13 @@ void HarnessDumpBldgState( std::string& out )
             if ( iFireRt == 0 )
                 ++iArmedSilent;                       // armed but won't fire (#60 symptom)
         }
-        snprintf( line, sizeof( line ), "%lu t%d %s cd%d stop%d bfr%d fr%d\n",
+        // ev = CUnit::event, the materials-halt / waiting-on-input flag. Appended LAST
+        // so positional parsers keep working; ResumeUnit clears it alongside stopped,
+        // so a building can be idle with stop0 and only this field says why.
+        snprintf( line, sizeof( line ), "%lu t%d %s cd%d stop%d bfr%d fr%d ev%d\n",
                   (unsigned long) dwID, iType, bMine ? "me" : "other",
-                  iConst, iStopped, iBaseFR, iFireRt );
+                  iConst, iStopped, iBaseFR, iFireRt,
+                  pBldg->IsFlag( CUnit::event ) ? 1 : 0 );
         body += line;
     }
 

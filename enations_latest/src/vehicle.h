@@ -231,6 +231,73 @@ protected:
 
 
 /////////////////////////////////////////////////////////////////////////////
+// [SUBATTEMPT] selector record (015 T2 item 1/2 - INSTRUMENT ONLY, no behaviour
+// change). CVehicle::FindSub is the only thing that picks m_ptNext, and a census
+// snapshot cannot reconstruct which directions it walked or what turned each one
+// down (WinAstra review 10: "T1 still infers history from a snapshot"). So the
+// selector records its OWN latest attempt, in the loop, at the existing
+// comparisons - it never re-runs FindSub/GetPath and never touches the random
+// state. ONE bounded record per vehicle (latest attempt only, no stream), written
+// on whatever thread ran FindSub; read back by TrafficCensus for [STUCK] context.
+// Runtime-only, NOT serialized: zero-initialised by the in-class {} below so the
+// existing ctor path in new_unit.cpp needs no change.
+const int EN_SUB_MAXDIR = 8;   // widest FindSub sweep: FL1hex walks iDir -4..+3
+
+// first rejecting gate per direction, in the order FindSub tests them
+enum {
+	EN_SUBGATE_NONE = 0,		// considered and not rejected (winner OR a valid loser)
+	EN_SUBGATE_OLDNEXT,			// _next == the old m_ptNext
+	EN_SUBGATE_NOTCLOSER,		// bCloser and not closer to m_hexNext
+	EN_SUBGATE_OCCUPIED,		// a vehicle holds the sub (id/mode recorded, self flagged)
+	EN_SUBGATE_BLDGENTRY,		// CanEnterBldg said no
+	EN_SUBGATE_TERRDIR,			// CanEnterHex said no (directional terrain / bridge deck)
+	EN_SUBGATE_SAMEBLDG,		// would turn back into the building we are standing on
+	EN_SUBGATE_DIAGPAIR,		// diagonal step and ONE vehicle holds both corner subs
+	EN_SUBGATE_ZEROCOST,		// GetTerrainCost == 0
+	EN_SUBGATE_COSTTHRESH,		// first-winner test: iSpeed >= iBestSpeed * 8
+	EN_SUBGATE_NUM };
+
+// caller/rung tag - which of the seven real FindSub call sites ran this attempt
+enum {
+	EN_SUBTAG_OTHER = 0,		// a call site not on the list below
+	EN_SUBTAG_TNS_FIRST,		// TryNewSub, first search
+	EN_SUBTAG_TNS_REPATH,		// TryNewSub, second search after GetPath (TRUE)
+	EN_SUBTAG_TNS_CLOSER,		// TryNewSub, closer-only anti-circle rung
+	EN_SUBTAG_GNH_SPEED,		// GetNextHex, slow/impassable-terrain re-search
+	EN_SUBTAG_GNH_CANTENTER,	// GetNextHex, CanEnter (m_ptNext) failed
+	EN_SUBTAG_GNH_CLOSER,		// GetNextHex, closer-only anti-circle rung
+	EN_SUBTAG_MSGNEXTHEX,		// MsgSetNextHex traffic shuffle (runs on the OTHER vehicle)
+	EN_SUBTAG_NUM };
+
+extern char const * EnSubTagName (int iTag);		// vehmove.cpp
+extern char const * EnSubGateName (int iGate);		// vehmove.cpp
+
+struct EnSubAttempt
+{
+	DWORD			dwSeq;			// per-vehicle attempt counter; 0 = nothing recorded yet
+	DWORD			dwTimeMs;		// raw timeGetTime () when the attempt ran
+	DWORD			dwOkRun;		// consecutive successes immediately before this attempt
+	BYTE			bTag;			// EN_SUBTAG_*
+	BYTE			bCloser;		// the bCloser argument
+	BYTE			bResult;		// 1 = FindSub returned TRUE
+	BYTE			bNumDir;		// directions actually walked (<= EN_SUB_MAXDIR)
+	int				iWheel;			// GetWheelType ()
+	int				iVehType;		// CTransportData::GetType ()
+	short			sHeadX, sHeadY;
+	short			sTailX, sTailY;
+	short			sOldNextX, sOldNextY;	// m_ptNext on entry (the excluded candidate)
+	short			sHexNextX, sHexNextY;	// m_hexNext - what bCloser measures against
+	short			sDestX, sDestY;			// m_hexDest - the FINAL destination
+	short			sSelX, sSelY;			// m_ptNext on return (the selected next)
+	signed char		acDir  [EN_SUB_MAXDIR];		// iDir, in loop order
+	signed char		acGate [EN_SUB_MAXDIR];		// EN_SUBGATE_*
+	signed char		acOccMode [EN_SUB_MAXDIR];	// occupant VEH_MODE, -1 = no occupant
+	BYTE			abOccSelf [EN_SUB_MAXDIR];	// 1 = the occupant is this vehicle itself
+	short			asCandX [EN_SUB_MAXDIR], asCandY [EN_SUB_MAXDIR];
+	DWORD			adwOccId [EN_SUB_MAXDIR];	// occupant / diagonal blocker id, 0 = none
+};
+
+/////////////////////////////////////////////////////////////////////////////
 // CVehicle - a Vehicle
 
 class CMsgVehSetDest;
@@ -466,6 +533,12 @@ public:
 
 		void					DumpContents ();
 
+		// Traffic census, one line per LOCAL player (docs/plans/015-focus-investigation.md
+		// 1.3, discussion repo): the trucks-moving metric plus the in-a-building-that-is-
+		// not-my-destination count. Backs the harness `traffic` verb and the 30 s
+		// [CENSUS] line in traffic.log. Read-only.
+		static void			TrafficCensus (std::string & out);
+
 		void					TempTargetOff () { m_bFlags &= ~ temp_target; }
 
 		void					HpControlOn () { m_bFlags |= hp_controls; }
@@ -509,7 +582,9 @@ protected:
 		BOOL					TestStuck ();
 		void					HandleBlocked ();
 		BOOL					TryNewSub (BOOL bNoNewPath);
-		BOOL					FindSub (BOOL bCloser = FALSE);
+		// iTag = EN_SUBTAG_* - which call site/rung is asking, for the [SUBATTEMPT]
+		// record. Defaulted so nothing but the instrument has to care.
+		BOOL					FindSub (BOOL bCloser = FALSE, int iTag = EN_SUBTAG_OTHER);
 		CSubHex				Rotate (int iDir);
 		void					Turn180 ();
 		BOOL					IsPassable (CSubHex const & _sub, BOOL bStrict = TRUE);
@@ -555,6 +630,60 @@ protected:
 		LONG					m_iBlockCount;					// number of consecutive times blocked
 		CHexCoord			m_hexStagnant;					// blocked-stagnation watch: last hex seen blocked at (transient, not saved)
 		DWORD					m_dwStagnantSince;			// real ms when we first saw it blocked at that hex (0 = not watching)
+		DWORD					m_dwEnteredWrongAt;			// traffic probe: game ms (theGame.GettimeGetTime) when [ENTERWRONG] fired for the
+															// building we are in, 0 = none. Runtime-only, NOT serialized; cleared by ExitBuilding.
+		BYTE					m_bPathFail;					// traffic probe: why the last GetPath() failed. 0 = none, 1 = vehicle-free search
+															// failed, 2 = vehicle-aware search failed. Runtime-only, NOT serialized.
+		// [PATHRES]/[REISSUE] join (015 R11 instrument, docs/plans/015-fix-plan.md 3.1 v2).
+		// Runtime-only and NEVER serialized - the NSDMIs zero them without touching
+		// CVehicle::ctor or the save format, exactly like m_subAttempt below. Written ONLY
+		// under the EN_TRAFFIC_LOG gate, from whatever thread ran GetPath.
+		DWORD					m_dwTrafPathSeq = 0;		// per-vehicle GetPath call counter; the `seq` field of [PATHRES]
+		DWORD					m_dwTrafResSeq = 0;			// seq of the LAST EMITTED [PATHRES], 0 = none yet; printed by [GIVEUP]
+		const char *			m_pszTrafResCls = NULL;		// class name of that record (a string literal), NULL = none; printed by [GIVEUP]
+		BYTE					m_byTrafPrevFull = 1;		// was the PREVIOUS GetPath result the `full` class? Rate bound: a full
+															// result is printed only when this is 0 (the recovery transition).
+															// Starts at 1 so a vehicle that only ever succeeds stays silent.
+		DWORD					m_dwTrafReissue = 0;		// seq of the last NON-FULL result, i.e. the failed search not yet
+															// joined to an order; [REISSUE] prints it and clears it back to 0.
+		BYTE					m_byTrafNoNotify = 0;		// [NONOTIFY_CHG] (015 R12): 1 = this vehicle hit
+															// PostArrivedOrBlocked's blocked fall-through (human non-transport - nobody told).
+															// Cleared by the next real mode change in _SetRouteMode, which logs it. Runtime-only,
+															// NOT serialized, and NOTHING the game reads.
+		// [STEP] selector provenance (015 R20). PER-VEHICLE, and that is the whole point: a
+		// vehicle needs up to STEPS_HEX (16) Move() ticks to cross ONE sub-hex (SetMoveParams
+		// sets m_iStepsLeft = STEPS_HEX and Move() early-returns while steps remain,
+		// vehmove.cpp:79-83), and the main loop runs Operate() on EVERY other vehicle in
+		// between, on the SAME thread. R19 kept this tag in a process global, so by the time
+		// the head actually advanced in ArrivedNextHex the global named whichever vehicle
+		// selected LAST - wrong in the ORDINARY case, not merely in some race.
+		// Written immediately before each m_ptNext write (and at the FindSub sites only when
+		// the write actually CHANGED the value), read at the head-advance commit.
+		// STRING LITERALS ONLY - never allocated, never freed, and NEVER serialized; the
+		// NSDMI plus the explicit clear in CVehicle::ctor cover every construction path.
+		const char *			m_pszSelWhy = NULL;
+		// [PATHRES] emitter. A static MEMBER (like TrafficCensus) because it has to bump
+		// the five fields above; iCls is the unit.cpp EN_PATHCLS_* value passed as an int
+		// so that enum stays local to the probe block. Defined in unit.cpp, no-op when the
+		// EN_TRAFFIC_LOG gate is off, and it writes NOTHING the game reads.
+		// 015 R19: `pszExit` is CPathMgr's exit-reason literal for the search that produced
+		// this result (EnPathExitWhy(), cpathmgr.h) - "ok" on success, "faked" when the
+		// adjacency shortcut in CVehicle::GetPath returned without running a search.
+		// 015 R20: `iCoastSkip` is how many candidate cells that SAME search refused under the
+		// intermediate-coastline rule (EnPathCoastSkip(), cpathmgr.h). It is a COUNT and is
+		// printed as its own `coastskip` field: R19 glued it onto the exit label as a `_coast`
+		// suffix, which reads as "the coastline rule caused this exit" - it does not, it is
+		// one of the things that can starve a search. 0 on the faked/adjacency arm, which
+		// runs no search at all.
+		static void				EnTrafPathRes (CVehicle * pVeh, int iCls, BOOL bNoOcc, const char * pszReason,
+									   CHexCoord const & hexReq, CHexCoord const & hexFrom,
+									   int iRetX, int iRetY, int iLen, int iRetries, long lBc,
+									   const char * pszExit, int iCoastSkip);
+		// [SUBATTEMPT] (015 T2): the LATEST FindSub attempt on this vehicle - one bounded
+		// record, no stream. Written by FindSub on whatever thread ran it; read by
+		// TrafficCensus for the [STUCK] "last attempt seq/age" context. Runtime-only and
+		// NOT serialized - the = {} zero-inits it without touching CVehicle::ctor.
+		EnSubAttempt			m_subAttempt = {};
 #if EN_PATH_PROBES
 		CHexCoord			m_hexLastClamp;					// mpath.reclamp probe: hex of last clamped path, (-1,-1) = none (transient, not saved)
 #endif
@@ -669,6 +798,138 @@ extern CVehicleHex theVehicleHex;
 
 extern void SerializeElements (CArchive & ar, CVehicle * * ppVeh, int nCount);
 extern void SerializeElements (CArchive & ar, CRoute * * ppRt, int nCount);
+
+// Traffic probe sink (vehicle.cpp). Switched at RUNTIME by EN_TRAFFIC_LOG (set, not "0")
+// so one build serves every platform and the probes can stay in Release; writes
+// traffic.log in the launch dir. EN_TRAFFIC_VEH=<id> follows one vehicle ([FOLLOW]).
+extern bool		EnTrafficLogOn ();
+extern void		EnTrafficLog (const char * pszFmt, ...);
+extern DWORD	EnTrafficFollowId ();
+
+// [STEP] (015 R19) vehicle filter. EN_TRAFFIC_VEH is a COMMA-SEPARATED list of vehicle
+// ids read ONCE (at most EN_TRAF_VEH_MAX of them); unset or empty = every id is
+// unlisted, i.e. the [STEP] probe is off. EnTrafficFollowId() (the older single-id
+// [FOLLOW] probe) takes the FIRST id of the same list, so both probes share one env var.
+const int EN_TRAF_VEH_MAX = 32;		// ids kept from the list
+const int EN_TRAF_VEH_BUF = 512;	// env-var read buffer (32 ids of 10 digits + commas)
+extern bool		EnTrafficVehListed (DWORD dwId);
+
+// [STEP] emitter (015 R20; defined in vehmove.cpp). No longer a file-static: the 6-minute
+// stuck hop in vehicle.cpp relocates the head in ANOTHER translation unit and has to be
+// recorded as a relocation rather than left to masquerade as a step. Bounded by
+// EnTrafficVehListed and suppressed when subFrom == subTo; tail/dest/event are read off
+// pVeh as it stands at the call. Instrument only - writes nothing the game reads.
+extern void		EnTrafStepLog (CVehicle * pVeh, const char * pszWhy,
+						   CSubHex const & subFrom, CSubHex const & subTo, int iDir, int iMode);
+
+// AI liveness counter (ai.cpp): bumped once per CAIMgr::Manage() pass, indexed by
+// player number, so TrafficCensus can print it as `aiticks` - a counter that stops
+// moving while that player still has vehicles is a dead/wedged AI thread, not a
+// traffic jam. NOTE: the game has NO fixed player array to borrow a bound from -
+// players live in CGame's CList and per-player buffers are sized at runtime from
+// theGame.GetMaxPlyrNum() - so this probe carries its own generous fixed bound and
+// EVERY access is range-checked. 64 matches the player-colour table's modulus
+// (NUM_PLYR_COLORS, player.cpp), the widest player number the game ever renders.
+const int EN_AI_TICK_PLYRS = 64;
+extern volatile long g_alAiManageTicks [];
+
+// AI seek-scan counters (defined in caitmgr.cpp), same bound and the same
+// bounds-checked access rule as g_alAiManageTicks above - player numbers are
+// runtime-assigned, so EVERY access is range-checked. They exist to answer one
+// question: is CAIGoalMgr::GetOpForUnitScan what stops CAITaskMgr::AssignUnits
+// from finishing a walk (20 of 26 AI workers sampled inside that scan on a
+// contended-lock leaf, one scan ~100 s, so trucks never got dispatched).
+//   ScansRun / ScanMsTotal / ScanMsMax - GetOpForUnitScan calls and their cost
+//   ScansSkipBudget          - scans declined by the per-walk budget (part D)
+//   WalksStarted / WalksDone - AssignUnits entries vs normal exits: started
+//                              running away from done IS the stall
+//   ScanCandTotal / Max      - per-candidate AssessThreat/AssessTarget cs takes
+//                              per scan. Part C hoists the per-HEX takes only,
+//                              on the assumption candidates are few; without
+//                              this a flat lock-wait after part C cannot be
+//                              told from "there were never many candidates"
+//   ScanOpForTotal / Max     - CAIUnitList::GetOpForUnit calls per scan. That
+//                              call takes cs on every index miss and allocates
+//                              under it (caiunit.cpp:1523) and is deliberately
+//                              NOT changed here, so "one acquisition per row"
+//                              is only true while this number is small
+//   SeekTargets              - seek units seen holding a target (DataDW != 0)
+//                              so far in the current/last walk
+//   SeekLoops                - [SEEKLOOP] wedges: SeekOpfor rejected the SAME
+//                              target id on two consecutive turns of one call's
+//                              `goto SeekNDestroy` loop. One bump per wedge, not
+//                              per turn, so a non-zero value with frozen aiticks
+//                              is the spin itself, not a rate
+extern volatile long g_alAiScansRun [];
+extern volatile long g_alAiScansSkipBudget [];
+extern volatile long g_alAiScanMsTotal [];
+extern volatile long g_alAiScanMsMax [];
+extern volatile long g_alAiWalksStarted [];
+extern volatile long g_alAiWalksDone [];
+extern volatile long g_alAiScanCandTotal [];
+extern volatile long g_alAiScanCandMax [];
+extern volatile long g_alAiScanOpForTotal [];
+extern volatile long g_alAiScanOpForMax [];
+extern volatile long g_alAiSeekTargets [];
+extern volatile long g_alAiSeekLoops [];
+
+// R10 traffic DENOMINATORS (015 T2 item 4, defined in vehicle.cpp). Same bound and
+// the same range-check-every-access rule as the AI counters above. These are EXACT
+// event counts, deliberately kept apart from the sampled [SUBATTEMPT]/[STUCK] detail:
+// a rate needs a denominator that is not itself throttled.
+//   OrdersOk    - CAIUnit::SetDestination calls that passed the 30 s dedupe AND the
+//                 same-location drop and actually reached theGame.PostToServer
+//   OrdersWake  - the subset posted BECAUSE the target hex is where the unit already
+//                 stands (the truck "wake" order): counted separately so an order rate
+//                 is not inflated by wakes that ask for no movement at all
+//   Steps       - PHYSICAL sub-step completions: bumped in CVehicle::ArrivedNextHex at
+//                 the line where the head sub actually advances. Placement, carried
+//                 (MoveCargo) and the stuck teleport never reach that line
+//   Deliveries  - truck unloads completed at BOTH routers: the AI path
+//                 (CAIMgr::DestinationResponse -> CAIRouter::UnloadMaterials) and,
+//                 since 015 T2b, the human auto-router path
+//                 (CHPRouter::DestinationResponse -> CHPRouter::UnloadMaterials,
+//                 chproute.cpp - both its normal and its post-restore unload branch).
+//                 A human row of 0 now means no deliveries, not an absent counter
+//   SweepMsMax  - longest CAIMgr::HandleStuckVehicles call for that player, ms
+extern volatile long g_alTrafOrdersOk [];
+extern volatile long g_alTrafOrdersWake [];
+extern volatile long g_alTrafSteps [];
+extern volatile long g_alTrafDeliveries [];
+extern volatile long g_alTrafSweepMsMax [];
+
+// T2b GetPath return CLASSES (015 T2 item 1, defined in vehicle.cpp, stamped in
+// unit.cpp at every exit of CVehicle::GetPath). Indexed [player][mode]. bNoOcc is
+// handed STRAIGHT to CPathMgr::GetPath's `bVehBlock` parameter, documented at
+// cpathmgr.h:134-135 as "default (FALSE) means that path goes thru vehicles, TRUE
+// means vehicles will block" and used that way at cpathmgr.cpp:1072, so the original
+// T2b legend had the two modes BACKWARDS. Corrected (015 R11 item 3):
+//   mode 0 = bNoOcc FALSE = the path may run THROUGH vehicles = vehicle-FREE  - suffix `_free`
+//   mode 1 = bNoOcc TRUE  = an occupied hex is no-entry       = vehicle-AWARE - suffix `_aware`
+// EXACTLY ONE class is stamped per GetPath call, so for a given player the ten cells
+// sum to the number of calls - that is what makes them usable as a denominator.
+// Every classification is read off state GetPath has ALREADY computed; nothing here
+// runs a second pathfind or re-queries the map. Same runtime bound and the same
+// range-check-every-access rule as the counters above.
+//   PathEmpty   - the "we're stuck" exit: no path at all (m_iPathLen <= 0), or a path
+//                 whose first and last hex are the same. BOTH of its returns count
+//                 here (the blocked one and the in-building cant_deploy guard)
+//   PathRepPart - the "can't reach dest, same path as 2 ago" exit: the search came
+//                 back SHORT of the requested destination and short at exactly the hex
+//                 it stopped at last time, so the path is thrown away. Both of its
+//                 exits count here (the cant_deploy return and the fall-through)
+//   PathDegen   - ACCEPTED but degenerate: m_iPathLen == 1, i.e. the vehicle is handed
+//                 a one-hex "path" (src == dest after the exit-hex adjustment)
+//   PathAccPart - ACCEPTED but PARTIAL: the path ends somewhere other than the hex
+//                 that was asked for, and NOT at the same short end as last time.
+//                 This is GetPath's own truncation test (_newDest != _hexDest), not a
+//                 shadow computation
+//   PathFull    - ACCEPTED and complete: length > 1, ending on the requested hex
+extern volatile long g_alTrafPathEmpty [][2];
+extern volatile long g_alTrafPathRepPart [][2];
+extern volatile long g_alTrafPathDegen [][2];
+extern volatile long g_alTrafPathAccPart [][2];
+extern volatile long g_alTrafPathFull [][2];
 
 
 #endif

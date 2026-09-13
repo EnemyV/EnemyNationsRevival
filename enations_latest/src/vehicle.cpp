@@ -21,6 +21,9 @@
 #include "building.inl"
 #include "vehicle.inl"
 #include "terrain.inl"
+#include "en_harness.h"   // HarnessDumpTraffic (the `traffic` verb lives here, not area.cpp)
+
+#include <map>            // TrafficCensus per-player buckets (must precede DEBUG_NEW)
 
 
 #ifdef _DEBUG
@@ -28,6 +31,13 @@
 static char BASED_CODE THIS_FILE[] = __FILE__;
 #endif
 #define new DEBUG_NEW
+
+// [NONOTIFY]/[ARRIVEMISS] caller tag (015 R12/R13 traffic probes). Defined in
+// vehmove.cpp; the three CVehicle::PostArrivedOrBlocked calls in THIS file are in
+// another translation unit, which is why the R12 records were full of "?". They now
+// name themselves, using the same set-around-the-call pattern as the vehmove.cpp
+// callers. INSTRUMENT ONLY: nothing reads it but those two log lines.
+extern const char *g_pszPostWhy;
 
 #if EN_GAMEPLAY_PROBES
 // Diagnostic sink: appends to bridge_debug.log in the run dir. Deliberately NOT
@@ -39,6 +49,434 @@ void EnBridgeDbgLog( const char* pszMsg )
     if ( f != NULL ) { fputs( pszMsg, f ); fclose( f ); }
 }
 #endif
+
+// Traffic probes (docs/plans/015-focus-investigation.md 1.3, discussion repo). A file
+// sink switched at RUNTIME by EN_TRAFFIC_LOG, so the same build serves every seat and
+// the probes can stay in Release: the compile-gated ODS meters they replace were
+// Windows-only, AI-only and needed a DBWIN listener. Same shape as the HP router log
+// (chproute.cpp): GetEnvironmentVariableA/GetTickCount are shimmed on POSIX, and each
+// line is append+close so a crash keeps what was written.
+bool EnTrafficLogOn()
+{
+    static int s_iOn = -1;
+    if (s_iOn < 0) {
+        char szBuf[8];
+        s_iOn = (GetEnvironmentVariableA("EN_TRAFFIC_LOG", szBuf, sizeof(szBuf)) > 0 && szBuf[0] != '0') ? 1 : 0;
+    }
+    return s_iOn != 0;
+}
+
+// EN_TRAFFIC_VEH is now a COMMA-SEPARATED list (015 R19 [STEP] probe). The single-id
+// [FOLLOW] probe below keeps working: it takes the FIRST id of the list. The buffer is
+// read once into s_szVehList - a 16-byte buffer would have made GetEnvironmentVariableA
+// return "needed size" and write NOTHING for a list, silently zeroing the follow id.
+static char s_szTrafVehList[EN_TRAF_VEH_BUF] = {0};
+static bool s_bTrafVehRead = false;
+
+static const char *EnTrafficVehEnv()
+{
+    if (!s_bTrafVehRead) {
+        s_bTrafVehRead = true;
+        if (GetEnvironmentVariableA("EN_TRAFFIC_VEH", s_szTrafVehList, sizeof(s_szTrafVehList)) >= sizeof(s_szTrafVehList))
+            s_szTrafVehList[0] = 0;   // over-long list: buffer untouched by the API, do not read garbage
+    }
+    return s_szTrafVehList;
+}
+
+DWORD EnTrafficFollowId()
+{
+    static long s_lId = -1;
+    if (s_lId < 0) {
+        s_lId = atol(EnTrafficVehEnv());   // first id of the list
+        if (s_lId < 0)
+            s_lId = 0;
+    }
+    return (DWORD) s_lId;
+}
+
+// [STEP] (015 R19) membership test for EN_TRAFFIC_VEH. Parsed ONCE into a fixed array of
+// at most EN_TRAF_VEH_MAX ids; unset/empty = probe off (returns false for every id, so
+// the [STEP] stream cannot flood). Read-only, no game state touched.
+bool EnTrafficVehListed(DWORD dwId)
+{
+    static DWORD s_adwIds[EN_TRAF_VEH_MAX];
+    static int   s_iCount = -1;
+    if (s_iCount < 0) {
+        s_iCount = 0;
+        const char *psz = EnTrafficVehEnv();
+        while ((*psz != 0) && (s_iCount < EN_TRAF_VEH_MAX)) {
+            while ((*psz == ' ') || (*psz == ',') || (*psz == '	'))
+                psz++;
+            if ((*psz < '0') || (*psz > '9'))
+                break;
+            long lId = atol(psz);
+            if (lId > 0)
+                s_adwIds[s_iCount++] = (DWORD) lId;
+            while ((*psz >= '0') && (*psz <= '9'))
+                psz++;
+        }
+    }
+    for (int i = 0; i < s_iCount; i++)
+        if (s_adwIds[i] == dwId)
+            return true;
+    return false;
+}
+
+void EnTrafficLog(const char *pszFmt, ...)
+{
+    if (!EnTrafficLogOn())
+        return;
+    FILE *pFile = fopen(EnLogPath("traffic.log").c_str(), "a");
+    if (pFile == NULL)
+        return;
+    fprintf(pFile, "[%9lu] ", (unsigned long) GetTickCount());
+    va_list args;
+    va_start(args, pszFmt);
+    vfprintf(pFile, pszFmt, args);
+    va_end(args);
+    fputc('\n', pFile);
+    fclose(pFile);
+}
+
+// ---------------------------------------------------------------------------
+// R10 traffic denominators (015 T2 item 4). Declared in vehicle.h with the field
+// documentation; player numbers are handed out at runtime with no compile-time
+// ceiling, so EVERY access is range-checked against EN_AI_TICK_PLYRS - the same
+// rule as ai.cpp's g_alAiManageTicks and caitmgr.cpp's seek-scan counters.
+// These are EXACT event counts and are deliberately kept separate from the
+// sampled [SUBATTEMPT]/[STUCK] detail: a rate needs a denominator that is not
+// itself throttled. Written from the AI threads (orders/sweep) and the game
+// thread (steps); read unlocked by TrafficCensus, which is the same
+// single-word-read discipline the AI counters above already use.
+// ---------------------------------------------------------------------------
+volatile long g_alTrafOrdersOk[EN_AI_TICK_PLYRS]   = { 0 };
+volatile long g_alTrafOrdersWake[EN_AI_TICK_PLYRS] = { 0 };
+volatile long g_alTrafSteps[EN_AI_TICK_PLYRS]      = { 0 };
+volatile long g_alTrafDeliveries[EN_AI_TICK_PLYRS] = { 0 };
+volatile long g_alTrafSweepMsMax[EN_AI_TICK_PLYRS] = { 0 };
+
+// T2b GetPath return classes (015 T2 item 1). Declared in vehicle.h with the class
+// documentation; stamped in unit.cpp at every exit of CVehicle::GetPath, exactly once
+// per call. [player][mode]. bNoOcc goes straight into CPathMgr::GetPath's `bVehBlock`
+// ("TRUE means vehicles will block", cpathmgr.h:134-135, applied at cpathmgr.cpp:1072),
+// so the T2b comments had this BACKWARDS - corrected 015 R11 item 3:
+//   mode 0 = bNoOcc FALSE = vehicle-FREE  (census suffix `_free`)
+//   mode 1 = bNoOcc TRUE  = vehicle-AWARE (census suffix `_aware`)
+// Written from whichever thread called GetPath, read unlocked by TrafficCensus - the
+// same single-word-read discipline as the counters above.
+volatile long g_alTrafPathEmpty[EN_AI_TICK_PLYRS][2]   = { { 0 } };
+volatile long g_alTrafPathRepPart[EN_AI_TICK_PLYRS][2] = { { 0 } };
+volatile long g_alTrafPathDegen[EN_AI_TICK_PLYRS][2]   = { { 0 } };
+volatile long g_alTrafPathAccPart[EN_AI_TICK_PLYRS][2] = { { 0 } };
+volatile long g_alTrafPathFull[EN_AI_TICK_PLYRS][2]    = { { 0 } };
+
+// One census line per LOCAL player. "inbldg_notdest" is the count the DOORSTEP
+// hypothesis predicts (a vehicle inside a building that is neither its destination
+// nor its construction site); the retry histogram over blocked vehicles shows how
+// many sit in the turn/180 rungs (>= 11) that make the narrow-street dance.
+// inbldg_wrong = vehicles still inside a building they entered wrongly (stamped by
+// [ENTERWRONG], cleared by ExitBuilding), maxwrong_ms = the longest such dwell.
+// maxstag_ms counts BLOCKED vehicles only; oldstamp_* names the oldest stagnation
+// stamp in any mode (a stamp nothing cleared on the way out of blocked reads as a
+// huge age forever, which is why the two are now separate numbers). aiticks is the
+// AI worker's Manage() counter, 0 for humans. Also emits [STUCK] per blocked vehicle
+// stagnant over 60 s, naming the vehicle sitting on the hex it wants next.
+void CVehicle::TrafficCensus(std::string &out)
+{
+    struct CCensus {
+        int iAI, iTrucks, iCranes, iMoving, iBlocked, iStop, iCantDeploy, iTraffic, iInBldg, iInBldgNotDest;
+        int iInBldgWrong;
+        int iContention, iDeployIt, iRun;
+        int iStranded;         // R10: vehicles WITH an order sitting in stop/blocked right now
+        int aiRetries[4];
+        DWORD dwMaxStag;
+        DWORD dwMaxWrong;
+        DWORD dwOldStamp;      // oldest surviving stagnation stamp, ANY mode
+        CVehicle *pOldStamp;   // the vehicle holding it (NULL = none)
+        CCensus() { memset(this, 0, sizeof(*this)); }
+    };
+    std::map<int, CCensus> mapPlyr;
+    DWORD dwNow = theGame.GettimeGetTime();   // m_dwStagnantSince is stamped from this clock
+    // [SUBATTEMPT] ages are stamped from the RAW clock in FindSub, not the frame-cached
+    // game clock, so the STUCK context needs its own read of the same clock.
+    DWORD dwRawNow = timeGetTime();
+
+    POSITION pos = theVehicleMap.GetStartPosition();
+    while (pos != NULL) {
+        DWORD dwID;
+        CVehicle *pVeh;
+        theVehicleMap.GetNextAssoc(pos, dwID, pVeh);
+        if ((pVeh == NULL) || (pVeh->GetOwner() == NULL) || (!pVeh->GetOwner()->IsLocal()))
+            continue;
+
+        CCensus &c = mapPlyr[pVeh->GetOwner()->GetPlyrNum()];
+        c.iAI = pVeh->GetOwner()->IsAI() ? 1 : 0;
+
+        CTransportData const *pData = pVeh->GetData();
+        if (pData != NULL) {
+            if (pData->IsTransport())
+                c.iTrucks++;
+            if (pData->IsCrane())
+                c.iCranes++;
+        }
+
+        switch (pVeh->m_cMode) {
+            case moving :       c.iMoving++;      break;
+            case blocked :      c.iBlocked++;     break;
+            case stop :         c.iStop++;        break;
+            case cant_deploy :  c.iCantDeploy++;  break;
+            case traffic :      c.iTraffic++;     break;
+            case contention :   c.iContention++;  break;
+            case deploy_it :    c.iDeployIt++;    break;
+            case run :          c.iRun++;         break;
+            default :           break;
+        }
+        if (pVeh->m_cMode == blocked) {
+            int iR = pVeh->m_iNumRetries;
+            c.aiRetries[iR < 5 ? 0 : (iR < 10 ? 1 : (iR < 15 ? 2 : 3))]++;
+        }
+
+        // R10 `stranded_ms` cohort (015 T2 item 4): a vehicle that HAS somewhere to be
+        // and is going nowhere - stop or blocked, while it still holds a destination it
+        // has not reached, a pending arrival event, or an unfinished route. Counted here
+        // as a headcount; the TIME is integrated below over the elapsed census interval,
+        // never by re-summing current ages (which double-counts every pass).
+        if (((pVeh->m_cMode == stop) || (pVeh->m_cMode == blocked)) &&
+            ((pVeh->m_ptDest != pVeh->m_ptHead) || (pVeh->m_iEvent != none) || (pVeh->m_pos != NULL)))
+            c.iStranded++;
+
+        if (pVeh->IsInBuilding()) {
+            c.iInBldg++;
+            CBuilding *pOn = theBuildingHex._GetBuilding(pVeh->m_ptHead);
+            if ((pOn != NULL) && (pOn != theBuildingHex._GetBuilding(pVeh->m_hexDest)) && (pOn != pVeh->m_pBldg))
+                c.iInBldgNotDest++;
+        }
+
+        if (pVeh->m_dwEnteredWrongAt != 0) {
+            c.iInBldgWrong++;
+            DWORD dwAge = dwNow - pVeh->m_dwEnteredWrongAt;
+            if (dwAge > c.dwMaxWrong)
+                c.dwMaxWrong = dwAge;
+        }
+
+        if (pVeh->m_dwStagnantSince != 0) {
+            DWORD dwAge = dwNow - pVeh->m_dwStagnantSince;
+            // maxstag_ms is the BLOCKED-mode stagnation the give-up ladder acts on. It used to
+            // be taken over every stamped vehicle, so a stamp left behind by a mode change
+            // (nothing clears it on the way out of blocked) inflated it forever.
+            if ((pVeh->m_cMode == blocked) && (dwAge > c.dwMaxStag))
+                c.dwMaxStag = dwAge;
+            // oldstamp_* keeps that stale-stamp signal, now named: the oldest stamp in ANY
+            // mode plus who holds it, so a leaked stamp can be told from a real jam.
+            if (dwAge > c.dwOldStamp) {
+                c.dwOldStamp = dwAge;
+                c.pOldStamp  = pVeh;
+            }
+            // [STUCK]: one line per blocked vehicle stagnant over a minute, emitted once per
+            // census pass (30 s), naming whoever is sitting on the hex it wants next.
+            if (EnTrafficLogOn() && (pVeh->m_cMode == blocked) && (dwAge > 60000)) {
+                CVehicle *pBlk = theVehicleHex._GetVehicle(pVeh->m_ptNext);
+
+                // [SUBATTEMPT] cross-reference (015 T2 item 2): the sequence/age of the
+                // LAST real selector attempt on this vehicle. `unknown` = FindSub never
+                // ran under the probe for it; `stale` = the attempt is older than 60 s,
+                // i.e. it says nothing about the neighbourhood printed below. The two
+                // labels exist so a later snapshot is never read back onto an earlier
+                // failed attempt.
+                char szSeq[32], szAge[32];
+                if (pVeh->m_subAttempt.dwSeq == 0) {
+                    strcpy(szSeq, "unknown");
+                    strcpy(szAge, "unknown");
+                } else {
+                    DWORD dwSubAge = dwRawNow - pVeh->m_subAttempt.dwTimeMs;
+                    sprintf(szSeq, "%lu", (unsigned long) pVeh->m_subAttempt.dwSeq);
+                    if (dwSubAge > 60000)
+                        strcpy(szAge, "stale");
+                    else
+                        sprintf(szAge, "%lu", (unsigned long) dwSubAge);
+                }
+
+                // Eight-neighbour snapshot around the HEAD sub, as CONTEXT ONLY - it is a
+                // snapshot, not a cause. Every neighbour carries its terrain type AND its
+                // building AND its occupant, because occupancy does not rule out a
+                // simultaneous terrain/door constraint, and an unoccupied passable grass
+                // sub prints a terrain type too (WinAstra review 10). No verdict is
+                // derived here and none should be derived from it.
+                static const int aiCtxDx[8] = { -1,  0,  1, -1,  1, -1,  0,  1 };
+                static const int aiCtxDy[8] = { -1, -1, -1,  0,  0,  1,  1,  1 };
+                char szCtx[512];
+                int  iCtxOff = 0;
+                szCtx[0] = 0;
+                for (int iN = 0; iN < 8; iN++) {
+                    CSubHex _sN(pVeh->m_ptHead.x + aiCtxDx[iN], pVeh->m_ptHead.y + aiCtxDy[iN]);
+                    _sN.Wrap();
+                    CVehicle  *pVN = theVehicleHex._GetVehicle(_sN);
+                    CBuilding *pBN = theBuildingHex._GetBuilding(_sN);
+                    CHex      *pHN = theMap._GetHex(_sN);
+                    int iLeft = (int) sizeof(szCtx) - iCtxOff;
+                    if (iLeft <= 1)
+                        break;
+                    int iPut = snprintf(szCtx + iCtxOff, iLeft, "%s%d,%d t%d b%lu v%lu m%d s%d",
+                                        (iN ? " " : ""), aiCtxDx[iN], aiCtxDy[iN],
+                                        pHN != NULL ? pHN->GetType() : -1,
+                                        pBN != NULL ? (unsigned long) pBN->GetID() : 0UL,
+                                        pVN != NULL ? (unsigned long) pVN->GetID() : 0UL,
+                                        pVN != NULL ? (int) pVN->m_cMode : -1,
+                                        (pVN == pVeh) ? 1 : 0);
+                    if ((iPut < 0) || (iPut >= iLeft))
+                        break;
+                    iCtxOff += iPut;
+                }
+
+                EnTrafficLog("[STUCK] veh %lu vtype %d plyr %d ai %d stagnant_ms %lu retries %d bc %ld "
+                             "head %d,%d next %d,%d blocker %lu blocker_mode %d blocker_next %d,%d "
+                             "lastsub %s lastsub_age_ms %s ctx %s",
+                             (unsigned long) pVeh->GetID(), pData != NULL ? pData->GetType() : -1,
+                             pVeh->GetOwner()->GetPlyrNum(), pVeh->GetOwner()->IsAI() ? 1 : 0,
+                             (unsigned long) dwAge, pVeh->m_iNumRetries, (long) pVeh->m_iBlockCount,
+                             pVeh->m_ptHead.x, pVeh->m_ptHead.y, pVeh->m_ptNext.x, pVeh->m_ptNext.y,
+                             pBlk != NULL ? (unsigned long) pBlk->GetID() : 0UL,
+                             pBlk != NULL ? (int) pBlk->m_cMode : -1,
+                             pBlk != NULL ? pBlk->m_ptNext.x : 0,
+                             pBlk != NULL ? pBlk->m_ptNext.y : 0,
+                             szSeq, szAge, szCtx);
+            }
+        }
+    }
+
+    // scans-per-minute is a ROLLING rate: the delta in g_alAiScansRun over the
+    // wall time since this function last looked at that player. Sampling the
+    // census on demand (harness `traffic`) just makes the window shorter, not
+    // the rate wrong; the first sample after start has no window and prints 0.
+    static long  s_alScansPrev[EN_AI_TICK_PLYRS] = { 0 };
+    static DWORD s_adwScansAt[EN_AI_TICK_PLYRS]  = { 0 };
+
+    // stranded_ms is INTEGRATED, not sampled: each pass adds (this player's stranded
+    // headcount) x (ms since the previous pass for that player). Re-summing current
+    // ages every pass would count the same wait over and over; this does not. The
+    // harness `traffic` verb just makes the intervals shorter, which is still correct.
+    // Unit: vehicle-milliseconds. The first pass for a player has no window and adds 0.
+    static DWORD s_adwStrandAt[EN_AI_TICK_PLYRS] = { 0 };
+    static DWORD s_adwStrandMs[EN_AI_TICK_PLYRS] = { 0 };
+
+    char szLine[1536];
+    for (std::map<int, CCensus>::const_iterator it = mapPlyr.begin(); it != mapPlyr.end(); ++it) {
+        CCensus const &c = it->second;
+        CHexCoord hexOld = (c.pOldStamp != NULL) ? c.pOldStamp->GetHexHead() : CHexCoord(0, 0);
+        CTransportData const *pOldData = (c.pOldStamp != NULL) ? c.pOldStamp->GetData() : NULL;
+        // aiticks: the AI worker's Manage() counter for this player (ai.cpp). A frozen
+        // counter with live vehicles means the AI thread died, not that traffic jammed.
+        unsigned long ulAiTicks = 0;
+        // seek-scan block (caitmgr.cpp/caigmgr.cpp): scans run/skipped and what
+        // they cost, walks started vs finished, the cs takes part C leaves in
+        // place, targets held and the scan rate. All zero for human players.
+        unsigned long ulScans = 0, ulSkipB = 0, ulScanAvg = 0, ulScanMax = 0;
+        unsigned long ulWalks = 0, ulWalksDone = 0;
+        unsigned long ulCandAvg = 0, ulCandMax = 0, ulOpForAvg = 0, ulOpForMax = 0;
+        unsigned long ulTgtHeld = 0, ulScansPm = 0, ulSeekLoops = 0;
+        if (c.iAI && (it->first >= 0) && (it->first < EN_AI_TICK_PLYRS)) {
+            int const iP = it->first;
+            ulAiTicks   = (unsigned long) g_alAiManageTicks[iP];
+            ulScans     = (unsigned long) g_alAiScansRun[iP];
+            ulSkipB     = (unsigned long) g_alAiScansSkipBudget[iP];
+            ulScanMax   = (unsigned long) g_alAiScanMsMax[iP];
+            ulWalks     = (unsigned long) g_alAiWalksStarted[iP];
+            ulWalksDone = (unsigned long) g_alAiWalksDone[iP];
+            ulCandMax   = (unsigned long) g_alAiScanCandMax[iP];
+            ulOpForMax  = (unsigned long) g_alAiScanOpForMax[iP];
+            ulTgtHeld   = (unsigned long) g_alAiSeekTargets[iP];
+            ulSeekLoops = (unsigned long) g_alAiSeekLoops[iP];
+            if (ulScans) {
+                ulScanAvg  = ((unsigned long) g_alAiScanMsTotal[iP]) / ulScans;
+                ulCandAvg  = ((unsigned long) g_alAiScanCandTotal[iP]) / ulScans;
+                ulOpForAvg = ((unsigned long) g_alAiScanOpForTotal[iP]) / ulScans;
+            }
+            DWORD dwRateNow = timeGetTime();   // raw: dwNow is the frame-cached clock
+            if (s_adwScansAt[iP] != 0) {
+                DWORD dwSpan = dwRateNow - s_adwScansAt[iP];
+                if (dwSpan >= 1000) {
+                    long lDelta = g_alAiScansRun[iP] - s_alScansPrev[iP];
+                    if (lDelta < 0)
+                        lDelta = 0;
+                    ulScansPm = (unsigned long) ((60000.0 * (double) lDelta) / (double) dwSpan);
+                }
+            }
+            s_alScansPrev[iP] = g_alAiScansRun[iP];
+            s_adwScansAt[iP]  = dwRateNow;
+        }
+        // R10 denominators (015 T2 item 4). Range-checked like every other per-player
+        // probe read; a player number outside the bound prints zeros rather than
+        // indexing off the end. `deliveries` counts BOTH routers' unload paths - the
+        // AI one in caimgr.cpp and the human one in chproute.cpp - see the vehicle.h note.
+        unsigned long ulOrdersOk = 0, ulOrdersWake = 0, ulSteps = 0, ulDeliv = 0;
+        unsigned long ulStrandMs = 0, ulSweepMax = 0;
+        // T2b GetPath return classes: path_<class>_<free|aware>. bNoOcc is CPathMgr's
+        // `bVehBlock`, so index 0 (bNoOcc FALSE) is the vehicle-FREE search and index 1
+        // (bNoOcc TRUE) is the vehicle-AWARE one - the T2b suffixes `_a`/`_f` named these
+        // the wrong way round and are renamed here (015 R11 item 3). Exactly one class is
+        // stamped per GetPath call, so these ten sum to the call count for that player.
+        unsigned long ulPathEFr = 0, ulPathEAw = 0, ulPathRFr = 0, ulPathRAw = 0;
+        unsigned long ulPathDFr = 0, ulPathDAw = 0, ulPathPFr = 0, ulPathPAw = 0;
+        unsigned long ulPathFFr = 0, ulPathFAw = 0;
+        if ((it->first >= 0) && (it->first < EN_AI_TICK_PLYRS)) {
+            int const iPd = it->first;
+            ulOrdersOk   = (unsigned long) g_alTrafOrdersOk[iPd];
+            ulOrdersWake = (unsigned long) g_alTrafOrdersWake[iPd];
+            ulSteps      = (unsigned long) g_alTrafSteps[iPd];
+            ulDeliv      = (unsigned long) g_alTrafDeliveries[iPd];
+            ulSweepMax   = (unsigned long) g_alTrafSweepMsMax[iPd];
+            ulPathEFr    = (unsigned long) g_alTrafPathEmpty[iPd][0];
+            ulPathEAw    = (unsigned long) g_alTrafPathEmpty[iPd][1];
+            ulPathRFr    = (unsigned long) g_alTrafPathRepPart[iPd][0];
+            ulPathRAw    = (unsigned long) g_alTrafPathRepPart[iPd][1];
+            ulPathDFr    = (unsigned long) g_alTrafPathDegen[iPd][0];
+            ulPathDAw    = (unsigned long) g_alTrafPathDegen[iPd][1];
+            ulPathPFr    = (unsigned long) g_alTrafPathAccPart[iPd][0];
+            ulPathPAw    = (unsigned long) g_alTrafPathAccPart[iPd][1];
+            ulPathFFr    = (unsigned long) g_alTrafPathFull[iPd][0];
+            ulPathFAw    = (unsigned long) g_alTrafPathFull[iPd][1];
+            if (s_adwStrandAt[iPd] != 0)
+                s_adwStrandMs[iPd] += (dwRawNow - s_adwStrandAt[iPd]) * (DWORD) c.iStranded;
+            s_adwStrandAt[iPd] = dwRawNow;
+            ulStrandMs         = (unsigned long) s_adwStrandMs[iPd];
+        }
+        snprintf(szLine, sizeof(szLine),
+                 "traffic plyr %d ai %d trucks %d cranes %d moving %d blocked %d stop %d cantdeploy %d traffic %d "
+                 "inbldg %d inbldg_notdest %d r0_4 %d r5_9 %d r10_14 %d r15p %d maxstag_ms %lu "
+                 "inbldg_wrong %d maxwrong_ms %lu oldstamp_ms %lu oldstamp_veh %lu oldstamp_mode %d "
+                 "oldstamp_type %d oldstamp_hex %d,%d contention %d deployit %d run %d aiticks %lu "
+                 "scans %lu skipb %lu scanms_avg %lu scanms_max %lu walks %lu walksdone %lu "
+                 "cand_avg %lu cand_max %lu opfor_avg %lu opfor_max %lu tgtheld %lu scanspm %lu seekloops %lu "
+                 "orders_ok %lu orders_wake %lu steps %lu deliveries %lu stranded %d stranded_ms %lu "
+                 "sweep_ms_max %lu path_e_free %lu path_e_aware %lu path_rp_free %lu path_rp_aware %lu "
+                 "path_d_free %lu path_d_aware %lu path_ap_free %lu path_ap_aware %lu "
+                 "path_f_free %lu path_f_aware %lu\n",
+                 it->first, c.iAI, c.iTrucks, c.iCranes, c.iMoving, c.iBlocked, c.iStop, c.iCantDeploy, c.iTraffic,
+                 c.iInBldg, c.iInBldgNotDest, c.aiRetries[0], c.aiRetries[1], c.aiRetries[2], c.aiRetries[3],
+                 (unsigned long) c.dwMaxStag, c.iInBldgWrong, (unsigned long) c.dwMaxWrong,
+                 (unsigned long) c.dwOldStamp,
+                 c.pOldStamp != NULL ? (unsigned long) c.pOldStamp->GetID() : 0UL,
+                 c.pOldStamp != NULL ? (int) c.pOldStamp->m_cMode : 0,
+                 pOldData != NULL ? pOldData->GetType() : 0,
+                 c.pOldStamp != NULL ? (int) hexOld.X() : 0, c.pOldStamp != NULL ? (int) hexOld.Y() : 0,
+                 c.iContention, c.iDeployIt, c.iRun, ulAiTicks,
+                 ulScans, ulSkipB, ulScanAvg, ulScanMax, ulWalks, ulWalksDone,
+                 ulCandAvg, ulCandMax, ulOpForAvg, ulOpForMax, ulTgtHeld, ulScansPm, ulSeekLoops,
+                 ulOrdersOk, ulOrdersWake, ulSteps, ulDeliv, c.iStranded, ulStrandMs, ulSweepMax,
+                 ulPathEFr, ulPathEAw, ulPathRFr, ulPathRAw, ulPathDFr, ulPathDAw,
+                 ulPathPFr, ulPathPAw, ulPathFFr, ulPathFAw);
+        out += szLine;
+    }
+}
+
+// Backs the harness `traffic` verb (control_socket.cpp cannot see CVehicle).
+void HarnessDumpTraffic(std::string &out)
+{
+    out.clear();
+    CVehicle::TrafficCensus(out);
+    if (out.empty())
+        out = "err no local vehicles (not in-game?)\n";
+}
 
 int aiBaseDir[9] = {7, 6, 5, 0, 0, 4, 1, 2, 3};
 int aiDir[9] = {7 * EIGHTH_ROT, 6 * EIGHTH_ROT, 5 * EIGHTH_ROT, 0, 0, 4 * EIGHTH_ROT, 1 * EIGHTH_ROT, 2 * EIGHTH_ROT,
@@ -114,6 +552,7 @@ BOOL CVehicle::TestStuck() {
         // do we have a clear hex?
         if (!(theMap._GetHex(*pHexOn)->GetUnits() & CHex::unit)) {
             // put it here pointing at the next hex
+            CSubHex const _subHeadWas = m_ptHead;   // [STEP] (015 R20)
             ReleaseOwnership();
             if (pHexOn->X() < (pHexOn + 1)->X()) {
                 m_ptTail.x = pHexOn->X() * 2;
@@ -144,8 +583,14 @@ BOOL CVehicle::TestStuck() {
                 m_pTransport = NULL;
             }
 
+            m_pszSelWhy = "stuckhop";   // [STEP] selector tag: 6-min stuck fallback hop
             m_ptNext = m_ptHead;
             m_hexNext = *(pHexOn + 1);
+
+            // [STEP] (015 R20): the 6-minute fallback TELEPORTS the head along the path -
+            // it never reaches the ArrivedNextHex commit, so record it as a relocation.
+            EnTrafStepLog(this, "stuckhop_relocate", _subHeadWas, m_ptHead, (int) m_iDir, (int) m_cMode);
+
             SetMoveParams(FALSE);
             AtNewLoc();
             TakeOwnership();
@@ -225,7 +670,9 @@ void CVehicle::Operate() {
                           "!! backup method - AI told vehicle %d at sub (%d,%d) stopped", GetID(), m_ptHead.x,
                           m_ptHead.y);
 #endif
+                g_pszPostWhy = "stopbackup";   // [NONOTIFY]/[ARRIVEMISS] caller tag
                 PostArrivedOrBlocked();
+                g_pszPostWhy = NULL;
             }
             ASSERT ((m_bFlags & told_ai_stop) || (m_ptDest == m_ptHead));
 
@@ -409,7 +856,9 @@ void CVehicle::Operate() {
                           m_ptHead.y);
 #endif
                 _SetRouteMode(stop);
+                g_pszPostWhy = "cantdeploy30s";   // [NONOTIFY]/[ARRIVEMISS] caller tag
                 PostArrivedOrBlocked();
+                g_pszPostWhy = NULL;
             }
 
             // time we've been blocked
@@ -440,6 +889,7 @@ void CVehicle::Operate() {
                         else
                             _next = Rotate(iDir);
                         if ((!theBuildingHex._GetBuilding(_next)) && (CanEnter(_next, FALSE))) {
+                            m_pszSelWhy = "deploy_nose";   // [STEP] selector tag
                             m_ptNext = _next;
                             bCanEnter = TRUE;
                             break;
@@ -499,8 +949,12 @@ void CVehicle::Operate() {
                 if (theBuildingHex._GetBuilding(m_ptHead) != NULL)
                     EnterBuilding();
 
-                // tell the AI
+                // tell the AI. [ARRIVEMISS]: this caller decided "at dest" with the HEX
+                // test above, PostArrivedOrBlocked decides with a SUB test - so on a
+                // different sub-hex of the same hex it takes the BLOCKED branch.
+                g_pszPostWhy = "deployed";   // [NONOTIFY]/[ARRIVEMISS] caller tag
                 PostArrivedOrBlocked();
+                g_pszPostWhy = NULL;
 #ifdef TEST_TRAFFIC
                 if ( m_cOwn )
                     {

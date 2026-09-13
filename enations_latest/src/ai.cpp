@@ -20,6 +20,7 @@
 #include "player.h"
 #include "racedata.h"
 #include "stdafx.h"
+#include "vehicle.h"  // EnTrafficLog + EN_AI_TICK_PLYRS (g_alAiManageTicks below)
 #ifdef __linux__
 #include <cxxabi.h>   // abi::__forced_unwind (libstdc++) — let pthread_cancel unwind past catch(...)
 #endif
@@ -44,6 +45,13 @@ CAIData* pGameData = NULL;
 // the AI Manager List, a list of CAIMgr objects
 // which is the central point for AI access by the game
 CAIMgrList* plAIMgrList = NULL;
+
+// AI liveness, one slot per player number (declared in vehicle.h, read by
+// CVehicle::TrafficCensus as the census `aiticks` field). Bumped after every
+// CAIMgr::Manage() pass: each AI worker owns its own slot, so the plain ++ needs no
+// lock, and a slot that stops moving while that player still has vehicles says the
+// thread is gone - which the census could not previously tell from a traffic jam.
+volatile long g_alAiManageTicks[EN_AI_TICK_PLYRS] = { 0 };
 
 
 static int iPlyrNum = 1;
@@ -449,6 +457,15 @@ LRESULT CALLBACK AiWndProc( HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam )
     return ( DefWindowProc( hWnd, uMsg, wParam, lParam ) );
 }
 
+// Bounds-checked bump of the AI liveness counter. Player numbers are handed out at
+// runtime (CGame::m_iNextPlyrNum) with no compile-time ceiling, so nothing may index
+// g_alAiManageTicks without this check.
+static inline void EnAiManageTick( int iPlyr )
+{
+    if ( ( iPlyr >= 0 ) && ( iPlyr < EN_AI_TICK_PLYRS ) )
+        ++g_alAiManageTicks[iPlyr];
+}
+
 // called once for each AI once the game starts. Return when the game ends
 // dwID is the ID returned from AiNewPlayer
 // hex is the location player will start at
@@ -512,11 +529,13 @@ void WINAPI AiThread( AI_INIT* pAiI )
             // pass - each message keeps its complete original per-message
             // semantics - then sleep out the cadence slice as before.
             pAIMgr->Manage( );
+            EnAiManageTick( pAIMgr->GetPlayer( ) );
             for ( int iBatch = 1; iBatch < 32 && pAIMgr->HasPendingMessages( ); iBatch++ )
             {
                 if ( myThreadShouldExit( dwGenAtStart ) )
                     break;
                 pAIMgr->Manage( );
+                EnAiManageTick( pAIMgr->GetPlayer( ) );
             }
             myYieldThread( );
         }
@@ -542,6 +561,12 @@ void WINAPI AiThread( AI_INIT* pAiI )
 #ifdef _LOGOUT
         logPrintf( LOG_PRI_ALWAYS, LOG_AI_MISC, "AiThread() player %d terminated ", pAIMgr->GetPlayer( ) );
 #endif
+        // ALWAYS-ON record: this worker is about to stop managing that player, and until
+        // now the only trace was a _LOGOUT line nobody builds with. Both sinks on purpose
+        // - traffic.log when EN_TRAFFIC_LOG is set, stderr when it is not.
+        EnTrafficLog( "[AITHREAD_DEAD] plyr %d", pAIMgr->GetPlayer( ) );
+        fprintf( stderr, "[AITHREAD_DEAD] plyr %d\n", pAIMgr->GetPlayer( ) );
+
         TRAP( );
 
         // ok, on the first two GPFs we start it up again

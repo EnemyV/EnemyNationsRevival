@@ -658,6 +658,37 @@ void CPlayer::StartLoop( )
         SampleHistory( );
     }
 
+    // [PWRLOOP]/[PPLLOOP] (015 R12) INSTRUMENT ONLY, read HERE because this is the last
+    // point at which the finished economic loop's totals still exist - the reset below is
+    // untouched. m_iPwrHave < 0 means a negative power stock survived a whole accumulation
+    // cycle. m_iPplBldg is deliberately NOT reset by this function (it is a running stock,
+    // unlike m_iPwrHave), which is exactly why a bad value persists - #82 has it at
+    // ~2,137,000,000 on live players. Neither line writes anything.
+    if ( EnTrafficLogOn( ) )
+    {
+        if ( m_iPwrHave < 0 )
+            EnTrafficLog( "[PWRLOOP] plyr %d have %d need %d", GetPlyrNum( ), (int)m_iPwrHave,
+                          (int)m_iPwrNeed );
+
+        if ( ( m_iPplBldg < 0 ) || ( m_iPplBldg > 1000000000 ) )
+        {
+            // one line per player per 10 s. EN_AI_TICK_PLYRS (vehicle.h) is the same
+            // generous fixed bound the other per-player probes carry, and the index is
+            // range-checked because the game has no fixed player array.
+            static DWORD s_adwNextPplLoop[EN_AI_TICK_PLYRS] = { 0 };
+            const int    iPl   = GetPlyrNum( );
+            const DWORD  dwNow = timeGetTime( );
+            DWORD*       pdw   = ( ( iPl >= 0 ) && ( iPl < EN_AI_TICK_PLYRS ) ) ? &s_adwNextPplLoop[iPl] : NULL;
+            if ( ( pdw == NULL ) || ( dwNow >= *pdw ) )
+            {
+                if ( pdw != NULL )
+                    *pdw = dwNow + 10000;
+                EnTrafficLog( "[PPLLOOP] plyr %d pplbldg %d pplneed %d pplveh %d", iPl,
+                              (int)m_iPplBldg, (int)m_iPplNeedBldg, (int)m_iPplVeh );
+            }
+        }
+    }
+
     // clear for next count
     m_iPwrHave     = 0;
     m_iPwrNeed     = 0;
@@ -671,6 +702,13 @@ void CPlayer::StartLoop( )
 // StartLoop). Feeds the building-info windows' history graphs.
 void CPlayer::SampleHistory( )
 {
+    // [HISTBAD] (015 R15) INSTRUMENT ONLY. m_iHistHead indexes m_aHist* on the very next
+    // line with no bound of its own, so a head outside [0, HIST_LEN) - which only a save
+    // can introduce, see [HISTLOAD] - writes past the arrays. This line ONLY logs it: the
+    // writes below are deliberately untouched so the failure stays reproducible.
+    if ( EnTrafficLogOn( ) && ( ( m_iHistHead < 0 ) || ( m_iHistHead >= HIST_LEN ) ) )
+        EnTrafficLog( "[HISTBAD] plyr %d fine head %d", (int)m_iPlyrNum, (int)m_iHistHead );
+
     m_aHistPwrHave[m_iHistHead]  = m_iPwrHave;
     m_aHistPwrNeed[m_iHistHead]  = m_iPwrNeed;
     m_aHistPplTotal[m_iHistHead] = GetPplTotal( );
@@ -694,6 +732,10 @@ void CPlayer::SampleHistory( )
         if ( ++m_iHRTick[r] >= _hrCad[r] ) {
             m_iHRTick[r] = 0;
             int h = m_iHRHead[r];
+            // [HISTBAD] (015 R15) INSTRUMENT ONLY - same check as the fine head above, for
+            // the coarse ring head that indexes m_aHR on the next line. Logs only.
+            if ( EnTrafficLogOn( ) && ( ( h < 0 ) || ( h >= HIST_LEN ) ) )
+                EnTrafficLog( "[HISTBAD] plyr %d ring %d head %d", (int)m_iPlyrNum, r, h );
             for ( int s = 0; s < HR_SERIES; s++ ) m_aHR[r][s][h] = hv[s];
             m_iHRHead[r] = ( h + 1 ) % HIST_LEN;
             if ( m_iHRCount[r] < HIST_LEN )
@@ -1438,6 +1480,34 @@ void CPlayer::Serialize( CArchive& ar )
                         for ( int i = 0; i < HIST_LEN; i++ )
                             ar >> m_aHR[r][s][i];
                 }
+
+            // [HISTLOAD] (015 R15) INSTRUMENT ONLY. Placed here because this is the first
+            // statement after the WHOLE history block is deserialized (the fine head/count
+            // above, and the coarse rings under the >= 6 gate just above) and BEFORE anything
+            // samples or seeds them: SeedHRFromHist is further down in this same block and
+            // SampleHistory only runs from CPlayer::StartLoop. So these are the ring indices
+            // EXACTLY as the save produced them. `bad` is a read-only range check - nothing
+            // is clamped, no ring is touched, and the game reads none of this.
+            // NOTE: on a save older than release 6 the m_iHR* values printed are the ctor
+            // defaults, not saved data (the gate above did not read them) - SeedHRFromHist
+            // overwrites them below. The three-slot format matches HR_RINGS == 3.
+            if ( EnTrafficLogOn( ) )
+            {
+                int iBad = ( ( m_iHistHead  < 0 ) || ( m_iHistHead  >= HIST_LEN )
+                          || ( m_iHistCount < 0 ) || ( m_iHistCount >  HIST_LEN ) ) ? 1 : 0;
+                for ( int r = 0; r < HR_RINGS; r++ )
+                    if ( ( m_iHRHead[r]  < 0 ) || ( m_iHRHead[r]  >= HIST_LEN )
+                      || ( m_iHRCount[r] < 0 ) || ( m_iHRCount[r] >  HIST_LEN ) )
+                        iBad = 1;
+                EnTrafficLog( "[HISTLOAD] plyr %d ver %lu fine head %d count %d "
+                              "hr head %d,%d,%d count %d,%d,%d tick %d,%d,%d bad %d",
+                              (int)m_iPlyrNum, (unsigned long)theGame.m_dwVer,
+                              (int)m_iHistHead, (int)m_iHistCount,
+                              (int)m_iHRHead[0],  (int)m_iHRHead[1],  (int)m_iHRHead[2],
+                              (int)m_iHRCount[0], (int)m_iHRCount[1], (int)m_iHRCount[2],
+                              (int)m_iHRTick[0],  (int)m_iHRTick[1],  (int)m_iHRTick[2],
+                              iBad );
+            }
 
             // Diagnostic (EN_SAVE_DIAG): confirm how many history samples were READ back.
             // If save wrote >0 but load reads 0 (or the graph is still empty), that isolates

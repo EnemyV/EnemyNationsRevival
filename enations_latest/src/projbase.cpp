@@ -37,6 +37,46 @@ bool g_enProjTrails = true;
 
 // Master on/off for rotating projectiles to face their travel direction (GPU path).
 bool g_enProjRotate = true;
+#if 1
+// ---------------------------------------------------------------------------
+// [FIRERATE] instrumentation probe - NO behaviour change, NO early return.
+// Crash 0xC0000094 (integer divide by zero) at the div in CUnit::Shoot below
+// with m_iFireRate == 0, even though the HandleCombat entry guard
+// ( ! IsLocal () || GetFireRate () == 0 ) saw a NON-ZERO rate earlier in the
+// SAME call. These lines print the rate at the guard, at every Shoot () call
+// site and immediately before the div, so the point at which the value
+// changes becomes visible. Volume is bounded by EN_FIRERATE_HOT (): the guard
+// and shoot lines are emitted only on the crash precondition (rate 0, or the
+// unit dying). The divide line is emitted whenever the divisor is 0 - it is
+// the last thing written before the fault, so it is never suppressed.
+// Nothing here guards the div: the game must still crash exactly as before so
+// the full dump is written.
+// Sink: EnTrafficLog (vehicle.h -> traffic.log, EN_TRAFFIC_LOG=1) AND
+// OutputDebugStringA (always, with a trailing newline).
+// ---------------------------------------------------------------------------
+#define EN_FIRERATE_LINE(site, tgtid, oppoid)                                                       \
+    do  {                                                                                           \
+        char szFrP[224], szFrN[240];                                                                \
+        sprintf_s (szFrP, sizeof (szFrP),                                                           \
+            "[FIRERATE] site %s this %p id %lu utype %d owner %d datarate %d rate %d dying %d tgt %lu oppo %lu", \
+            (site), (void *) this, (unsigned long) GetID (), (int) GetUnitType (),                  \
+            (GetOwner () != NULL) ? GetOwner ()->GetPlyrNum () : -1,                                \
+            (GetData () != NULL) ? GetData ()->_GetFireRate () : -1,                                \
+            (int) m_iFireRate, ((m_unitFlags & dying) != 0) ? 1 : 0,                                \
+            (unsigned long) (tgtid), (unsigned long) (oppoid));                                     \
+        EnTrafficLog ("%s", szFrP);                                                                 \
+        sprintf_s (szFrN, sizeof (szFrN), "%s\n", szFrP);                                           \
+        OutputDebugStringA (szFrN);                                                                 \
+        } while (0)
+
+// the crash precondition - keeps the guard/shoot lines bounded
+#define EN_FIRERATE_HOT()   ( (m_iFireRate == 0) || ((m_unitFlags & dying) != 0) ||                 \
+                              ((m_dwReloadMod != 0) && (m_iFireRate == 0)) )
+
+// tgt / oppo unit ids, 0 when the pointer is NULL
+#define EN_FIRERATE_TGT     ((m_pUnitTarget != NULL) ? m_pUnitTarget->GetID () : (DWORD) 0)
+#define EN_FIRERATE_OPPO    ((m_pUnitOppo   != NULL) ? m_pUnitOppo->GetID   () : (DWORD) 0)
+#endif
 
 
 #ifdef _DEBUG
@@ -1069,6 +1109,10 @@ void CVehicle::HandleCombat ()
     // must be able to shoot
     if ( (! GetOwner()->IsLocal ()) || (GetFireRate () == 0) )
         return;
+#if 1
+    if ( EN_FIRERATE_HOT () )
+        EN_FIRERATE_LINE ("guardV", EN_FIRERATE_TGT, EN_FIRERATE_OPPO);
+#endif
 
     // turn off temp_target if it starts moving or we got an oppo
     if ( m_bFlags & temp_target )
@@ -1266,6 +1310,10 @@ void CVehicle::HandleCombat ()
                 theGame.PostToClient ( m_pUnitTarget->GetOwner(), &msg, sizeof (msg));
                 }
 
+#if 1
+            if ( EN_FIRERATE_HOT () )
+                EN_FIRERATE_LINE ("shootVT", EN_FIRERATE_TGT, EN_FIRERATE_OPPO);
+#endif
             Shoot (m_pUnitTarget, m_iLOS);
 
             // turn it off once it's hit it
@@ -1310,7 +1358,13 @@ void CVehicle::HandleCombat ()
 
                 if ( (abs (m_iOppoLOS) <= GetRange ()) &&
                                 ((m_iOppoLOS >= 0) || (GetData()->GetBaseType () == CTransportData::artillery)))
+                    {
+#if 1
+                    if ( EN_FIRERATE_HOT () )
+                        EN_FIRERATE_LINE ("shootVO", EN_FIRERATE_TGT, EN_FIRERATE_OPPO);
+#endif
                     Shoot (m_pUnitOppo, m_iOppoLOS);
+                    }
                 // if we can't hit it it's not an oppo fire anymore
                 else
                     bOkTurret = FALSE;
@@ -1376,6 +1430,10 @@ void CBuilding::HandleCombat ()
     // must be able to shoot
     if ( (! GetOwner()->IsLocal ()) || (GetFireRate () == 0) )
         return;
+#if 1
+    if ( EN_FIRERATE_HOT () )
+        EN_FIRERATE_LINE ("guardB", EN_FIRERATE_TGT, EN_FIRERATE_OPPO);
+#endif
 
     // if we are under construction we can't shoot
     if ( IsConstructing () )
@@ -1446,6 +1504,10 @@ void CBuilding::HandleCombat ()
                 theGame.PostToClient ( m_pUnitTarget->GetOwner(), &msg, sizeof (msg));
                 }
 
+#if 1
+            if ( EN_FIRERATE_HOT () )
+                EN_FIRERATE_LINE ("shootT", EN_FIRERATE_TGT, EN_FIRERATE_OPPO);
+#endif
             Shoot (m_pUnitTarget, m_iLOS);
             }
 
@@ -1462,7 +1524,13 @@ void CBuilding::HandleCombat ()
                             m_iOppoLOS = theMap.LineOfSight (this, m_pUnitOppo);
                         }
                 if ( abs (m_iOppoLOS) <= GetRange () )
+                    {
+#if 1
+                    if ( EN_FIRERATE_HOT () )
+                        EN_FIRERATE_LINE ("shootO", EN_FIRERATE_TGT, EN_FIRERATE_OPPO);
+#endif
                     Shoot (m_pUnitOppo, m_iOppoLOS);
+                    }
                 // if we can't hit it it's not an oppo fire anymore
                 else
                     SetOppo (NULL);
@@ -1505,6 +1573,12 @@ void CUnit::Shoot (CUnit * pUnit, int iLOS)
 
     // figure the number of shots
 
+#if 1
+    // [FIRERATE] last line before the faulting div - always emitted when the
+    // divisor is 0 so the crash dump is preceded by the shooter's identity.
+    if ( m_iFireRate == 0 )
+        EN_FIRERATE_LINE ("divide", ((pUnit != NULL) ? pUnit->GetID () : (DWORD) 0), (DWORD) 0);
+#endif
     div_t dtShoot = div ( m_dwReloadMod, GetFireRate () * AVG_SPEED_MUL );
     m_dwReloadMod = dtShoot.rem;
     if ( dtShoot.quot == 0 )

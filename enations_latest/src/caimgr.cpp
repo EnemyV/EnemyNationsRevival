@@ -20,6 +20,7 @@
 #include "logging.h"  // dave's logging system
 #include "stdafx.h"
 #include "enprobes.h"   // probe gates - was relying on a transitive include
+#include "vehicle.h"    // EnTrafficLog + EN_AI_TICK_PLYRS + the R10 traffic counters
 #include "version.h"
 
 #include "Perf.h"  // lightweight runtime metrics (gated by EN_PERF)
@@ -60,6 +61,48 @@ static inline unsigned long long DedupKey( const CAIMsg* p )
          | ( (unsigned long long)( p->m_dwID2 & 0xFFFFFF ) );
 }
 
+
+// ---------------------------------------------------------------------------
+// [SWEEP] entry/exit record for CAIMgr::HandleStuckVehicles (015 T2 item 4).
+// INSTRUMENT ONLY - it wraps the CALL, so the sweep body is untouched and the exit
+// line is written whatever happens inside: a normal return, a future early return,
+// or the AI yield exception (the AI threads throw pException to yield). The call
+// path is passed in because both call sites live here and the two mean different
+// things: `idle` = the m_bIdleFunction rotation, which never runs for an AI under
+// sustained attack; `wall` = the 240 s + jitter wall-clock gate that was added
+// precisely because of that. start/end are raw timeGetTime, the same monotonic
+// millisecond clock the sweep gate itself uses.
+// ---------------------------------------------------------------------------
+class EnSweepRec
+{
+  public:
+    EnSweepRec( int iPlyr, char const* pszWhy )
+        : m_iPlyr( iPlyr ), m_pszWhy( pszWhy ), m_dwStart( 0 ), m_bOn( EnTrafficLogOn( ) )
+    {
+        if ( !m_bOn )
+            return;
+        m_dwStart = timeGetTime( );
+        EnTrafficLog( "[SWEEP] plyr %d why %s enter start_ms %lu", m_iPlyr, m_pszWhy,
+                      (unsigned long)m_dwStart );
+    }
+    ~EnSweepRec( )
+    {
+        if ( !m_bOn )
+            return;
+        DWORD dwEnd = timeGetTime( );
+        DWORD dwMs  = dwEnd - m_dwStart;
+        EnTrafficLog( "[SWEEP] plyr %d why %s exit start_ms %lu end_ms %lu ms %lu", m_iPlyr, m_pszWhy,
+                      (unsigned long)m_dwStart, (unsigned long)dwEnd, (unsigned long)dwMs );
+        if ( ( m_iPlyr >= 0 ) && ( m_iPlyr < EN_AI_TICK_PLYRS ) && ( (long)dwMs > g_alTrafSweepMsMax[m_iPlyr] ) )
+            g_alTrafSweepMsMax[m_iPlyr] = (long)dwMs;   // census `sweep_ms_max`
+    }
+
+  private:
+    int          m_iPlyr;
+    char const*  m_pszWhy;
+    DWORD        m_dwStart;
+    bool         m_bOn;
+};
 
 extern CAITaskList* plTaskList;  // standard CAITask list
 extern CAIGoalList* plGoalList;  // standard CAIGoal list
@@ -317,7 +360,10 @@ void CAIMgr::Manage( void )
         else if ( m_bIdleFunction[6] )
         {
             // BUGBUG turn off by commenting
-            HandleStuckVehicles( );
+            {
+                EnSweepRec _sw( m_iPlayer, "idle" );   // [SWEEP] instrument, no behaviour change
+                HandleStuckVehicles( );
+            }
             m_bIdleFunction[6] = FALSE;
         }
         else
@@ -348,7 +394,10 @@ void CAIMgr::Manage( void )
                 OutputDebugStringA( szSw );
             }
 #endif
-            HandleStuckVehicles( );
+            {
+                EnSweepRec _sw( m_iPlayer, "wall" );   // [SWEEP] instrument, no behaviour change
+                HandleStuckVehicles( );
+            }
 
             // lab-goal growth lived ONLY in the road-bail paths (IdleCrane), so
             // fixing roads froze it; grow + restart research on the sweep instead
@@ -2892,6 +2941,15 @@ void CAIMgr::DestinationResponse( CAIMsg* pMsg )
                 // transfer the qty needed to the building
                 // and clear the truck of assignment
                 BOOL bNeedMore = m_pRouter->UnloadMaterials( pUnit, pBldg );
+
+                // R10 denominator `deliveries` (015 T2 item 4): the completed truck
+                // unload, counted where it actually happens. This is the AI path
+                // (CAIMgr -> CAIRouter). The HUMAN player's auto-router unloads at
+                // CHPRouter::DestinationResponse in chproute.cpp, which is outside the
+                // files this instrument may touch, so a human player's census reads 0
+                // here - absent counter, NOT zero deliveries. See vehicle.h.
+                if ( EnTrafficLogOn( ) && ( m_iPlayer >= 0 ) && ( m_iPlayer < EN_AI_TICK_PLYRS ) )
+                    ++g_alTrafDeliveries[m_iPlayer];
 
                 // try the building we just unloaded at
                 CHexCoord hexDest;

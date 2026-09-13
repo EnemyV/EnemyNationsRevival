@@ -9697,6 +9697,69 @@ TryTryAgain:
 // NEAREST goes on to block size and the whole-unit-list fallback (which,
 // as in the original, ignores iKindOf - "regardless of type").
 //
+// One occupied hex of a scan row, as the hoisted row hold left it. Only the
+// POST-FILTER values are kept - the same four the per-class candidate logic
+// consumed before this change. The filters themselves (own/cargo vehicle,
+// own/abandoned/city building) run inside the hold on the verbatim per-hex
+// code, because the 2x2 sub probe's control flow is load-bearing: it breaks on
+// the first EMPTY sub and a non-own CARGO vehicle halts the search before the
+// later zeroing, so "first non-own non-cargo occupant" is NOT what it computes.
+struct EnScanHex
+{
+    int   iX;      // offset of the hex within the row (hcStart.X + iX)
+    BYTE  bUnits;  // CHex::GetUnits() bits - read WITHOUT cs, exactly as before
+    DWORD dwVehID;
+    int   iVehOwner;
+    DWORD dwBldgID;
+    int   iBldgOwner;
+};
+
+// Hexes snapshotted per cs acquisition. The hold is bounded by THIS, not by the
+// map: a row longer than one chunk is simply walked in several chunks, each
+// with its own acquire/release, so nothing here depends on m_iHexPerBlk.
+const int EN_SCAN_CHUNK_HEXES = 64;
+
+// one-shot marker for the structurally-unreachable clamp below (benign race)
+static BOOL s_bScanRowClamped = FALSE;
+
+// Per-scan cs-take instrumentation, recorded on EVERY exit path of
+// GetOpForUnitScan (it returns from six places). Two numbers, both needed to
+// read the row-hold change honestly:
+//   iCandTakes - AssessThreat / AssessTarget holds, one per candidate class
+//                considered. These are deliberately NOT hoisted; if they turn
+//                out to be many, a flat lock-wait result means nothing.
+//   iOpForCalls - CAIUnitList::GetOpForUnit calls. That function takes cs on
+//                every index miss and allocates a CAIUnit under the lock
+//                (caiunit.cpp:1523) and is left alone in this commit, so
+//                "one acquisition per row" holds only while this is small.
+class CAiScanTakeScope
+{
+  public:
+    CAiScanTakeScope( int iPlyr, int const& iCand, int const& iOpFor )
+        : m_iPlyr( iPlyr ), m_piCand( &iCand ), m_piOpFor( &iOpFor )
+    {
+    }
+    ~CAiScanTakeScope( )
+    {
+        if ( ( m_iPlyr < 0 ) || ( m_iPlyr >= EN_AI_TICK_PLYRS ) )
+            return;
+        long lCand = (long)*m_piCand;
+        g_alAiScanCandTotal[m_iPlyr] += lCand;
+        if ( lCand > g_alAiScanCandMax[m_iPlyr] )
+            g_alAiScanCandMax[m_iPlyr] = lCand;
+
+        long lOpFor = (long)*m_piOpFor;
+        g_alAiScanOpForTotal[m_iPlyr] += lOpFor;
+        if ( lOpFor > g_alAiScanOpForMax[m_iPlyr] )
+            g_alAiScanOpForMax[m_iPlyr] = lOpFor;
+    }
+
+  private:
+    int        m_iPlyr;
+    int const* m_piCand;
+    int const* m_piOpFor;
+};
+
 DWORD CAIGoalMgr::GetOpForUnitScan( int const* aiHow, int const* aiKindOf, int nClasses, CAIUnit* pUnit, int* piClassSel )
 {
     if ( piClassSel != NULL )
@@ -9705,6 +9768,11 @@ DWORD CAIGoalMgr::GetOpForUnitScan( int const* aiHow, int const* aiKindOf, int n
         return ( 0 );
     if ( nClasses <= 0 || nClasses > 8 )
         return ( 0 );
+
+    // cs takes this scan performs; published by the scope's destructor
+    int             iCandTakes  = 0;
+    int             iOpForCalls = 0;
+    CAiScanTakeScope takeScope( m_iPlayer, iCandTakes, iOpForCalls );
 
     int       iArea = 0;
     int       iSpotting = 0;
@@ -9792,6 +9860,9 @@ DWORD CAIGoalMgr::GetOpForUnitScan( int const* aiHow, int const* aiKindOf, int n
     CTransportData const* pTd;
     int                   i;
 
+    // row snapshot for the hoisted cs hold (see EnScanHex); 64 * 24 bytes
+    EnScanHex aScanRow[EN_SCAN_CHUNK_HEXES];
+
     for ( int iLvl = 0; iLvl < nLevels; ++iLvl )
     {
         int  iA    = aiLevels[iLvl];
@@ -9810,18 +9881,29 @@ DWORD CAIGoalMgr::GetOpForUnitScan( int const* aiHow, int const* aiKindOf, int n
         int iDeltaX = hcStart.Wrap( hcEnd.X( ) - hcStart.X( ) );
         int iDeltaY = hcStart.Wrap( hcEnd.Y( ) - hcStart.Y( ) );
 
-        for ( int iY = 0; iY < iDeltaY; ++iY )
+        // iBase is the cursor within the current row: the row is consumed in
+        // chunks of at most EN_SCAN_CHUNK_HEXES occupied hexes, one cs hold per
+        // chunk, and iY only advances when the row is exhausted. Written this
+        // way so the candidate logic below keeps its nesting depth (and so the
+        // per-row yield still happens exactly once, outside every hold).
+        for ( int iY = 0, iBase = 0; iY < iDeltaY; )
         {
             hcAt.Y( hcAt.Wrap( hcStart.Y( ) + iY ) );
 
 #if THREADS_ENABLED
-            // yield once per row (see GetOpForUnit)
-            myYieldThread( );
+            // yield once per row (see GetOpForUnit) - never inside the hold
+            if ( iBase == 0 )
+                myYieldThread( );
 #endif
 
-            for ( int iX = 0; iX < iDeltaX; iX++ )
+            // ---- chunk pass 1: collect this chunk's occupied hexes. NO cs:
+            //      theMap.GetHex and CHex::GetUnits were read unlocked before
+            //      this change and still are ----
+            int nRow = 0;
+            while ( iBase < iDeltaX && nRow < EN_SCAN_CHUNK_HEXES )
             {
-                hcAt.X( hcAt.Wrap( hcStart.X( ) + iX ) );
+                int const iAt = iBase++;
+                hcAt.X( hcAt.Wrap( hcStart.X( ) + iAt ) );
 
                 CHex* pGameHex = theMap.GetHex( hcAt );
                 if ( pGameHex == NULL )
@@ -9831,64 +9913,121 @@ DWORD CAIGoalMgr::GetOpForUnitScan( int const* aiHow, int const* aiKindOf, int n
                 if ( !( bUnits & CHex::unit ) )
                     continue;
 
-                // ---- occupant extraction, once per hex ----
-                DWORD dwVehID   = 0;
-                int   iVehOwner = 0;
-                DWORD dwBldgID   = 0;
-                int   iBldgOwner = 0;
-
-                // first non-own, non-cargo vehicle in the hex (vanilla subhex order)
-                if ( !( bUnits & CHex::bldg ) && ( bUnits & ( CHex::ul | CHex::ur | CHex::ll | CHex::lr ) ) )
+                // the while condition already bounds nRow; clamp + shout rather
+                // than overrun if that ever stops being true
+                ASSERT( nRow < EN_SCAN_CHUNK_HEXES );
+                if ( nRow >= EN_SCAN_CHUNK_HEXES )
                 {
-                    BOOL bIsCargo = FALSE;
-                    CVehicle* pVehicle = NULL;
-                    for ( int iy = 0; iy < 2 && pVehicle == NULL; ++iy )
+#if EN_AI_PROBES_ECON
+                    if ( !s_bScanRowClamped )
                     {
-                        sub.y = ( hcAt.Y( ) * 2 ) + iy;
-                        for ( int ix = 0; ix < 2; ++ix )
+                        s_bScanRowClamped = TRUE;
+                        EnTrafficLog( "[SCANROW] clamped plyr %d level %d deltaX %d max %d", m_iPlayer, iA, iDeltaX,
+                                      EN_SCAN_CHUNK_HEXES );
+                    }
+#endif
+                    break;
+                }
+
+                EnScanHex& e = aScanRow[nRow++];
+                e.iX         = iAt;
+                e.bUnits     = bUnits;
+                e.dwVehID    = 0;
+                e.iVehOwner  = 0;
+                e.dwBldgID   = 0;
+                e.iBldgOwner = 0;
+            }
+
+            // ---- chunk pass 2: ONE acquisition for the whole chunk. The body
+            //      is the old per-hex code verbatim (same sub order, same
+            //      break/continue, same filters) with its own Enter/Leave pairs
+            //      removed; only the four post-filter values are kept ----
+            if ( nRow )
+            {
+                EnterCriticalSection( &cs );
+                for ( int iOn = 0; iOn < nRow; ++iOn )
+                {
+                    EnScanHex& e = aScanRow[iOn];
+                    hcAt.X( hcAt.Wrap( hcStart.X( ) + e.iX ) );
+
+                    BYTE  bUnits     = e.bUnits;
+                    DWORD dwVehID    = 0;
+                    int   iVehOwner  = 0;
+                    DWORD dwBldgID   = 0;
+                    int   iBldgOwner = 0;
+
+                    // Spatial maps retain dying occupants until removal. They must
+                    // not become targets: the ID lookup in SeekOpfor rejects them.
+                    if ( !( bUnits & CHex::bldg ) && ( bUnits & ( CHex::ul | CHex::ur | CHex::ll | CHex::lr ) ) )
+                    {
+                        BOOL bIsCargo = FALSE;
+                        BOOL bIsDying = FALSE;
+                        CVehicle* pVehicle = NULL;
+                        for ( int iy = 0; iy < 2 && pVehicle == NULL; ++iy )
                         {
-                            sub.x = ( hcAt.X( ) * 2 ) + ix;
-                            EnterCriticalSection( &cs );
-                            pVehicle = theVehicleHex.GetVehicle( sub.x, sub.y );
-                            if ( pVehicle != NULL )
+                            sub.y = ( hcAt.Y( ) * 2 ) + iy;
+                            for ( int ix = 0; ix < 2; ++ix )
                             {
-                                iVehOwner = pVehicle->GetOwner( )->GetPlyrNum( );
-                                dwVehID   = pVehicle->GetID( );
-                                bIsCargo  = ( pVehicle->GetTransport( ) != NULL );
-                            }
-                            LeaveCriticalSection( &cs );
+                                sub.x = ( hcAt.X( ) * 2 ) + ix;
+                                pVehicle = theVehicleHex.GetVehicle( sub.x, sub.y );
+                                if ( pVehicle != NULL )
+                                {
+                                    iVehOwner = pVehicle->GetOwner( )->GetPlyrNum( );
+                                    dwVehID   = pVehicle->GetID( );
+                                    bIsCargo  = ( pVehicle->GetTransport( ) != NULL );
+                                    bIsDying  = pVehicle->IsFlag( CUnit::dying );
+                                }
 
-                            if ( pVehicle != NULL && iVehOwner == m_iPlayer )
-                            {
-                                dwVehID  = 0;
-                                pVehicle = NULL;
-                                continue;
+                                if ( pVehicle != NULL && iVehOwner == m_iPlayer )
+                                {
+                                    dwVehID  = 0;
+                                    pVehicle = NULL;
+                                    continue;
+                                }
+                                break;
                             }
-                            break;
                         }
+                        if ( dwVehID && ( iVehOwner == m_iPlayer || bIsCargo || bIsDying ) )
+                            dwVehID = 0;
                     }
-                    if ( dwVehID && ( iVehOwner == m_iPlayer || bIsCargo ) )
-                        dwVehID = 0;
-                }
 
-                if ( bUnits & CHex::bldg )
-                {
-                    int  iType       = -1;
-                    BOOL bIsAbandoned = FALSE;
-                    EnterCriticalSection( &cs );
-                    CBuilding* pBuilding = theBuildingHex.GetBuilding( hcAt );
-                    if ( pBuilding != NULL )
+                    if ( bUnits & CHex::bldg )
                     {
-                        iBldgOwner   = pBuilding->GetOwner( )->GetPlyrNum( );
-                        iType        = pBuilding->GetData( )->GetType( );
-                        dwBldgID     = pBuilding->GetID( );
-                        bIsAbandoned = pBuilding->IsFlag( CUnit::abandoned );
-                    }
-                    LeaveCriticalSection( &cs );
+                        int  iType       = -1;
+                        BOOL bIsAbandoned = FALSE;
+                        BOOL bIsDying     = FALSE;
+                        CBuilding* pBuilding = theBuildingHex.GetBuilding( hcAt );
+                        if ( pBuilding != NULL )
+                        {
+                            iBldgOwner   = pBuilding->GetOwner( )->GetPlyrNum( );
+                            iType        = pBuilding->GetData( )->GetType( );
+                            dwBldgID     = pBuilding->GetID( );
+                            bIsAbandoned = pBuilding->IsFlag( CUnit::abandoned );
+                            bIsDying     = pBuilding->IsFlag( CUnit::dying );
+                        }
 
-                    if ( dwBldgID && ( iBldgOwner == m_iPlayer || bIsAbandoned || iType == CStructureData::city ) )
-                        dwBldgID = 0;
+                        if ( dwBldgID && ( iBldgOwner == m_iPlayer || bIsAbandoned || bIsDying || iType == CStructureData::city ) )
+                            dwBldgID = 0;
+                    }
+
+                    e.dwVehID    = dwVehID;
+                    e.iVehOwner  = iVehOwner;
+                    e.dwBldgID   = dwBldgID;
+                    e.iBldgOwner = iBldgOwner;
                 }
+                LeaveCriticalSection( &cs );
+            }
+
+            // ---- chunk pass 3: the candidate logic, unchanged, off the snapshot ----
+            for ( int iOn = 0; iOn < nRow; iOn++ )
+            {
+                hcAt.X( hcAt.Wrap( hcStart.X( ) + aScanRow[iOn].iX ) );
+
+                // ---- occupant extraction, once per hex (done under the hold above) ----
+                DWORD dwVehID    = aScanRow[iOn].dwVehID;
+                int   iVehOwner  = aScanRow[iOn].iVehOwner;
+                DWORD dwBldgID   = aScanRow[iOn].dwBldgID;
+                int   iBldgOwner = aScanRow[iOn].iBldgOwner;
 
                 if ( !dwVehID && !dwBldgID )
                     continue;
@@ -9932,6 +10071,7 @@ DWORD CAIGoalMgr::GetOpForUnitScan( int const* aiHow, int const* aiKindOf, int n
                         continue;
                     if ( pOpFor->IsAI( ) && !pOpFor->AtWar( ) )
                         continue;
+                    ++iOpForCalls;
                     if ( m_plUnits->GetOpForUnit( dwCand ) == NULL )
                         continue;
 
@@ -9946,6 +10086,7 @@ DWORD CAIGoalMgr::GetOpForUnitScan( int const* aiHow, int const* aiKindOf, int n
                     else if ( aiHow[c] == THREAT_TARGET )
                     {
                         iScore = 0;
+                        ++iCandTakes;
                         EnterCriticalSection( &cs );
                         if ( bIsVeh )
                         {
@@ -9970,6 +10111,7 @@ DWORD CAIGoalMgr::GetOpForUnitScan( int const* aiHow, int const* aiKindOf, int n
                     else  // BEST_TARGET
                     {
                         iScore = 0;
+                        ++iCandTakes;
                         EnterCriticalSection( &cs );
                         if ( bIsVeh )
                         {
@@ -10015,6 +10157,13 @@ DWORD CAIGoalMgr::GetOpForUnitScan( int const* aiHow, int const* aiKindOf, int n
                     aiScore[c] = iScore;
                     adwSel[c]  = dwCand;
                 }
+            }
+
+            // next row only once this one has been consumed chunk by chunk
+            if ( iBase >= iDeltaX )
+            {
+                ++iY;
+                iBase = 0;
             }
         }
 

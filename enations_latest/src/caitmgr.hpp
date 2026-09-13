@@ -26,6 +26,20 @@ protected:
 	BOOL m_bRepairFirst;	// alternates repair/resume vs new-construction first pick
 	BOOL m_bPartialPick;	// alternates partial-adopt vs damage-repair inside the picker
 	int  m_iCraneAssignCnt;	// every 5th crane assignment prefers the road task
+	// seek-scan instrumentation (transient, never serialized): units seen
+	// holding a target so far in the current AssignUnits walk. Published to
+	// g_alAiSeekTargets as it counts, so a walk that never finishes still
+	// shows what it saw.
+	int  m_iWalkSeekTargets;
+	// seek-scan budget (transient, never serialized). m_bInWalk is TRUE only
+	// inside an AssignUnits pass; GenerateTaskOrder reached from any other
+	// call site (CAIMgr::DestinationResponse and the other message paths)
+	// therefore bypasses the budget entirely, so an arrival never skips its
+	// scan. m_dwWalkScanMs accumulates GetOpForUnitScan time ONLY - walk time
+	// spent on assignment, patrol picking, routing and the per-unit yield must
+	// not count, or a big walk exhausts the budget on non-scan work alone.
+	BOOL  m_bInWalk;
+	DWORD m_dwWalkScanMs;
 
 	CAIGoalMgr *m_pGoalMgr;	// this player's goal manager
 	

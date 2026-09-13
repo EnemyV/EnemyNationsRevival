@@ -179,6 +179,24 @@ public:
                          BOOL bVehBlock = FALSE, BOOL bDirectPath = FALSE );
 };
 
+// [PATHRES] `exit` reason (015 R19 instrument). A short string literal naming the exact
+// exit CPathMgr::_GetPath took for the LAST search run ON THIS THREAD - "ok" when it
+// succeeded. Cleared at search entry and set at every exit; storage is THREAD-LOCAL
+// because the AI threads and the game thread all call thePathMgr and the reader
+// (CVehicle::GetPath's [PATHRES] record, vehicle.h:657) runs after GetPath has already
+// dropped m_cs, so a shared global would name some other thread's search. Read it on the
+// same thread right after the GetPath call. Instrument only: nothing in the search or
+// the game reads it, and no control flow depends on it.
+extern const char * EnPathExitWhy ();
+
+// [PATHRES] `coastskip` (015 R20 instrument). How many candidate cells the LAST search on
+// THIS thread refused under the intermediate-coastline rule in GetCellCosts. Same
+// thread-local storage and the same read-it-right-after-GetPath rule as EnPathExitWhy.
+// R19 reported this as a `_coast` SUFFIX on the exit label, which asserted a causation the
+// counter cannot support; it is a plain count now and the caller prints it as its own
+// field. Instrument only: no branch in the search or in the game reads it.
+extern int          EnPathCoastSkip ();
+
 extern CPathMgr thePathMgr;
 
 #endif // __CPATHMGR_H__
