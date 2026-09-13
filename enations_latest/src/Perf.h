@@ -113,6 +113,9 @@ namespace Perf
     // negative slack. If slack is positive there, the 10 ms was pacing.
     void NoteFrameSleep( int slackMs, uint64_t sleptUs );
 
+    // Per-frame TAIL-drain cost; [SLOWFRAME] msg= is the HEAD drain only.
+    void NoteFrameMsgTail( uint64_t us );
+
     // RAII scoped timer for a NAMED counter. (Audit note: this is functionally the
     // same shape as ScopeCounter; kept separate only because it early-outs on
     // IsEnabled() at construction. Collapse into ScopeCounter when that is confirmed

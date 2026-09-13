@@ -488,7 +488,18 @@ namespace { const int kFrameMsgTypes = 128;
            uint64_t g_frameSearchMax  = 0;
            int      g_frameSlackMs    = 0;
            bool     g_frameSlackSet   = false;
-           uint64_t g_frameSleptUs    = 0; }
+           uint64_t g_frameSleptUs    = 0;
+           uint64_t g_frameMsgTailUs = 0; }
+
+// The TAIL drain sits inside SEC_SIM but OUTSIDE SEC_MSG, so the [SLOWFRAME] msg=
+// field is the HEAD drain only. Without this the per-frame drain share cannot be
+// computed at all - msg.tail.us is a ScopeNamed counter and never reaches this line,
+// which is why a "redo the table per frame" request was unanswerable on 2026-09-13.
+void NoteFrameMsgTail( uint64_t us )
+{
+    if ( !g_enabled ) return;
+    g_frameMsgTailUs += us;
+}
 
 void NoteFrameSleep( int slackMs, uint64_t sleptUs )
 {
@@ -646,6 +657,8 @@ void FrameMark()
                 if ( g_frameMsgTop >= 0 && g_frameMsgUs[g_frameMsgTop] > 0 )
                     fprintf( s_fp, "  topmsg=%d/%.1fms", g_frameMsgTop,
                              (double)g_frameMsgUs[g_frameMsgTop] / 1000.0 );
+                if ( g_frameMsgTailUs > 0 )
+                    fprintf( s_fp, "  msgtail=%.1f", (double)g_frameMsgTailUs / 1000.0 );
                 if ( g_frameInvalHexes >= 0 )
                     fprintf( s_fp, "  invalhex=%d  invalms=%.1f", g_frameInvalHexes,
                              (double)g_frameInvalUs / 1000.0 );
@@ -663,6 +676,7 @@ void FrameMark()
         for ( int i = 0; i < SEC_COUNT; ++i ) g_prevFrameSec[i] = g_secTicks[i];
         for ( int i = 0; i < kFrameMsgTypes; ++i ) g_frameMsgUs[i] = 0;
         g_frameMsgTop     = -1;
+        g_frameMsgTailUs  = 0;
         g_frameInvalHexes = -1;
         g_frameInvalUs    = 0;
         g_frameSearches   = 0;

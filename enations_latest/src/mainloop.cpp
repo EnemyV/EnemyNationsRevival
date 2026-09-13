@@ -1706,7 +1706,12 @@ void CConquerApp::GraphicsEnginePump( )
             const DWORD _mtBack = theGame.m_messagePointerList.GetCount( );
             Perf::GaugeSet( "msg.tail.backlog", (int64_t)_mtBack );
             const DWORD _mt0 = timeGetTime( );
+            const uint64_t _mtq = Perf::NowIfEnabled( );
             ProcessAllMessages( 100 );
+            // [SLOWFRAME] msg= is SEC_MSG, the HEAD drain only; this drain is inside
+            // SEC_SIM but outside SEC_MSG, so without this note the per-frame drain
+            // share cannot be computed from the slow-frame line at all.
+            Perf::NoteFrameMsgTail( Perf::ElapsedUs( _mtq ) );
             if ( timeGetTime( ) - _mt0 >= 100 )
                 Perf::CounterInc( "msg.tail.capped" );
             g_enMsgDrain = 0;
