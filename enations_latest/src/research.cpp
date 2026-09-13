@@ -1289,19 +1289,24 @@ void CRsrchArray::Open( )
     // Tier 1 is priced at 6x the spot_3 topic (1,488,000: dearer than anything in the DAT,
     // well short of the end-game combat tiers) and gated behind the top of the sensor line
     // plus the reactor physics that says what a drive core sounds like and the plant that can
-    // drive the emitter. Tiers 2-6 each cost 5x the tier below and chain it.
+    // drive the emitter. Tiers 2-6 each cost RESONANCE_COST_MULT x the tier below and chain it,
+    // giving 1.488M / 4.464M / 13.392M / 40.176M / 120.528M / 361.584M.
     //
-    // CEILING: the 5x ladder is 1.488M / 7.44M / 37.2M / 186M / 930M / 4.65 BILLION, and that
-    // last one does not fit in the int m_iPtsRequired -- worse, CPlayer::Research compares
-    // against m_iPtsRequired * 2, so anything above INT_MAX/2 overflows to negative and the
-    // topic would complete instantly or never. The ladder is therefore computed in 64-bit and
-    // clamped to RSRCH_PTS_CEILING, which lands tier 6 at ~1.07e9 instead of 4.65e9. Tiers 5
-    // and 6 end up close in price as a result; retune the multiplier (3x keeps the whole
-    // ladder under the ceiling) if that matters.
+    // CEILING -- read this before raising RESONANCE_COST_MULT. m_iPtsRequired is an int, and
+    // CPlayer::Research compares against m_iPtsRequired * 2, so the usable ceiling is INT_MAX/2
+    // (RSRCH_PTS_CEILING below), not INT_MAX: above it the comparison goes negative and the
+    // topic completes instantly or never. At 5x this line ran 1.488M .. 4.65 BILLION and the top
+    // tier blew straight through that, so the multiplier is 3x, which lands the whole ladder
+    // comfortably under it -- the top tier is ~361M, the same order as the existing end-game
+    // techs (atk_8 is 9.92M). The ladder is still computed in 64-bit and clamped as a backstop,
+    // so a future retune degrades to a squashed top tier rather than to UB.
     // The AI's frozen research path doesn't author these, though its cheapest-available
     // fallback can still reach them.
     {
         const int RESONANCE_TIERS = 6;
+
+        // Cost step per tier. See the CEILING note above before raising this.
+        const long long RESONANCE_COST_MULT = 3;
 
         // INT_MAX/2, because Research( ) evaluates m_iPtsRequired * 2.
         const long long RSRCH_PTS_CEILING = 1073741823LL;
@@ -1345,7 +1350,7 @@ void CRsrchArray::Open( )
             CRsrchItem* pRi = &ElementAt( aiIdx[iOn] );
 
             if ( iOn > 0 )
-                llPts *= 5;
+                llPts *= RESONANCE_COST_MULT;
             pRi->m_iPtsRequired      = (int)( ( llPts > RSRCH_PTS_CEILING ) ? RSRCH_PTS_CEILING : llPts );
             pRi->m_iNumBldgsRequired = 0;
 

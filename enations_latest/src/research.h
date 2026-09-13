@@ -414,12 +414,12 @@ public:
 					// ping from a bare contact into REAL VISION: tier 2 lights a 1-hex ring of
 					// ground around the rocket it finds, up to a 5-hex ring at tier 6
 					// (CPlayer::GetSweepRings), for RESONANCE_SWEEP_LIT_SECS before it goes dark
-					// again. Each tier also costs 5x the previous in points and adds
+					// again. Each tier also costs 3x the previous in points and adds
 					// RESONANCE_SWEEP_POWER_TIER to the edict's flat power draw. Kept CONTIGUOUS
 					// with tier 1 above so the tier arithmetic stays a subtraction, and appended
 					// LAST so no earlier enum index shifts (RDPATH_SAVE_COUNT==53 stays put).
-					// NOTE the 5x ladder outruns a 32-bit int at tier 6 -- research.cpp clamps it,
-					// see RSRCH_PTS_CEILING there.
+					// NOTE the multiplier is capped by what an int can hold -- see RSRCH_PTS_CEILING
+					// in research.cpp before raising it.
 					drive_core_resonance_2,
 					drive_core_resonance_3,
 					drive_core_resonance_4,
