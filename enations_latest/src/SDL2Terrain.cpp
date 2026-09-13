@@ -1143,6 +1143,60 @@ static void AppendQueuedBuildGhosts( const CAnimAtr& aa, std::vector<SDL_Vertex>
 
             AppendFootprintHatch( aa, pR->GetCoord( ), cx, cy, kQueuedGhostCol, 0, verts );
         }
+
+        // #38 IN-FLIGHT PLAIN BUILD. An ORDINARY (no-Shift) placement never touches the
+        // route list - CGameArea::DoCommandAt calls ClearOrders() before SetBuilding - so
+        // it draws no entry above, and the real site does not exist until the crane
+        // arrives and the server answers: nothing marks the click. CVehicle::SetBuilding
+        // sets m_iEvent = build the moment the site is armed, and BuildBldg (vehicle.cpp)
+        // is the only thing that clears it, on the single line where the request is
+        // finally SENT on arrival - so GetEvent()==build spans the whole click-to-arrival
+        // window unbroken, for a plain placement and a just-dispatched queued one alike.
+        // The dedup right below is what keeps the two ghosts from stacking for the
+        // queued case; it is not a separate code path.
+        //
+        // NOT covered: the round trip after the request is sent (m_iOrderState ==
+        // order_sent, event already cleared) until the server's answer creates the site
+        // or rejects it. m_iOrderState/m_iOrderKind would close that gap, but neither is
+        // scoped to "build" for a plain placement the way GetEvent() is - they are set by
+        // NextOrder for EVERY order kind (build_road, repair too) and are not touched by
+        // a plain SetBuilding at all, so trusting them here would light a stale ghost, at
+        // whatever hex this crane's PREVIOUS build left behind, for the length of a
+        // totally unrelated queued job. One tick of gap around a network round trip is
+        // the safer read.
+        if ( pVeh->GetEvent( ) == CVehicle::build )
+        {
+            CHexCoord const& hexBldg = pVeh->GetHexBldg( );
+
+            BOOL bListed = FALSE;
+            for ( POSITION rp2 = lst.GetHeadPosition( ); rp2 != NULL; )
+            {
+                CRoute* pR2 = lst.GetNext( rp2 );
+                if ( ( pR2 != NULL ) && ( pR2->GetRouteType( ) == CRoute::build ) &&
+                     ( pR2->GetCoord( ) == hexBldg ) )
+                {
+                    bListed = TRUE;
+                    break;
+                }
+            }
+
+            if ( ( !bListed ) && ( theBuildingHex._GetBuilding( hexBldg ) == NULL ) )
+            {
+                int iBldg = pVeh->GetBldgType( );
+                if ( ( iBldg > 0 ) && ( iBldg <= theStructures.GetNumBuildings( ) ) )
+                {
+                    CStructureData const* pData = theStructures.GetData( iBldg );
+                    if ( pData != NULL )
+                    {
+                        int iDir = pVeh->GetBuildDir( );
+                        int cx   = ( iDir & 1 ) ? pData->GetCY( ) : pData->GetCX( );
+                        int cy   = ( iDir & 1 ) ? pData->GetCX( ) : pData->GetCY( );
+                        if ( ( cx > 0 ) && ( cy > 0 ) )
+                            AppendFootprintHatch( aa, hexBldg, cx, cy, kQueuedGhostCol, 0, verts );
+                    }
+                }
+            }
+        }
     }
 }
 
