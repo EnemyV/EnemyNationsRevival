@@ -3451,8 +3451,16 @@ void CVehicle::GetPath( BOOL bNoOcc )
         }
     }
     else
+    {
+        // BRACES ARE LOAD-BEARING (WinOpus 2026-09-13, defect I introduced in ea56d266
+        // and WinFable's probe audit caught). Without them the counter became the else
+        // body and this GetPath ran UNCONDITIONALLY: the adjacent fast path above still
+        // allocated its 3-element array, then this overwrote the pointer - a leak on
+        // every short move and a full A* on every one-hex step. Every measurement taken
+        // between 03:05Z and this fix was on a build that manufactured searches.
         Perf::CounterInc( "pq.veh" );   // BURST PROBE: CVehicle::GetPath, ordinary movement route
         m_phexPath = thePathMgr.GetPath( this, _hexSrc, _hexDest, m_iPathLen, 0, bNoOcc );
+    }
 
     // if we have no path we're stuck
     if ( ( m_iPathLen <= 0 ) || ( ( m_iPathLen > 1 ) && ( *m_phexPath == *( m_phexPath + m_iPathLen - 1 ) ) ) )
