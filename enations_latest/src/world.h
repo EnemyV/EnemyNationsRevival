@@ -182,6 +182,13 @@ protected:
 	DWORD					m_dwLastRadarDraw{};	// last time the static minimap background was baked
 	CDIB*					m_pdibRadarStatic{};	// cached minimap background (no unit dots) — see ReRender
 	unsigned long long		m_qwLastWalkSig{};		// inputs signature of the last bake (skip-gate, see ReRender)
+	unsigned long long		m_qwLastViewSig{};		// VIEW signature (centre/zoom/dir/mode) of the last bake
+													// -- picks the bake CADENCE; content churn must not (see ReRender)
+	unsigned				m_uFramesSinceBake{};	// render frames since the last bake -- the FRAME floor.
+													// The radar opts out of DecideRenderFrame's interval
+													// throttle (RendersEveryFrame below), so the ms cadence
+													// is its only bound, and a slow machine (4.5fps = 221ms
+													// a frame) satisfies that every frame. See radarbake.h.
 	DWORD					m_dwDirBakePending{};	// !=0: building change awaits a coalesced _NewDir
 	DWORD					m_dwLastDirBake{};		// last _NewDir time (coalescing clock)
 	CPoint					m_ptLastBakeCtr{};		// area-view centre the last bake was anchored to
