@@ -1,10 +1,13 @@
-"""Compile the PRODUCTION road-step rule (queue-road ghost), driven verbatim.
+"""Compile the PRODUCTION road-step rule AND the road-ghost drawing body, driven verbatim.
 
 Same technique as run-order-lifecycle.py / run-drag-place.py: CVehicle::RoadStepToward
-is extracted verbatim out of enations_latest/src/vehicle.cpp into roadghost_actual.inc
-and compiled against the CHexCoord stand-in in test_road_ghost.cpp (terrain.inl's
-torus arithmetic, drag-place's technique: mask = eX-1, half = eX/2). So a check here is
-a statement about the shipped step rule, not a mirror of it.
+is extracted verbatim out of enations_latest/src/vehicle.cpp into roadghost_actual.inc,
+and AppendRoadGhostLine + RoadGhostCap are extracted verbatim out of
+enations_latest/src/SDL2Terrain.cpp into roadghost_draw_actual.inc. Both are compiled
+against the CHexCoord stand-in and the drawing stubs (CPoint/SDL_Vertex/CHex/theMap/
+CAnimAtr/FootprintSeamShift) in test_road_ghost.cpp (terrain.inl's torus arithmetic,
+drag-place's technique: mask = eX-1, half = eX/2). So a check here is a statement about
+the shipped step rule and the shipped drawing body, not a mirror of either.
 
 This script ALSO lints vehicle.cpp: CVehicle::_NextRoadHex (the function the crane's own
 BuildRoad/NextRoadHex actually call) must still call RoadStepToward(...) rather than
@@ -17,9 +20,11 @@ lint even if RoadStepToward itself still exists and still passes every other che
     python tests/orders/run-road-ghost.py --opt /O2
     python tests/orders/run-road-ghost.py --baseline-ref <commit>
 
---baseline-ref reads production vehicle.cpp from an older revision: 89772cb1 (the
-integration tip this work is based on) has no RoadStepToward at all -- the positive
-control for "this is reading the real source", not a stand-in.
+--baseline-ref reads production vehicle.cpp/SDL2Terrain.cpp from an older revision:
+89772cb1 (the integration tip this work is based on) has no RoadStepToward at all -- the
+positive control for "this is reading the real source", not a stand-in. Pre-fix
+(3678b991, before the last-hex/cap corrections below) is also a useful --baseline-ref:
+the two new drawing checks fail there and pass on the working tree.
 
 Exit codes: 0 all pass, 1 a check failed, 2 toolchain / compile / extraction / lint error.
 """
@@ -38,6 +43,7 @@ parser.add_argument('--opt', default='/Od', help='cl optimisation switch (defaul
 args = parser.parse_args()
 
 VEH = 'enations_latest/src/vehicle.cpp'
+TERR = 'enations_latest/src/SDL2Terrain.cpp'
 
 
 def read(path):
@@ -48,6 +54,7 @@ def read(path):
 
 
 source = read(VEH)
+terrain_source = read(TERR)
 
 
 def brace_match(src, start):
@@ -62,7 +69,7 @@ def brace_match(src, start):
 def method(signature, src=source):
     """Verbatim text of one method, located by signature and brace-matched."""
     if signature not in src:
-        print('[orders] NOT FOUND in %s: %s' % (VEH, signature))
+        print('[orders] NOT FOUND in %s: %s' % (VEH if src is source else TERR, signature))
         sys.exit(2)
     start = src.index(signature)
     opening, end = brace_match(src, start)
@@ -78,6 +85,29 @@ out.mkdir(parents=True, exist_ok=True)
 (out / 'roadghost_actual.inc').write_text(actual, encoding='utf-8')
 print('[orders] production CVehicle::RoadStepToward (vehicle.cpp) SHA256:',
       hashlib.sha256(actual.encode()).hexdigest(), flush=True)
+
+# THE drawing body -- lifted verbatim out of SDL2Terrain.cpp, same technique.
+draw_actual = method('static void AppendRoadGhostLine(', src=terrain_source)
+
+# The bound the drawing body walks against: post-fix it's a small RoadGhostCap()
+# function derived from the loaded map; pre-fix (readable via --baseline-ref, e.g.
+# 3678b991) it's a flat `kMaxRoadGhostHexes=256` constant. Extract whichever this
+# revision actually has, verbatim, so --baseline-ref keeps working across the fix and
+# the two new checks below can demonstrate the pre-fix truncation for real.
+if 'static int RoadGhostCap(' in terrain_source:
+    cap_actual = method('static int RoadGhostCap(', src=terrain_source)
+elif 'static const int kMaxRoadGhostHexes' in terrain_source:
+    decl_sig = 'static const int kMaxRoadGhostHexes'
+    line_start = terrain_source.index(decl_sig)
+    line_end = terrain_source.index('\n', line_start)
+    cap_actual = terrain_source[line_start:line_end] + '\n'
+else:
+    print('[orders] NOT FOUND in %s: RoadGhostCap() / kMaxRoadGhostHexes declaration' % TERR)
+    sys.exit(2)
+
+(out / 'roadghost_draw_actual.inc').write_text(cap_actual + '\n' + draw_actual, encoding='utf-8')
+print('[orders] production AppendRoadGhostLine (SDL2Terrain.cpp) SHA256:',
+      hashlib.sha256(draw_actual.encode()).hexdigest(), flush=True)
 
 # LINT: _NextRoadHex must still call the shared function, not its own arithmetic.
 next_road_hex = method('CHexCoord CVehicle::_NextRoadHex(CHexCoord const &_hexOn)')

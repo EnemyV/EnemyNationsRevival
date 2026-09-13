@@ -91,7 +91,7 @@ static CHexCoord ShadowStep( CHexCoord const& hexFrom, CHexCoord const& hexEnd )
     return ( hex );
 }
 
-static const int kMaxChain = 256;   // matches SDL2Terrain.cpp's kMaxRoadGhostHexes
+static const int kMaxChain = 256;   // matches SDL2Terrain.cpp's pre-fix kMaxRoadGhostHexes
 
 // Walks RoadStepToward and ShadowStep in lockstep from hexFrom to hexEnd, checking:
 //   - the chain reaches hexEnd
@@ -135,6 +135,123 @@ static void CheckChain( char const* name, CHexCoord hexFrom, CHexCoord hexEnd )
     CHECK_EQ( (int)chain.size( ), expectedLen );
 }
 
+// ----------------------------------------------------------------- the drawing body
+// AppendRoadGhostLine (SDL2Terrain.cpp) is the routine WinAstra's review found two
+// omissions in: a lone unbuilt endpoint drew zero vertices, and a fixed 256-hex cap
+// truncated a legitimate long chain. Drives the PRODUCTION body (roadghost_draw_actual.inc,
+// written by run-road-ghost.py) rather than a mirror, the same way the step-rule checks
+// above drive RoadStepToward -- so a regression in the shipped drawing routine, not just
+// its formula, fails here. Needs stand-ins for the SDL/map/CAnimAtr types the real body
+// touches; none of these model real rendering, only enough shape to link and run.
+struct CPoint
+{
+    int x, y;
+    CPoint( int a = 0, int b = 0 ): x( a ), y( b ) {}
+};
+struct SDL_Color { unsigned char r, g, b, a; };
+struct SDL_FPoint { float x, y; };
+struct SDL_Vertex { SDL_FPoint position; SDL_Color color; SDL_FPoint tex_coord; };
+
+// GetType()/road mirror terrain.h's CHex just enough for the "already built" prefix
+// scan; the real enum's road value doesn't matter here, only that it's distinguishable.
+struct CHex
+{
+    enum { road = 1 };
+    int type = 0;
+    int GetType( ) const { return ( type ); }
+};
+
+// theMap stand-in: a plain 256x256 grid (same world size as g_world above), plus the
+// Get_eX()/Get_eY() accessors RoadGhostCap() (post-fix) reads to size its bound.
+struct CTestMap
+{
+    CHex h[256][256];
+    CHex* GetHex( CHexCoord const& c ) { return ( &h[c.X( )][c.Y( )] ); }
+    int   Get_eX( ) const { return ( 256 ); }
+    int   Get_eY( ) const { return ( 256 ); }
+} theMap;
+
+// CAnimAtr stand-in: projects a hex to 4 corner points 10 units apart, so consecutive
+// hex centres in AppendRoadGhostLine's line are a fixed 10 units apart -- enough to
+// clear its `len >= 0.5f` degenerate-segment guard without modelling real projection.
+struct CAnimAtr
+{
+    BOOL MapToWindowHex( CHexCoord const& c, CPoint p[4] ) const
+    {
+        p[0] = CPoint( c.X( ) * 10, c.Y( ) * 10 );
+        p[1] = CPoint( c.X( ) * 10 + 10, c.Y( ) * 10 );
+        p[2] = CPoint( c.X( ) * 10 + 10, c.Y( ) * 10 + 10 );
+        p[3] = CPoint( c.X( ) * 10, c.Y( ) * 10 + 10 );
+        return ( TRUE );
+    }
+};
+static CPoint FootprintSeamShift( CAnimAtr const&, CHexCoord, bool ) { return ( CPoint( ) ); }
+
+// the ghost line colour AppendRoadGhostLine paints every vertex with (SDL2Terrain.cpp);
+// the actual colour is irrelevant here, only that the symbol exists to assign.
+static const SDL_Color kQueuedGhostCol = { 120, 190, 255, 120 };
+
+// the PRODUCTION drawing body (roadghost_draw_actual.inc, written by run-road-ghost.py):
+// RoadGhostCap() (post-fix) or the flat kMaxRoadGhostHexes constant (pre-fix, read via
+// --baseline-ref) plus AppendRoadGhostLine itself.
+#include "roadghost_draw_actual.inc"
+
+// Resets the shared scratch hexes this call's chain touches back to unbuilt, so tests
+// don't leak state into each other through the disjoint coordinate ranges they use.
+static void ClearRoad( CHexCoord const& hexFrom, CHexCoord const& hexEnd )
+{
+    CHexCoord hex = hexFrom;
+    for ( int i = 0; i < 512; ++i )
+    {
+        theMap.GetHex( hex )->type = 0;
+        if ( hex == hexEnd )
+            break;
+        hex = CVehicle::RoadStepToward( hex, hexEnd );
+    }
+}
+
+// #1: the LAST unbuilt hex of a multi-hex road must still draw -- the segment INTO
+// it, anchored on the last already-built hex, matching what the crane physically lays.
+// Pre-fix: `n - iStart < 2` returned with zero vertices the moment only the endpoint
+// was left, so a real pending order looked visually identical to a finished one.
+static void CheckLastHexDraws( )
+{
+    const CHexCoord hexFrom( 200, 200 ), hexEnd( 202, 200 );
+    ClearRoad( hexFrom, hexEnd );
+    theMap.GetHex( CHexCoord( 200, 200 ) )->type = CHex::road;
+    theMap.GetHex( CHexCoord( 201, 200 ) )->type = CHex::road;   // only (202,200) unbuilt
+
+    CAnimAtr                 aa;
+    std::vector<SDL_Vertex>  verts;
+    AppendRoadGhostLine( aa, hexFrom, hexEnd, verts );
+
+    std::printf( "-- last-hex-draws: verts=%zu (want 6)\n", verts.size( ) );
+    CHECK( !verts.empty( ) );        // the vanished-endpoint defect
+    CHECK_EQ( (long long)verts.size( ), 6 );   // exactly the one segment into the last hex
+
+    ClearRoad( hexFrom, hexEnd );
+}
+
+// #2: a chain longer than the old flat 256-hex cap must still draw in full. On this
+// 256x256 stand-in world, (0,0) -> (128,128) is a 257-hex chain (matches WinAstra's
+// witness) -- one more than the pre-fix cap, which silently dropped the tail.
+static void CheckLongChainDraws( )
+{
+    const CHexCoord hexFrom( 0, 0 ), hexEnd( 128, 128 );
+    const int        expectedLen =
+        abs( CHexCoord::Diff( hexEnd.X( ) - hexFrom.X( ) ) ) +
+        abs( CHexCoord::Diff( hexEnd.Y( ) - hexFrom.Y( ) ) ) + 1;
+
+    CAnimAtr                aa;
+    std::vector<SDL_Vertex> verts;
+    AppendRoadGhostLine( aa, hexFrom, hexEnd, verts );
+
+    const long long expectedVerts = (long long)( expectedLen - 1 ) * 6;   // one 6-vertex quad per segment
+    std::printf( "-- long-chain-draws: chain len %d, verts=%zu (want %lld)\n",
+                expectedLen, verts.size( ), expectedVerts );
+    CHECK_EQ( (long long)verts.size( ), expectedVerts );   // pre-fix: capped short of the real end
+}
+
 int main( )
 {
     const CHexCoord c( 128, 128 );   // map centre, well clear of the seam
@@ -164,6 +281,9 @@ int main( )
 
     // zero-length: already at the destination
     CheckChain( "zero-length", c, c );
+
+    CheckLastHexDraws( );
+    CheckLongChainDraws( );
 
     return microtest::Summary( );
 }
