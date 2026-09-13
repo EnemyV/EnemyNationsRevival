@@ -2356,6 +2356,71 @@ void CBuilding::GetAccepts( int* pVals ) const
     memset( pVals, 0, sizeof( int ) * CMaterialTypes::GetNumTypes( ) );
 }
 
+//---------------------------------------------------------------------------
+// Per-material auto-stock veto.
+//
+// The six HAULABLE materials, in flag-bit order. food and gas never sit in a
+// unit's store at all (farms/refineries credit the player's global pools --
+// mainloop.cpp), and moly/goods are vestigial, so none of the four is ever
+// trucked anywhere and none needs a veto bit. This order is an ON-DISK contract
+// once a save has been written: append only, never reorder.
+//---------------------------------------------------------------------------
+static int const s_aiBlockableMat[] = {
+    CMaterialTypes::lumber, CMaterialTypes::steel, CMaterialTypes::copper,
+    CMaterialTypes::oil,    CMaterialTypes::coal,  CMaterialTypes::iron };
+static int const s_iNumBlockable = sizeof( s_aiBlockableMat ) / sizeof( s_aiBlockableMat[0] );
+
+// The reserved flag window has to be exactly wide enough for the table above --
+// otherwise a seventh entry would silently overrun into whatever flag is added next.
+static_assert( ( ( CUnit::no_stock_base << s_iNumBlockable ) - CUnit::no_stock_base ) == CUnit::no_stock_mask,
+               "no_stock_mask must cover exactly s_aiBlockableMat" );
+
+// Bit for iInd, or 0 if this material has none (never blockable).
+static int MatBlockBit( int iInd )
+{
+    for ( int iBit = 0; iBit < s_iNumBlockable; iBit++ )
+        if ( s_aiBlockableMat[iBit] == iInd )
+            return ( CUnit::no_stock_base << iBit );
+    return ( 0 );
+}
+
+BOOL CBuilding::IsBlockableMat( int iInd )
+{
+    return ( (BOOL)( MatBlockBit( iInd ) != 0 ) );
+}
+
+BOOL CBuilding::IsMatBlocked( int iInd ) const
+{
+    ASSERT_VALID( this );
+
+    int iBit = MatBlockBit( iInd );
+    if ( iBit == 0 )
+        return ( FALSE );
+    return ( (BOOL)( ( (int)m_unitFlags & iBit ) != 0 ) );
+}
+
+void CBuilding::SetMatBlocked( int iInd, BOOL bBlock )
+{
+    ASSERT_VALID( this );
+
+    int iBit = MatBlockBit( iInd );
+    if ( iBit == 0 )
+        return;
+    if ( bBlock )
+        m_unitFlags = (UNIT_FLAGS)( (int)m_unitFlags | iBit );
+    else
+        m_unitFlags = (UNIT_FLAGS)( (int)m_unitFlags & ~iBit );
+}
+
+// Only the two bottomless sinks get the checkboxes (operator 2026-09-13). Every
+// other building's intake is dictated by what it consumes, so a veto there would
+// just be a way to starve yourself by accident.
+BOOL CBuilding::CanBlockMaterials( ) const
+{
+    ASSERT_VALID( this );
+    return ( (BOOL)( GetData( )->GetUnionType( ) == CStructureData::UTwarehouse ) );
+}
+
 CStructureData::BLDG_TYPE CStructureData::GetBldgType( ) const
 {
 
@@ -2615,10 +2680,78 @@ void CWarehouseBuilding::GetAccepts( int* pVals ) const
 
     for ( int iOn = 0; iOn < CMaterialTypes::GetNumTypes( ); iOn++ )
         if ( ( iOn != CMaterialTypes::food ) && ( iOn != CMaterialTypes::gas ) && ( iOn != CMaterialTypes::moly ) &&
-             ( iOn != CMaterialTypes::goods ) )
+             ( iOn != CMaterialTypes::goods ) &&
+             // player has vetoed this material here -- an "iron only" warehouse
+             ( !IsMatBlocked( iOn ) ) )
             *pVals++ = 1;
         else
             *pVals++ = 0;
+}
+
+// Rocket 5000 / warehouse 2000 per material. GetBldgType folds rocket and warehouse
+// together into `warehouse`, so test the concrete type instead.
+int CWarehouseBuilding::GetAutoStockCap( int iInd ) const
+{
+    ASSERT_VALID( this );
+
+    if ( IsMatBlocked( iInd ) )
+        return ( 0 );   // vetoed: haul nothing here
+
+    return ( GetData( )->GetType( ) == CStructureData::rocket ? (int)ROCKET_STOCK_CAP
+                                                              : (int)WAREHOUSE_STOCK_CAP );
+}
+
+// STOCK_UNITS times the DEAREST single-unit requirement for iInd across everything
+// this factory can build right now. "Right now" == discovered by this owner, so the
+// ceiling rises as research unlocks costlier units instead of letting a barracks
+// hoard for a heavy tank it cannot build yet. If nothing is discovered (very early
+// game, or no owner) fall back to the full catalogue rather than returning 0, which
+// would starve the factory.
+int CVehicleBuilding::GetAutoStockCap( int iInd ) const
+{
+    ASSERT_VALID( this );
+
+    if ( iInd >= CMaterialTypes::GetNumBuildTypes( ) )
+        return ( 0 );   // a factory consumes only build materials
+
+    // CShipyardBuilding inherits this, and a shipyard's data is UTshipyard, not
+    // UTvehicle -- GetBldVehicle ASSERT_STRICTs on the union type, so pick the right
+    // accessor. CBuildShipyard derives from CBuildVehicle, so the unit catalogue is
+    // reached the same way for both.
+    CStructureData const* pSd = GetData( );
+    CBuildVehicle*        pBv = NULL;
+    if ( pSd->GetUnionType( ) == CStructureData::UTvehicle )
+        pBv = pSd->GetBldVehicle( );
+    else if ( pSd->GetUnionType( ) == CStructureData::UTshipyard )
+        pBv = pSd->GetBldShipyard( );
+    if ( pBv == NULL )
+        return ( -1 );
+
+    CPlayer* pOwner = GetOwner( );
+
+    int iMaxDisc = 0;   // dearest among units we can actually build
+    int iMaxAll  = 0;   // dearest in the whole catalogue (fallback)
+    for ( int iOn = 0; iOn < pBv->GetSize( ); iOn++ )
+    {
+        CBuildUnit const* pBu = pBv->GetUnit( iOn );
+        if ( pBu == NULL )
+            continue;
+
+        int iCost = pBu->GetInput( iInd );
+        if ( iCost > iMaxAll )
+            iMaxAll = iCost;
+
+        int iVehTyp = pBu->GetVehType( );
+        if ( ( pOwner != NULL ) && ( 0 <= iVehTyp ) && ( iVehTyp < theTransports.GetNumTransports( ) ) )
+        {
+            CTransportData const* pTd = theTransports.GetData( iVehTyp );
+            if ( ( pTd != NULL ) && pTd->PlyrIsDiscovered( pOwner ) && ( iCost > iMaxDisc ) )
+                iMaxDisc = iCost;
+        }
+    }
+
+    int iBase = ( iMaxDisc > 0 ) ? iMaxDisc : iMaxAll;
+    return ( iBase * (int)STOCK_UNITS );   // 0 if nothing here uses iInd at all
 }
 
 /////////////////////////////////////////////////////////////////////////////

@@ -517,8 +517,23 @@ class CUnit : public CUnitTile
         // flag was added and went stale once serialization covered the flags word. The
         // stale note cost an investigation and nearly a needless save-format change on
         // 2026-08-02; verified against the serialize code before rewriting it.)
-        alt_oil         = 0x0800
+        alt_oil         = 0x0800,
+
+        // Per-material auto-stock veto, one bit per HAULABLE material, in the order
+        // given by CBuilding's kBlockableMat table (unit.cpp): lumber, steel, copper,
+        // oil, coal, iron. SET = "the auto-router must not bring me this", so a zeroed
+        // flags word -- every existing building, and every building loaded out of a
+        // save written before this existed -- means "accept everything", i.e. exactly
+        // the old behaviour. That is what lets this ship with NO save-format bump:
+        // CUnit::Serialize already writes the flags word as a full DWORD
+        // (new_unit.cpp), so these bits round-trip and read back 0 from old saves.
+        // Only warehouses and the rocket expose the checkboxes (CanBlockMaterials).
+        no_stock_base   = 0x1000,
+        no_stock_mask   = 0x3F000     // 6 materials, 0x1000 .. 0x20000
     };
+    // Highest bit currently defined in this enum -- the AssertValid sanity check on
+    // m_unitFlags keys off this so it never goes stale again when a flag is added.
+    enum { UNIT_FLAGS_VALID_MASK = 0x3FFFF };
     void         SetFlag( UNIT_FLAGS fl ) { m_unitFlags = (UNIT_FLAGS)( (int)m_unitFlags | (int)fl ); }
     void         ClrFlag( UNIT_FLAGS fl ) { m_unitFlags = (UNIT_FLAGS)( (int)m_unitFlags & ~(int)fl ); }
     BOOL         IsFlag( UNIT_FLAGS fl ) { return ( (BOOL)( (int)m_unitFlags & (int)fl ) ); }

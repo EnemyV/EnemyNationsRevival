@@ -1643,6 +1643,27 @@ m_iPlayer, pUnit->GetID(), pUnit->GetParam(CAI_UNASSIGNED) );
 // pGameData->GetMaterialCapacity(pTruck) of iMat and deliver
 // it to the to-building
 //
+int CHPRouter::AutoStockRoom( DWORD dwBldgID, int iMat )
+{
+    int iRoom = INT_MAX;
+
+    EnterCriticalSection( &cs );
+    CBuilding* pBldg = theBuildingMap.GetBldg( dwBldgID );
+    if ( pBldg != NULL )
+    {
+        int iCap = pBldg->GetAutoStockCap( iMat );
+        if ( iCap >= 0 )
+        {
+            iRoom = iCap - pBldg->GetStore( iMat );
+            if ( iRoom < 0 )
+                iRoom = 0;
+        }
+    }
+    LeaveCriticalSection( &cs );
+
+    return ( iRoom );
+}
+
 void CHPRouter::SecondaryStocking( int iMat, int iFromBldg, int iToBldg )
 {
     int      iExcess = 0, iBestFromExcess = 0, iBestToExcess = 0xFFFE;
@@ -1703,9 +1724,15 @@ void CHPRouter::SecondaryStocking( int iMat, int iFromBldg, int iToBldg )
 
                         iExcess = pBldg->GetStore( iMat );
 
-                        // if this building already has qty > EXCESS_MATERIALS
-                        // of the material, then skip this building for consideration
-                        if ( iExcess < EXCESS_MATERIALS )
+                        // Skip a building that is already at its auto-stock ceiling.
+                        // Was a flat EXCESS_MATERIALS for every destination; now each
+                        // building answers for itself (a factory's ceiling is derived
+                        // from what it can build), and EXCESS_MATERIALS remains the
+                        // answer only for the uncapped ones.
+                        int iCap = pBldg->GetAutoStockCap( iMat );
+                        if ( iCap < 0 )
+                            iCap = EXCESS_MATERIALS;
+                        if ( iExcess < iCap )
                         {
                             // this criteria uses:
                             // selecting the to building with the least
@@ -1751,10 +1778,13 @@ void CHPRouter::SecondaryStocking( int iMat, int iFromBldg, int iToBldg )
                         continue;
                     }
 
-                    // if this building already has qty > EXCESS_MATERIALS
-                    // of the material, then skip this building for consideration
-                    iExcess = pBldg->GetStore( iMat );
-                    if ( iExcess < EXCESS_MATERIALS )
+                    // Skip a building already at its auto-stock ceiling (see the
+                    // matching comment in the explicit-iToBldg branch above).
+                    iExcess  = pBldg->GetStore( iMat );
+                    int iCap = pBldg->GetAutoStockCap( iMat );
+                    if ( iCap < 0 )
+                        iCap = EXCESS_MATERIALS;
+                    if ( iExcess < iCap )
                     {
                         iVehCount = GetVehicleCount( pBldg );
                         if ( iVehCount > iBestVehCount )
@@ -1837,6 +1867,14 @@ void CHPRouter::SecondaryStocking( int iMat, int iFromBldg, int iToBldg )
     if ( !bGotPath )
         return;
 
+    // Never ship more than the destination has room for under its ceiling. Without
+    // this the quantity was purely the SOURCE's surplus, so a smelter sitting on
+    // 20000 steel would order 17000 steel hauled into a factory capped at 1000.
+    int iRoom = AutoStockRoom( paiTo->GetID( ), iMat );
+    int iQty  = ( iBestFromExcess < iRoom ) ? iBestFromExcess : iRoom;
+    if ( iQty <= 0 )
+        return;
+
     // update the truck and building as need commodiaties
     pTruck->ClearParam( );
 
@@ -1849,14 +1887,14 @@ void CHPRouter::SecondaryStocking( int iMat, int iFromBldg, int iToBldg )
     // that is a source for the material again using
     // offset of the material needed
     pTruck->SetParamDW( iMat, paiFrom->GetID( ) );
-    pTruck->SetParam( iMat, iBestFromExcess );
+    pTruck->SetParam( iMat, iQty );
     SetDestination( pTruck->GetID( ), hexFrom );
     // remove pointer to truck from trucks available list
     m_plTrucksAvailable->RemoveUnit( pTruck->GetID( ), FALSE );
 
     // record truck at the building that needs it
     paiTo->SetParamDW( iMat, pTruck->GetID( ) );
-    paiTo->SetParam( iMat, iBestFromExcess );
+    paiTo->SetParam( iMat, iQty );
 
     // force building priority to 0 on any material
     // assignment, and if other materials are still
@@ -5029,6 +5067,13 @@ BOOL CHPRouter::_NeedsCommodities( CAIUnit* pCAIBldg )
     }
     LeaveCriticalSection( &cs );
 
+    // What is ACTUALLY on the floor here, kept before the warehouse special-case
+    // below wipes it. The auto-stock ceiling has to be measured against the real
+    // pile -- that the warehouse branch pretends the pile is empty is precisely why
+    // warehouses used to fill forever.
+    int aiRealStore[CMaterialTypes::num_types];
+    for ( int i = 0; i < CMaterialTypes::num_types; ++i ) aiRealStore[i] = m_iStore[i];
+
     // if working with a warehouse, then don't count
     // materials already at that warehouse
     if ( iProduces == CStructureData::UTwarehouse && !bIsPaused && !bIsConstructing )
@@ -5043,6 +5088,50 @@ BOOL CHPRouter::_NeedsCommodities( CAIUnit* pCAIBldg )
         // update needed commoditiy array
         // with id offset of commodity, needed amount, on-hand amount
         SetNeeded( i, m_aiMatsNeeded, m_iStore[i] );
+
+        // Auto-stock ceiling (operator 2026-09-13). Warehouses/rocket and vehicle
+        // factories now cap how much the router will pile up; every other building
+        // answers -1 and is untouched.
+        //
+        // Construction and repair are never denied: GetBldgMatReq is what this
+        // building still needs to FINISH BUILDING or to REPAIR ITSELF (0 for a
+        // finished, undamaged one, and 0 for anything that is not a build material),
+        // and the ceiling is raised to at least that. Exempting damaged/unfinished
+        // buildings outright would instead have let a half-built or lightly scratched
+        // warehouse go right back to filling without bound.
+        if ( m_aiMatsNeeded[i] )
+        {
+            EnterCriticalSection( &cs );
+            CBuilding* pCap   = theBuildingMap.GetBldg( pCAIBldg->GetID( ) );
+            int        iCap   = -1;
+            int        iFloor = 0;
+            if ( pCap != NULL )
+            {
+                iCap   = pCap->GetAutoStockCap( i );
+                iFloor = pCap->GetBldgMatReq( i, FALSE );
+            }
+            LeaveCriticalSection( &cs );
+
+            if ( iCap >= 0 )
+            {
+                if ( iCap < iFloor )
+                    iCap = iFloor;
+
+                int iRoom = iCap - aiRealStore[i];
+                if ( iRoom < 0 )
+                    iRoom = 0;
+                if ( m_aiMatsNeeded[i] > iRoom )
+                {
+#ifdef _LOGOUT
+                    logPrintf( LOG_PRI_ALWAYS, LOG_HP_ROUTER,
+                               "building %d id=%ld material %d need %d trimmed to %d (cap %d, on hand %d)",
+                               pCAIBldg->GetTypeUnit( ), pCAIBldg->GetID( ), i, m_aiMatsNeeded[i], iRoom, iCap,
+                               aiRealStore[i] );
+#endif
+                    m_aiMatsNeeded[i] = iRoom;
+                }
+            }
+        }
 
         // if a material is still needed
         if ( m_aiMatsNeeded[i] )
