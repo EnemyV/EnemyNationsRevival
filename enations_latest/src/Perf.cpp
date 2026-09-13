@@ -60,6 +60,7 @@ namespace
     LONGLONG g_lastFrameQpc  = 0;
 
     LONGLONG g_secTicks[Perf::SEC_COUNT] = { 0 };
+    LONGLONG g_prevFrameSec[Perf::SEC_COUNT] = { 0 };   // per-FRAME baseline for the spike catcher
 
     // match-second at which to dump the leak attribution (EN_PERF_LEAKDUMP).
     long         g_leakDumpAtSec = 0;
@@ -526,6 +527,43 @@ void FrameMark()
     double frameMs = ( (double)( c.QuadPart - g_lastFrameQpc ) / g_perfFreq ) * 1000.0;
     g_lastFrameQpc = c.QuadPart;
 
+    // SPIKE CATCHER. perf.log aggregates per SECOND, so a single 276ms frame is
+    // invisible in per-second sums - at t=148 the whole second held only 82ms of
+    // pathfinding yet one frame took 276ms. Section counters are cumulative, so
+    // diffing them against the previous frame gives PER-FRAME attribution. When a
+    // frame exceeds the threshold, write one line naming where THAT frame went.
+    // File sink, not OutputDebugString: a dead listener drops lines and stalls the
+    // caller. Threshold via EN_SLOWFRAME_MS (default 80).
+    {
+        static double   s_thresh = -1.0;
+        static FILE*    s_fp     = NULL;
+        if ( s_thresh < 0.0 )
+        {
+            s_thresh = 80.0;
+            const char* e = getenv( "EN_SLOWFRAME_MS" );
+            if ( e && e[0] ) { double v = atof( e ); if ( v >= 5.0 ) s_thresh = v; }
+        }
+        if ( frameMs > s_thresh )
+        {
+            if ( s_fp == NULL ) s_fp = fopen( "slowframe.log", "a" );
+            if ( s_fp != NULL )
+            {
+                static const char* kName[SEC_COUNT] =
+                    { "pump", "sim", "render", "present", "msg", "sleep", "operB", "operV", "operP" };
+                fprintf( s_fp, "[SLOWFRAME] %.1f ms  t=%lu", frameMs,
+                         (unsigned long)( ( GetTickCount() - g_startTickMs ) / 1000 ) );
+                for ( int i = 0; i < SEC_COUNT; ++i )
+                {
+                    double d = ( (double)( g_secTicks[i] - g_prevFrameSec[i] ) / g_perfFreq ) * 1000.0;
+                    if ( d >= 0.5 ) fprintf( s_fp, "  %s=%.1f", kName[i], d );
+                }
+                fprintf( s_fp, "\n" );
+                fflush( s_fp );
+            }
+        }
+        for ( int i = 0; i < SEC_COUNT; ++i ) g_prevFrameSec[i] = g_secTicks[i];
+    }
+
     g_frames++;
     g_frameSumMs += frameMs;
     if ( frameMs > g_frameMaxMs )
@@ -618,7 +656,10 @@ void FrameMark()
     g_frameSumMs = 0.0;
     g_frameMaxMs = 0.0;
     for ( int i = 0; i < SEC_COUNT; ++i )
-        g_secTicks[i] = 0;
+    {
+        g_secTicks[i]     = 0;
+        g_prevFrameSec[i] = 0;   // keep the per-frame baseline in lockstep with the reset
+    }
     g_intervalStart = c.QuadPart;
 }
 

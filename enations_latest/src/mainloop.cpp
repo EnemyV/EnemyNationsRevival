@@ -177,13 +177,24 @@ int CConquerApp::Run( )
 
             uint64_t _perfPumpStart = Perf::IsEnabled() ? Perf::Now() : 0;
 
+            // SPIKE SPLIT: [SLOWFRAME] showed SEC_PUMP is 74.5ms of an 85ms spike frame
+            // (96% of spikes) while sim/render/present stay flat. SEC_PUMP covers the SDL
+            // poll, the progress-dialog render and BaseYield's Win32 pump - split them so
+            // the spike names a function instead of a section.
             // === Phase 3a: INVERTED event loop - SDL2 events first ===
             // Process SDL2 events if game window is active
-            if ( m_gameWindow && m_gameWindow->PollEvents() )
             {
-                // SDL_QUIT received - post WM_QUIT so shutdown is clean
-                ::PostQuitMessage( 0 );
-                bQuitReceived = TRUE;
+                // SPIKE SPLIT: [SLOWFRAME] showed SEC_PUMP is 74.5ms of an 85ms spike
+                // frame (96% of spikes) while sim/render/present stay flat. SEC_PUMP
+                // covers the SDL poll, the progress-dialog render and BaseYield's Win32
+                // pump - separate braced scopes so the spike names a function.
+                Perf::ScopeNamed _perfPoll( "pump.poll.us" );
+                if ( m_gameWindow && m_gameWindow->PollEvents() )
+                {
+                    // SDL_QUIT received - post WM_QUIT so shutdown is clean
+                    ::PostQuitMessage( 0 );
+                    bQuitReceived = TRUE;
+                }
             }
 
             // Render progress dialog directly (same logic as BaseYield)
@@ -196,6 +207,9 @@ int CConquerApp::Run( )
 
             // === Secondary: Windows messages (for system integration, Win32 housekeeping) ===
             // Check for WM_QUIT or other Windows messages if they're pending
+            {
+            Perf::ScopeNamed _perfYield( "pump.yield.us" );   // BRACED: an unbraced guard
+            // here outlived the pump and swallowed GraphicsEnginePump - it read 1009ms/s.
             if ( bQuitReceived || BaseYield( ) )
             {
                 // BaseYield returned TRUE (WM_QUIT detected) or we already got SDL_QUIT
@@ -212,6 +226,8 @@ int CConquerApp::Run( )
 #endif
                         return ExitInstance( );
                     }
+            }
+
             }
 
             if ( Perf::IsEnabled() )
@@ -1558,7 +1574,21 @@ void CConquerApp::GraphicsEnginePump( )
         LeaveCriticalSection( &cs );
 
         // process messages from Operate calls (same time-box as the pump head)
-        ProcessAllMessages( 100 );
+        // THE SECOND DRAIN. This sits inside SEC_SIM but OUTSIDE SEC_MSG, so every
+        // earlier measurement missed it - including the one where I concluded the
+        // message-drain budget was innocent (msg.capped=0 covered only the HEAD drain
+        // at the top of this function). Its flat 100ms budget matches the 79ms median
+        // of the in-game sim spikes. msg.tail.capped counts drains that ran OUT of
+        // budget, i.e. frames this call cut short.
+        {
+            Perf::ScopeNamed _mt( "msg.tail.us" );
+            const DWORD _mtBack = theGame.m_messagePointerList.GetCount( );
+            Perf::GaugeSet( "msg.tail.backlog", (int64_t)_mtBack );
+            const DWORD _mt0 = timeGetTime( );
+            ProcessAllMessages( 100 );
+            if ( timeGetTime( ) - _mt0 >= 100 )
+                Perf::CounterInc( "msg.tail.capped" );
+        }
     }  // if operate
 
 NoOper:
