@@ -2580,6 +2580,20 @@ static void SetVehDest( CMsgVehSetDest* pMsg )
         OutputDebugStringA( szE );
     }
 #endif
+    // REDUNDANCY PROBE (@WinAstra: "distinguish redundant reissues from necessary new
+    // orders before choosing a fix"). veh_set_dest is 94% of message-handling time and
+    // its handler pathfinds synchronously, but that only makes DEDUP the fix shape if a
+    // large share of these orders re-state a destination the vehicle already holds.
+    // Sampled BEFORE SetEvent/SetDest mutate the vehicle. Inert unless EN_PERF is set.
+    if ( Perf::IsEnabled( ) )
+    {
+        const BOOL bSameHex = ( pVeh->m_hexDest == pMsg->m_hex );
+        Perf::CounterInc( bSameHex ? "vsd.samedest" : "vsd.newdest" );
+        Perf::CounterInc( pVeh->GetOwner( )->IsAI( ) ? "vsd.ai" : "vsd.human" );
+        if ( pVeh->m_cMode == CVehicle::stop )
+            Perf::CounterInc( bSameHex ? "vsd.samedest.stopped" : "vsd.newdest.stopped" );
+    }
+
     pVeh->SetEvent( CVehicle::none );
     if ( pMsg->m_iSub == CVehicle::sub )
         pVeh->SetDest( pMsg->m_sub );
