@@ -705,7 +705,16 @@ void CConquerApp::_RenderScreens( )
     DWORD dwNow               = timeGetTime( );
     div_t dtFrame             = div( dwNow - theGame.m_dwFrameTimeLast, 1000 / FRAME_RATE );
     theGame.m_dwFramesElapsed = dtFrame.quot;
-    theGame.m_dwFrameTimeLast = dwNow + dtFrame.rem;
+    // CARRY the unconsumed remainder, don't ADD it. quot whole 1/24s frames were
+    // consumed; rem ms are left over and must be carried INTO the next interval,
+    // so the clock moves back to the start of that remainder. `+ rem` pushed it
+    // 2*rem AHEAD of where it belongs, so the measured delta alternated ~32/0ms
+    // and NEVER reached the 41ms quantum: EN_PERF anim.step0 was 96.3% of renders
+    // (render-side animation advancing ~1.1 steps/sec instead of ~24). The sim
+    // clock at the bottom of the pump has always done this correctly - this line
+    // is now the same arithmetic. Also makes the OP-CLOCK SANITY clamp below a
+    // no-op for this clock, since now-rem can never exceed now.
+    theGame.m_dwFrameTimeLast = dwNow - dtFrame.rem;
 
     if ( !theGame.ShouldAnimate() )
     {
