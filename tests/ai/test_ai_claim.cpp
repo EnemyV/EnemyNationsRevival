@@ -14,6 +14,10 @@
 //  (2) ROUTER SCENE -- the same mirror driving the FillPriorities list
 //      discipline, so the LIST outcome is tested and not just the predicate:
 //      the site comes back exactly once and the idle truck cannot re-claim it.
+//  (2b) THE SCHEDULING HOLE -- the same scene with the site ALREADY OFF the
+//      needs list and no re-signal of any kind, which is the production
+//      precondition the layer-2 tests hand themselves. Only the truck-keyed
+//      claim-expiry walk in FillPriorities reaches it.
 //  (3) SOURCE LINT -- parses cairoute.cpp / caiunit.hpp / vehicle.h and asserts
 //      the shipped forms are present, the pre-fix forms are GONE, and the
 //      traffic-hold constants the 90s bound was DERIVED from still hold those
@@ -470,6 +474,186 @@ static void test_one_dead_claim_does_not_drop_a_live_one( void )
     CHECK_EQ( r.iDropped, 1 );
 }
 
+
+// ===========================================================================
+// (2b) THE SCHEDULING HOLE -- the site is ALREADY OFF the needs list
+//
+// Every recovery scenario above hands itself the precondition by calling
+// SignalNeedsMaterials() between passes. Production has no such re-signal for
+// the filed specimen: FindTransport dropped the site off m_plBldgsNeed when it
+// assigned the truck, and a starved construction site cannot emit a second
+// out_mat (CBuilding::Operate's `event` gate returns before Construct). The
+// tests below therefore NEVER call SignalNeedsMaterials, so they fail on the
+// pre-fix sources and pass only with the truck-keyed walk.
+// ===========================================================================
+
+// (a) The headline case: site off the list, no spare truck, NO re-signal.
+static void test_idle_claim_expires_with_no_resignal( void )
+{
+    Router r;
+    r.trucks.push_back( Truck( 7, 10, 10 ) );  // the idle claimer
+    Claim( r, 7 );
+    // the site is ALREADY off the needs list -- production drops it at
+    // assignment (FindTransport returns TRUE) and never gets it back
+    r.plBldgsNeed.clear( );
+    r.plTrucksAvailable.push_back( 99 );  // pool non-empty, no usable truck
+    CHECK_EQ( r.NeedCount( r.site.dwID ), 0 );
+
+    // a first pass reaches the truck even though the site is off the list, and
+    // a single sample must not convict
+    r.dwNow += 1000;
+    r.FillPriorities( );
+    CHECK_EQ( r.iDropped, 0 );
+    CHECK_EQ( r.NeedCount( r.site.dwID ), 0 );
+    CHECK_EQ( r.site.adwClaim[0], 7u );
+
+    // past the bound the expiry is observed with NO re-signal of any kind
+    r.dwNow += AI_CLAIM_IDLE_MS + 1;
+    r.FillPriorities( );
+    CHECK_EQ( r.iDropped, 1 );
+    CHECK_EQ( r.NeedCount( r.site.dwID ), 1 );  // requeued exactly once
+    CHECK( r.NeedCount( r.site.dwID ) <= 1 );
+    CHECK_EQ( r.site.adwClaim[0], 0u );
+    CHECK_EQ( r.trucks[0].dwDataDW, 0u );
+    CHECK( !r.trucks[0].bInUse );
+    CHECK( !r.InPool( 7 ) );  // the starver is not its own rescuer this pass
+}
+
+// (b) Same precondition with a spare truck: the requeue happens early enough in
+// the pass that the site is SERVED, not merely re-listed.
+static void test_idle_claim_no_resignal_served_same_pass( void )
+{
+    Router r;
+    r.trucks.push_back( Truck( 7, 10, 10 ) );  // the idle claimer
+    r.trucks.push_back( Truck( 8, 40, 40 ) );  // a perfectly good spare
+    Claim( r, 7 );
+    r.plBldgsNeed.clear( );
+    r.plTrucksAvailable.push_back( 8 );
+
+    r.dwNow += 1000;
+    r.FillPriorities( );  // arm the standstill clock
+    CHECK_EQ( r.iDropped, 0 );
+    CHECK_EQ( r.iAssigned, 0 );
+    CHECK( r.InPool( 8 ) );
+
+    r.dwNow += AI_CLAIM_IDLE_MS + 1;
+    r.FillPriorities( );
+    CHECK_EQ( r.iDropped, 1 );
+    CHECK_EQ( r.iAssigned, 1 );                     // same pass
+    CHECK_EQ( r.site.adwClaim[0], 8u );             // by the spare
+    CHECK_EQ( r.trucks[1].dwDataDW, r.site.dwID );
+    CHECK( !r.InPool( 8 ) );
+    CHECK_EQ( r.NeedCount( r.site.dwID ), 0 );      // off the list because SERVED
+}
+
+// (c) The loaded claimer: the idle truck carries enough to zero the want, so a
+// NeedsCommodities-style gate reports "needs nothing" and would veto the
+// rescue. The requeue must happen anyway.
+static void test_loaded_idle_claimer_is_still_requeued( void )
+{
+    Router r;
+    r.trucks.push_back( Truck( 7, 10, 10 ) );
+    Claim( r, 7 );                       // site wants 12 of material 0
+    r.trucks[0].aiCargo[0] = 20;         // ...and the claimer is carrying 20
+    r.plBldgsNeed.clear( );
+    r.plTrucksAvailable.push_back( 99 );
+
+    // the gate really does veto: this is the suppressor, not a straw man
+    CHECK( !r.NeedsCommodities( &r.site ) );
+
+    r.dwNow += 1000;
+    r.FillPriorities( );
+    CHECK_EQ( r.iDropped, 0 );
+
+    r.dwNow += AI_CLAIM_IDLE_MS + 1;
+    r.FillPriorities( );
+    CHECK_EQ( r.iDropped, 1 );
+    CHECK_EQ( r.NeedCount( r.site.dwID ), 1 );  // requeued despite the veto
+    CHECK_EQ( r.site.adwClaim[0], 0u );
+    CHECK_EQ( r.site.aiWant[0], 12 );           // the want was never satisfied
+
+    // and with the claim released the gate is honest again
+    CHECK( r.NeedsCommodities( &r.site ) );
+}
+
+// (d) No double-add, on either route into the list: a site the walk finds
+// ALREADY listed, and two claims on the same site expiring in one walk.
+static void test_requeue_never_double_adds( void )
+{
+    {
+        // already listed when the walk fires, and re-added on FindTransport
+        // FALSE in the same pass -- still exactly one node
+        Router r;
+        r.trucks.push_back( Truck( 7, 10, 10 ) );
+        Claim( r, 7 );
+        r.plBldgsNeed.push_back( r.site.dwID );
+        r.plTrucksAvailable.push_back( 99 );
+
+        r.dwNow += 1000;
+        r.FillPriorities( );
+        r.plBldgsNeed.push_back( r.site.dwID );  // listed again by an unrelated event
+        CHECK_EQ( r.NeedCount( r.site.dwID ), 1 );
+
+        r.dwNow += AI_CLAIM_IDLE_MS + 1;
+        r.FillPriorities( );
+        CHECK_EQ( r.iDropped, 1 );
+        CHECK_EQ( r.NeedCount( r.site.dwID ), 1 );
+        CHECK( r.NeedCount( r.site.dwID ) <= 1 );
+    }
+    {
+        // two materials, two idle claimers, one site: two releases, one node
+        Router r;
+        r.trucks.push_back( Truck( 7, 10, 10 ) );
+        r.trucks.push_back( Truck( 8, 20, 20 ) );
+        r.site.aiWant[0]     = 5;
+        r.site.aiWant[1]     = 5;
+        r.site.adwClaim[0]   = 7;
+        r.site.adwClaim[1]   = 8;
+        r.trucks[0].dwDataDW = r.site.dwID;
+        r.trucks[1].dwDataDW = r.site.dwID;
+        r.trucks[0].bInUse = r.trucks[1].bInUse = true;
+        r.plBldgsNeed.clear( );
+        r.plTrucksAvailable.push_back( 99 );
+
+        r.dwNow += 1000;
+        r.FillPriorities( );  // arms both clocks
+        CHECK_EQ( r.iDropped, 0 );
+
+        r.dwNow += AI_CLAIM_IDLE_MS + 1;
+        r.FillPriorities( );
+        CHECK_EQ( r.iDropped, 2 );                  // both claims released
+        CHECK_EQ( r.NeedCount( r.site.dwID ), 1 );  // one node
+        CHECK( r.NeedCount( r.site.dwID ) <= 1 );
+        CHECK_EQ( r.site.adwClaim[0], 0u );
+        CHECK_EQ( r.site.adwClaim[1], 0u );
+    }
+}
+
+// A live delivery must not be touched by the new walk, even across a run long
+// enough to outlive every rescuer: the walk adds to the SCHEDULE, it is not a
+// second opinion on the predicate.
+static void test_walk_never_interrupts_a_live_delivery( void )
+{
+    Router r;
+    r.trucks.push_back( Truck( 7, 10, 10 ) );
+    Claim( r, 7 );
+    r.plBldgsNeed.clear( );
+    r.plTrucksAvailable.push_back( 99 );
+
+    for ( int iPass = 0; iPass < 200; ++iPass )
+    {
+        r.dwNow += 3000;  // 600s total
+        r.trucks[0].iHexX += ( iPass & 1 );
+        r.trucks[0].iHexY += ( iPass & 1 ) ^ 1;
+        r.FillPriorities( );
+    }
+    CHECK( r.dwNow > RESEND_MS );
+    CHECK_EQ( r.iDropped, 0 );
+    CHECK_EQ( r.site.adwClaim[0], 7u );
+    CHECK_EQ( r.trucks[0].dwDataDW, r.site.dwID );
+    CHECK_EQ( r.NeedCount( r.site.dwID ), 0 );
+}
+
 // ===========================================================================
 // (3) SOURCE LINT
 // ===========================================================================
@@ -527,6 +711,56 @@ static void test_dropclaim_touches_no_list( const std::string& sq )
     CHECK( Has( body.c_str( ), "if(pTruck!=NULL&&pTruck->GetDataDW()==pBldg->GetID())" ) );
 }
 
+
+// The follow-up fix: the claim-expiry walk must live INSIDE the shipped
+// CAIRouter::FillPriorities (the mirror above cannot prove that), must consult
+// the shipped predicate/release, must requeue under a dedupe guard, and must
+// NOT be gated on NeedsCommodities -- a loaded idle claimer would veto its own
+// rescue. Ordering is linted too: after the truck re-pool, before the count
+// snapshot. cairoute.cpp carries a second, dead FillPriorities under `#if 0`,
+// so the body is bounded by the NEXT occurrence of the same signature.
+static void test_fillpriorities_sweeps_stale_claims( const std::string& sq )
+{
+    const char* pszSig = "voidCAIRouter::FillPriorities(void)";
+    size_t      iBeg   = sq.find( pszSig );
+    CHECK( iBeg != std::string::npos );
+    if ( iBeg == std::string::npos ) return;
+    size_t iEnd = sq.find( pszSig, iBeg + 1 );
+    if ( iEnd == std::string::npos ) iEnd = sq.find( "voidCAIRouter::IdleTruckTask", iBeg );
+    CHECK( iEnd != std::string::npos );
+    if ( iEnd == std::string::npos ) return;
+    std::string body = sq.substr( iBeg, iEnd - iBeg );
+
+    // the walk itself: truck-keyed, this player's CAI_IN_USE trucks only
+    CHECK( Has( body.c_str( ), "POSITIONposClaim=m_plUnits->GetHeadPosition();" ) );
+    CHECK( Has( body.c_str( ), "if(pClaimTruck->GetOwner()!=m_iPlayer)" ) );
+    CHECK( Has( body.c_str( ), "if(!(pClaimTruck->GetStatus()&CAI_IN_USE))" ) );
+    CHECK( Has( body.c_str( ), "if(!pGameData->IsTruck(pClaimTruck->GetID()))" ) );
+    // the truck's own DataDW resolves the site -- this is what reaches a site
+    // that is off m_plBldgsNeed
+    CHECK( Has( body.c_str( ), "DWORDdwClaimDest=pClaimTruck->GetDataDW();" ) );
+    CHECK( Has( body.c_str( ), "CAIUnit*pClaimBldg=m_plUnits->GetUnit(dwClaimDest);" ) );
+    // the shipped predicate and the shipped release, unchanged
+    CHECK( Has( body.c_str( ), "if(ClaimIsLive(pClaimTruck,pClaimBldg))" ) );
+    CHECK( Has( body.c_str( ), "DropClaim(pClaimBldg,dwClaimTruckID);" ) );
+    // requeue, exactly once, in the CALLER (DropClaim stays list-free)
+    CHECK( Has( body.c_str( ), "if(m_plBldgsNeed->GetUnit(pClaimBldg->GetID())==NULL)" ) );
+    CHECK( Has( body.c_str( ), "m_plBldgsNeed->AddTail((CObject*)pClaimBldg);" ) );
+    // ...and NOT behind the cargo-credit gate. The needle carries the open
+    // paren on purpose: the only way to gate on that predicate is to CALL it,
+    // and the shipped walk names it in prose to explain why it must not.
+    CHECK( !Has( body.c_str( ), "NeedsCommodities(" ) );
+
+    // ordering: after the truck re-pool, before the needs-list count snapshot
+    size_t iPool  = body.find( "GetTrucksAvailable();" );
+    size_t iWalk  = body.find( "POSITIONposClaim=m_plUnits->GetHeadPosition();" );
+    size_t iCount = body.find( "intiCntBldgs=m_plBldgsNeed->GetCount();" );
+    CHECK( iPool != std::string::npos );
+    CHECK( iCount != std::string::npos );
+    CHECK( Lt( (DWORD_)iPool, (DWORD_)iWalk ) );
+    CHECK( Lt( (DWORD_)iWalk, (DWORD_)iCount ) );
+}
+
 static void test_caiunit_carries_the_stamp( const std::string& sq )
 {
     CHECK( Has( sq, "DWORDNoteClaimStill(DWORDdwHex,DWORDdwNow)" ) );
@@ -572,6 +806,13 @@ int main( int argc, char** argv )
     test_fossil_claim_does_not_cancel_another_job( );
     test_one_dead_claim_does_not_drop_a_live_one( );
 
+    // the scheduling hole: no SignalNeedsMaterials anywhere in these
+    test_idle_claim_expires_with_no_resignal( );
+    test_idle_claim_no_resignal_served_same_pass( );
+    test_loaded_idle_claimer_is_still_requeued( );
+    test_requeue_never_double_adds( );
+    test_walk_never_interrupts_a_live_delivery( );
+
     // source lint -- each path is optional and skips cleanly
     for ( int i = 1; i < argc && i <= 3; ++i )
     {
@@ -588,6 +829,7 @@ int main( int argc, char** argv )
             test_cairoute_carries_the_fix( sq );
             test_cairoute_has_no_frozen_forms( sq );
             test_dropclaim_touches_no_list( sq );
+            test_fillpriorities_sweeps_stale_claims( sq );
         }
         else if ( i == 2 )
             test_caiunit_carries_the_stamp( sq );

@@ -4,7 +4,9 @@
 // MIRRORS production; links nothing. The two mirrored bodies are:
 //   CAIUnit::NoteClaimStill / ClearClaimProgress   (caiunit.hpp)
 //   CAIRouter::ClaimIsLive / DropClaim /
-//   CAIRouter::TrucksAreEnroute / FillPriorities   (cairoute.cpp)
+//   CAIRouter::TrucksAreEnroute / FillPriorities
+//   (incl. FillPriorities' TRUCK-keyed claim-expiry walk) /
+//   CAIRouter::NeedsCommodities' cargo credit             (cairoute.cpp)
 // test_ai_claim.cpp lints the shipped sources so these copies cannot drift.
 //
 // The scene is deliberately tiny: ONE construction site that still wants one
@@ -88,6 +90,8 @@ inline DWORD_ PackHex( int iX, int iY ) { return ( (DWORD_)(unsigned short)iX ) 
 // ---------------------------------------------------------------------------
 // Scene units. A truck carries exactly the state the predicate reads.
 // ---------------------------------------------------------------------------
+const int NUM_MATS = 10;  // CMaterialTypes::num_types
+
 struct Truck
 {
     DWORD_     dwID;
@@ -95,12 +99,14 @@ struct Truck
     int        iHexX, iHexY;
     bool       bAlive;     // false models "the unit is gone" (ReadVeh FALSE)
     bool       bInUse;     // CAI_IN_USE
+    int        aiCargo[NUM_MATS];  // m_aiDataIn -- what NeedsCommodities credits
     ClaimStamp stamp;
 
-    Truck( DWORD_ id, int x, int y ) : dwID( id ), dwDataDW( 0 ), iHexX( x ), iHexY( y ), bAlive( true ), bInUse( false ) {}
+    Truck( DWORD_ id, int x, int y ) : dwID( id ), dwDataDW( 0 ), iHexX( x ), iHexY( y ), bAlive( true ), bInUse( false )
+    {
+        for ( int i = 0; i < NUM_MATS; ++i ) aiCargo[i] = 0;
+    }
 };
-
-const int NUM_MATS = 10;  // CMaterialTypes::num_types
 
 struct Site
 {
@@ -232,10 +238,63 @@ struct Router
         }
     }
 
+    // MIRROR of CAIRouter::NeedsCommodities' cargo credit: an in-use truck that
+    // NAMES this building has its load subtracted from the want, with no
+    // liveness test (cairoute.cpp:2526/2547). This is the gate the requeue in
+    // the walk below must NOT be subject to -- a LOADED idle claimer would
+    // otherwise veto its own rescue.
+    bool NeedsCommodities( Site* pBldg )
+    {
+        int aiNeed[NUM_MATS];
+        for ( int i = 0; i < NUM_MATS; ++i ) aiNeed[i] = pBldg->aiWant[i];
+        for ( size_t t = 0; t < trucks.size( ); ++t )
+        {
+            Truck& tk = trucks[t];
+            if ( !tk.bAlive ) continue;
+            if ( !tk.bInUse || tk.dwDataDW != pBldg->dwID ) continue;  // name match only
+            for ( int i = 0; i < NUM_MATS; ++i )
+            {
+                if ( aiNeed[i] > tk.aiCargo[i] )
+                    aiNeed[i] -= tk.aiCargo[i];
+                else
+                    aiNeed[i] = 0;
+            }
+        }
+        for ( int i = 0; i < NUM_MATS; ++i )
+            if ( aiNeed[i] ) return true;
+        return false;
+    }
+
+    // MIRROR of the #69 follow-up TRUCK-keyed claim-expiry walk in
+    // CAIRouter::FillPriorities. Keyed on the TRUCK, so it reaches a site that
+    // is already OFF plBldgsNeed -- which is the whole hole: production drops
+    // the site at assignment time and a starved site emits no second out_mat.
+    // Runs after GetTrucksAvailable (a released truck must not be re-pooled in
+    // the same pass) and before the count snapshot (a requeued site is served
+    // in THIS pass). NOT gated on NeedsCommodities.
+    void SweepIdleClaims( void )
+    {
+        for ( size_t i = 0; i < trucks.size( ); ++i )
+        {
+            Truck& t = trucks[i];
+            if ( !t.bAlive ) continue;
+            if ( !t.bInUse ) continue;             // CAI_IN_USE only
+            if ( t.dwDataDW == 0 ) continue;       // no job named
+            if ( t.dwDataDW != site.dwID ) continue;  // the scene has one building
+            if ( ClaimIsLive( &t, &site ) ) continue;
+
+            DWORD_ dwTruckID = t.dwID;
+            DropClaim( &site, dwTruckID );
+            if ( NeedCount( site.dwID ) == 0 ) plBldgsNeed.push_back( site.dwID );
+        }
+    }
+
     // MIRROR of CAIRouter::FillPriorities' list discipline (the bug's home).
     void FillPriorities( void )
     {
         if ( ( ++iPasses % 10 ) == 0 ) GetTrucksAvailable( );
+
+        SweepIdleClaims( );
 
         int iCnt = (int)plBldgsNeed.size( );
         while ( iCnt-- )
