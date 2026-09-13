@@ -524,6 +524,14 @@ void FrameMark()
     if ( frameMs > g_frameMaxMs )
         g_frameMaxMs = frameMs;
 
+    // SHAPE, not just avg/max: "avg 35 max 76" is equally consistent with one
+    // hitch and with constant 20/70ms alternation - different bugs, same two
+    // numbers. Buckets straddle the 41ms animation quantum (1000/FRAME_RATE).
+    CounterInc( frameMs <  20.0 ? "frame.lt20"
+              : ( frameMs <  41.0 ? "frame.20_41"
+              : ( frameMs <  60.0 ? "frame.41_60"
+              : ( frameMs < 100.0 ? "frame.60_100" : "frame.ge100" ) ) ) );
+
     double elapsedMs = ( (double)( c.QuadPart - g_intervalStart ) / g_perfFreq ) * 1000.0;
     if ( elapsedMs < (double)g_intervalMs )
         return;

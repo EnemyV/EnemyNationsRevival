@@ -649,7 +649,7 @@ void CConquerApp::ProcessAllMessages( DWORD dwBudgetMs )
             int   iMsgType = (int)( (CNetCmd*)pBuf )->GetType( );
             theGame.ProcessMessage( (CNetCmd*)pBuf );
             DWORD dwMsgMs = timeGetTime( ) - dwMsgT0;
-            if ( dwMsgMs > 250 )
+            if ( dwMsgMs > 40 )   // was 250: tests ONE message, but msg= is a SUM - never fired
             {
                 char szM[80];
                 sprintf( szM, "[SLOWMSG] type %d took %lu ms\n", iMsgType, dwMsgMs );
@@ -703,9 +703,21 @@ void CConquerApp::_RenderScreens( )
 {
 
     DWORD dwNow               = timeGetTime( );
+    // JANK PROBE: count how far the ANIMATION clock advances per render. Smooth
+    // motion is ~every render advancing exactly one step; judder is a mix of 0s
+    // and 2+. Nothing in perf.log records this today - avg/max frame time cannot
+    // tell a steady 35ms from an alternating 20/70ms, and those are different bugs.
+    // clk.future counts the render clock landing AHEAD of now, which this function
+    // can cause on its own (see the += rem below vs the -= rem on the oper clock
+    // at the bottom of the pump) and which the OP-CLOCK SANITY clamp then undoes.
+    if ( theGame.m_dwFrameTimeLast > dwNow )
+        Perf::CounterInc( "clk.future" );
     div_t dtFrame             = div( dwNow - theGame.m_dwFrameTimeLast, 1000 / FRAME_RATE );
     theGame.m_dwFramesElapsed = dtFrame.quot;
     theGame.m_dwFrameTimeLast = dwNow + dtFrame.rem;
+    Perf::CounterInc( dtFrame.quot == 0 ? "anim.step0"
+                    : ( dtFrame.quot == 1 ? "anim.step1"
+                    : ( dtFrame.quot == 2 ? "anim.step2" : "anim.step3plus" ) ) );
 
     if ( !theGame.ShouldAnimate() )
     {
@@ -841,7 +853,17 @@ void CConquerApp::GraphicsEnginePump( )
         Perf::ScopeSlot _perfMsg( Perf::SEC_MSG );
         const int   iBacklog = theGame.m_messagePointerList.GetCount( );
         const DWORD dwBudget = iBacklog > 2000 ? 400 : ( iBacklog > 500 ? 200 : 100 );
+        // SPIKE PROBE: msg= is the only strong positive correlate of worst-frame
+        // time (r=+0.61 over 449 intervals). Record what the budget actually did:
+        // the backlog it saw, the tier it chose, and whether the drain RAN OUT of
+        // budget (= this frame was cut short by the cap, not by an empty queue).
+        Perf::GaugeSet( "msg.backlog", iBacklog );
+        Perf::CounterInc( dwBudget == 400 ? "msg.tier400"
+                                          : ( dwBudget == 200 ? "msg.tier200" : "msg.tier100" ) );
+        const DWORD dwDrainT0 = timeGetTime( );
         ProcessAllMessages( dwBudget );
+        if ( timeGetTime( ) - dwDrainT0 >= dwBudget )
+            Perf::CounterInc( "msg.capped" );
     }
 
     theGame._SettimeGetTime( );
