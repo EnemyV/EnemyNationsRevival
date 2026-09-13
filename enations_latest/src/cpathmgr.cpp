@@ -72,7 +72,45 @@ CHexCoord* CPathMgr::GetPath( CVehicle* pVehicle, CHexCoord& hexFrom, CHexCoord&
     // mpath.us includes lock wait, so contention shows up here too.
     Perf::ScopeCounter _t( "mpath.us" );
 #endif
+    // CONTENTION SPLIT (see the same block in cpathmap.cpp): mpath.us above lumps
+    // wait and work together, which is exactly the ambiguity being resolved - a
+    // MAIN-thread wait on m_cs is a frame stall, an AI-worker wait is not.
+    const uint64_t _qWait = Perf::NowIfEnabled( );
+    // audit (4): short-circuit so nothing runs with EN_PERF unset.
+    const bool     _qMain = Perf::IsEnabled( ) && Perf::IsMainThread( );
+    Perf::CounterInc( _qMain ? "mpath.calls.main" : "mpath.calls.ai" );
     EnterCriticalSection( &m_cs );
+    Perf::CounterAddElapsedUs( _qMain ? "mpath.wait.main.us" : "mpath.wait.ai.us", _qWait );
+    const uint64_t _qWork = Perf::NowIfEnabled( );
+
+    // CACHE-FEASIBILITY PROBE, counting only - no behaviour change, nothing is
+    // reused. Type 58 is closed: the fix is main-thread search COST, and the three
+    // candidates are budget-per-frame, cache/reuse paths, or move off-thread.
+    // This sizes the middle one BEFORE anyone builds it: how often does a
+    // main-thread search repeat a (from -> to) pair seen recently? A ring of the
+    // last 512 keys, scanned linearly - ~130 searches/s makes that free, and it is
+    // main-thread only so the static ring needs no lock. Inert unless EN_PERF is set.
+    if ( _qMain && Perf::IsEnabled( ) )
+    {
+        static uint64_t s_ring[512] = { 0 };
+        static int      s_next      = 0;
+        const uint64_t  key = ( (uint64_t)(uint16_t)hexFrom.X( ) )
+                            | ( (uint64_t)(uint16_t)hexFrom.Y( ) << 16 )
+                            | ( (uint64_t)(uint16_t)hexTo.X( )   << 32 )
+                            | ( (uint64_t)(uint16_t)hexTo.Y( )   << 48 );
+        int hitAt = -1;
+        for ( int i = 0; i < 512; ++i )
+        {
+            const int idx = ( s_next - 1 - i + 1024 ) % 512;   // most recent first
+            if ( s_ring[idx] == key ) { hitAt = i; break; }
+        }
+        if ( hitAt < 0 )        Perf::CounterInc( "mpath.cache.miss" );
+        else if ( hitAt < 16 )  Perf::CounterInc( "mpath.cache.hit16" );
+        else if ( hitAt < 64 )  Perf::CounterInc( "mpath.cache.hit64" );
+        else                    Perf::CounterInc( "mpath.cache.hit512" );
+        s_ring[s_next] = key;
+        s_next = ( s_next + 1 ) % 512;
+    }
 #if EN_PATH_PROBES
     m_iNextSlot = 0;  // trivial rejects skip the in-search reset; don't re-count
 #endif
@@ -81,6 +119,8 @@ CHexCoord* CPathMgr::GetPath( CVehicle* pVehicle, CHexCoord& hexFrom, CHexCoord&
     Perf::CounterInc( "mpath.calls" );
     Perf::CounterAdd( "mpath.nodes", m_iNextSlot );  // cells created this search
 #endif
+    if ( _qMain ) Perf::NoteFrameSearch( Perf::ElapsedUs( _qWork ) );
+    Perf::CounterAddElapsedUs( _qMain ? "mpath.work.main.us" : "mpath.work.ai.us", _qWork );
     LeaveCriticalSection( &m_cs );
     return phcPath;
 }

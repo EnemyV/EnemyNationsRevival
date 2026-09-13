@@ -10,6 +10,7 @@
 ////////////////////////////////////////////////////////////////////////////
 
 #include "chproute.hpp"
+#include "Perf.h"      // pq.* path-request burst counters
 
 #include "building.inl"
 #include "cpathmap.h"
@@ -1887,6 +1888,7 @@ void CHPRouter::SecondaryStocking( int iMat, int iFromBldg, int iToBldg )
     // truck can't get from hex -> to hex
     BOOL       bGotPath = FALSE;
     int        iPathLen = 0;
+    Perf::CounterInc( "pq.hprtr" );   // BURST PROBE: HP material router
     CHexCoord* pPath    = thePathMgr.GetPath( NULL, hexFrom, hexTo, iPathLen, pTruck->GetTypeUnit( ), FALSE, TRUE );
     if ( pPath != NULL )
     {
@@ -2370,6 +2372,7 @@ BOOL CHPRouter::NeedsTransport( CAIUnit* pTruck, CHexCoord& hex )
     //	int& iPathLen, int iVehType = 0,
     //	BOOL bVehBlock = FALSE, BOOL bDirectPath = FALSE );
 
+    Perf::CounterInc( "pq.hprtr" );   // BURST PROBE: HP material router
     CHexCoord* pPath = thePathMgr.GetPath( NULL, hexVeh, hex, iPathLen, pTruck->GetTypeUnit( ), FALSE, TRUE );
     if ( pPath != NULL )
     {
@@ -2576,6 +2579,7 @@ void CHPRouter::ConsiderLandWater( CAIUnit* pTruck, CHexCoord& hex )
                     bCanGetThere = FALSE;
 
                     iPathLen = 0;
+                    Perf::CounterInc( "pq.hprtr" );   // BURST PROBE: HP material router
                     pPath = thePathMgr.GetPath( NULL, hexVeh, hexBldg, iPathLen, pTruck->GetTypeUnit( ), FALSE, TRUE );
                     if ( pPath != NULL )
                     {
@@ -2970,6 +2974,7 @@ BOOL CHPRouter::ConsiderLandWater( CAIUnit* pUnit, CAIHex* pHex )
                 GetBldgExit( paiBldg->GetID( ), hexBldg );
                 bCanGetThere = FALSE;
                 iPathLen     = 0;
+                Perf::CounterInc( "pq.hprtr" );   // BURST PROBE: HP material router
                 pPath = thePathMgr.GetPath( NULL, hexBldg, hexDest, iPathLen, pTruck->GetTypeUnit( ), FALSE, TRUE );
                 if ( pPath != NULL )
                 {
@@ -6475,6 +6480,7 @@ BOOL CHPRouter::GetStagingHex( CAIUnit* paiTruck, CAIUnit* paiBldg, CHexCoord& h
     BOOL bCanGetThere = FALSE;
     // run a path out to the candidate seaport from this seaport
     // using the ship as a vehicle
+    Perf::CounterInc( "pq.hprtr" );   // BURST PROBE: HP material router
     pPath = thePathMgr.GetPath( NULL, hexVeh, hexNearBy, iPathLen, paiTruck->GetTypeUnit( ), FALSE, TRUE );
     if ( pPath != NULL )
     {
@@ -6787,6 +6793,11 @@ int CHPRouter::CountSpecialUnits( int iTypeUnit )
 void CHPRouter::SetDestination( DWORD dwID, CHexCoord& hexDest )
 {
     CMsgVehSetDest msg( dwID, hexDest, CVehicle::moving );
+    // producer attribution for the veh_set_dest flood. This path carries NO dedupe
+    // of any kind - no window, no same-location drop, no state - and the comment
+    // above says it exists specifically to bypass CAIUnit::SetDestination, which
+    // does. 23 call sites, trucks and ships. Inert unless EN_PERF is set.
+    Perf::CounterInc( "vsd.src.hprtr" );
     theGame.PostToClient( m_iPlayer, (CNetCmd*)&msg, sizeof( CMsgVehSetDest ) );
 }
 

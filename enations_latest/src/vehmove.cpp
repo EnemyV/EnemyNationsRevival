@@ -6,7 +6,11 @@
 //---------------------------------------------------------------------------
 
 
+#ifdef _WIN32
+#include <share.h>   // _SH_DENYNO: let other processes read the wait log live
+#endif
 #include "enprobes.h"
+#include "Perf.h"      // pq.* path-request burst counters
 #include "stdafx.h"
 #include "lastplnt.h"
 #include "chproute.hpp"
@@ -1314,14 +1318,22 @@ BOOL CVehicle::GetNextHex(BOOL bNew) {
                     // deliberately NOT corrected - but this is the geometry QA
                     // reports as a corner cut, so name it instead of leaving the
                     // exempted case silent.
-                    if (bCorner)
+                    if (bCorner && WaitLogEnabled()) {
+                        // @WinFable: "the log does not say whether the clipped hex was
+                        // occupied; a suppressed step that is occupied still falls through
+                        // to CanEnter". occ = the ID of whatever else holds the sub-hex we
+                        // are stepping into, 0 if free - an ID, not a flag, so a residual
+                        // collision has a named second party. Read-only, no routing change.
+                        CVehicle *pOcc = theVehicleHex.GetVehicle(_turn);
                         WaitLog("[ROAD-TURN-EXEMPT] veh %d head %d,%d tail %d,%d next %d,%d "
                                 "dest %d,%d hexnext %d,%d hexdest %d,%d heading %d,%d out %d,%d "
-                                "step %d,%d reason arrival-entry corner-cut",
+                                "step %d,%d occ %lu reason arrival-entry corner-cut",
                                 GetID(), m_ptHead.x, m_ptHead.y, m_ptTail.x, m_ptTail.y,
                                 _turn.x, _turn.y, m_ptDest.x, m_ptDest.y,
                                 m_hexNext.X(), m_hexNext.Y(), m_hexDest.X(), m_hexDest.Y(),
-                                hx, hy, rx, ry, xStep, yStep);
+                                hx, hy, rx, ry, xStep, yStep,
+                                (unsigned long)((pOcc && pOcc != this) ? pOcc->GetID() : 0));
+                    }
                 } else if (bCorner) {
                     xStep = hx;
                     yStep = hy;
@@ -2687,7 +2699,16 @@ static void EnsureWaitLogOpen() {
     char *p = NULL;
     size_t n = 0;
     if ((_dupenv_s(&p, &n, "EN_WAIT_LOG") == 0) && (p != NULL)) {
-        fopen_s(&s_waitLogFp, p, "w");
+#ifdef _WIN32
+        // fopen_s opens EXCLUSIVELY by design, so no other process can read this log
+        // while the game runs - which is what made a live junction histogram impossible.
+        // _fsopen is the same open with sharing left on; Perf.cpp's plain fopen already
+        // defaults to _SH_DENYNO, which is why perf.log and slowframe.log have always
+        // been readable mid-session and this one was not.
+        s_waitLogFp = _fsopen(p, "w", _SH_DENYNO);
+#else
+        s_waitLogFp = fopen(p, "w");   // POSIX fopen does not deny sharing
+#endif
         free(p);
     }
 }
@@ -3139,6 +3160,7 @@ BOOL CVehicle::FindOffRoadSpot(CSubHex &_found, CVehicle *pAsker) {
                     // temporary vehicles must not make a usable exit disappear.
                     CHexCoord from(_hexOn), to(_cand);
                     int pathLength = 0;
+                    Perf::CounterInc( "pq.offroad" );   // BURST PROBE: FindOffRoadSpot, traffic stop-case LeaveRoad
                     CHexCoord *path = thePathMgr.GetPath(NULL, from, to, pathLength, GetData()->GetType(), FALSE, TRUE);
                     BOOL reachable = from == to || (path != NULL && pathLength > 0 && path[pathLength - 1] == to);
                     delete[] path;

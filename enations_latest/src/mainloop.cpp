@@ -7,6 +7,7 @@
 
 
 #include "enprobes.h"
+#include "en_logpath.h"   // EnLogPath - msgtype.log beside the other probe sinks
 #include "ai.h"
 #include "altoutput.h"
 #include "edicts.h"     // EDICT_DESPERATE_MEASURES (rocket scrounge edict)
@@ -20,6 +21,7 @@
 #include "en_harness.h"   // EnHarness_ServiceMainLoop() — main-loop-safe harness ops (save)
 #include "event.h"
 #include "GameWindow.h"
+#include <typeinfo>   // typeid: per-window r.draw attribution
 #include "Perf.h"
 #include "SDL2CreateStatus.h"
 #include "SDL2Compositor.h"
@@ -175,15 +177,26 @@ int CConquerApp::Run( )
             }
 #endif
 
-            uint64_t _perfPumpStart = Perf::IsEnabled() ? Perf::Now() : 0;
+            uint64_t _perfPumpStart = Perf::IsEnabled() ? Perf::NowIfEnabled() : 0;
 
+            // SPIKE SPLIT: [SLOWFRAME] showed SEC_PUMP is 74.5ms of an 85ms spike frame
+            // (96% of spikes) while sim/render/present stay flat. SEC_PUMP covers the SDL
+            // poll, the progress-dialog render and BaseYield's Win32 pump - split them so
+            // the spike names a function instead of a section.
             // === Phase 3a: INVERTED event loop - SDL2 events first ===
             // Process SDL2 events if game window is active
-            if ( m_gameWindow && m_gameWindow->PollEvents() )
             {
-                // SDL_QUIT received - post WM_QUIT so shutdown is clean
-                ::PostQuitMessage( 0 );
-                bQuitReceived = TRUE;
+                // SPIKE SPLIT: [SLOWFRAME] showed SEC_PUMP is 74.5ms of an 85ms spike
+                // frame (96% of spikes) while sim/render/present stay flat. SEC_PUMP
+                // covers the SDL poll, the progress-dialog render and BaseYield's Win32
+                // pump - separate braced scopes so the spike names a function.
+                Perf::ScopeNamed _perfPoll( "pump.poll.us" );
+                if ( m_gameWindow && m_gameWindow->PollEvents() )
+                {
+                    // SDL_QUIT received - post WM_QUIT so shutdown is clean
+                    ::PostQuitMessage( 0 );
+                    bQuitReceived = TRUE;
+                }
             }
 
             // Render progress dialog directly (same logic as BaseYield)
@@ -196,6 +209,9 @@ int CConquerApp::Run( )
 
             // === Secondary: Windows messages (for system integration, Win32 housekeeping) ===
             // Check for WM_QUIT or other Windows messages if they're pending
+            {
+            Perf::ScopeNamed _perfYield( "pump.yield.us" );   // BRACED: an unbraced guard
+            // here outlived the pump and swallowed GraphicsEnginePump - it read 1009ms/s.
             if ( bQuitReceived || BaseYield( ) )
             {
                 // BaseYield returned TRUE (WM_QUIT detected) or we already got SDL_QUIT
@@ -212,6 +228,8 @@ int CConquerApp::Run( )
 #endif
                         return ExitInstance( );
                     }
+            }
+
             }
 
             if ( Perf::IsEnabled() )
@@ -600,6 +618,65 @@ BOOL CConquerApp::CheckYield( )
     return ( FALSE );
 }
 
+// typeid().name() is "class CFoo" on MSVC; the space would break perf.log's
+// space-separated key=value line, so point past the last space. The returned
+// pointer is into the compiler's static type-name storage, so it stays valid
+// for the life of the process, which is what Perf::ScopeCounter requires.
+static const char* EnDrawTag( const CWndAnim* pWnd )
+{
+    // GATE FIRST (@WinFable 23:28Z, class-B residual 1): typeid( ).name( ) plus strrchr
+    // ran per rendering window per frame BEFORE ScopeCounter's own ctor gate, so the
+    // probe cost something with EN_PERF unset. A probe must not change behaviour.
+    if ( !Perf::IsEnabled( ) ) return "";
+    if ( pWnd == NULL ) return "draw.null";
+    const char* n = typeid( *pWnd ).name( );
+    if ( n == NULL ) return "draw.?";
+    const char* sp = strrchr( n, ' ' );
+    return sp ? sp + 1 : n;
+}
+
+// PER-TYPE MESSAGE HISTOGRAM (WinFable's round-4 instrument). Counters are out:
+// ~30 CNetCmd types x 2 drains x 3 metrics would blow MAX_COUNTERS=160, so this
+// accumulates into a fixed array and writes its own sink. g_enMsgDrain says WHICH
+// drain is running (0 = head, at the top of the pump; 1 = tail, mainloop's
+// ProcessAllMessages(100) after the Operate block) because they hold different
+// traffic. Whole body is inert unless Perf::IsEnabled().
+namespace {
+    // Sized from the enum, not a magic number: CNetCmd's ordinals run to 95, so a
+    // 64-slot table silently dropped shoot_gun (75), veh_comp_loc (85) and
+    // comp_unit_damage (86) - exactly the combat types the second arm needs.
+    const int kMsgTypes = 128;
+    struct MsgStat { long long n; long long us; long long maxUs; };
+    MsgStat g_msgStat[2][kMsgTypes] = {};
+    int     g_enMsgDrain = 0;
+    DWORD   g_msgDumpLast = 0;
+
+    void EnMsgHistoDump()
+    {
+        if ( !Perf::IsEnabled( ) ) return;
+        DWORD now = timeGetTime( );
+        if ( g_msgDumpLast != 0 && now - g_msgDumpLast < 10000 ) return;
+        g_msgDumpLast = now;
+        FILE* f = fopen( EnLogPath( "msgtype.log" ).c_str( ), "a" );
+        if ( f == NULL ) return;
+        // INTERVAL statistics: without the reset below, n and us accumulate for the
+        // whole session and maxUs is a LIFETIME max, so no two dumps can name the
+        // slowest handler in the current interval - the question this exists to answer.
+        for ( int d = 0; d < 2; ++d )
+            for ( int t = 0; t < kMsgTypes; ++t )
+                if ( g_msgStat[d][t].n > 0 )
+                    fprintf( f, "[MSGTYPE] t=%lu drain=%s type=%d n=%lld total_ms=%.1f max_ms=%.1f\n",
+                             (unsigned long)Perf::MatchSec( ), d ? "tail" : "head", t,
+                             g_msgStat[d][t].n,
+                             (double)g_msgStat[d][t].us / 1000.0,
+                             (double)g_msgStat[d][t].maxUs / 1000.0 );
+        fclose( f );
+        for ( int d = 0; d < 2; ++d )
+            for ( int t = 0; t < kMsgTypes; ++t )
+                g_msgStat[d][t] = MsgStat();   // reset: each dump is ONE interval
+    }
+}
+
 void CConquerApp::ProcessAllMessages( DWORD dwBudgetMs )
 {
 
@@ -645,19 +722,47 @@ void CConquerApp::ProcessAllMessages( DWORD dwBudgetMs )
             // hang-regression probe: the drain budget checks BETWEEN messages,
             // so one slow handler = one multi-second frame (t=632: 9,958ms in
             // ProcessAllMessages under a 400ms budget). Name the message type.
-            DWORD dwMsgT0  = timeGetTime( );
             int   iMsgType = (int)( (CNetCmd*)pBuf )->GetType( );
+            const uint64_t _mhT0 = Perf::NowIfEnabled( );
             theGame.ProcessMessage( (CNetCmd*)pBuf );
-            DWORD dwMsgMs = timeGetTime( ) - dwMsgT0;
-            if ( dwMsgMs > 250 )
+            if ( Perf::IsEnabled( ) && iMsgType >= 0 && iMsgType < kMsgTypes )
             {
-                char szM[80];
-                sprintf( szM, "[SLOWMSG] type %d took %lu ms\n", iMsgType, dwMsgMs );
-                OutputDebugStringA( szM );
+                const long long _us = (long long)Perf::ElapsedUs( _mhT0 );
+                MsgStat& st = g_msgStat[ g_enMsgDrain ? 1 : 0 ][ iMsgType ];
+                st.n++; st.us += _us;
+                if ( _us > st.maxUs ) st.maxUs = _us;
+                Perf::NoteMsgUs( iMsgType, (uint64_t)_us );   // per-FRAME top type for [SLOWFRAME]
+                // audit (4): [SLOWMSG] used its own pair of bare timeGetTime calls, two
+                // per message with EN_PERF unset - about 2,900 clock calls a second at the
+                // measured 1,460 messages/s. It now shares the one gated clock above.
+                if ( _us > 40000 )   // 40ms; was 250ms, which tests ONE message while msg= is a SUM
+                {
+                    char szM[80];
+                    sprintf( szM, "[SLOWMSG] type %d took %lld ms\n", iMsgType, _us / 1000 );
+                    OutputDebugStringA( szM );
+                }
             }
         }
 #else
-        theGame.ProcessMessage((CNetCmd *) pBuf);
+        // PER-TYPE HISTOGRAM on the path that ACTUALLY RUNS when EN_PERF_PROBES is 0
+        // (the lane default). My first cut put this only inside the #if branch above,
+        // so with lane gates it compiled out entirely and wrote an EMPTY msgtype.log -
+        // which would have read as "no messages in the drain" rather than as a broken
+        // probe. Runtime-gated on Perf::IsEnabled() only, per the audit.
+        {
+            const bool     _mhOn = Perf::IsEnabled( );   // gate GetType too (class-B 5)
+            const int      _mhTy = _mhOn ? (int)( (CNetCmd*)pBuf )->GetType( ) : -1;
+            const uint64_t _mhT0 = Perf::NowIfEnabled( );
+            theGame.ProcessMessage((CNetCmd *) pBuf);
+            if ( _mhOn && _mhTy >= 0 && _mhTy < kMsgTypes )
+            {
+                const long long _us = (long long)Perf::ElapsedUs( _mhT0 );
+                MsgStat& st = g_msgStat[ g_enMsgDrain ? 1 : 0 ][ _mhTy ];
+                st.n++; st.us += _us;
+                if ( _us > st.maxUs ) st.maxUs = _us;
+                Perf::NoteMsgUs( _mhTy, (uint64_t)_us );   // per-FRAME top type for [SLOWFRAME]
+            }
+        }
 #endif
         theGame.FreeQueueElement((CNetCmd *) pBuf);
 
@@ -703,18 +808,27 @@ void CConquerApp::_RenderScreens( )
 {
 
     DWORD dwNow               = timeGetTime( );
+    // JANK PROBE: count how far the ANIMATION clock advances per render. Smooth
+    // motion is ~every render advancing exactly one step; judder is a mix of 0s
+    // and 2+. Nothing in perf.log records this today - avg/max frame time cannot
+    // tell a steady 35ms from an alternating 20/70ms, and those are different bugs.
+    // clk.future counts the render clock landing AHEAD of now, which this function
+    // can cause on its own (see the += rem below vs the -= rem on the oper clock
+    // at the bottom of the pump) and which the OP-CLOCK SANITY clamp then undoes.
+    if ( theGame.m_dwFrameTimeLast > dwNow )
+        Perf::CounterInc( "clk.future" );
     div_t dtFrame             = div( dwNow - theGame.m_dwFrameTimeLast, 1000 / FRAME_RATE );
     theGame.m_dwFramesElapsed = dtFrame.quot;
     // CARRY the unconsumed remainder, don't ADD it. quot whole 1/24s frames were
-    // consumed; rem ms are left over and must be carried INTO the next interval,
-    // so the clock moves back to the start of that remainder. `+ rem` pushed it
-    // 2*rem AHEAD of where it belongs, so the measured delta alternated ~32/0ms
-    // and NEVER reached the 41ms quantum: EN_PERF anim.step0 was 96.3% of renders
-    // (render-side animation advancing ~1.1 steps/sec instead of ~24). The sim
-    // clock at the bottom of the pump has always done this correctly - this line
-    // is now the same arithmetic. Also makes the OP-CLOCK SANITY clamp below a
-    // no-op for this clock, since now-rem can never exceed now.
+    // consumed; rem ms are left over and must be carried INTO the next interval.
+    // (This IS the lane's arithmetic - 1aa0b262 is an ancestor of 0076db78. My
+    // cherry-pick of 067a9d36 resolved the conflict to the STALE side and put
+    // `+ rem` back, reverting a landed fix on the measurement branch and in the
+    // play-dir exe QA was testing. Restored; the counters below stay.)
     theGame.m_dwFrameTimeLast = dwNow - dtFrame.rem;
+    Perf::CounterInc( dtFrame.quot == 0 ? "anim.step0"
+                    : ( dtFrame.quot == 1 ? "anim.step1"
+                    : ( dtFrame.quot == 2 ? "anim.step2" : "anim.step3plus" ) ) );
 
     if ( !theGame.ShouldAnimate() )
     {
@@ -743,6 +857,7 @@ void CConquerApp::_RenderScreens( )
                 ANIM_THROTTLE_MS = 0;
         }
         DWORD dwAnimNow = timeGetTime( );
+        const uint64_t _qInval = Perf::NowIfEnabled( );   // paired with the dirty count below
         {
             Perf::ScopeCounter _ci( "r.inval" );   // invalidate pass (theMap.Update)
             for ( CWndAnim* pWnd : theAnimList )
@@ -761,15 +876,29 @@ void CConquerApp::_RenderScreens( )
         }
         {
             Perf::ScopeCounter _cd( "r.draw" );    // draw pass (UpdateRect walk + capture)
+            // ATTRIBUTION (2026-09-13): r.draw is the largest identified render item
+            // (190 ms/s on the host) and the sprite layer accounts for only 5.4% of it,
+            // so 94.6% of it had no name. The rr.* counters live inside ReRender, NOT
+            // Draw, so none of them can see this loop. One counter per concrete window
+            // class via RTTI attributes every window without touching any window class.
             for ( CWndAnim* pWnd : theAnimList )
                 if ( pWnd->RenderingThisFrame( ) )
+                {
+                    Perf::ScopeCounter _cw( EnDrawTag( pWnd ) );
                     pWnd->Draw( );
+                }
         }
 
         // Item 5 (dirty-rects) de-risk probe: how many hexes were invalidated this
         // frame (sim moves + render-time marks). If this is O(moving-units) and not
         // O(visible-hexes), the push-based dirty-rect source is viable.
-        Perf::CounterAdd( "inval.hexes", theMap.GetHexValidMatrix( )->GetDirtyCount( ) );
+        {
+            const int _nDirty = theMap.GetHexValidMatrix( )->GetDirtyCount( );
+            Perf::CounterAdd( "inval.hexes", _nDirty );
+            // same value onto the [SLOWFRAME] line, so dirty-set SIZE and frame TIME
+            // are paired PER FRAME - the per-second view cannot tell cause from effect
+            Perf::NoteFrameInval( _nDirty, Perf::ElapsedUs( _qInval ) );
+        }
 
         CHexCoord::ClearInvalidated( );  // Set terrain invalidated flags to FALSE
 
@@ -850,7 +979,18 @@ void CConquerApp::GraphicsEnginePump( )
         Perf::ScopeSlot _perfMsg( Perf::SEC_MSG );
         const int   iBacklog = theGame.m_messagePointerList.GetCount( );
         const DWORD dwBudget = iBacklog > 2000 ? 400 : ( iBacklog > 500 ? 200 : 100 );
+        // SPIKE PROBE: msg= is the only strong positive correlate of worst-frame
+        // time (r=+0.61 over 449 intervals). Record what the budget actually did:
+        // the backlog it saw, the tier it chose, and whether the drain RAN OUT of
+        // budget (= this frame was cut short by the cap, not by an empty queue).
+        Perf::GaugeSet( "msg.backlog", iBacklog );
+        Perf::CounterInc( dwBudget == 400 ? "msg.tier400"
+                                          : ( dwBudget == 200 ? "msg.tier200" : "msg.tier100" ) );
+        const bool  _msgOn    = Perf::IsEnabled( );   // gate the clock pair (class-B 2)
+        const DWORD dwDrainT0 = _msgOn ? timeGetTime( ) : 0;
         ProcessAllMessages( dwBudget );
+        if ( _msgOn && timeGetTime( ) - dwDrainT0 >= dwBudget )
+            Perf::CounterInc( "msg.capped" );
     }
 
     theGame._SettimeGetTime( );
@@ -899,11 +1039,21 @@ void CConquerApp::GraphicsEnginePump( )
             // case just yield (Sleep(0)) so AI/network worker threads still get scheduled but
             // we immediately loop back to render again. (The sim-tick path keeps its own
             // explicit AI time slice below, so AI is not starved.)
+            // SEC_SLEEP is shared by all four sleep sites, so a [SLOWFRAME] "sleep=" is
+            // their SUM and cannot say which one fired. Slow frames carry a median 10.9 ms
+            // of sleep and site :1029 below still has the 10 ms floor this branch had
+            // removed - these names settle which. Inert unless EN_PERF is set.
             Perf::ScopeSlot _perfSleep( Perf::SEC_SLEEP );
             if ( dwSleep > 0 )
+            {
+                Perf::ScopeCounter _cs( "slp.pace" );
                 ::Sleep( __minmax( 1, 1000 / FRAME_RATE, dwSleep ) );
+            }
             else
+            {
+                Perf::ScopeCounter _cs( "slp.yield" );
                 ::Sleep( 0 );   // render-bound: yield without the 10ms penalty
+            }
         }
         return;
     }
@@ -915,10 +1065,41 @@ void CConquerApp::GraphicsEnginePump( )
         int iExtra =
             ( (int)( 2 * 1000 / FRAME_RATE ) - (int)( theGame.GettimeGetTime( ) - theGame.m_dwOperTimeLast ) ) / 2;
         Perf::ScopeSlot _perfSleep( Perf::SEC_SLEEP );
-        ::Sleep( __minmax( 10, 2 * 1000 / FRAME_RATE, iExtra ) );
+        // slp.ai.floor counts the case the sibling branch above was repaired for: iExtra
+        // at or below the clamp floor means we are NOT ahead of schedule and are sleeping
+        // 10 ms anyway. Counting only - the Sleep call is unchanged.
+        if ( iExtra <= 10 ) Perf::CounterInc( "slp.ai.floor" );
+        else                Perf::CounterInc( "slp.ai.real" );
+        { Perf::ScopeCounter _cs( "slp.ai" );
+          ::Sleep( __minmax( 10, 2 * 1000 / FRAME_RATE, iExtra ) ); }
     }
     else
-        { Perf::ScopeSlot _perfSleep( Perf::SEC_SLEEP ); ::Sleep( 10 ); }  // give network some time
+    {
+        Perf::ScopeSlot _perfSleep( Perf::SEC_SLEEP );
+        // @WinAstra's decision-time instrument. This branch has no slack test at all -
+        // it sleeps 10 ms whether the tick is early or 40 ms late. Compute the SAME
+        // quantity the repaired render path uses, for MEASUREMENT ONLY: ms remaining to
+        // the next sim tick, negative when we are already behind. The Sleep is unchanged.
+        // @WinAstra, correcting me: the early return at :983 only falls through when
+        // GettimeGetTime() >= m_dwOperTimeLast + 1000/FRAME_RATE, so "41 - elapsed <= 0"
+        // is GUARANTEED here - my ahead/behind counter was measuring a tautology, and
+        // GettimeGetTime() is the CACHED stamp (player.h:1219), not a fresh read. The
+        // slack value is kept only because the [SLOWFRAME] line records HOW FAR past the
+        // quantum we were, which is not tautological; the ahead/behind split is gone.
+        int _slack = 0;
+        if ( Perf::IsEnabled( ) )
+            _slack = (int)( 1000 / FRAME_RATE )
+                   - (int)( theGame.GettimeGetTime( ) - theGame.m_dwOperTimeLast );
+
+        // The bounded sleep-trial env switch is REMOVED (@WinFable 21:57Z). It closed:
+        // Sleep(0) converts 194 ms/s of sleep into 200 ms/s of render+present+msg - it
+        // buys frames, not AI - so a launch-time switch that changes SHIPPED pacing has
+        // no reason to stay in the tree. Stock 10 ms exactly as the lane has it; only the
+        // measurement around it is new, and measurement must not change behaviour.
+        const uint64_t _t0 = Perf::NowIfEnabled( );
+        { Perf::ScopeCounter _cs( "slp.net" ); ::Sleep( 10 ); }
+        Perf::NoteFrameSleep( _slack, Perf::ElapsedUs( _t0 ) );
+    }
 
     // animate if 1/24 of a second has passed
     div_t dtFrame             = div( theGame.GettimeGetTime( ) - theGame.m_dwOperTimeLast, 1000 / FRAME_RATE );
@@ -939,6 +1120,12 @@ void CConquerApp::GraphicsEnginePump( )
         theGame.m_dwOperSecFrames += theGame.m_dwOpersElapsed;
         if ( theGame.m_dwOperSecFrames >= (DWORD)( FRAME_RATE * theGame.m_iSpeedMul ) )
         {
+            // 591ms of every second inside SEC_SIM is attributed to nothing (measured:
+            // sim 1013 - sleep 260 - msg 55 - operB 12 - operV 95). Perf.h guesses the
+            // remainder is "once-a-second housekeeping + message-posting scans +
+            // animate" - this names it instead of guessing. NOTE this block contains a
+            // `goto NoOper`, so it must be RAII, not a paired call at the end.
+            Perf::ScopeNamed _perfSec( "pump.sec.us" );
             div_t dtNum                = div( theGame.m_dwOperSecFrames, FRAME_RATE );
             theGame.m_dwOperSecElapsed = dtNum.quot;
             theGame.m_dwOperSecFrames  = dtNum.rem;
@@ -1314,15 +1501,21 @@ void CConquerApp::GraphicsEnginePump( )
 
         // got stuck waiting here?
         // take the critical section while we do our thing
+        // ("got stuck waiting here?" is in the 1996 source - so measure it and answer.)
+        const uint64_t _qCs = Perf::NowIfEnabled( );
         EnterCriticalSection( &cs );
+        Perf::CounterAddElapsedUs( "pump.cswait.us", _qCs );
 
         // figure the multipliers, etc
         POSITION pos;
-        for ( pos = theGame.GetAll( ).GetHeadPosition( ); pos != NULL; )
         {
-            CPlayer* pPlr = theGame.GetAll( ).GetNext( pos );
-            ASSERT_STRICT_VALID( pPlr );
-            pPlr->StartLoop( );
+            Perf::ScopeNamed _perfStart( "pump.startloop.us" );
+            for ( pos = theGame.GetAll( ).GetHeadPosition( ); pos != NULL; )
+            {
+                CPlayer* pPlr = theGame.GetAll( ).GetNext( pos );
+                ASSERT_STRICT_VALID( pPlr );
+                pPlr->StartLoop( );
+            }
         }
 
         // operate the buildings
@@ -1524,7 +1717,33 @@ void CConquerApp::GraphicsEnginePump( )
         LeaveCriticalSection( &cs );
 
         // process messages from Operate calls (same time-box as the pump head)
-        ProcessAllMessages( 100 );
+        // THE SECOND DRAIN. This sits inside SEC_SIM but OUTSIDE SEC_MSG, so every
+        // earlier measurement missed it - including the one where I concluded the
+        // message-drain budget was innocent (msg.capped=0 covered only the HEAD drain
+        // at the top of this function). Its flat 100ms budget matches the 79ms median
+        // of the in-game sim spikes. msg.tail.capped counts drains that ran OUT of
+        // budget, i.e. frames this call cut short.
+        {
+            Perf::ScopeNamed _mt( "msg.tail.us" );
+            g_enMsgDrain = 1;
+            // gate GetCount and the clock pair (class-B 3 and 4): both were probe-only
+            // work that ran with EN_PERF unset.
+            const bool  _mtOn = Perf::IsEnabled( );
+            if ( _mtOn )
+                Perf::GaugeSet( "msg.tail.backlog",
+                                (int64_t)theGame.m_messagePointerList.GetCount( ) );
+            const DWORD _mt0 = _mtOn ? timeGetTime( ) : 0;
+            const uint64_t _mtq = Perf::NowIfEnabled( );
+            ProcessAllMessages( 100 );
+            // [SLOWFRAME] msg= is SEC_MSG, the HEAD drain only; this drain is inside
+            // SEC_SIM but outside SEC_MSG, so without this note the per-frame drain
+            // share cannot be computed from the slow-frame line at all.
+            Perf::NoteFrameMsgTail( Perf::ElapsedUs( _mtq ) );
+            if ( _mtOn && timeGetTime( ) - _mt0 >= 100 )
+                Perf::CounterInc( "msg.tail.capped" );
+            g_enMsgDrain = 0;
+            EnMsgHistoDump( );
+        }
     }  // if operate
 
 NoOper:

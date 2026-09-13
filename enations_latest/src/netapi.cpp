@@ -14,6 +14,7 @@
 
 #include "SDL2GameDialogs.h"
 #include "enprobes.h"
+#include "Perf.h"           // flee.* spike counters (main-thread A* in a message handler)
 #include "ai.h"
 #include "area.h"
 #include "bridge.h"
@@ -2579,6 +2580,34 @@ static void SetVehDest( CMsgVehSetDest* pMsg )
         OutputDebugStringA( szE );
     }
 #endif
+    // REDUNDANCY PROBE (@WinAstra: "distinguish redundant reissues from necessary new
+    // orders before choosing a fix"). veh_set_dest is 94% of message-handling time and
+    // its handler pathfinds synchronously, but that only makes DEDUP the fix shape if a
+    // large share of these orders re-state a destination the vehicle already holds.
+    // Sampled BEFORE SetEvent/SetDest mutate the vehicle. Inert unless EN_PERF is set.
+    if ( Perf::IsEnabled( ) )
+    {
+        // public accessor, not the protected member: this function is declared static
+        // but befriended, so touching m_hexDest compiled here and would be the first
+        // unguarded protected access from it (WinFable re-audit fix 3).
+        const BOOL bSameHex = ( pVeh->GetHexDest( ) == pMsg->m_hex );
+        Perf::CounterInc( bSameHex ? "vsd.samedest" : "vsd.newdest" );
+        Perf::CounterInc( pVeh->GetOwner( )->IsAI( ) ? "vsd.ai" : "vsd.human" );
+        // the .stopped split is DROPPED rather than kept: m_cMode is protected and has
+        // no public equivalent (IsOnTheMove() is not "== stop"), so keeping it would
+        // mean adding a production accessor for a probe. The finding it produced -
+        // 63% of new destinations go to vehicles in stop mode - is already on the board.
+        // discriminates the suspected LEAK in the AI dedupe: CAIUnit::SetDestination's
+        // building and sub-hex overloads (caiunit.cpp:1016, 1070) short-circuit the whole
+        // 30s guard on !bInBldg, so a vehicle parked INSIDE a building is deduped not at
+        // all - while the CHexCoord overload (:1127) gives that case a 5s cooldown. If the
+        // leak is real, samedest is dominated by in-building vehicles. Sampled at handler
+        // time, which can differ from producer time for a vehicle in motion; for a parked
+        // truck - the population this is about - it is stable.
+        if ( pVeh->IsInBuilding( ) )
+            Perf::CounterInc( bSameHex ? "vsd.samedest.inbldg" : "vsd.newdest.inbldg" );
+    }
+
     pVeh->SetEvent( CVehicle::none );
     if ( pMsg->m_iSub == CVehicle::sub )
         pVeh->SetDest( pMsg->m_sub );
@@ -3054,11 +3083,22 @@ static void UnitAttacked( CMsgUnitAttacked* pMsg )
                             pVeh->GetData()->CanTravelHex(hex) &&
                             theMap.GetTerrainCost(to, to, 0, pVeh->GetData()->GetWheelType()) != 0;
                         if ( usable ) {
+                            // SPIKE PROBE: this is a FULL synchronous A* on the MAIN thread,
+                            // inside a message handler, to validate a RANDOMLY jittered flee
+                            // point. Added by traffic(015) 2/7 (e081a6e7) and ungated - no
+                            // TrafficOpts bit reaches it, which is why the EN_TRAFFIC=0 arm
+                            // could never have exonerated it. flee.reject counts searches
+                            // whose entire cost is thrown away.
+                            Perf::CounterInc( "flee.calls" );
+                            const uint64_t _qFlee = Perf::NowIfEnabled( );
                             int length = 0;
                             CHexCoord *path = thePathMgr.GetPath(NULL, from, to, length,
                                 pVeh->GetData()->GetType(), FALSE, TRUE);
                             usable = from == to || (path != NULL && length > 0 && path[length-1] == to);
                             delete[] path;
+                            Perf::CounterAddElapsedUs( "flee.us", _qFlee );
+                            if ( !usable )
+                                Perf::CounterInc( "flee.reject" );
                         }
                         if ( !usable ) {
                             WaitLog("[FLEE-REJECT] veh %d attacker %d from %d,%d proposed %d,%d terrain %d",
