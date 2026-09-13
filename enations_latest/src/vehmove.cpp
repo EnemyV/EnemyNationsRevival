@@ -1218,15 +1218,15 @@ BOOL CVehicle::GetNextHex(BOOL bNew) {
     //      incoming lane - carry it straight into the junction first;
     //   2. having turned, take the OUTGOING arm's lane even where the branches
     //      above turned lane checking off.
-    // Off pavement, on a bridge, where MustKeepLane already governs, near the
-    // destination, when reversing and for any step that stays on the same arm this
-    // is a no-op. Routes that genuinely cross still meet the usual occupancy/wait
-    // handling: a suppressed step that is occupied falls through to CanEnter.
+    // Off pavement, on a bridge, where MustKeepLane already governs, on the
+    // arrival move itself, when reversing and for any step that stays on the same
+    // arm this is a no-op. Routes that genuinely cross still meet the usual
+    // occupancy/wait handling: a suppressed step that is occupied falls through to
+    // CanEnter.
     // This is lane policy, so it lives behind the same EN_TRAFFIC bit 16 as InLane
     // and BlockedLaneStep and goes away with them.
     if ((!bAtDest) && (TrafficOpts() & 16) && (!m_bReversing) && m_cOwn && (!IsHpControl()) &&
-        (GetData()->IsTransport() || GetData()->IsCrane()) && (!GetData()->IsBoat()) &&
-        ((abs(xDest) > 3) || (abs(yDest) > 3))) {
+        (GetData()->IsTransport() || GetData()->IsCrane()) && (!GetData()->IsBoat())) {
         int hx = CSubHex::Diff(m_ptHead.x - m_ptTail.x);
         int hy = CSubHex::Diff(m_ptHead.y - m_ptTail.y);
         CSubHex blockedStep;
@@ -1252,16 +1252,47 @@ BOOL CVehicle::GetNextHex(BOOL bNew) {
                                          : ((m_ptHead.x & 1) == ((hy > 0) ? 0 : 1));
                 int iCross = (hx != 0) ? yStep : xStep;
 
+                // THE ONLY STEP THAT NEEDS FREEDOM HERE IS THE ARRIVAL MOVE: the
+                // step that enters the destination hex, a truck already inside it,
+                // or the last sub-hex before the destination point - which is where
+                // a building's entry angle has to be satisfied and a diagonal must
+                // stay available. The near-destination relaxation above
+                // (bCheckStreet off within three sub-hexes of m_ptDest) used to gate
+                // this block too, and three sub-hexes on each axis is a 7x7
+                // neighbourhood - up to three hexes across - so it switched lane
+                // guidance off for a truck still a whole bend short of its
+                // destination. That is the corner cut QA still sees: two trucks with
+                // near destinations meeting at a bend both ask for the same sub-hex.
+                // Guide the approach, exempt the arrival move.
+                BOOL bArrival = _turn.SameHex(m_hexDest) || (_hexHere == m_hexDest) ||
+                                ((abs(xDest) <= 1) && (abs(yDest) <= 1));
+
                 // 1. in lane, stepping out of it, and the route hex is DIAGONALLY
                 //    adjacent - the corner. The turn cannot be taken from this hex
                 //    at all, so the step can only be cutting across the arm. An arm
                 //    that is squarely adjacent IS turnable from here and is left
                 //    alone. Requiring the hex ahead to be a different one keeps the
                 //    deferral to a single sub-hex and cannot loop.
-                if (bInLane && (iCross != 0) && (rx != 0) && (ry != 0) &&
-                    (!_ahead.SameHex(m_ptHead)) && OnPavement(_turn)) {
+                BOOL bCorner = bInLane && (iCross != 0) && (rx != 0) && (ry != 0) &&
+                               (!_ahead.SameHex(m_ptHead)) && OnPavement(_turn);
+                const char *pszWhy = NULL;
+
+                if (bArrival) {
+                    // deliberately NOT corrected - but this is the geometry QA
+                    // reports as a corner cut, so name it instead of leaving the
+                    // exempted case silent.
+                    if (bCorner)
+                        WaitLog("[ROAD-TURN-EXEMPT] veh %d head %d,%d tail %d,%d next %d,%d "
+                                "dest %d,%d hexnext %d,%d hexdest %d,%d heading %d,%d out %d,%d "
+                                "step %d,%d reason arrival-entry corner-cut",
+                                GetID(), m_ptHead.x, m_ptHead.y, m_ptTail.x, m_ptTail.y,
+                                _turn.x, _turn.y, m_ptDest.x, m_ptDest.y,
+                                m_hexNext.X(), m_hexNext.Y(), m_hexDest.X(), m_hexDest.Y(),
+                                hx, hy, rx, ry, xStep, yStep);
+                } else if (bCorner) {
                     xStep = hx;
                     yStep = hy;
+                    pszWhy = "corner-deferred";
                 }
 
                 // 2. the turn itself: put it in the outgoing arm's lane. Only a
@@ -1287,12 +1318,22 @@ BOOL CVehicle::GetNextHex(BOOL bNew) {
                     if (OnPavement(_lane)) {
                         xStep = nx;
                         yStep = ny;
+                        pszWhy = "turn-lane";
                     }
                 }
 
-                if ((oldX != xStep) || (oldY != yStep))
-                    WaitLog("[ROAD-TURN] veh %d head %d,%d heading %d,%d out %d,%d step %d,%d to %d,%d",
-                            GetID(), m_ptHead.x, m_ptHead.y, hx, hy, rx, ry, oldX, oldY, xStep, yStep);
+                if ((oldX != xStep) || (oldY != yStep)) {
+                    CSubHex _went(m_ptHead.x + xStep, m_ptHead.y + yStep);
+                    _went.Wrap();
+                    WaitLog("[ROAD-TURN] veh %d head %d,%d tail %d,%d next %d,%d dest %d,%d "
+                            "hexnext %d,%d hexdest %d,%d heading %d,%d out %d,%d step %d,%d to %d,%d "
+                            "reason %s",
+                            GetID(), m_ptHead.x, m_ptHead.y, m_ptTail.x, m_ptTail.y,
+                            _went.x, _went.y, m_ptDest.x, m_ptDest.y,
+                            m_hexNext.X(), m_hexNext.Y(), m_hexDest.X(), m_hexDest.Y(),
+                            hx, hy, rx, ry, oldX, oldY, xStep, yStep,
+                            (pszWhy != NULL) ? pszWhy : "unknown");
+                }
             }
         }
     }
