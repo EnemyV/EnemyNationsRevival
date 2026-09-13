@@ -723,6 +723,20 @@ public:
 		// free to list them in whatever order reads best.
 		static BOOL				IsBlockableMat (int iInd);
 
+		// ---- automatic routing membership ---------------------------------------
+		// Is this building part of the auto-router's network? Default TRUE. When a
+		// player turns it off the router treats the building as if it did not exist:
+		// no deliveries TO it, no pickups FROM it, and its surplus no longer counts
+		// toward what warehouses are told to absorb. Player-drawn routes and the
+		// Load Truck dialog keep working exactly as before -- this is a switch for
+		// hand-managing one building, not for shutting it down.
+		BOOL					IsAutoRouteEnabled () const;
+		void					SetAutoRouteEnabled (BOOL bEnable);
+		// TRUE if this building type takes part in material routing at all, i.e.
+		// whether the toggle is worth showing. Housing/command/embassy/fort/research
+		// neither consume nor supply haulable materials, so they never do.
+		BOOL					CanAutoRoute () const;
+
 		void					AnimateOperating (BOOL bOper);
 		void					SetAmbientHalfSpeed (BOOL bHalf);
 		void					StopUnit () { CUnit::StopUnit (); AnimateOperating (FALSE); }

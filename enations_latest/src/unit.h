@@ -529,11 +529,19 @@ class CUnit : public CUnitTile
         // (new_unit.cpp), so these bits round-trip and read back 0 from old saves.
         // Only warehouses and the rocket expose the checkboxes (CanBlockMaterials).
         no_stock_base   = 0x1000,
-        no_stock_mask   = 0x3F000     // 6 materials, 0x1000 .. 0x20000
+        no_stock_mask   = 0x3F000,    // 6 materials, 0x1000 .. 0x20000
+
+        // Player has taken this building OUT of the automatic truck network entirely:
+        // the router will neither deliver to it nor collect from it, and it stops
+        // contributing surplus to warehouse demand. Manual routes and hand-loading are
+        // unaffected. Same inverted sense as the veto bits above -- SET = excluded --
+        // so a zeroed flags word (and therefore every older save) means "in the
+        // network", which is the pre-existing behaviour.
+        no_autoroute    = 0x40000
     };
     // Highest bit currently defined in this enum -- the AssertValid sanity check on
     // m_unitFlags keys off this so it never goes stale again when a flag is added.
-    enum { UNIT_FLAGS_VALID_MASK = 0x3FFFF };
+    enum { UNIT_FLAGS_VALID_MASK = 0x7FFFF };
     void         SetFlag( UNIT_FLAGS fl ) { m_unitFlags = (UNIT_FLAGS)( (int)m_unitFlags | (int)fl ); }
     void         ClrFlag( UNIT_FLAGS fl ) { m_unitFlags = (UNIT_FLAGS)( (int)m_unitFlags & ~(int)fl ); }
     BOOL         IsFlag( UNIT_FLAGS fl ) { return ( (BOOL)( (int)m_unitFlags & (int)fl ) ); }

@@ -1700,6 +1700,12 @@ void CHPRouter::SecondaryStocking( int iMat, int iFromBldg, int iToBldg )
                 // this is a valid iFromBldg/iToBldg, so check how much iMat it has
                 EnterCriticalSection( &cs );
                 CBuilding* pBldg = theBuildingMap.GetBldg( pUnit->GetID( ) );
+                // excluded from the automatic network: neither a source nor a target
+                if ( ( pBldg != NULL ) && ( !pBldg->IsAutoRouteEnabled( ) ) )
+                {
+                    LeaveCriticalSection( &cs );
+                    continue;
+                }
                 if ( pBldg != NULL )
                 {
                     // this uses criteria of selecting the from building with
@@ -1769,6 +1775,12 @@ void CHPRouter::SecondaryStocking( int iMat, int iFromBldg, int iToBldg )
                 // this is a valid iToBldg, so check how much iMat it has
                 EnterCriticalSection( &cs );
                 CBuilding* pBldg = theBuildingMap.GetBldg( pUnit->GetID( ) );
+                // excluded from the automatic network: never a secondary-stocking target
+                if ( ( pBldg != NULL ) && ( !pBldg->IsAutoRouteEnabled( ) ) )
+                {
+                    LeaveCriticalSection( &cs );
+                    continue;
+                }
                 if ( pBldg != NULL )
                 {
                     pBldg->GetAccepts( &m_iNeeds[0] );
@@ -3558,11 +3570,13 @@ CAIUnit* CHPRouter::GetNearestSource( CAIUnit* pTruck, int iMaterial, CAIUnit* p
 
             bIsConstructing = FALSE;
             bIsDepleted     = FALSE;
+            BOOL bAutoRoute = TRUE;
             // need pBuilding->IsConstructing(); [CAI_ISCONSTRUCTING]
             EnterCriticalSection( &cs );
             CBuilding* pBldg = theBuildingMap.GetBldg( pUnit->GetID( ) );
             if ( pBldg != NULL )
             {
+                bAutoRoute      = pBldg->IsAutoRouteEnabled( );
                 bIsConstructing = pBldg->IsConstructing( );
                 hexMat          = pBldg->GetExitHex( );
                 // need pBuilding->GetData()->GetUnionType(); [CAI_PRODUCES]
@@ -3573,6 +3587,12 @@ CAIUnit* CHPRouter::GetNearestSource( CAIUnit* pTruck, int iMaterial, CAIUnit* p
                 bIsDepleted = pBldg->IsFlag( CUnit::abandoned );
             }
             LeaveCriticalSection( &cs );
+
+            // player took this building out of the automatic network - never collect
+            // from it (the exclusion is symmetric: no deliveries either, handled in
+            // _NeedsCommodities)
+            if ( !bAutoRoute )
+                continue;
 
             // if not ours must be a farm or mine NOT under construction
             if ( pUnit->GetOwner( ) != m_iPlayer )
@@ -3987,6 +4007,20 @@ CAIUnit* CHPRouter::GetNearestSource( CAIUnit* pTruck, int iMaterial, CAIUnit* p
                 // set rocket as source
                 pClosest = m_plUnits->GetUnitNY( m_dwRocket );
             }
+        }
+
+        // The special-reserve fallback names the rocket DIRECTLY, bypassing the
+        // candidate loop above (and therefore its autorouting check), so re-test it
+        // here -- otherwise excluding the rocket would still let a first-of-type
+        // lumber/coal/iron/smelter pull its reserve out of it.
+        if ( pClosest != NULL )
+        {
+            EnterCriticalSection( &cs );
+            CBuilding* pRk = theBuildingMap.GetBldg( pClosest->GetID( ) );
+            BOOL       bNo = ( pRk != NULL ) && ( !pRk->IsAutoRouteEnabled( ) );
+            LeaveCriticalSection( &cs );
+            if ( bNo )
+                pClosest = NULL;
         }
 
         // a special building was detected and special reserve enabled,
@@ -4424,6 +4458,19 @@ void CHPRouter::CheckWarehouses( void )
     if ( pRocket == NULL )
         return;
 
+    // This is the one place a building is pushed onto the needs list WITHOUT going
+    // through _NeedsCommodities, so the exclusion has to be tested here too --
+    // otherwise an excluded rocket is re-added every pass, fails to be assigned a
+    // truck (it reports no needs), and is re-added again: pure churn.
+    {
+        EnterCriticalSection( &cs );
+        CBuilding* pBldg   = theBuildingMap.GetBldg( m_dwRocket );
+        BOOL       bExcl   = ( pBldg != NULL ) && ( !pBldg->IsAutoRouteEnabled( ) );
+        LeaveCriticalSection( &cs );
+        if ( bExcl )
+            return;
+    }
+
     if ( m_plBldgsNeed->GetUnitNY( m_dwRocket ) == NULL )
     {
         m_plBldgsNeed->AddTail( (CObject*)pRocket );
@@ -4523,10 +4570,13 @@ BOOL CHPRouter::_NeedsCommodities( CAIUnit* pCAIBldg )
 
     // need pBuilding->IsConstructing(); [CAI_ISCONSTRUCTING]
     // int	GetBldgMatRepair (int iInd) const;
+    BOOL bAutoRoute = TRUE;
     EnterCriticalSection( &cs );
     CBuilding* pBldg = theBuildingMap.GetBldg( pCAIBldg->GetID( ) );
     if ( pBldg != NULL )
     {
+        bAutoRoute = pBldg->IsAutoRouteEnabled( );
+
         // building has been damaged
         if ( pBldg->GetDamagePer( ) < DAMAGE_0 )
             bNeedRepair = TRUE;
@@ -4552,6 +4602,21 @@ BOOL CHPRouter::_NeedsCommodities( CAIUnit* pCAIBldg )
     // something is wrong
     if ( iProduces == CStructureData::num_union_types )
         return FALSE;
+
+    // Player took this building out of the automatic network: it never wants
+    // anything as far as the router is concerned. Reporting no need here is what
+    // keeps it out of m_plBldgsNeed (GetBuildingNeeding and the bldg_new/bldg_stat
+    // paths all decide membership through this function), and NeedsCommodities(NULL)
+    // then drops it from the list as soon as any truck already enroute has landed.
+    if ( !bAutoRoute )
+    {
+        for ( int i = 0; i < CMaterialTypes::num_types; ++i ) pCAIBldg->SetParam( i, 0 );
+#ifdef _LOGOUT
+        logPrintf( LOG_PRI_ALWAYS, LOG_HP_ROUTER, "building %d id=%ld excluded from autorouting ",
+                   pCAIBldg->GetTypeUnit( ), pCAIBldg->GetID( ) );
+#endif
+        return FALSE;
+    }
 
 #ifdef _LOGOUT
     logPrintf( LOG_PRI_ALWAYS, LOG_HP_ROUTER, "\nCHPRouter::NeedsCommodities for player %d ", m_iPlayer );
@@ -5215,8 +5280,10 @@ BOOL CHPRouter::HaveExcessMaterials( void )
             CBuilding* pBldg = theBuildingMap.GetBldg( pCAIBldg->GetID( ) );
             if ( pBldg != NULL )
             {
-                // skip any warehouses
-                if ( pBldg->GetData( )->GetUnionType( ) == CStructureData::UTwarehouse )
+                // skip any warehouses, and anything the player has taken out of the
+                // automatic network (its pile is not the router's to move)
+                if ( ( pBldg->GetData( )->GetUnionType( ) == CStructureData::UTwarehouse ) ||
+                     ( !pBldg->IsAutoRouteEnabled( ) ) )
                 {
                     LeaveCriticalSection( &cs );
                     continue;
@@ -5266,8 +5333,11 @@ void CHPRouter::SetExcessMaterials( CAIUnit* pWarehouseBldg )
             CBuilding* pBldg = theBuildingMap.GetBldg( pCAIBldg->GetID( ) );
             if ( pBldg != NULL )
             {
-                // skip other warehouses
-                if ( pBldg->GetData( )->GetUnionType( ) == CStructureData::UTwarehouse )
+                // skip other warehouses, and anything excluded from the automatic
+                // network -- counting its surplus here would send a truck that
+                // GetNearestSource then refuses to load from
+                if ( ( pBldg->GetData( )->GetUnionType( ) == CStructureData::UTwarehouse ) ||
+                     ( !pBldg->IsAutoRouteEnabled( ) ) )
                 {
                     LeaveCriticalSection( &cs );
                     continue;

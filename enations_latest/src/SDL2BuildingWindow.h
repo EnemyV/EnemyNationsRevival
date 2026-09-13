@@ -218,6 +218,8 @@ private:
     // the shared AltOutput::Convert production hook reads); label comes from the def. Scope
     // ("This building only") is shown via an adjacent SDL2InfoIcon (#36).
     SDL2Checkbox* m_chkAltOut      = nullptr;
+    // Master "Enable Autorouting" switch for this building.
+    SDL2Checkbox* m_chkAutoRoute = nullptr;
     // One veto checkbox per stored material, plus the "x / cap" readout beside it.
     SDL2Checkbox* m_chkAutoStock[kNumStoreMats] = {};
     SDL2Label*    m_lblAutoStock[kNumStoreMats] = {};

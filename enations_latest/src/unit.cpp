@@ -2421,6 +2421,48 @@ BOOL CBuilding::CanBlockMaterials( ) const
     return ( (BOOL)( GetData( )->GetUnionType( ) == CStructureData::UTwarehouse ) );
 }
 
+//---------------------------------------------------------------------------
+// Automatic-routing membership
+//---------------------------------------------------------------------------
+BOOL CBuilding::IsAutoRouteEnabled( ) const
+{
+    ASSERT_VALID( this );
+    return ( (BOOL)( ( (int)m_unitFlags & (int)CUnit::no_autoroute ) == 0 ) );
+}
+
+void CBuilding::SetAutoRouteEnabled( BOOL bEnable )
+{
+    ASSERT_VALID( this );
+
+    if ( bEnable )
+        m_unitFlags = (UNIT_FLAGS)( (int)m_unitFlags & ~(int)CUnit::no_autoroute );
+    else
+        m_unitFlags = (UNIT_FLAGS)( (int)m_unitFlags | (int)CUnit::no_autoroute );
+}
+
+// The building classes the router actually moves materials for. The rest
+// (housing, command centre, embassy, fort, research) neither consume nor supply
+// anything haulable, so the toggle would be a no-op switch on their window.
+BOOL CBuilding::CanAutoRoute( ) const
+{
+    ASSERT_VALID( this );
+
+    switch ( GetData( )->GetUnionType( ) )
+    {
+    case CStructureData::UTmaterials:   // smelter, refinery
+    case CStructureData::UTvehicle:     // vehicle plants, barracks
+    case CStructureData::UTshipyard:
+    case CStructureData::UTrepair:
+    case CStructureData::UTpower:       // burns coal/oil
+    case CStructureData::UTwarehouse:   // warehouse, rocket, seaport
+    case CStructureData::UTmine:
+    case CStructureData::UTfarm:        // farm, lumber mill
+        return ( TRUE );
+    default:
+        return ( FALSE );
+    }
+}
+
 CStructureData::BLDG_TYPE CStructureData::GetBldgType( ) const
 {
 

@@ -68,9 +68,10 @@ static int slotRowH(int iconIdx) {
 }
 static int matRowH()       { return slotRowH( ICON_MATERIALS ); }
 static int storageHeight() { return BOX_PAD + HDR_H + SDL2BuildingWindow::kNumStoreMats * matRowH() + BOX_PAD; }
-// Auto-Stock: one veto checkbox per stored material. Plain ROW_H rows (no material
-// icon strip), so it is shorter than Storage.
-static int autoStockHeight() { return BOX_PAD + HDR_H + SDL2BuildingWindow::kNumStoreMats * ROW_H + BOX_PAD; }
+// Auto-Routing: the master switch, plus one veto checkbox per stored material on
+// warehouse-class hosts. Plain ROW_H rows (no material icon strip).
+static int nAutoStockRows(CBuilding* b);
+static int autoStockHeight(CBuilding* b) { return BOX_PAD + HDR_H + nAutoStockRows(b) * ROW_H + BOX_PAD; }
 // graph + the tiny time-range button row underneath it
 static const int RANGE_ROW_H  = 24;   // height of the 10s/10m/1h/10h button row — was 18, which
                                       // downscaled the labels to ~12pt mush ("difficult to read",
@@ -165,11 +166,17 @@ static const char* const kStoreNames[SDL2BuildingWindow::kNumStoreMats] = {
 static bool secStorage(CBuilding* b) {
     return ( b->GetData()->GetUnionType() == CStructureData::UTwarehouse );   // warehouse + rocket
 }
-// Auto-Stock: the per-material "don't haul this here" vetoes plus the ceiling readout.
-// Same hosts as Storage (warehouse + rocket) and only for buildings we own -- there is
-// nothing to configure on somebody else's depot.
+// Auto-Routing: the "Enable Autorouting" master switch for this building, plus (on
+// warehouse-class buildings only) the per-material "don't haul this here" vetoes and
+// the ceiling readout. Shown on any routing participant we own -- there is nothing to
+// configure on somebody else's building.
 static bool secAutoStock(CBuilding* b) {
-    return b->CanBlockMaterials() && b->GetOwner() && b->GetOwner()->IsMe();
+    return b->CanAutoRoute() && b->GetOwner() && b->GetOwner()->IsMe();
+}
+// How many rows the section needs: the master switch, plus a material row each when
+// this building supports the per-material vetoes.
+static int nAutoStockRows(CBuilding* b) {
+    return 1 + ( b->CanBlockMaterials() ? SDL2BuildingWindow::kNumStoreMats : 0 );
 }
 static bool secCoalLiqActive(CBuilding* b);   // fwd (defined below; used to gate secPower for C6)
 static bool secPower(CBuilding* b) {
@@ -603,7 +610,7 @@ static BldgLayout computeLayout(CBuilding* b) {
     int& n = L.n;
     // Order here is the display order; must match BuildSection's dispatch.
     if ( secStorage(b)    ) L.secs[n++] = { SEC_STORAGE,    storageHeight() };
-    if ( secAutoStock(b)  ) L.secs[n++] = { SEC_AUTOSTOCK,  autoStockHeight() };
+    if ( secAutoStock(b)  ) L.secs[n++] = { SEC_AUTOSTOCK,  autoStockHeight(b) };
     if ( secProduction(b) ) L.secs[n++] = { SEC_PRODUCTION, PRODUCTION_H };
     if ( secBuilding(b)   ) L.secs[n++] = { SEC_BUILDING,   BUILDING_H };
     if ( secFertility(b)  ) L.secs[n++] = { SEC_FERTILITY,  fertilityHeight(b) };
@@ -829,6 +836,7 @@ void SDL2BuildingWindow::NullSectionWidgets() {
     m_imgFertility = nullptr; m_lblFertility = nullptr;
     m_imgStorage = nullptr;
     for ( int i = 0; i < kNumStoreMats; i++ ) { m_lblStoreName[i] = nullptr; m_lblStoreCount[i] = nullptr; }
+    m_chkAutoRoute = nullptr;
     for ( int i = 0; i < kNumStoreMats; i++ ) { m_chkAutoStock[i] = nullptr; m_lblAutoStock[i] = nullptr; }
     m_lblPowerHdr = nullptr; m_imgPowerHdrIcon = nullptr; m_lblPowerBldg = nullptr;
     m_lblPowerColony = nullptr; m_imgPowerGraph = nullptr;
@@ -1057,22 +1065,45 @@ int SDL2BuildingWindow::BuildAltOutput(int x, int y, int w) {
 // will only ever bring iron here. It governs AUTOMATIC hauling only -- a hand-loaded truck
 // or a player-drawn route still delivers whatever the player tells it to.
 int SDL2BuildingWindow::BuildAutoStock(int x, int y, int w) {
-    int H = autoStockHeight();
+    int H = autoStockHeight(m_pBldg);
     AddOutline(x, y, w, H);
-    int yh = Header(x + BOX_PAD, y + BOX_PAD, w - 2 * BOX_PAD, "Auto-Stock", kAccentGold,
+    int yh = Header(x + BOX_PAD, y + BOX_PAD, w - 2 * BOX_PAD, "Auto-Routing", kAccentGold,
                     ICON_MATERIALS, CMaterialTypes::lumber);
 
     // checkbox (name) on the left, "held / cap" right-aligned like the Storage counts
-    const int capW = 96;
-    int       cbX  = x + BOX_PAD + 4;
-    int       cbW  = ( x + w - BOX_PAD - capW - 4 ) - cbX;
+    const int capW    = 96;
+    const int kInfoSz = 14;
+    int       cbX     = x + BOX_PAD + 4;
+    int       cbW     = ( x + w - BOX_PAD - capW - 4 ) - cbX;
 
     CBuilding* pBldg = m_pBldg;          // capture by value: the callback outlives this frame
+
+    // Master switch. Unticking it takes the building out of the automatic truck
+    // network entirely -- no deliveries in, no pickups out, and its surplus stops
+    // counting toward what warehouses are asked to absorb. Hand-loading and
+    // player-drawn routes are unaffected, which is the point: this is how you take
+    // one building under manual control without stopping it.
+    m_chkAutoRoute = AddWidget<SDL2Checkbox>(
+        cbX, yh, cbW - ( kInfoSz + 4 ), ROW_H, "Enable Autorouting", pBldg->IsAutoRouteEnabled() != FALSE,
+        [pBldg]( bool on ) { pBldg->SetAutoRouteEnabled( on ? TRUE : FALSE ); } );
+    AddWidget<SDL2InfoIcon>( cbX + cbW - kInfoSz, yh + ( ROW_H - kInfoSz ) / 2, kInfoSz, kInfoSz,
+                             "This building only\n"
+                             "Off: automatic trucks neither deliver here nor collect from here,\n"
+                             "including materials for CONSTRUCTION and REPAIR - supply those by hand.\n"
+                             "Hand-loaded trucks and routes you draw yourself still work." );
+
+    if ( !pBldg->CanBlockMaterials() )
+        return y + H + SEC_PAD;
+
+    // Per-material vetoes (warehouse / rocket / seaport). Ticked == this material may
+    // be auto-hauled here; the underlying flag bit is stored with the opposite sense
+    // (set == blocked) so a zeroed flags word -- every older save -- reads as "allow
+    // everything" and nothing changes for existing games. Unticking all but Iron is
+    // what makes an iron-only warehouse.
     for ( int i = 0; i < kNumStoreMats; i++ ) {
         int mat = kStoreMats[i];
-        int ry  = yh + i * ROW_H;
+        int ry  = yh + ( i + 1 ) * ROW_H;
 
-        // ticked == allowed == NOT blocked
         m_chkAutoStock[i] = AddWidget<SDL2Checkbox>(
             cbX, ry, cbW, ROW_H, kStoreNames[i], !pBldg->IsMatBlocked( mat ),
             [pBldg, mat]( bool on ) { pBldg->SetMatBlocked( mat, on ? FALSE : TRUE ); } );
@@ -2242,15 +2273,26 @@ void SDL2BuildingWindow::Refresh() {
     }
 
     if ( m_bAutoStock ) {
+        // Re-sync the ticks from the live flags: the harness can set them, and the same
+        // building may be open in more than one window.
+        bool bRouting = ( m_pBldg->IsAutoRouteEnabled() != FALSE );
+        if ( m_chkAutoRoute && m_chkAutoRoute->IsChecked() != bRouting )
+            m_chkAutoRoute->SetChecked( bRouting );
+
         for ( int i = 0; i < kNumStoreMats; i++ ) {
             int mat     = kStoreMats[i];
             bool bAllow = !m_pBldg->IsMatBlocked( mat );
-            // Re-sync the tick from the live flag: the harness and the AI can both set it,
-            // and the same building may be open in more than one place.
-            if ( m_chkAutoStock[i] && m_chkAutoStock[i]->IsChecked() != bAllow )
-                m_chkAutoStock[i]->SetChecked( bAllow );
+            if ( m_chkAutoStock[i] ) {
+                if ( m_chkAutoStock[i]->IsChecked() != bAllow )
+                    m_chkAutoStock[i]->SetChecked( bAllow );
+                // With the master switch off the per-material vetoes decide nothing --
+                // grey them rather than leave live-looking controls that do nothing.
+                m_chkAutoStock[i]->SetEnabled( bRouting );
+            }
             if ( m_lblAutoStock[i] ) {
-                if ( !bAllow )
+                if ( !bRouting )
+                    m_lblAutoStock[i]->SetText( FmtNum( m_pBldg->GetStore( mat ) ) + " (manual)" );
+                else if ( !bAllow )
                     m_lblAutoStock[i]->SetText( "blocked" );
                 else {
                     int iCap = m_pBldg->GetAutoStockCap( mat );
