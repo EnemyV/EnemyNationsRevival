@@ -1085,18 +1085,13 @@ void CConquerApp::GraphicsEnginePump( )
             _slack = (int)( 1000 / FRAME_RATE )
                    - (int)( theGame.GettimeGetTime( ) - theGame.m_dwOperTimeLast );
 
-        // BOUNDED TRIAL (@WinAstra 18:20Z): change ONLY this network-branch sleep, by
-        // env var so control and changed arms share ONE binary and one build. Read once.
-        // EN_NETSLEEP unset or absent = stock 10 ms. Nothing else in the loop varies.
-        static int s_netSleepMs = -1;
-        if ( s_netSleepMs < 0 )
-        {
-            s_netSleepMs = 10;
-            const char* e = getenv( "EN_NETSLEEP" );
-            if ( e && e[0] ) { int v = atoi( e ); if ( v >= 0 && v <= 100 ) s_netSleepMs = v; }
-        }
+        // The bounded sleep-trial env switch is REMOVED (@WinFable 21:57Z). It closed:
+        // Sleep(0) converts 194 ms/s of sleep into 200 ms/s of render+present+msg - it
+        // buys frames, not AI - so a launch-time switch that changes SHIPPED pacing has
+        // no reason to stay in the tree. Stock 10 ms exactly as the lane has it; only the
+        // measurement around it is new, and measurement must not change behaviour.
         const uint64_t _t0 = Perf::NowIfEnabled( );
-        { Perf::ScopeCounter _cs( "slp.net" ); ::Sleep( s_netSleepMs ); }
+        { Perf::ScopeCounter _cs( "slp.net" ); ::Sleep( 10 ); }
         Perf::NoteFrameSleep( _slack, Perf::ElapsedUs( _t0 ) );
     }
 
