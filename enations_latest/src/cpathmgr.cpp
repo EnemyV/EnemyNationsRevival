@@ -75,12 +75,12 @@ CHexCoord* CPathMgr::GetPath( CVehicle* pVehicle, CHexCoord& hexFrom, CHexCoord&
     // CONTENTION SPLIT (see the same block in cpathmap.cpp): mpath.us above lumps
     // wait and work together, which is exactly the ambiguity being resolved - a
     // MAIN-thread wait on m_cs is a frame stall, an AI-worker wait is not.
-    const uint64_t _qWait = Perf::Now( );
+    const uint64_t _qWait = Perf::NowIfEnabled( );
     const bool     _qMain = Perf::IsMainThread( );
     Perf::CounterInc( _qMain ? "mpath.calls.main" : "mpath.calls.ai" );
     EnterCriticalSection( &m_cs );
     Perf::CounterAddElapsedUs( _qMain ? "mpath.wait.main.us" : "mpath.wait.ai.us", _qWait );
-    const uint64_t _qWork = Perf::Now( );
+    const uint64_t _qWork = Perf::NowIfEnabled( );
 #if EN_PATH_PROBES
     m_iNextSlot = 0;  // trivial rejects skip the in-search reset; don't re-count
 #endif

@@ -1011,15 +1011,19 @@ bool GameWindow::PollEvents() {
             // so ONE call occasionally blocks. SDL_PollEvent runs SDL_PumpEvents, which
             // pumps the Win32 queue for EVERY SDL window (this game runs many). Log the
             // call that blocks, with what it returned, so the trigger names itself.
-            const uint64_t _pt0 = Perf::Now( );
+            const uint64_t _pt0 = Perf::NowIfEnabled( );
             _have = SDL_PollEvent(&event);
             static LARGE_INTEGER s_qpf = { 0 };
             if ( s_qpf.QuadPart == 0 ) QueryPerformanceFrequency( &s_qpf );
-            const double _pms = (double)( Perf::Now( ) - _pt0 ) * 1000.0 / (double)s_qpf.QuadPart;
-            if ( _pms > 15.0 )
+            const double _pms = (double)( Perf::NowIfEnabled( ) - _pt0 ) * 1000.0 / (double)s_qpf.QuadPart;
+            // WHOLE-BODY GATED (audit item c): this opened and wrote with EN_PERF unset,
+            // behind only a 15ms threshold that alt-tab and device-lost trip in a shipped
+            // Release. Now nothing here runs unless profiling is on, and the sink goes
+            // through EnLogPath like every other probe file.
+            if ( Perf::IsEnabled( ) && _pms > 15.0 )
             {
                 static FILE* s_pf = NULL;
-                if ( s_pf == NULL ) s_pf = fopen( "slowpoll.log", "a" );
+                if ( s_pf == NULL ) s_pf = fopen( EnLogPath( "slowpoll.log" ).c_str( ), "a" );
                 if ( s_pf != NULL )
                 {
                     fprintf( s_pf, "[SLOWPOLL] %.1f ms  returned=%d  type=0x%X  windows=%d\n",

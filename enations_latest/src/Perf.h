@@ -49,6 +49,10 @@ namespace Perf
 
     // ---- section timers ----------------------------------------------------
     uint64_t Now();                              // raw performance counter ticks
+    // GATED clock read. Perf::Now() always calls QueryPerformanceCounter, so every
+    // inline `const uint64_t t0 = Perf::Now();` pays a syscall even with EN_PERF unset.
+    // Use this at probe sites: returns 0 and reads nothing when profiling is off.
+    inline uint64_t NowIfEnabled() { return IsEnabled() ? Now() : 0; }
     void     SectionEnd( int slot, uint64_t startTicks );
 
     // Fixed slot ids for the hot phases (avoids string lookups on hot path).
@@ -84,8 +88,14 @@ namespace Perf
     // ad-hoc sub-phase profiling finer than the fixed Section slots. The counter
     // then reads as µs/interval (÷1000 ≈ the ms/s render/present columns).
     void CounterAddElapsedUs( const char* name, uint64_t startTicks );
+    // Microseconds since a NowIfEnabled() stamp, for probes that keep their own
+    // accumulators instead of a named counter. Returns 0 when profiling is off.
+    uint64_t ElapsedUs( uint64_t startTicks );
 
-    // RAII scoped timer for a NAMED counter. Use where a fixed Section slot is
+    // RAII scoped timer for a NAMED counter. (Audit note: this is functionally the
+    // same shape as ScopeCounter; kept separate only because it early-outs on
+    // IsEnabled() at construction. Collapse into ScopeCounter when that is confirmed
+    // equivalent at every call site - not done blind.) Use where a fixed Section slot is
     // overkill but an early `goto`/`return` must still be recorded - a bare
     // CounterAddElapsedUs at the end of a block silently loses those paths.
     struct ScopeNamed

@@ -459,6 +459,14 @@ bool IsMainThread()
     return ( g_mainTid != 0 && GetCurrentThreadId() == g_mainTid );
 }
 
+uint64_t ElapsedUs( uint64_t startTicks )
+{
+    if ( !g_enabled || startTicks == 0 ) return 0;
+    LARGE_INTEGER c;
+    QueryPerformanceCounter( &c );
+    return (uint64_t)( ( (double)( (uint64_t)c.QuadPart - startTicks ) / g_perfFreq ) * 1000000.0 );
+}
+
 uint64_t Now()
 {
     LARGE_INTEGER c;
