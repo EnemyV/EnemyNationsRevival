@@ -1882,17 +1882,20 @@ void CVehicle::ConstructRoad() {
     MaterialChange();
 }
 
-CHexCoord CVehicle::_NextRoadHex(CHexCoord const &_hexOn) {
+// #38 ROAD GHOST: the pure step rule, extracted verbatim out of what was this
+// function's body so the road-ghost draw (SDL2Terrain.cpp) can walk the SAME chain
+// _NextRoadHex does - see the header comment where this is declared (vehicle.h).
+CHexCoord CVehicle::RoadStepToward(CHexCoord const &hexFrom, CHexCoord const &hexEnd) {
 
     // if we're there - return it
-    if (_hexOn == m_hexEnd)
-        return (_hexOn);
+    if (hexFrom == hexEnd)
+        return (hexFrom);
 
     // nope, go to the next hex
     // move closer on the longest one (so we go diaganol)
-    int x = CHexCoord::Diff(m_hexEnd.X() - _hexOn.X());
-    int y = CHexCoord::Diff(m_hexEnd.Y() - _hexOn.Y());
-    CHexCoord hex(_hexOn);
+    int x = CHexCoord::Diff(hexEnd.X() - hexFrom.X());
+    int y = CHexCoord::Diff(hexEnd.Y() - hexFrom.Y());
+    CHexCoord hex(hexFrom);
     if (abs(x) >= abs(y)) {
         if (x > 0)
             hex.Xinc();
@@ -1906,6 +1909,10 @@ CHexCoord CVehicle::_NextRoadHex(CHexCoord const &_hexOn) {
     }
 
     return (hex);
+}
+
+CHexCoord CVehicle::_NextRoadHex(CHexCoord const &_hexOn) {
+    return RoadStepToward(_hexOn, m_hexEnd);
 }
 
 BOOL CVehicle::NextRoadHex() {

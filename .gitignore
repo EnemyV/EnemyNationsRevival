@@ -69,3 +69,4 @@ __pycache__/
 /tests/traffic/remote-loc-out/
 /tests/orders/lifecycle-out/
 /tests/orders/dragplace-out/
+/tests/orders/roadghost-out/

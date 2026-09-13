@@ -25,6 +25,7 @@
 #include <fstream>
 #include <cstdlib>
 #include <climits>
+#include <cmath>       // sqrt - road-ghost line-segment normals
 #ifdef _WIN32
 #include <windows.h>   // FindFirstFile / GetFileAttributes (project isn't C++17)
 #endif
@@ -1206,6 +1207,145 @@ static void AppendQueuedBuildGhosts( const CAnimAtr& aa, std::vector<SDL_Vertex>
     }
 }
 
+// #38/#queue-road ROAD GHOST: a thin line through the centre of every hex a queued or
+// in-flight road run WILL lay, so a road reads as planned the same way a queued
+// building does. Walks the exact chain CVehicle::_NextRoadHex advances by, one hex at
+// a time, calling CVehicle::RoadStepToward - the SAME pure function _NextRoadHex now
+// calls (vehicle.cpp) - so this indicator cannot drift from what the crane actually
+// lays. Capped at kMaxRoadGhostHexes; no legit run approaches that length, and the
+// scratch array is static so this allocates nothing per frame.
+//
+// Skips the leading run of hexes that already have a road (CHex::GetType()==road -
+// the same "nothing to lay here" test CVehicle::BuildRoad itself makes; there is no
+// separate GetUnits() road bit). A crane always lays a run in chain order starting
+// from its own end, so what is already built is always a contiguous PREFIX of the
+// chain - skipping it is what makes the drawn line shorten as the crane lays.
+static const int kMaxRoadGhostHexes = 256;
+
+static void AppendRoadGhostLine( const CAnimAtr& aa, CHexCoord const& hexFrom,
+                                 CHexCoord const& hexEnd, std::vector<SDL_Vertex>& verts )
+{
+    static CHexCoord s_aHex[kMaxRoadGhostHexes];
+
+    int       n   = 0;
+    CHexCoord hex = hexFrom;
+    while ( n < kMaxRoadGhostHexes )
+    {
+        s_aHex[n++] = hex;
+        if ( hex == hexEnd )
+            break;
+        hex = CVehicle::RoadStepToward( hex, hexEnd );
+    }
+
+    int iStart = 0;
+    while ( iStart < n )
+    {
+        CHex* pHex = theMap.GetHex( s_aHex[iStart] );
+        if ( ( pHex == NULL ) || ( pHex->GetType( ) != CHex::road ) )
+            break;
+        ++iStart;
+    }
+    if ( n - iStart < 2 )
+        return;   // nothing left to lay, or a zero-length order
+
+    // one seam shift for the whole line (AppendFootprintHatch's technique), anchored
+    // on the run's start, plus a per-hex UN-wrapped projection relative to that same
+    // anchor via CHexCoord::Diff (the exitProj technique just above) - so a run that
+    // crosses the map seam stays one contiguous line instead of splitting in two.
+    const CPoint shift = FootprintSeamShift( aa, hexFrom, true );
+    auto         centre = [&]( CHexCoord const& hex ) -> CPoint {
+        CHexCoord hcProj( hexFrom.X( ) + CHexCoord::Diff( hex.X( ) - hexFrom.X( ) ),
+                          hexFrom.Y( ) + CHexCoord::Diff( hex.Y( ) - hexFrom.Y( ) ) );
+        CPoint pts[4];
+        aa.MapToWindowHex( hcProj, pts );
+        return CPoint( ( pts[0].x + pts[1].x + pts[2].x + pts[3].x ) / 4 + shift.x,
+                       ( pts[0].y + pts[1].y + pts[2].y + pts[3].y ) / 4 + shift.y );
+    };
+
+    const float kHalfWidth = 2.0f;
+    CPoint      prev       = centre( s_aHex[iStart] );
+    for ( int i = iStart + 1; i < n; ++i )
+    {
+        const CPoint cur = centre( s_aHex[i] );
+
+        const float dx = (float)( cur.x - prev.x ), dy = (float)( cur.y - prev.y );
+        const float len = sqrtf( dx * dx + dy * dy );
+        if ( len >= 0.5f )
+        {
+            const float nx = -dy / len * kHalfWidth, ny = dx / len * kHalfWidth;
+
+            SDL_Vertex v[4];
+            v[0].position = { prev.x + nx, prev.y + ny };
+            v[1].position = { prev.x - nx, prev.y - ny };
+            v[2].position = { cur.x - nx, cur.y - ny };
+            v[3].position = { cur.x + nx, cur.y + ny };
+            for ( int k = 0; k < 4; ++k ) { v[k].tex_coord = { 0, 0 }; v[k].color = kQueuedGhostCol; }
+
+            verts.push_back( v[0] ); verts.push_back( v[1] ); verts.push_back( v[2] );
+            verts.push_back( v[0] ); verts.push_back( v[2] ); verts.push_back( v[3] );
+        }
+
+        prev = cur;
+    }
+}
+
+// #38/#queue-road: every crane I own, every build_road order on its route list, plus
+// its own in-flight plain road run - same crane walk and same "plain build never
+// touches the route list" reasoning as AppendQueuedBuildGhosts above.
+static void AppendQueuedRoadGhosts( const CAnimAtr& aa, std::vector<SDL_Vertex>& verts )
+{
+    POSITION pos = theVehicleMap.GetStartPosition( );
+    while ( pos != NULL )
+    {
+        DWORD     dwID;
+        CVehicle* pVeh;
+        theVehicleMap.GetNextAssoc( pos, dwID, pVeh );
+        if ( pVeh == NULL )
+            continue;
+        if ( ( pVeh->GetOwner( ) == NULL ) || ( !pVeh->GetOwner( )->IsMe( ) ) )
+            continue;
+        if ( !pVeh->GetData( )->IsCrane( ) )
+            continue;
+
+        CList<CRoute*, CRoute*>& lst = pVeh->GetRouteList( );
+        for ( POSITION rp = lst.GetHeadPosition( ); rp != NULL; )
+        {
+            CRoute* pR = lst.GetNext( rp );
+            if ( ( pR == NULL ) || ( pR->GetRouteType( ) != CRoute::build_road ) )
+                continue;
+
+            AppendRoadGhostLine( aa, pR->GetCoord( ), pR->GetEndCoord( ), verts );
+        }
+
+        // #38 IN-FLIGHT PLAIN ROAD. An ordinary (no-Shift) road order never touches
+        // the route list - SetRoad sets m_iEvent + m_hexStart/m_hexEnd directly - so
+        // it draws no entry above. Once the run IS a dispatched queued order (NextOrder's
+        // build_road case calls SetRoad with THAT order's own ends), the in-flight ends
+        // match an order already drawn above; skip so the two ghosts don't stack (same
+        // dedup shape as the plain-build ghost's bListed check above).
+        if ( pVeh->GetEvent( ) == CVehicle::build_road )
+        {
+            CHexCoord const& hexStart = pVeh->GetRoadStart( );
+            CHexCoord const& hexRunEnd = pVeh->GetRoadEnd( );
+
+            BOOL bListed = FALSE;
+            for ( POSITION rp2 = lst.GetHeadPosition( ); rp2 != NULL; )
+            {
+                CRoute* pR2 = lst.GetNext( rp2 );
+                if ( ( pR2 != NULL ) && ( pR2->GetRouteType( ) == CRoute::build_road ) &&
+                     ( pR2->GetCoord( ) == hexStart ) && ( pR2->GetEndCoord( ) == hexRunEnd ) )
+                {
+                    bListed = TRUE;
+                    break;
+                }
+            }
+
+            if ( !bListed )
+                AppendRoadGhostLine( aa, hexStart, hexRunEnd, verts );
+        }
+    }
+}
+
 // #38 DRAG-PLACE LINE PREVIEW: the sites a Shift+drag in build mode is about to queue,
 // while the button is still down. Deliberately its OWN pass beside AppendQueuedBuildGhosts
 // rather than folded into it: that one reads committed orders off every crane I own, this
@@ -1259,6 +1399,7 @@ static void DrawBuildCursorOverlay( SDL_Renderer* r, const CAnimAtr& aa )
 
     // #38: the planned sites first, so a live placement cursor draws OVER them.
     AppendQueuedBuildGhosts( aa, verts );
+    AppendQueuedRoadGhosts( aa, verts );
     AppendDragPlacePreview( aa, verts );
 
     DrawPlacementCursor( aa, phase, verts );
