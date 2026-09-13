@@ -975,16 +975,73 @@ bool GameWindow::PollEvents() {
     // Portable by design: on Windows/Linux button-up is delivered reliably, so during a
     // real drag a button is down (net skips) and when idle nothing is captured (no-op) —
     // it also hardens those platforms against a focus-loss/alt-tab missed-up.
+    // SPIKE SPLIT (WinOpus 2026-09-13): [SLOWFRAME] puts 76.4ms of an 87ms spike frame
+    // inside SEC_PUMP (92% of spikes) and pump.poll owns 743 of 778ms of that. This
+    // splits PollEvents into its three parts so the spike names a LINE:
+    //   poll.capture = the per-frame SDL_GetGlobalMouseState OS round trip
+    //   poll.harness = EnHarness_Service
+    //   poll.drain   = the SDL_PollEvent dispatch loop, with poll.events counting how
+    //                  many events one frame drains (a burst is the obvious suspect)
     {
+        Perf::ScopeNamed _pc( "poll.capture.us" );
         Uint32 mouseButtons = SDL_GetGlobalMouseState(nullptr, nullptr);
         if (!(mouseButtons & (SDL_BUTTON_LMASK | SDL_BUTTON_MMASK | SDL_BUTTON_RMASK)))
             SDL_CaptureMouse(SDL_FALSE);
     }
 
-    EnHarness_Service();   // service any pending harness request on this (render) thread
+    {
+        Perf::ScopeNamed _ph( "poll.harness.us" );
+        EnHarness_Service();   // service any pending harness request on this (render) thread
+    }
 
+    Perf::ScopeNamed _pd( "poll.drain.us" );
     SDL_Event event;
-    while (SDL_PollEvent(&event)) {
+    // SPLIT THE SDL CALL FROM THE DISPATCH. Measured: drain = 731.6ms while the sum of
+    // every event handler is 33.6ms over 39 events - so 95% of the cost is INSIDE
+    // SDL_PollEvent, which calls SDL_PumpEvents and runs the Win32 message loop across
+    // every SDL window (this game is heavily multi-window). poll.sdlcall.us isolates it,
+    // and poll.sdlcall.n counts the calls including the final empty one that ends the loop.
+    for ( ;; ) {
+        int _have;
+        {
+            Perf::ScopeNamed _sc( "poll.sdlcall.us" );
+            Perf::CounterInc( "poll.sdlcall.n" );
+            // CATCH THE INDIVIDUAL STALL. SDL_PollEvent averages 0.051ms across 3809
+            // calls yet owns 92.6% of the drain and the pump hits 62.9ms in one frame -
+            // so ONE call occasionally blocks. SDL_PollEvent runs SDL_PumpEvents, which
+            // pumps the Win32 queue for EVERY SDL window (this game runs many). Log the
+            // call that blocks, with what it returned, so the trigger names itself.
+            const uint64_t _pt0 = Perf::Now( );
+            _have = SDL_PollEvent(&event);
+            static LARGE_INTEGER s_qpf = { 0 };
+            if ( s_qpf.QuadPart == 0 ) QueryPerformanceFrequency( &s_qpf );
+            const double _pms = (double)( Perf::Now( ) - _pt0 ) * 1000.0 / (double)s_qpf.QuadPart;
+            if ( _pms > 15.0 )
+            {
+                static FILE* s_pf = NULL;
+                if ( s_pf == NULL ) s_pf = fopen( "slowpoll.log", "a" );
+                if ( s_pf != NULL )
+                {
+                    fprintf( s_pf, "[SLOWPOLL] %.1f ms  returned=%d  type=0x%X  windows=%d\n",
+                             _pms, _have, _have ? (unsigned)event.type : 0u,
+                             (int)m_activeDialogs.size() );
+                    fflush( s_pf );
+                }
+            }
+        }
+        if (!_have) break;
+        {
+        Perf::CounterInc( "poll.events" );
+        // PER-EVENT-TYPE COST. The drain spends ~1.65ms PER EVENT (38 events = 62.9ms
+        // in one second), so this is a slow HANDLER, not a deep queue. Name the type.
+        // RAII so `continue`/`break` paths inside this loop still record.
+        Perf::ScopeNamed _ev(
+            ( event.type == SDL_MOUSEMOTION )                                     ? "ev.motion.us" :
+            ( event.type == SDL_MOUSEBUTTONDOWN || event.type == SDL_MOUSEBUTTONUP ) ? "ev.button.us" :
+            ( event.type == SDL_MOUSEWHEEL )                                      ? "ev.wheel.us"  :
+            ( event.type == SDL_KEYDOWN || event.type == SDL_KEYUP )              ? "ev.key.us"    :
+            ( event.type == SDL_WINDOWEVENT )                                     ? "ev.window.us" :
+                                                                                    "ev.other.us" );
         if (event.type == SDL_QUIT) {
             LogToFile("SDL_QUIT received");
             m_pollingEvents = false;
@@ -1149,6 +1206,7 @@ bool GameWindow::PollEvents() {
                 theMusicPlayer.OnActivate(FALSE);
             }
         }
+        }   // close the dispatch scope opened after the SDL_PollEvent split
     }
 
     // Correlate frame cost with how many of our own extra windows are open. If the
@@ -1190,6 +1248,7 @@ bool GameWindow::PollEvents() {
     else if (m_mainMenu && m_mainMenu->IsInitialized()) {
         m_mainMenu->Render();
     }
+
 
     m_pollingEvents = false;
     return false;
