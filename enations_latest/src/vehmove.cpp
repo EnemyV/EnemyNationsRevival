@@ -1315,14 +1315,22 @@ BOOL CVehicle::GetNextHex(BOOL bNew) {
                     // deliberately NOT corrected - but this is the geometry QA
                     // reports as a corner cut, so name it instead of leaving the
                     // exempted case silent.
-                    if (bCorner)
+                    if (bCorner) {
+                        // @WinFable: "the log does not say whether the clipped hex was
+                        // occupied; a suppressed step that is occupied still falls through
+                        // to CanEnter". occ = the ID of whatever else holds the sub-hex we
+                        // are stepping into, 0 if free - an ID, not a flag, so a residual
+                        // collision has a named second party. Read-only, no routing change.
+                        CVehicle *pOcc = theVehicleHex.GetVehicle(_turn);
                         WaitLog("[ROAD-TURN-EXEMPT] veh %d head %d,%d tail %d,%d next %d,%d "
                                 "dest %d,%d hexnext %d,%d hexdest %d,%d heading %d,%d out %d,%d "
-                                "step %d,%d reason arrival-entry corner-cut",
+                                "step %d,%d occ %lu reason arrival-entry corner-cut",
                                 GetID(), m_ptHead.x, m_ptHead.y, m_ptTail.x, m_ptTail.y,
                                 _turn.x, _turn.y, m_ptDest.x, m_ptDest.y,
                                 m_hexNext.X(), m_hexNext.Y(), m_hexDest.X(), m_hexDest.Y(),
-                                hx, hy, rx, ry, xStep, yStep);
+                                hx, hy, rx, ry, xStep, yStep,
+                                (unsigned long)((pOcc && pOcc != this) ? pOcc->GetID() : 0));
+                    }
                 } else if (bCorner) {
                     xStep = hx;
                     yStep = hy;
