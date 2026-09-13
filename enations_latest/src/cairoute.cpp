@@ -557,6 +557,87 @@ void CAIRouter::FillPriorities( void )
     if ( ( m_iReserveSweep % 10 ) == 0 )
         GetTrucksAvailable( );
 
+    // ---------------------------------------------------------------------
+    // BUGS #69 (follow-up): the claim-expiry walk has to be TRUCK-keyed.
+    //
+    // Both ClaimIsLive callers are SITE-keyed: TrucksAreEnroute (via
+    // FindTransport, below) and the SetUnitPriority ghost-claim reaper. Both
+    // are reachable only for a site that is still ON m_plBldgsNeed - and a
+    // site LEAVES that list the instant FindTransport assigns a truck (it
+    // returns TRUE and the loop below does not re-add). A starved
+    // construction site never re-signals either: CBuilding::Operate's `event`
+    // gate returns before Construct, so the one out_mat per starvation
+    // episode has already been spent. Result before this walk: for the filed
+    // specimen - one idle truck holding the claim on a site that is off the
+    // list - the 90s bound was never EVALUATED, and the site stayed silent
+    // until the truck died, the site took damage, or the game was reloaded.
+    //
+    // Same loop shape and cost as RebuildReservations: one traversal of
+    // m_plUnits, with real work only for this player's CAI_IN_USE trucks.
+    //
+    // EVERY pass, not the %10 slot above: the runtime gate is "the site
+    // resumes within ~90s plus ONE router pass". Router passes are
+    // message-driven (DoRouting) with no bounded period, so a 10-pass divisor
+    // would turn a bounded latency into an unbounded one for exactly the
+    // quiet colony this bug shows up in.
+    //
+    // Ordered deliberately: AFTER the GetTrucksAvailable re-scan, so a truck
+    // released here cannot be re-pooled and become its own starved site's
+    // nearest candidate in the same pass; BEFORE the GetCount() snapshot
+    // below, so a requeued site is counted by - and served in - THIS pass.
+    // ---------------------------------------------------------------------
+    if ( m_plUnits != NULL )
+    {
+        POSITION posClaim = m_plUnits->GetHeadPosition( );
+        while ( posClaim != NULL )
+        {
+            CAIUnit* pClaimTruck = (CAIUnit*)m_plUnits->GetNext( posClaim );
+            if ( pClaimTruck == NULL )
+                continue;
+            if ( pClaimTruck->GetOwner( ) != m_iPlayer )
+                continue;
+            if ( pClaimTruck->GetType( ) == CUnit::building )
+                continue;
+            if ( !( pClaimTruck->GetStatus( ) & CAI_IN_USE ) )
+                continue;
+            if ( !pGameData->IsTruck( pClaimTruck->GetID( ) ) )
+                continue;
+
+            // the building this truck names as its job
+            DWORD dwClaimDest = pClaimTruck->GetDataDW( );
+            if ( dwClaimDest == 0 )
+                continue;
+            CAIUnit* pClaimBldg = m_plUnits->GetUnit( dwClaimDest );
+            if ( pClaimBldg == NULL || pClaimBldg->GetType( ) != CUnit::building )
+                continue;
+
+            // the shipped predicate, unchanged - a delivery that is happening
+            // keeps its claim no matter how long it takes
+            if ( ClaimIsLive( pClaimTruck, pClaimBldg ) )
+                continue;
+
+            DWORD dwClaimTruckID = pClaimTruck->GetID( );
+            DropClaim( pClaimBldg, dwClaimTruckID );  // shipped release, list-free
+
+            // requeue ONCE, and deliberately NOT gated on NeedsCommodities:
+            // that gate credits an assigned truck's cargo with no liveness
+            // test, so a LOADED idle claimer would veto its own rescue.
+            // FindTransport self-cleans a site that truly needs nothing (it
+            // returns TRUE on the !iQtyNeeded branch), so the list cannot grow
+            // a permanent passenger from this.
+            if ( m_plBldgsNeed->GetUnit( pClaimBldg->GetID( ) ) == NULL )
+                m_plBldgsNeed->AddTail( (CObject*)pClaimBldg );
+#if EN_AI_PROBES_ECON && defined(_WIN32)
+            {
+                char szC[128];
+                sprintf( szC, "[IDLECLAIM] plyr %d bldg %lu truck %lu released+requeued (truck sweep)\n", m_iPlayer,
+                         (unsigned long)pClaimBldg->GetID( ), (unsigned long)dwClaimTruckID );
+                OutputDebugStringA( szC );
+            }
+#endif
+        }
+    }
+
 #ifdef _LOGOUT
     logPrintf( LOG_PRI_ALWAYS, LOG_AI_MISC, "CAIRouter::FillPriorities for player %d \n ", m_iPlayer );
 #endif
