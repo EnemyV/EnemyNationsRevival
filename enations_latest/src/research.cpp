@@ -1280,6 +1280,38 @@ void CRsrchArray::Open( )
             pRi->m_sResult = aszDpRslt[iOn];
         }
     }
+    // ---- Drive-Core Resonance (in-code) --------------------------------------
+    // A single late topic whose only effect is to unlock the Resonance Sweep edict at the
+    // Command Center (see edicts.h / CPlayer::ResonanceSweep). Priced at 6x the spot_3
+    // topic -- 1,488,000, dearer than anything in the DAT but well short of the end-game
+    // combat tiers -- and gated behind the top of the sensor line plus the reactor physics
+    // that says what a drive core sounds like and the plant that can drive the emitter.
+    // The AI's frozen research path doesn't pursue it (optional human tier).
+    {
+        CRsrchItem* pRi = &ElementAt( drive_core_resonance );
+
+        static const int aiReq[3] = { (int)spot_3, (int)nuclear, (int)advanced_facilities };
+
+        pRi->m_iPtsRequired      = ElementAt( spot_3 ).m_iPtsRequired * 6;   // 1,488,000
+        pRi->m_iNumBldgsRequired = 0;
+        pRi->m_iNumRsrchRequired = 3;
+        pRi->m_piRsrchRequired   = new int[3];
+
+        // Take the LATEST scenario any prereq needs -- the topic cannot be started before
+        // every one of its gates is itself reachable (same rule the late combat tier uses).
+        int iScen = 0;
+        for ( int iReq = 0; iReq < 3; iReq++ )
+        {
+            pRi->m_piRsrchRequired[iReq] = aiReq[iReq];
+            if ( ElementAt( aiReq[iReq] ).m_iScenarioReq > iScen )
+                iScen = ElementAt( aiReq[iReq] ).m_iScenarioReq;
+        }
+        pRi->m_iScenarioReq = iScen;
+
+        pRi->m_sName   = "Drive-Core Resonance";
+        pRi->m_sDesc   = "Every one of those ships came down on the same kind of core. If we hit the right frequency it will ring, and we will hear which way it rang from.";
+        pRi->m_sResult = "We can make their drive cores ring. Our Command Centers can now run a Resonance Sweep and take a bearing on one enemy ship at a time.";
+    }
 #ifdef _DEBUG
     theDataFile.DisableNegativeSeekChecking( );
     theDataFile.EnableNegativeSeekChecking( );

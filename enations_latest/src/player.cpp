@@ -115,6 +115,9 @@ void CPlayer::ctor( )
     m_dwEdicts            = 0;
     m_fEdictFuelCarry     = 0.0f;   // runtime-only fractional gas-surcharge carry (not reset per recompute)
     m_bAutoRsrchPending   = FALSE;  // runtime-only AutoResearch set_rsrch-in-flight guard
+    m_iSweepSecs          = 0;      // runtime-only Resonance Sweep timer phase
+    m_uSweepRand          = 1;      // runtime-only Resonance Sweep private RNG (1 == the CRT seed)
+    m_iEdictFlatPwr       = 0;
     m_fEdictConstMult     = 1.0f;
     m_fEdictMineMult      = 1.0f;
     m_fEdictRsrchMult     = 1.0f;
@@ -266,6 +269,7 @@ void CPlayer::RecomputeEdictMults( )
     m_fEdictEnergyUpkeepPct    = 0.0f;
     m_fEdictWorkforceUpkeepPct = 0.0f;
     m_fEdictFoodUpkeepPct      = 0.0f;
+    m_iEdictFlatPwr            = 0;
 
     for ( int id = 0; id < EDICT_COUNT; ++id )
     {
@@ -292,6 +296,8 @@ void CPlayer::RecomputeEdictMults( )
         m_fEdictBldgDmgMult    *= e.fBldgDmgMult;
         // Upkeep is additive across active edicts (a pct of the relevant per-loop demand).
         m_fEdictEnergyUpkeepPct    += e.fEnergyUpkeepPct;
+        // Flat upkeep sums like the pcts do, but in absolute power rather than a share.
+        m_iEdictFlatPwr            += e.iFlatEnergyUpkeep;
         m_fEdictWorkforceUpkeepPct += e.fWorkforceUpkeepPct;
         m_fEdictFoodUpkeepPct      += e.fFoodUpkeepPct;
     }
@@ -665,6 +671,13 @@ void CPlayer::StartLoop( )
     // demand as a pct of the accumulated base, applied here — BEFORE the throttle below —
     // so an unaffordable edict correctly drags m_fPwrMult/m_fPplMult down (the cost half).
     if ( m_fEdictEnergyUpkeepPct    > 0.0f ) m_iPwrNeed     += (int)( m_iPwrNeed     * m_fEdictEnergyUpkeepPct );
+    // Flat edict draw (Resonance Sweep). Added AFTER the pct line so the percentage taxes the
+    // colony own demand and not the emitter -- and added here, once per civ, rather than at a
+    // host building, so owning three Command Centers does not triple the bill. Like the pct
+    // above this rides the raw member only until the loop resets it; GetPwrNeed re-adds it for
+    // display. Unaffordable means the whole colony browns out through m_fPwrMult below, which
+    // is the intended pressure: 500 power is a real commitment on a small grid.
+    m_iPwrNeed += m_iEdictFlatPwr;
     if ( m_fEdictWorkforceUpkeepPct > 0.0f ) m_iPplNeedBldg += (int)( m_iPplNeedBldg * m_fEdictWorkforceUpkeepPct );
 
     // #82/#87: never divide by a zero (or negative) need; a negative have against zero need produced -inf, then NaN in GetFrameProd, then an INT_MIN fire rate whose product with AVG_SPEED_MUL overflowed to 0 at the Shoot divide.
@@ -917,6 +930,138 @@ void CPlayer::Research( int iNumSec )
         theGame.MulEvent( MEVENT_RSRCH_DONE, NULL );
         CWndComm::UpdateMail( );
     }
+}
+
+//---------------------------------------------------------------------------
+// Resonance Sweep (EDICT_RESONANCE_SWEEP, unlocked by CRsrchArray::drive_core_resonance).
+// Every RESONANCE_SWEEP_SECS game-seconds, pick ONE enemy rocket at random and resolve what
+// we know of it. The three outcomes are deliberately the SAME three the engine already runs
+// when one of our own units scouts an enemy building (the reveal block in
+// CUnit::IncrementSpotting, unit.cpp) -- this is that block reached by a different trigger,
+// not a new visibility rule:
+//     destroyed     -> delete the corpse, so our map stops drawing a ship that is gone
+//     never seen    -> MakeBldgVisible, then refresh
+//     already known -> refresh only (damage level, construction pct, animations)
+// The refresh is what keeps the edict worth its power once every rocket has been found: an
+// enemy building that has left our vision keeps the look it had when we last saw it
+// (DecrementSpotting only pauses its animations), so absent a ping its damage reads however
+// stale our last sighting was, and a ship destroyed out of sight would sit there intact.
+//
+// LOCAL VIEW ONLY, and that is why this needs no net message. m_iVisible means "can the local
+// human see this"; the whole spotting system is single-viewpoint (IncrementSpotting bails
+// unless m_pOwner->IsMe). So this runs for IsMe() alone, mutates no simulated state, and each
+// client sweeps for its own player.
+//
+// The pick uses a PRIVATE LCG and never RandNum. RandNum drives MyRand, which rand.cpp
+// documents as feeding ALL deterministic game randomness (world-gen, placement, combat rolls)
+// and which the cross-platform join handshake fingerprints; drawing from it on a per-client,
+// view-only path would advance that shared stream by a different amount on every machine.
+// Which rocket lights up has no business being part of the simulation.
+//---------------------------------------------------------------------------
+void CPlayer::ResonanceSweep( int iNumSec )
+{
+    // Only the local human view, and only while the edict is on. Zero the bank when it is off
+    // so re-arming the edict starts a fresh cycle rather than firing instantly on time that
+    // accrued while it was switched off.
+    if ( ( !IsMe( ) ) || ( !IsEdictActive( EDICT_RESONANCE_SWEEP ) ) )
+    {
+        m_iSweepSecs = 0;
+        return;
+    }
+
+    m_iSweepSecs += iNumSec;
+    if ( m_iSweepSecs < RESONANCE_SWEEP_SECS )
+        return;
+    m_iSweepSecs = 0;
+
+    // Pass 1 - count the candidates. Allies are skipped: their rockets are already visible to
+    // us, so pinging one would burn the sweep to learn nothing.
+    int      nRocket = 0;
+    POSITION pos     = theBuildingMap.GetStartPosition( );
+    while ( pos != NULL )
+    {
+        DWORD      dwID;
+        CBuilding* pBldg;
+        theBuildingMap.GetNextAssoc( pos, dwID, pBldg );
+        if ( ( pBldg == NULL ) || ( pBldg->GetData( ) == NULL ) )
+            continue;
+        if ( pBldg->GetData( )->GetType( ) != CStructureData::rocket )
+            continue;
+        if ( ( pBldg->GetOwner( ) == NULL ) || ( pBldg->GetOwner( )->IsMe( ) ) )
+            continue;
+        if ( pBldg->GetOwner( )->GetTheirRelations( ) == RELATIONS_ALLIANCE )
+            continue;
+        nRocket++;
+    }
+    if ( nRocket <= 0 )
+        return;
+
+    // Private stream (see the note above): the documented MSVC CRT LCG, the same shape
+    // rand.cpp uses, but on our own state so g_enRandState is left untouched.
+    m_uSweepRand = m_uSweepRand * 214013U + 2531011U;
+    int iWant = (int)( ( ( m_uSweepRand >> 16 ) & 0x7FFF ) % (unsigned int)nRocket );
+
+    // Pass 2 - walk to the chosen one and take the pointer. We must be OUT of the map
+    // iteration before acting on it: the destroyed case deletes the building, which would
+    // invalidate the POSITION we are iterating with.
+    CBuilding* pRocket = NULL;
+    int        iOn     = 0;
+    pos = theBuildingMap.GetStartPosition( );
+    while ( pos != NULL )
+    {
+        DWORD      dwID;
+        CBuilding* pBldg;
+        theBuildingMap.GetNextAssoc( pos, dwID, pBldg );
+        if ( ( pBldg == NULL ) || ( pBldg->GetData( ) == NULL ) )
+            continue;
+        if ( pBldg->GetData( )->GetType( ) != CStructureData::rocket )
+            continue;
+        if ( ( pBldg->GetOwner( ) == NULL ) || ( pBldg->GetOwner( )->IsMe( ) ) )
+            continue;
+        if ( pBldg->GetOwner( )->GetTheirRelations( ) == RELATIONS_ALLIANCE )
+            continue;
+        if ( iOn++ == iWant )
+        {
+            pRocket = pBldg;
+            break;
+        }
+    }
+    if ( pRocket == NULL )
+        return;
+
+    std::string sWho = pRocket->GetOwner( )->GetName( );
+
+    // Destroyed: drop the corpse. Mirrors the dead-building branch of the scouting reveal --
+    // our map has been showing a ship that no longer exists, and this is how the player finds
+    // out. Nothing below this line may touch pRocket.
+    if ( pRocket->IsFlag( CUnit::dead ) )
+    {
+        delete pRocket;
+        theApp.m_wndBar.SetStatusText(
+            0, ( "Resonance Sweep: no return from " + sWho + ". That ship has been destroyed." ).c_str( ),
+            CStatInst::status );
+        return;
+    }
+
+    BOOL bNew = !pRocket->IsVisible( );
+    if ( bNew )
+        pRocket->MakeBldgVisible( );
+
+    // Refresh what we display of it, exactly as the scouting reveal does.
+    pRocket->SetConstPer( );
+    pRocket->UpdateDamageLevel( );
+    if ( ( !pRocket->IsConstructing( ) ) && ( !pRocket->IsFlag( CUnit::stopped ) ) )
+    {
+        if ( !pRocket->GetAmbient( CSpriteView::ANIM_FRONT_1 )->IsEnabled( ) )
+            pRocket->EnableAnimations( TRUE );
+        pRocket->PauseAnimations( FALSE );
+    }
+
+    theApp.m_wndBar.SetStatusText(
+        0,
+        ( bNew ? ( "Resonance Sweep: contact. Located the ship belonging to " + sWho + "." )
+               : ( "Resonance Sweep: re-acquired the ship belonging to " + sWho + "." ) ).c_str( ),
+        CStatInst::status );
 }
 
 #ifdef _CHEAT

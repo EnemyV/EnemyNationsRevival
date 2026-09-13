@@ -168,6 +168,9 @@ class CPlayer : public CObject
     void StartLoop( );
     void PeopleAndFood( int iNumSec );
     void Research( int iNumSec );
+    // Resonance Sweep edict: one enemy-rocket ping per RESONANCE_SWEEP_SECS. Called from the
+    // same per-player block in mainloop.cpp as Research, with the same game-seconds elapsed.
+    void ResonanceSweep( int iNumSec );
     void CPlayer::CitizenConstruction( );
 
     void UpdateRacialAttributes( int iRsrch );
@@ -199,7 +202,9 @@ class CPlayer : public CObject
         // cost (e.g. Mining Subsidy +25% power). StartLoop applies the same pct to the raw
         // member transiently for the m_fPwrMult drag, but resets it before render — so
         // without this the displayed need never moved. See player.cpp StartLoop.
-        return ( m_iPwrNeed + (int)( m_iPwrNeed * m_fEdictEnergyUpkeepPct ) );
+        // m_iEdictFlatPwr is ABSOLUTE, so it is added outside the pct scaling above --
+        // scaling it by the base need would make one emitter cost more in a big colony.
+        return ( m_iPwrNeed + (int)( m_iPwrNeed * m_fEdictEnergyUpkeepPct ) + m_iEdictFlatPwr );
     }
     int GetPwrHave( ) const
     {
@@ -982,8 +987,16 @@ class CPlayer : public CObject
     float m_fEdictBldgDmgMult;     // building damage-taken (Meat Shield; projbase.cpp)
     float m_fEdictFuelCarry;       // runtime-only: fractional gas-surcharge carry (not serialized)
     BOOL  m_bAutoRsrchPending;     // runtime-only: AutoResearch edict posted a set_rsrch, awaiting it (not serialized)
+    // Resonance Sweep edict state. Both runtime-only and deliberately NOT serialized: they carry
+    // nothing but the phase of a 10-second timer and the position of a private RNG, so a reload
+    // simply restarts the cycle. Nothing the sweep produces lives here -- what it reveals is
+    // recorded in the buildings' own visibility, which already persists.
+    int   m_iSweepSecs;            // game-seconds banked toward the next ping
+    unsigned int m_uSweepRand;     // private LCG state -- never MyRand (see ResonanceSweep)
     // Upkeep — recurring cost (sum of active edicts' pct), applied as extra per-loop demand:
     float m_fEdictEnergyUpkeepPct;     // added to m_iPwrNeed in StartLoop (pre-throttle)
+    LONG  m_iEdictFlatPwr;             // FLAT power (sum of active edicts' iFlatEnergyUpkeep),
+                                       // added to m_iPwrNeed in StartLoop and to GetPwrNeed
     float m_fEdictWorkforceUpkeepPct;  // added to m_iPplNeedBldg in StartLoop (pre-throttle)
     float m_fEdictFoodUpkeepPct;       // added to m_iFoodNeed in PeopleAndFood
 

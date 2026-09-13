@@ -396,6 +396,19 @@ public:
 					// idea as the attack tiers and the same FLAT cost ramp. See CPlayer::GetBldgArmorMult.
 					bldg_armor_2,
 					bldg_armor_3,
+					// Drive-Core Resonance (in-code) -- ONE topic, no tiers, and the only research
+					// whose entire payload is an EDICT. It unlocks Resonance Sweep at the Command
+					// Center (EDICT_RESONANCE_SWEEP): while that edict is on, the colony pings for
+					// enemy ROCKETS and resolves a random one every RESONANCE_SWEEP_SECS game-
+					// seconds -- revealing it, refreshing what we know of it, or clearing it if it
+					// has since been destroyed (CPlayer::ResonanceSweep). Costs 6x the 248,000-point
+					// spot_3 topic (1,488,000: dearer than every DAT topic, well under the deep
+					// combat tiers) and is gated on spot_3 + nuclear + advanced_facilities -- the
+					// sensor line to hear the return, the reactor physics to know what a drive core
+					// sounds like, and the plant to drive the emitter. Appended LAST so no earlier
+					// enum index shifts (old saves store discovered-flags positionally;
+					// RDPATH_SAVE_COUNT==53 stays put).
+					drive_core_resonance,
 					num_types	};
 
 	CRsrchArray () {}
