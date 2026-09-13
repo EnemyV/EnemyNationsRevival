@@ -1419,6 +1419,11 @@ CWndArea::CWndArea( )
     m_phexRoadPath  = NULL;
     m_ppUnderSprite = NULL;
     m_iNumRoadHex   = 0;
+
+    m_bBuildDrag = FALSE;   // #38 drag-place
+    m_nDragSites = 0;
+    m_iDragCx    = 0;
+    m_iDragCy    = 0;
 }
 
 void CWndArea::PostNcDestroy( )
@@ -2087,6 +2092,141 @@ static void BuildSiteVerdict( CHexCoord const& hexUL, int iBuild, int iDir, BOOL
     }
 }
 
+// #38 DRAG-PLACE, THE LINE. The sites a drag from hexFrom to hexTo lays down, as footprint
+// UL anchors. One axis only - the DOMINANT one, x when the hex deltas tie, which is the
+// same choice and the same tie-break the road preview makes (SetRoadIcons) - and one
+// footprint per step along it: cx hexes going east/west, cy going north/south, with cx/cy
+// already carrying the dir swap CGameMap::SetBldgCur applies to the placement cursor. So
+// the footprints abut and never overlap, which is legal: FoundationCost's bldg_next only
+// refuses an abutting building when the two differ in altitude by more than 10.
+//
+// The deltas go through CHexCoord::Diff, the house wrap-aware subtract, so a drag ACROSS
+// THE SEAM lays a contiguous line the short way round instead of a map-wide one; each site
+// is wrapped, so what comes out is a canonical hex an order can carry.
+//
+// Returns the number of sites written, always >= 1 while nMax >= 1: a zero-length drag is
+// one site, which is exactly a plain Shift-place.
+static int BuildDragLine( CHexCoord const& hexFrom, CHexCoord const& hexTo, int cx, int cy,
+                          CHexCoord* pSites, int nMax )
+{
+    if ( ( pSites == NULL ) || ( nMax <= 0 ) )
+        return ( 0 );
+    if ( cx < 1 )
+        cx = 1;
+    if ( cy < 1 )
+        cy = 1;
+
+    int dx = CHexCoord::Diff( hexTo.X( ) - hexFrom.X( ) );
+    int dy = CHexCoord::Diff( hexTo.Y( ) - hexFrom.Y( ) );
+
+    int iStepX = 0;
+    int iStepY = 0;
+    int nSteps = 0;
+    if ( abs( dx ) >= abs( dy ) )
+    {
+        iStepX = ( dx >= 0 ) ? cx : -cx;
+        nSteps = abs( dx ) / cx;
+    }
+    else
+    {
+        iStepY = ( dy >= 0 ) ? cy : -cy;
+        nSteps = abs( dy ) / cy;
+    }
+
+    int nOn = 0;
+    for ( int iOn = 0; ( iOn <= nSteps ) && ( nOn < nMax ); iOn++ )
+    {
+        CHexCoord hexSite( hexFrom.X( ) + iStepX * iOn, hexFrom.Y( ) + iStepY * iOn );
+        hexSite.Wrap( );
+        pSites[nOn++] = hexSite;
+    }
+    return ( nOn );
+}
+
+// #38 DRAG-PLACE: re-lay the candidate line for the cursor at `point` and judge every site
+// through the SHARED verdict (BuildSiteVerdict) - the same body the hover uses for the one
+// hex under the cursor, so the line cannot promise a site the hover would refuse. Called
+// on every mouse-move of the drag and once more from the release.
+void CWndArea::UpdateBuildDrag( CPoint point )
+{
+
+    m_nDragSites = 0;
+    if ( !m_bBuildDrag )
+        return;
+    if ( ( m_iBuild <= 0 ) || ( m_iBuild > theStructures.GetNumBuildings( ) ) )
+        return;
+    CStructureData const* pData = theStructures.GetData( m_iBuild );
+    if ( pData == NULL )
+        return;
+
+    // the footprint, swapped for the facing exactly as SetBldgCur swaps it
+    const int iDir = GetBuildDir( );
+    m_iDragCx      = ( iDir & 1 ) ? pData->GetCY( ) : pData->GetCX( );
+    m_iDragCy      = ( iDir & 1 ) ? pData->GetCX( ) : pData->GetCY( );
+    if ( ( m_iDragCx <= 0 ) || ( m_iDragCy <= 0 ) )
+        return;
+
+    // Both ends go through ToBuildUL, the placement anchor the hover and the click both
+    // use, so the line is a line of real placements rather than of cursor hexes.
+    CHexCoord hexNow = m_aa.WindowToHex( point );
+    hexNow.Wrap( );
+    CHexCoord hexFrom( m_hexDragDn );
+    CHexCoord hexFromUL = ToBuildUL( hexFrom );
+    CHexCoord hexToUL   = ToBuildUL( hexNow );
+
+    m_nDragSites = BuildDragLine( hexFromUL, hexToUL, m_iDragCx, m_iDragCy, m_ahexDrag, MAX_DRAG_PLACE );
+    for ( int iOn = 0; iOn < m_nDragSites; iOn++ )
+    {
+        CBuildVerdict v;
+        BuildSiteVerdict( m_ahexDrag[iOn], m_iBuild, iDir, TRUE, v );
+        m_abDragOk[iOn] = v.CanBuild( ) ? 1 : 0;
+    }
+}
+
+// #38 DRAG-PLACE: the gesture is over (committed, cancelled, or the window lost it). The
+// preview reads m_nDragSites, so zeroing it is what takes the line off the map.
+void CWndArea::EndBuildDrag( )
+{
+
+    m_bBuildDrag = FALSE;
+    m_nDragSites = 0;
+}
+
+// #38 DRAG-PLACE PREVIEW, published for the SDL2 terrain overlay pass. Free functions
+// declared extern at the use site, the way g_enEditHex is: SDL2Terrain.cpp is the GPU hot
+// TU and must not pull area.h (MFC) in. The state lives on the area window that owns the
+// drag; these find it from the view being rendered, so a second area map onto the same
+// world does not draw another window's gesture.
+static CWndArea* DragPlaceWindow( CAnimAtr const* paa )
+{
+    for ( POSITION pos = theAreaList.GetHeadPosition( ); pos != NULL; )
+    {
+        CWndArea* pArea = theAreaList.GetNext( pos );
+        if ( ( pArea != NULL ) && ( &pArea->GetAA( ) == paa ) && ( pArea->GetDragPlaceCount( ) > 0 ) )
+            return ( pArea );
+    }
+    return ( NULL );
+}
+
+int g_enDragPlaceCount( CAnimAtr const* paa, int* pcx, int* pcy )
+{
+    CWndArea* pArea = DragPlaceWindow( paa );
+    if ( pArea == NULL )
+        return ( 0 );
+    if ( ( pcx != NULL ) && ( pcy != NULL ) )
+        pArea->GetDragPlaceSize( *pcx, *pcy );
+    return ( pArea->GetDragPlaceCount( ) );
+}
+
+BOOL g_enDragPlaceSite( CAnimAtr const* paa, int iOn, CHexCoord& hexUL )
+{
+    CWndArea* pArea = DragPlaceWindow( paa );
+    if ( ( pArea == NULL ) || ( iOn < 0 ) || ( iOn >= pArea->GetDragPlaceCount( ) ) )
+        return ( FALSE );
+    hexUL = pArea->GetDragPlaceSite( iOn );
+    return ( pArea->GetDragPlaceOk( iOn ) );
+}
+
 void CWndArea::OnMouseMove( UINT nFlags, CPoint point )
 {
 
@@ -2199,6 +2339,23 @@ void CWndArea::OnMouseMove( UINT nFlags, CPoint point )
 
     if ( m_iMode == road_set )
         SetRoadIcons( hexcoord );
+
+    // #38 DRAG-PLACE: keep the candidate line in step with the cursor. Placed BEFORE the
+    // build block below, which returns early for an unbuildable hex under the cursor - the
+    // line must keep updating while the cursor is over a site it cannot use, because the
+    // sites BEHIND the cursor are still good and the player is still dragging.
+    //
+    // The drag lives only while both the button and Shift are held: releasing Shift (or any
+    // re-entry that is not a real drag move, e.g. the synthetic OnMouseMove a footprint
+    // rotation makes) cancels the gesture, so a line is never queued after its preview
+    // stopped describing it.
+    if ( m_bBuildDrag )
+    {
+        if ( ( m_iMode != build_loc ) || ( !( nFlags & MK_LBUTTON ) ) || ( !( nFlags & MK_SHIFT ) ) )
+            EndBuildDrag( );
+        else
+            UpdateBuildDrag( point );
+    }
 
     // if not visible then it's not there
     if ( pUnit != NULL )
@@ -4094,6 +4251,19 @@ void CWndArea::OnLButtonDown( UINT nFlags, CPoint point )
     // set these up so we know the down came from here
     case build_ready:
         m_iMode = build_loc;
+        // #38 DRAG-PLACE: a press WITH SHIFT arms the line gesture (the road drag's shape:
+        // record the origin, take the mouse). Without Shift nothing is armed and the button
+        // means what it always did. A press that never moves lays ONE site - BuildDragLine
+        // returns a single site for a zero-length drag - so a plain Shift-click is
+        // unchanged; only a drag of at least one footprint queues more than one.
+        if ( nFlags & MK_SHIFT )
+        {
+            m_bBuildDrag = TRUE;
+            m_hexDragDn  = hexcoord;
+            m_hexDragDn.Wrap( );
+            m_nDragSites = 0;
+            CaptureMouse( );
+        }
         break;
     case rocket_ready:
         m_iMode = rocket_pos;
@@ -4338,7 +4508,10 @@ void CWndArea::OnLButtonUp( UINT nFlags, CPoint point )
     // local player. Debug asserted (player.h:1042); Release marched into the
     // null-deref (mac2 .ips 2026-07-02). No player → the click has no meaning.
     if ( theGame._GetMe( ) == NULL )
+    {
+        EndBuildDrag( );   // #38: the button is up, so no gesture survives this return
         return;
+    }
 
     CSubHex _sub = m_aa.WindowToSubHex( point );
     _sub.Wrap( );
@@ -5735,6 +5908,7 @@ void CWndArea::OnActivate( UINT nState, CWnd* pWndOther, BOOL bMinimized )
     m_bPanBtnDown = FALSE;
     m_bRmbCmdDown = FALSE;
     m_bLineMove   = FALSE;
+    EndBuildDrag( );   // #38 drag-place is a drag gesture too
     ReleaseMouse( );
     ::ClipCursor( NULL );
 
@@ -7588,6 +7762,8 @@ void CWndArea::OnCloseWin( )
 void CWndArea::BldgCurOff( )
 {
 
+    EndBuildDrag( );   // #38: leaving placement mode (Esc/OnDeselect, SelectOff, a
+                       // completed placement) drops any drag-place line with it
     theMap.ClrBldgCur( );
     m_iBuild = -1;
     m_iMode  = normal;

@@ -23,6 +23,12 @@ const int AREA_TEXT_HT = 28;						// height of text backdrop
 const int AREA_BTN_X_SKIP = 4;					// x skip between buttons
 const int AREA_BTN_Y_START = 4;					// where buttons start on the background
 
+// #38 DRAG-PLACE: the most build sites one Shift+drag may lay down. A cap, not a budget
+// the player should feel - 64 footprints is a line a third of the way across the map for
+// a 2x2 - but a wild drag must not be able to queue hundreds of orders on one crane or
+// make the preview pass walk an unbounded list, and a fixed array costs the drag nothing.
+const int MAX_DRAG_PLACE = 64;
+
 
 class CWndInfo;
 class CWndOrders;
@@ -228,6 +234,14 @@ public:
 	CHexCoord	ToBuildUL (CHexCoord & hexCur);
 	int		GetBuildDir () const { return ((m_aa.m_iDir + m_iBuildDir) & 3); }
 
+	// #38 DRAG-PLACE live preview, read by the SDL2 terrain overlay pass (through the
+	// g_enDragPlace* free functions in area.cpp, so that TU does not have to include this
+	// header). The state is the window's: one drag belongs to one area map.
+	int			GetDragPlaceCount () const { return ((m_iMode == build_loc) && m_bBuildDrag ? m_nDragSites : 0); }
+	CHexCoord	GetDragPlaceSite (int iOn) const { return (m_ahexDrag[iOn]); }	// footprint UL anchor
+	BOOL		GetDragPlaceOk (int iOn) const { return (m_abDragOk[iOn] != 0); }	// passed BuildSiteVerdict
+	void		GetDragPlaceSize (int & cx, int & cy) const { cx = m_iDragCx; cy = m_iDragCy; }
+
 	static	std::string	sWndCls;
 
 protected:
@@ -301,6 +315,11 @@ protected:
 	// SetMouseState on every mouse-move).
 	void DoCommandAt(UINT nFlags, CPoint point);
 	void ShiftQueueMove(CVehicle* pVeh, CSubHex const& sub);   // F2: Shift = append a one-shot route waypoint
+	// #38 DRAG-PLACE. UpdateBuildDrag re-lays the candidate line for the cursor at `point`
+	// (every mouse-move of the drag, and once more from the release so what is queued is
+	// exactly what was previewed); EndBuildDrag drops the gesture and its preview.
+	void		UpdateBuildDrag(CPoint point);
+	void		EndBuildDrag();
 	void StopRoute(CVehicle* pVeh);                          // manual move (normal/line) stops/overrides ANY route incl. loop/haul (BUGS.md #6)
 	afx_msg void OnActivate(UINT nState, CWnd* pWndOther, BOOL bMinimized);
 	afx_msg void OnLButtonDblClk(UINT nFlags, CPoint point);
@@ -380,6 +399,20 @@ protected:
 	BOOL					m_bShowRes;		// show the resource tiles
 
 	CHexCoord			m_hexRoadStart;//where the road starts
+
+	// #38 DRAG-PLACE (Shift+LMB-drag in build_loc lays a line of the armed building).
+	// m_hexDragDn is the CURSOR hex the press landed on, kept raw so a rotation mid-drag
+	// re-derives the footprint anchors; the sites are the line's footprint UL anchors,
+	// m_abDragOk their BuildSiteVerdict verdicts, and m_iDragCx/Cy the footprint size
+	// (dir-swapped, as the cursor is) that both the spacing and the preview use. Fixed
+	// arrays: the preview pass must not allocate, and the line is re-laid per mouse-move.
+	BOOL					m_bBuildDrag;
+	CHexCoord			m_hexDragDn;
+	CHexCoord			m_ahexDrag[MAX_DRAG_PLACE];
+	BYTE					m_abDragOk[MAX_DRAG_PLACE];
+	int						m_nDragSites;
+	int						m_iDragCx;
+	int						m_iDragCy;
 	CColorBuffer		m_colorbuffer;
 
 	CScrollBar			m_scrollbarH;
