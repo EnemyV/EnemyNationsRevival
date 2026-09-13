@@ -1010,11 +1010,21 @@ void CConquerApp::GraphicsEnginePump( )
             // case just yield (Sleep(0)) so AI/network worker threads still get scheduled but
             // we immediately loop back to render again. (The sim-tick path keeps its own
             // explicit AI time slice below, so AI is not starved.)
+            // SEC_SLEEP is shared by all four sleep sites, so a [SLOWFRAME] "sleep=" is
+            // their SUM and cannot say which one fired. Slow frames carry a median 10.9 ms
+            // of sleep and site :1029 below still has the 10 ms floor this branch had
+            // removed - these names settle which. Inert unless EN_PERF is set.
             Perf::ScopeSlot _perfSleep( Perf::SEC_SLEEP );
             if ( dwSleep > 0 )
+            {
+                Perf::ScopeCounter _cs( "slp.pace" );
                 ::Sleep( __minmax( 1, 1000 / FRAME_RATE, dwSleep ) );
+            }
             else
+            {
+                Perf::ScopeCounter _cs( "slp.yield" );
                 ::Sleep( 0 );   // render-bound: yield without the 10ms penalty
+            }
         }
         return;
     }
@@ -1026,10 +1036,17 @@ void CConquerApp::GraphicsEnginePump( )
         int iExtra =
             ( (int)( 2 * 1000 / FRAME_RATE ) - (int)( theGame.GettimeGetTime( ) - theGame.m_dwOperTimeLast ) ) / 2;
         Perf::ScopeSlot _perfSleep( Perf::SEC_SLEEP );
-        ::Sleep( __minmax( 10, 2 * 1000 / FRAME_RATE, iExtra ) );
+        // slp.ai.floor counts the case the sibling branch above was repaired for: iExtra
+        // at or below the clamp floor means we are NOT ahead of schedule and are sleeping
+        // 10 ms anyway. Counting only - the Sleep call is unchanged.
+        if ( iExtra <= 10 ) Perf::CounterInc( "slp.ai.floor" );
+        else                Perf::CounterInc( "slp.ai.real" );
+        { Perf::ScopeCounter _cs( "slp.ai" );
+          ::Sleep( __minmax( 10, 2 * 1000 / FRAME_RATE, iExtra ) ); }
     }
     else
-        { Perf::ScopeSlot _perfSleep( Perf::SEC_SLEEP ); ::Sleep( 10 ); }  // give network some time
+        { Perf::ScopeSlot _perfSleep( Perf::SEC_SLEEP );
+          Perf::ScopeCounter _cs( "slp.net" ); ::Sleep( 10 ); }  // give network some time
 
     // animate if 1/24 of a second has passed
     div_t dtFrame             = div( theGame.GettimeGetTime( ) - theGame.m_dwOperTimeLast, 1000 / FRAME_RATE );
