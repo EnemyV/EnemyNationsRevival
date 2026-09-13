@@ -4053,6 +4053,18 @@ void SDL2Terrain::Render( SDL_Renderer* r, const CAnimAtr& aa )
                 int d = ( curDir + k ) & 3;
                 if ( s_mapLoadGen[d] != s_loadGen || !s_mapFull[d] ) { buildDir = d; break; }
             }
+        // CONVERGENCE PROBE: the underlay bakes a fog generation, and CHex::IncVisible /
+        // DecVisible (terrain.inl) bump g_enFogVisGen on EVERY hex crossing the
+        // visible/not-visible boundary. With ~800 vehicles in motion that may never stop,
+        // in which case this slice re-sweeps for ever and map.build's 70ms/s is permanent
+        // rather than transient. Sampling the gen ONCE PER FRAME here (not at the bump -
+        // IncVisible is a hot per-hex inline and a counter there would serialize the sim);
+        // the per-interval DELTA is the churn rate. map.burst counts the full-rebuild
+        // path, which is the frame-spike candidate.
+        Perf::GaugeSet( "fog.gen", (int64_t)g_enFogVisGen );
+        Perf::GaugeSet( "map.dirs.full", (int64_t)( s_mapFull[0] + s_mapFull[1] + s_mapFull[2] + s_mapFull[3] ) );
+        if ( !anyCur && !fPreview )
+            Perf::CounterInc( "map.burst" );
         BuildMapUnderlay( r, aa, buildDir, s_loadGen, g_enFogVisGen, !anyCur && !fPreview, fPreview ? 2 : 16 );
     }
 

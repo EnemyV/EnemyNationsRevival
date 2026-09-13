@@ -7,6 +7,7 @@
 
 
 #include "enprobes.h"
+#include "Perf.h"      // pq.* path-request burst counters
 #include "stdafx.h"
 #include "lastplnt.h"
 #include "chproute.hpp"
@@ -2935,7 +2936,8 @@ BOOL CVehicle::FindOffRoadSpot(CSubHex &_found, CVehicle *pAsker) {
                     // temporary vehicles must not make a usable exit disappear.
                     CHexCoord from(_hexOn), to(_cand);
                     int pathLength = 0;
-                    CHexCoord *path = thePathMgr.GetPath(NULL, from, to, pathLength, GetData()->GetType(), FALSE, TRUE);
+                    Perf::CounterInc( "pq.offroad" );   // BURST PROBE: FindOffRoadSpot, traffic stop-case LeaveRoad
+        CHexCoord *path = thePathMgr.GetPath(NULL, from, to, pathLength, GetData()->GetType(), FALSE, TRUE);
                     BOOL reachable = from == to || (path != NULL && pathLength > 0 && path[pathLength - 1] == to);
                     delete[] path;
                     if (!reachable) {
