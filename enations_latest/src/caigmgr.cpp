@@ -11,6 +11,7 @@
 
 #include "caigmgr.hpp"
 
+#include "aipick.h"  // #73 clamped tie-break pick (RandNum is INCLUSIVE of its bound)
 #include "aisnap.h"  // Tier-B world snapshot (lock-free AI reads) — depleted-mine flag
 #include "altoutput.h"  // Fracking/Moho revival toggles (ConsiderAltOutputs)
 #include "caidata.hpp"
@@ -2152,7 +2153,19 @@ int CAIGoalMgr::NextResearchTopic( CPlayer* pPlayer )
             if ( pPlayer->CanRsrch( i ) && theRsrch[i].m_iPtsRequired == iMinCost )
                 aiCheapest[nCheapest++] = i;
 
-        int iTopic = aiCheapest[ pGameData->GetRandom( nCheapest ) ];
+        // #73: GetRandom( ) is a passthrough to RandNum( ), which returns 0..iMax
+        // INCLUSIVE (rand.cpp:55-68) -- so a raw GetRandom( nCheapest ) can return
+        // nCheapest and index one PAST the last slot written just above, an
+        // uninitialised stack read that hands the server a garbage topic id. Draw
+        // over nCheapest - 1 (the idiom already at area.cpp:4211) and clamp into the
+        // filled prefix: any draw that was already in range picks exactly the element
+        // it picked before. The empty test is unreachable today (iMinCost came from
+        // this same CanRsrch scan) but keeps GetRandom( -1 ) away from RandNum( )s
+        // ASSERT( iMax >= 0 ) if that ever stops holding.
+        if ( nCheapest <= 0 )
+            return ( 0 );
+        int iPick  = enaipick::PickFilled( nCheapest, pGameData->GetRandom( nCheapest - 1 ) );
+        int iTopic = aiCheapest[iPick];
 #ifdef _LOGOUT
         logPrintf( LOG_PRI_ALWAYS, LOG_AI_MISC,
                    "CAIGoalMgr::NextResearchTopic() for %d cheapest-fallback %d (cost %d) \n",
