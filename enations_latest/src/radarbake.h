@@ -3,36 +3,28 @@
 //
 // Background. CWndWorld::ReRender caches the unit-free minimap background in
 // m_pdibRadarStatic and only re-walks the map (an O(window-pixels) scattered
-// theMap._GetHex sampling pass, measured 7.7-9.4ms per bake in Debug x64) every so often.
-// Between walks the cached background plus the live unit dots is a complete, correct
-// frame, so a skipped walk costs only background freshness -- never correctness.
+// theMap._GetHex sampling pass) every so often. Between walks the cached background plus
+// the live unit dots is a complete, correct frame, so a skipped walk costs only
+// background freshness -- never correctness. That cache already exists; this header is
+// only about HOW OFTEN the walk behind it runs.
 //
-// TWO gates decide, and they answer different questions:
-//
-//  1. WALL CLOCK -- how long since the last walk. Two cadences: a FAST one while the user
-//     is moving the view (pan / zoom / rotate / mode buttons must feel immediate) and a
-//     SLOW one when the view is still.
-//  2. FRAME COUNT -- how many of this window's render frames since the last walk. The
-//     radar deliberately opts out of the frame-rate throttle every other window gets
-//     (world.h RendersEveryFrame() returns true for the radar, so wndbase.h
-//     DecideRenderFrame skips the interval test), which leaves the wall-clock gate as its
-//     ONLY bound. That bound inverts on a slow machine: at 4.5 fps a frame is 221ms, so
-//     EVERY frame satisfies even the slow cadence and the walk runs on ~every frame --
-//     the throttle disengages exactly where it is needed most. A minimum frame count
-//     caps the walk at 1-in-N frames whatever the frame rate.
-//
-// WHICH SIGNATURE DRIVES WHICH -- the defect this header exists to prevent:
+// Two signatures, answering two different questions -- conflating them was the defect
+// this header exists to prevent:
 //
 //   * the VIEW signature (centre, zoom, direction, mode) answers "did the camera move?"
-//     -> it picks WHICH cadence applies. Only human input changes it.
+//     -> it picks WHICH cadence applies: the fast one while the user is moving the view
+//     (pan / zoom / rotate / mode buttons must feel immediate) or the slow one when the
+//     view is still. Only human input changes it.
 //   * the WALK signature (view terms PLUS fog generation, terrain-edit generation,
 //     building count, resource-blink phase) answers "would a walk draw anything new?"
 //     -> it is the skip-gate: when nothing changed, don't walk at all.
 //
-// Feeding content churn into the cadence question pins the radar to the fast cadence
-// forever, because g_enFogVisGen is bumped by every hex that flips fog state
-// (terrain.inl:220-222), i.e. continuously, by every moving AI unit, with no human
-// input at all. That is a ~2x multiplier on the most expensive thing the renderer does.
+// Feeding content churn into the cadence question pins the radar to the fast cadence,
+// because g_enFogVisGen is bumped whenever a hex flips fog state (CHex::IncVisible /
+// DecVisible, terrain.inl:220-222) -- which happens continuously as the LOCAL player's
+// own units move, since spotting only runs for units whose owner IsMe() (unit.cpp:1076).
+// No click, no key, no camera movement is involved; the counter simply never settles
+// while the player has anything moving.
 //
 // Header-only and dependency-free on purpose: no platform types, no game headers, no
 // includes at all -- so tests/ui/test_radar_bake.cpp can compile THIS file, not a copy.
@@ -45,15 +37,21 @@ const unsigned kRadarBakeMovingMs    = 140;    // view is moving (radar and worl
 const unsigned kRadarBakeIdleMs      = 320;    // radar, view still
 const unsigned kWorldMapBakeIdleMs   = 1500;   // world map, view still (slow-changing overview)
 
-// Frame floor, in render frames of the window since the last completed bake. Applies to
-// BOTH cadences: it is a ceiling on the SHARE of frames the walk may occupy, not a
-// cadence of its own. 3 = the walk can never cost more than a third of the frames.
-const unsigned kRadarBakeMinFrames   = 3;
-// The world map is EXEMPT (1 = no floor) because it already has the frame-relative bound
-// the radar lacks: world.h MinRenderIntervalMs() returns 333 for it, so it renders -- and
-// therefore walks -- at most ~3/s however fast the game runs. Imposing 3 frames on top
-// would put a world-map pan at ~1 re-bake/s and bring back the 1-2s pan lag that the
-// centre/zoom/dir detection in ReRender was added to fix.
+// Frame floor: a minimum number of the window's own render frames between walks, applied
+// on top of the cadence. CURRENTLY DISABLED -- 1 means "no floor" -- on both paths.
+//
+// It is plumbed rather than absent because the idea recurs: the radar opts out of the
+// per-window render throttle (world.h RendersEveryFrame() -> true), so the millisecond
+// cadence is its only bound, and the reflex is to add a frame-relative one for slow
+// machines. The arithmetic says not to. A slow frame is still SHORTER than the idle
+// cadence (a 4.5fps frame is ~222ms, under kRadarBakeIdleMs), so once the view is
+// classified correctly the clock already skips frames on its own. And a floor of 3 would
+// push a MOVING camera to one walk per 3 frames -- ~663ms at 4.5fps, ~1.5s at 2fps --
+// which is exactly the case that must not lag: the background is anchored to the view
+// centre, so a stale one slides visibly under the live dots.
+//
+// Raise these only with a measurement showing the clock alone is not enough.
+const unsigned kRadarBakeMinFrames    = 1;
 const unsigned kWorldMapBakeMinFrames = 1;
 
 // Which cadence applies right now.
@@ -72,7 +70,7 @@ inline unsigned RadarBakeCadenceMs( bool bViewMoved, unsigned dwMovingMs, unsign
 //   uFramesSinceBake  render frames of THIS window since the last completed bake
 //   dwMovingMs        cadence to use while the view is moving
 //   dwIdleMs          cadence to use while the view is still
-//   uMinFrames        frame floor; 1 disables it
+//   uMinFrames        frame floor; 1 disables it (the shipped setting -- see above)
 //   bNoCache          there is no cached background yet -- must bake, whatever else says
 //   bIsRadar          radar (minimap) vs the world-map overview
 //   bBldgHit          a building-hit flash is animating and must keep re-baking
@@ -95,11 +93,10 @@ inline bool RadarShouldBake( bool     bViewMoved,
         return false;                                                           // too soon (clock)
     if ( uFramesSinceBake < uMinFrames )
         return false;                                                           // too soon (frames)
-    // Both gates satisfied. The radar additionally SKIPS the bake when a bake would
-    // reproduce the cached image exactly: its live unit dots are drawn outside the bake,
-    // so the cache plus this frame's dots is already a complete, correct frame. The
-    // world map has no live dots, so its cached blit is the frame and it always bakes
-    // once the clock allows.
+    // Both gates satisfied. The radar additionally SKIPS the walk when it would reproduce
+    // the cached image exactly: its live unit dots are drawn outside the walk, so the
+    // cache plus this frame's dots is already a complete, correct frame. The world map
+    // has no live dots, so its cached blit is the frame and it walks once the clock allows.
     return !bIsRadar || bWalkSigChanged || bBldgHit;
 }
 

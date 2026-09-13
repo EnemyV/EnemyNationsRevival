@@ -1888,11 +1888,12 @@ void CWndWorld::ReRender( )
         // WALK signature -- the view terms PLUS everything else the bake draws. Exactly the
         // same bits as before the split (XOR is commutative), so the skip-gate below is
         // bit-for-bit unchanged. These content terms must NEVER reach the cadence pick:
-        // g_enFogVisGen is bumped by every hex that flips fog state (terrain.inl:220-222),
-        // i.e. continuously, by every moving AI unit, with NO human input. Promoting that
-        // into "the view moved" pinned the radar to the 140ms cadence permanently -- ~6
-        // whole-map bakes/s (7.7ms each, Debug x64) instead of the ~3 the idle branch was
-        // written for, and the skip-gate below never got to skip anything either.
+        // g_enFogVisGen is bumped whenever a hex flips fog state (CHex::IncVisible /
+        // DecVisible, terrain.inl:220-222), which happens continuously as the LOCAL
+        // player's own units move -- spotting only runs for owners where IsMe() holds
+        // (unit.cpp:1076) -- with no click, key or camera movement involved. Promoting
+        // that into "the view moved" left the cadence below permanently on the moving
+        // branch, and the skip-gate below never got to skip anything either.
         walkSig = viewSig
                 ^ ( (unsigned long long)g_enFogVisGen << 32 )
                 ^ (unsigned long long)g_enTerrainEditGen
@@ -1915,16 +1916,15 @@ void CWndWorld::ReRender( )
     // (bCtrMoved: any center/zoom/dir/mode delta, set above), else the cheap 1500ms
     // idle cadence — the same responsive-on-input / cheap-when-idle split the radar uses
     // (#4). Bounds the expensive whole-map walk to the active-interaction window.
-    // FRAME floor alongside the ms cadence: the radar renders every frame by design
-    // (RendersEveryFrame, world.h) so the clock is its only throttle -- and on a slow
-    // machine the clock stops throttling, because a 221ms frame (4.5fps) satisfies even
-    // the idle cadence every single time. Counting this window's own frames caps the
-    // whole-map walk at 1-in-N frames at ANY frame rate. On a healthy host (33fps) 3
-    // frames is 90ms, well inside 140/320ms, so the clock still decides and host
-    // behaviour is unchanged. See radarbake.h for why the world map is exempt.
+    // Frames since the last walk, for the optional frame floor. That floor is DISABLED
+    // (kRadarBakeMinFrames / kWorldMapBakeMinFrames are 1): the clock alone is the
+    // throttle. radarbake.h records why, and the counter is kept so re-enabling it is a
+    // constant change rather than new plumbing.
     m_uFramesSinceBake++;
     // The decision itself lives in radarbake.h as a pure function so it can be
     // table-tested (tests/ui/test_radar_bake.cpp) -- the cadence pick is what regressed.
+    // bCtrMoved now means "the VIEW moved" and nothing else, so the two branches below
+    // are the ones the surrounding comments describe.
     const bool bRebuildBg = RadarShouldBake( bCtrMoved,                          // the VIEW moved
                                              walkSig != m_qwLastWalkSig,         // content changed (skip-gate)
                                              (unsigned)( dwRadarNow - m_dwLastRadarDraw ),

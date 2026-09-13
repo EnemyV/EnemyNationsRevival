@@ -4,34 +4,34 @@
 // so a change to the real decision shows up here. Nothing else is linked: RadarShouldBake
 // is pure arithmetic over booleans, a millisecond delta and a frame count.
 //
-// THE TWO REGRESSIONS THIS EXISTS TO CATCH
-// ----------------------------------------
-// The bake (a whole-map O(window-pixels) scattered-sample walk, 7.7-13.5ms per call in
-// Debug x64) is gated by a wall clock -- 140ms while the user is moving the view, 320ms
-// when the view is still -- and by a floor on this window's own render frames.
+// THE REGRESSION THIS EXISTS TO CATCH
+// -----------------------------------
+// CWndWorld::ReRender caches the unit-free minimap background and re-walks the map on one
+// of two cadences: 140ms while the user is moving the view, 320ms when the view is still.
+// It used to promote ANY change of the content signature into "the view moved":
 //
-// 1. CONTENT CHURN PICKING THE CADENCE. world.cpp used to promote ANY change of the
-//    content signature into "the view moved":
+//     if ( !bCtrMoved && walkSig != m_qwLastWalkSig )
+//         bCtrMoved = true;
 //
-//        if ( !bCtrMoved && walkSig != m_qwLastWalkSig )
-//            bCtrMoved = true;
-//
-//    and walkSig carries g_enFogVisGen, which every moving unit in the game bumps as
-//    hexes flip fog state (terrain.inl:220-222) -- including AI units, with no human
-//    input at all. So the radar sat on the 140ms "user is interacting" cadence
-//    permanently: measured rr.bg modal 6/s where the idle design called for 3/s.
-//
-// 2. A WALL CLOCK THAT STOPS THROTTLING WHERE IT MATTERS. The radar opts out of the
-//    per-window render throttle (world.h RendersEveryFrame() -> true), so the clock was
-//    its only bound -- and on a 4.5 fps machine a frame is 221ms, which satisfies even
-//    the SLOW cadence every single time. Measured there: 79% of frames carried the walk.
-//    A frame floor (kRadarBakeMinFrames) caps the walk at 1-in-N frames at any fps; on a
-//    33 fps host 3 frames is 90ms, inside both cadences, so the clock still decides.
+// and that signature carries g_enFogVisGen, bumped whenever a hex flips fog state
+// (CHex::IncVisible / DecVisible, terrain.inl:220-222). That happens continuously as the
+// LOCAL player's own units move -- spotting only runs for owners where IsMe() holds
+// (unit.cpp:1076) -- with no click, key or camera movement involved. So the radar sat on
+// the 140ms "user is interacting" cadence permanently: measured rr.bg modal 6/s where the
+// idle design called for 3/s. The fix splits the signature; the cadence is picked by a
+// VIEW-only signature, and the full signature stays the skip-gate.
 //
 // Guards here:
-//   * a TABLE over RadarShouldBake covering both gates;
-//   * 24fps and 4.5fps SIMULATIONS reproducing the observed bake rates and frame shares;
-//   * a SOURCE LINT over world.cpp/world.h that neither defect has come back.
+//   * a TABLE over RadarShouldBake;
+//   * frame-loop SIMULATIONS at 24fps, 33fps and 4.5fps, asserting the observed rates;
+//   * a SOURCE LINT over world.cpp/world.h that the promotion has not come back.
+//
+// The optional FRAME FLOOR (uMinFrames) is covered too, but it ships DISABLED
+// (kRadarBakeMinFrames == kWorldMapBakeMinFrames == 1) and the table pins that: a slow
+// frame is still shorter than the idle cadence, so the clock already skips frames once
+// the view is classified correctly, and a floor of 3 would push a MOVING camera to one
+// walk per ~663ms at 4.5fps. The rows below cover the mechanism with an explicit value so
+// the code stays honest if anyone re-enables it.
 //
 // The table is proved non-vacuous two ways: it is also evaluated against a verbatim
 // replication of the PRE-FIX expression (LegacyShouldBake below), which must disagree
@@ -50,7 +50,6 @@
 // ---------------------------------------------------------------------------
 // The PRE-FIX decision, replicated verbatim from world.cpp:1874-1910 @ 4ca2e4d6.
 // Kept so the table can prove it discriminates; never called by production code.
-// Note what it does NOT take: a frame count. That was the second defect.
 // ---------------------------------------------------------------------------
 static bool LegacyShouldBake( bool bCtrMoved, bool bWalkSigChanged, unsigned dwSinceLastBake,
                               bool bNoCache, bool bIsRadar, bool bBldgHit )
@@ -73,80 +72,89 @@ struct Row {
     bool        walkChanged;   // content signature differs from the last bake's
     unsigned    since;         // ms since the last completed bake
     unsigned    frames;        // render frames since the last completed bake
+    unsigned    minFrames;     // frame floor in force for this row
     bool        noCache;
     bool        isRadar;
     bool        bldgHit;
     bool        expect;        // what the FIXED decision must return
 };
 
+// The shipped floor values. Named here so the rows read as "what production does".
+static const unsigned R = kRadarBakeMinFrames;      // 1 -- floor disabled
+static const unsigned W = kWorldMapBakeMinFrames;   // 1 -- floor disabled
+
 static const Row kTable[] = {
-    // ---- radar, view still, content churning (defect 1): the 320ms idle cadence ----
-    { "idle+fog @0ms",            false, true,      0,  0, false, true,  false, false },
-    { "idle+fog @139ms",          false, true,    139,  4, false, true,  false, false },
-    { "idle+fog @200ms",          false, true,    200,  5, false, true,  false, false },
-    { "idle+fog @250ms",          false, true,    250,  6, false, true,  false, false },
-    { "idle+fog @319ms",          false, true,    319,  7, false, true,  false, false },
-    { "idle+fog @320ms",          false, true,    320,  8, false, true,  false, true  },
-    { "idle+fog @350ms",          false, true,    350,  8, false, true,  false, true  },
+    // ---- radar, view still, content churning (the defect): the 320ms idle cadence ----
+    { "idle+fog @0ms",            false, true,      0,  1, R, false, true,  false, false },
+    { "idle+fog @139ms",          false, true,    139,  4, R, false, true,  false, false },
+    { "idle+fog @200ms",          false, true,    200,  5, R, false, true,  false, false },
+    { "idle+fog @250ms",          false, true,    250,  6, R, false, true,  false, false },
+    { "idle+fog @319ms",          false, true,    319,  7, R, false, true,  false, false },
+    { "idle+fog @320ms",          false, true,    320,  8, R, false, true,  false, true  },
+    { "idle+fog @350ms",          false, true,    350,  8, R, false, true,  false, true  },
 
     // ---- radar, view moving: the 140ms cadence, unchanged by the fix ----
-    { "view moved @0ms",          true,  true,      0,  0, false, true,  false, false },
-    { "view moved @139ms",        true,  true,    139,  3, false, true,  false, false },
-    { "view moved @140ms",        true,  true,    140,  4, false, true,  false, true  },
-    { "view moved @150ms",        true,  true,    150,  4, false, true,  false, true  },
-    // a pan whose bake would draw the same pixels still skips: the cache is already right
-    { "view moved, no content",   true,  false,   150,  4, false, true,  false, false },
+    { "view moved @0ms",          true,  true,      0,  1, R, false, true,  false, false },
+    { "view moved @139ms",        true,  true,    139,  3, R, false, true,  false, false },
+    { "view moved @140ms",        true,  true,    140,  4, R, false, true,  false, true  },
+    { "view moved @150ms",        true,  true,    150,  4, R, false, true,  false, true  },
+    // a pan whose walk would draw the same pixels still skips: the cache is already right
+    { "view moved, no content",   true,  false,   150,  4, R, false, true,  false, false },
 
-    // ---- the skip-gate: nothing changed at all, never bake, however long it has been ----
-    { "quiet @320ms",             false, false,   320,  8, false, true,  false, false },
-    { "quiet @5s",                false, false,  5000, 99, false, true,  false, false },
+    // ---- the skip-gate: nothing changed at all, never walk, however long it has been ----
+    { "quiet @320ms",             false, false,   320,  8, R, false, true,  false, false },
+    { "quiet @5s",                false, false,  5000, 99, R, false, true,  false, false },
 
-    // ---- hit flash keeps re-baking, but still respects BOTH gates ----
-    { "bldgHit @200ms",           false, false,   200,  5, false, true,  true,  false },
-    { "bldgHit @320ms",           false, false,   320,  8, false, true,  true,  true  },
-    { "bldgHit @320ms, 2 frames", false, false,   320,  2, false, true,  true,  false },
+    // ---- hit flash keeps re-baking, but still respects the cadence ----
+    { "bldgHit @200ms",           false, false,   200,  5, R, false, true,  true,  false },
+    { "bldgHit @320ms",           false, false,   320,  8, R, false, true,  true,  true  },
 
-    // ---- no cached background yet: bake regardless of clock, frames or signatures ----
-    { "no cache @0ms",            false, false,     0,  0, true,  true,  false, true  },
-    { "no cache, quiet",          false, false,     0,  0, true,  true,  true,  true  },
+    // ---- no cached background yet: walk regardless of clock, frames or signatures ----
+    { "no cache @0ms",            false, false,     0,  0, R, true,  true,  false, true  },
+    { "no cache, quiet",          false, false,     0,  0, R, true,  true,  true,  true  },
 
-    // ---- defect 2: a 4.5fps VM, 222ms a frame. The clock alone lets EVERY frame walk;
-    //      the frame floor holds it to 1-in-3, in BOTH cadences ----
-    { "vm idle frame 1 @222ms",   false, true,    222,  1, false, true,  false, false },
-    { "vm idle frame 2 @444ms",   false, true,    444,  2, false, true,  false, false },
-    { "vm idle frame 3 @666ms",   false, true,    666,  3, false, true,  false, true  },
-    { "vm drag frame 1 @222ms",   true,  true,    222,  1, false, true,  false, false },
-    { "vm drag frame 2 @444ms",   true,  true,    444,  2, false, true,  false, false },
-    { "vm drag frame 3 @666ms",   true,  true,    666,  3, false, true,  false, true  },
+    // ---- a 4.5fps VM, 222ms a frame. A slow frame is still SHORTER than the idle
+    //      cadence, so with the view classified correctly the clock alone already skips
+    //      alternate frames -- no frame floor needed. A MOVING camera still follows every
+    //      frame, which is the point: the background is anchored to the view centre ----
+    { "vm idle frame 1 @222ms",   false, true,    222,  1, R, false, true,  false, false },
+    { "vm idle frame 2 @444ms",   false, true,    444,  2, R, false, true,  false, true  },
+    { "vm drag frame 1 @222ms",   true,  true,    222,  1, R, false, true,  false, true  },
 
-    // ---- a 33fps host, 30ms a frame: 3 frames is 90ms, inside both cadences, so the
-    //      WALL CLOCK is what decides and host behaviour is unchanged ----
-    { "host drag frame 1 @30ms",  true,  true,     30,  1, false, true,  false, false },
-    { "host drag frame 3 @90ms",  true,  true,     90,  3, false, true,  false, false },
-    { "host drag frame 5 @151ms", true,  true,    151,  5, false, true,  false, true  },
-    { "host idle frame 8 @242ms", false, true,    242,  8, false, true,  false, false },
-    { "host idle frame 11 @333",  false, true,    333, 11, false, true,  false, true  },
+    // ---- a 33fps host, 30ms a frame: the wall clock decides, as it always did ----
+    { "host drag frame 1 @30ms",  true,  true,     30,  1, R, false, true,  false, false },
+    { "host drag frame 5 @151ms", true,  true,    151,  5, R, false, true,  false, true  },
+    { "host idle frame 8 @242ms", false, true,    242,  8, R, false, true,  false, false },
+    { "host idle frame 11 @333",  false, true,    333, 11, R, false, true,  false, true  },
 
-    // ---- world map: no live dots, so its cached blit IS the frame; it bakes on the
-    //      timer alone, at the 1500ms idle cadence and 140ms while panning, and is
-    //      EXEMPT from the frame floor (MinRenderIntervalMs already caps it at ~3/s) ----
-    { "world idle+fog @800ms",    false, true,    800,  2, false, false, false, false },
-    { "world idle+fog @1499ms",   false, true,   1499,  4, false, false, false, false },
-    { "world idle+fog @1500ms",   false, true,   1500,  5, false, false, false, true  },
-    { "world quiet @1500ms",      false, false,  1500,  5, false, false, false, true  },
-    { "world moved @139ms",       true,  false,   139,  1, false, false, false, false },
-    { "world moved @140ms, 1 fr", true,  false,   140,  1, false, false, false, true  },
+    // ---- world map: no live dots, so its cached blit IS the frame; it walks on the
+    //      timer alone, at the 1500ms idle cadence and 140ms while panning ----
+    { "world idle+fog @800ms",    false, true,    800,  2, W, false, false, false, false },
+    { "world idle+fog @1499ms",   false, true,   1499,  4, W, false, false, false, false },
+    { "world idle+fog @1500ms",   false, true,   1500,  5, W, false, false, false, true  },
+    { "world quiet @1500ms",      false, false,  1500,  5, W, false, false, false, true  },
+    { "world moved @139ms",       true,  false,   139,  1, W, false, false, false, false },
+    { "world moved @140ms",       true,  false,   140,  1, W, false, false, false, true  },
+
+    // ---- the OPTIONAL frame floor, exercised with an explicit 3. Not the shipped
+    //      setting (see the constants pinned below); these rows keep the mechanism
+    //      correct for anyone who re-enables it ----
+    { "floor(3) frame 1",         false, true,    666,  1, 3, false, true,  false, false },
+    { "floor(3) frame 2",         false, true,    666,  2, 3, false, true,  false, false },
+    { "floor(3) frame 3",         false, true,    666,  3, 3, false, true,  false, true  },
+    { "floor(3) vs no cache",     false, false,     0,  0, 3, true,  true,  false, true  },
+    { "floor(3), clock not due",  true,  true,    100,  9, 3, false, true,  false, false },
 };
 static const int kRows = (int)( sizeof( kTable ) / sizeof( kTable[0] ) );
 
 static bool RunRow( const Row& r, bool bLegacy )
 {
-    const unsigned idle  = r.isRadar ? kRadarBakeIdleMs    : kWorldMapBakeIdleMs;
-    const unsigned minFr = r.isRadar ? kRadarBakeMinFrames : kWorldMapBakeMinFrames;
+    const unsigned idle = r.isRadar ? kRadarBakeIdleMs : kWorldMapBakeIdleMs;
     return bLegacy
         ? LegacyShouldBake( r.viewMoved, r.walkChanged, r.since, r.noCache, r.isRadar, r.bldgHit )
         : RadarShouldBake( r.viewMoved, r.walkChanged, r.since, r.frames,
-                           kRadarBakeMovingMs, idle, minFr, r.noCache, r.isRadar, r.bldgHit );
+                           kRadarBakeMovingMs, idle, r.minFrames,
+                           r.noCache, r.isRadar, r.bldgHit );
 }
 
 // Returns the number of rows on which the pre-fix decision disagrees with the table.
@@ -169,28 +177,44 @@ static int TestTable( bool bLegacy )
     return disagree;
 }
 
+// The shipped frame floor is OFF. This is the whole of the deferral: if someone turns it
+// on, this fails and they have to come back to the arithmetic in radarbake.h.
+static void TestFrameFloorShipsDisabled()
+{
+    CHECK_EQ( kRadarBakeMinFrames, 1 );
+    CHECK_EQ( kWorldMapBakeMinFrames, 1 );
+    // With the floor at 1 the frame count cannot change any decision.
+    for ( unsigned f = 1; f <= 20; f++ ) {
+        CHECK_EQ( RadarShouldBake( false, true, 400, f, kRadarBakeMovingMs, kRadarBakeIdleMs,
+                                   kRadarBakeMinFrames, false, true, false ),
+                  RadarShouldBake( false, true, 400, 1, kRadarBakeMovingMs, kRadarBakeIdleMs,
+                                   kRadarBakeMinFrames, false, true, false ) );
+    }
+}
+
 // The table must actually separate the fixed decision from the pre-fix one, or it is
 // pinning nothing.
 static void TestTableDiscriminates( int disagree )
 {
     CHECK( disagree >= 8 );
     // Name the discriminating cases explicitly so a future edit cannot quietly drop them.
-    // Defect 1: fog churn below the idle cadence.
+    // Fog churn below the idle cadence, on a healthy frame rate...
     CHECK( !RadarShouldBake( false, true, 200, 9, kRadarBakeMovingMs, kRadarBakeIdleMs,
                              kRadarBakeMinFrames, false, true, false ) );
     CHECK(  LegacyShouldBake( false, true, 200, false, true, false ) );
     CHECK( !RadarShouldBake( false, true, 319, 9, kRadarBakeMovingMs, kRadarBakeIdleMs,
                              kRadarBakeMinFrames, false, true, false ) );
     CHECK(  LegacyShouldBake( false, true, 319, false, true, false ) );
-    // Defect 2: a slow machine, where every frame clears the clock on its own.
-    CHECK( !RadarShouldBake( true, true, 222, 1, kRadarBakeMovingMs, kRadarBakeIdleMs,
+    // ...and on a 4.5fps VM, where the pre-fix classification made a 222ms frame clear the
+    // 140ms cadence every time. Correctly classified as idle, the 320ms cadence skips it.
+    CHECK( !RadarShouldBake( false, true, 222, 1, kRadarBakeMovingMs, kRadarBakeIdleMs,
                              kRadarBakeMinFrames, false, true, false ) );
-    CHECK(  LegacyShouldBake( true, true, 222, false, true, false ) );
+    CHECK(  LegacyShouldBake( false, true, 222, false, true, false ) );
 
-    // ...and with the frame floor satisfied, the clock behaves exactly as it always did,
-    // at every elapsed time, for a genuinely moving view.
+    // The clock behaves exactly as it always did for a genuinely moving view, at every
+    // elapsed time. This is the preservation guarantee for pan / zoom / rotate / buttons.
     for ( unsigned t = 0; t <= 400; t++ ) {
-        CHECK_EQ( RadarShouldBake( true, true, t, 99, kRadarBakeMovingMs, kRadarBakeIdleMs,
+        CHECK_EQ( RadarShouldBake( true, true, t, 1, kRadarBakeMovingMs, kRadarBakeIdleMs,
                                    kRadarBakeMinFrames, false, true, false ),
                   LegacyShouldBake( true, true, t, false, true, false ) );
     }
@@ -199,13 +223,14 @@ static void TestTableDiscriminates( int disagree )
 // ---------------------------------------------------------------------------
 // 2. Simulations -- reproduce the measured bake RATES (rr.bg) and frame shares.
 // ---------------------------------------------------------------------------
-// One radar ReRender per frame (the radar renders every frame by design); fog churn
-// every frame (700-800 moving vehicles); the view either dragging or still.
-// `frameMs10` is the frame period in TENTHS of a millisecond, so 4.5fps (222.2ms) is
-// expressible exactly enough: 24fps -> 4167, 33fps -> 3030, 4.5fps -> 2222.
+// One radar ReRender per frame (the radar renders every frame by design); fog churn every
+// frame (the local player has units moving); the view either dragging or still.
+// `frameMs10` is the frame period in TENTHS of a millisecond: 24fps -> 417,
+// 33fps -> 303, 4.5fps -> 2222.
 struct Sim { int bakes; int frames; };
 
-static Sim Simulate( int frames, int frameMs10, bool bViewMovingEveryFrame, bool bLegacy )
+static Sim Simulate( int frames, int frameMs10, bool bViewMovingEveryFrame, bool bLegacy,
+                     unsigned uMinFrames = kRadarBakeMinFrames )
 {
     Sim      s           = { 0, frames };
     unsigned lastBake    = 0;
@@ -216,19 +241,19 @@ static Sim Simulate( int frames, int frameMs10, bool bViewMovingEveryFrame, bool
         const bool go = bLegacy
             ? LegacyShouldBake( bViewMovingEveryFrame, true, t - lastBake, false, true, false )
             : RadarShouldBake( bViewMovingEveryFrame, true, t - lastBake, framesSince,
-                               kRadarBakeMovingMs, kRadarBakeIdleMs, kRadarBakeMinFrames,
+                               kRadarBakeMovingMs, kRadarBakeIdleMs, uMinFrames,
                                false, true, false );
         if ( go ) { lastBake = t; framesSince = 0; s.bakes++; }
     }
     return s;
 }
 
-// 24fps host: the rates WinOpus measured in the two Debug x64 captures.
+// 24fps: the rates WinOpus measured in the two Debug x64 captures.
 static void TestObservedRates()
 {
     const int kFrames24 = 240, kPeriod24 = 417;   // 10 s at 24fps, 41.7ms a frame
 
-    // Pre-fix, view STILL, AI units churning fog: 140ms cadence => the measured modal
+    // Pre-fix, view STILL, local units churning fog: 140ms cadence => the measured modal
     // rr.bg of 6/s (271 of 495 and 299 of 595 intervals).
     const Sim legacyIdle = Simulate( kFrames24, kPeriod24, false, true );
     CHECK( legacyIdle.bakes >= 57 && legacyIdle.bakes <= 62 );
@@ -237,40 +262,17 @@ static void TestObservedRates()
     const Sim fixedIdle = Simulate( kFrames24, kPeriod24, false, false );
     CHECK( fixedIdle.bakes >= 28 && fixedIdle.bakes <= 32 );
 
-    // ~2x fewer whole-map walks, which at ~7.7ms per bake is the ~23ms/s the fix recovers.
+    // ~2x fewer whole-map walks -- and the walk is what rr.radar is made of.
     CHECK( legacyIdle.bakes >= fixedIdle.bakes * 19 / 10 );
 
-    // PRESERVATION: while the view is dragging at 24fps the fixed decision is still 6-7/s,
-    // identical to pre-fix -- the 140ms cadence is 3.4 frames, so the frame floor does not
-    // bind here. If this drops, either the view signature is missing a term or the frame
-    // floor has been raised too far.
+    // PRESERVATION: while the view is dragging the fixed decision is identical to pre-fix.
+    // If this drops, the view signature is missing a term.
     const Sim fixedDrag  = Simulate( kFrames24, kPeriod24, true, false );
     const Sim legacyDrag = Simulate( kFrames24, kPeriod24, true, true );
     CHECK_EQ( fixedDrag.bakes, legacyDrag.bakes );
     CHECK( fixedDrag.bakes >= 57 && fixedDrag.bakes <= 62 );
-}
 
-// 4.5fps VM: 222ms a frame, so the wall clock alone permits a walk on EVERY frame and
-// the throttle has effectively disengaged. This is the case the frame floor is for.
-static void TestSlowMachineFrameShare()
-{
-    const int kFramesVm = 45, kPeriodVm = 2222;   // 10 s at 4.5fps, 222.2ms a frame
-
-    const Sim legacyIdle = Simulate( kFramesVm, kPeriodVm, false, true );
-    const Sim fixedIdle  = Simulate( kFramesVm, kPeriodVm, false, false );
-    const Sim fixedDrag  = Simulate( kFramesVm, kPeriodVm, true,  false );
-
-    // Pre-fix: a walk on essentially every frame (the VM capture measured 79%).
-    CHECK( legacyIdle.bakes * 100 / legacyIdle.frames >= 95 );
-    // Post-fix: capped at 1-in-kRadarBakeMinFrames, i.e. at most a third of frames...
-    CHECK( fixedIdle.bakes * 100 / fixedIdle.frames <= 34 );
-    CHECK( fixedIdle.bakes * 100 / fixedIdle.frames >= 28 );
-    // ...and the cap holds while DRAGGING too: the floor applies to both cadences.
-    CHECK( fixedDrag.bakes * 100 / fixedDrag.frames <= 34 );
-
-    // 33fps host: 3 frames is 90ms, inside both cadences, so the frame floor never binds
-    // and the fixed decision is exactly the clock -- host behaviour is unchanged except
-    // for the fog-signature fix. Dragging still reaches the full 140ms cadence.
+    // 33fps host: same story, the clock decides. Dragging reaches the full 140ms cadence.
     const int kFrames33 = 330, kPeriod33 = 303;   // 10 s at 33fps, 30.3ms a frame
     const Sim hostDrag       = Simulate( kFrames33, kPeriod33, true, false );
     const Sim hostDragLegacy = Simulate( kFrames33, kPeriod33, true, true );
@@ -278,6 +280,36 @@ static void TestSlowMachineFrameShare()
     CHECK( hostDrag.bakes >= 66 && hostDrag.bakes <= 72 );        // ~7/s = the 140ms cadence
     const Sim hostIdle = Simulate( kFrames33, kPeriod33, false, false );
     CHECK( hostIdle.bakes >= 28 && hostIdle.bakes <= 32 );        // ~3/s = the 320ms cadence
+}
+
+// 4.5fps VM: 222ms a frame. Pre-fix, misclassifying idle as "moving" put the gate at
+// 140ms, which a 222ms frame clears every time -- the throttle had disengaged entirely.
+static void TestSlowMachine()
+{
+    const int kFramesVm = 45, kPeriodVm = 2222;   // 10 s at 4.5fps, 222.2ms a frame
+
+    const Sim legacyIdle = Simulate( kFramesVm, kPeriodVm, false, true );
+    const Sim fixedIdle  = Simulate( kFramesVm, kPeriodVm, false, false );
+
+    // Pre-fix: a walk on essentially every frame.
+    CHECK( legacyIdle.bakes * 100 / legacyIdle.frames >= 95 );
+    // Post-fix: the 320ms cadence exceeds one 222ms frame, so the clock alone drops it to
+    // every OTHER frame. No frame floor involved -- this is why the floor was deferred.
+    CHECK( fixedIdle.bakes * 100 / fixedIdle.frames <= 55 );
+    CHECK( fixedIdle.bakes * 100 / fixedIdle.frames >= 45 );
+
+    // Dragging on the VM still walks every frame, and that is correct: the background is
+    // anchored to the view centre, so a stale one slides under the live dots.
+    const Sim fixedDrag  = Simulate( kFramesVm, kPeriodVm, true, false );
+    const Sim legacyDrag = Simulate( kFramesVm, kPeriodVm, true, true );
+    CHECK_EQ( fixedDrag.bakes, legacyDrag.bakes );
+    CHECK( fixedDrag.bakes * 100 / fixedDrag.frames >= 95 );
+
+    // ...and this is what a 3-frame floor WOULD do to that dragging camera: one walk per
+    // ~666ms. Documented as an executable reason the floor ships disabled.
+    const Sim withFloor = Simulate( kFramesVm, kPeriodVm, true, false, 3 );
+    CHECK( withFloor.bakes * 100 / withFloor.frames <= 34 );
+    CHECK( withFloor.bakes * 3 <= fixedDrag.bakes + 2 );
 }
 
 // Drag, then let go: the cadence must return to idle, not stay latched fast.
@@ -412,23 +444,21 @@ static void TestSourceLint( const std::string& srcRoot )
     CHECK_EQ( CountOf( gate, "#include" ), 0 );   // helper stays dependency-free / testable
 
     // (f) the new bake state is declared and stamped at bake time, or the cadence never
-    //     resets and the radar bakes on every frame instead.
+    //     resets and the radar walks on every frame instead.
     CHECK( worldH.find( "m_qwLastViewSig" ) != std::string::npos );
     CHECK_EQ( CountOf( body, "m_qwLastViewSig   = viewSig" ), 1 );
     CHECK_EQ( CountOf( body, "m_qwLastWalkSig   = walkSig" ), 1 );
 
-    // (g) the FRAME floor: a counter advanced once per render and cleared on the bake,
-    //     and the radar cadence actually passing the floor constant.
-    CHECK( gate.find( "kRadarBakeMinFrames" )    != std::string::npos );
-    CHECK( gate.find( "kWorldMapBakeMinFrames" ) != std::string::npos );
-    CHECK( worldH.find( "m_uFramesSinceBake" )   != std::string::npos );
+    // (g) the frame-count input is fed a real counter, advanced once per render and
+    //     cleared on the bake -- even though the floor it feeds ships disabled.
+    CHECK( worldH.find( "m_uFramesSinceBake" ) != std::string::npos );
     CHECK_EQ( CountOf( body, "m_uFramesSinceBake++" ), 1 );
     CHECK_EQ( CountOf( body, "m_uFramesSinceBake = 0" ), 1 );
     CHECK( body.find( "kRadarBakeMinFrames" ) != std::string::npos );
 
     // (h) the render-rate levers the investigation ruled out must stay untouched:
     //     rate-limiting ReRender itself stretches the hit flash, which world.cpp:2411-2414
-    //     decays once per radar render. The frame floor skips the WALK, not the render.
+    //     decays once per radar render.
     CHECK( worldH.find( "RendersEveryFrame () const override { return m_bIsRadar != FALSE; }" )
            != std::string::npos );
     CHECK( worldH.find( "MinRenderIntervalMs () const override { return m_bIsRadar ? 0 : 333; }" )
@@ -460,9 +490,10 @@ int main( int argc, char** argv )
         return rc;
     }
 
+    TestFrameFloorShipsDisabled();
     TestTableDiscriminates( disagree );
     TestObservedRates();
-    TestSlowMachineFrameShare();
+    TestSlowMachine();
     TestMovedThenIdleReturnsToIdle();
 
     CHECK( !srcRoot.empty() );   // --src=<enations_latest/src> is mandatory: no silent skip
