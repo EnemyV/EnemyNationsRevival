@@ -11,6 +11,7 @@
 #include "SDL2Compositor.h"
 #include "SDL2CreateStatus.h"
 #include "SDL2Panel.h"
+#include "SDL2RouteWindow.h"  // TickScrollRepeats — per-frame scrollbar arrow auto-repeat
 #include "area.h"         // CWndArea, theAreaList (Esc deselect-vs-options decision)
 #include "music.h"        // theMusicPlayer (pause/resume on app focus change)
 #include "Perf.h"         // GaugeSet — correlate window state with frame cost
@@ -1166,6 +1167,10 @@ bool GameWindow::PollEvents() {
         if (dlg->IsNonModalActive())
             dlg->RenderFrameNonModal();
     }
+
+    // Press-and-hold on a route window's scrollbar arrow. A route window repaints
+    // only on demand, so this is its per-frame tick; no-op when no arrow is held.
+    SDL2RouteWindow::TickScrollRepeats();
 
     // Clean up dialogs that have finished (EndDialog was called)
     for (auto it = m_activeDialogs.begin(); it != m_activeDialogs.end(); ) {
