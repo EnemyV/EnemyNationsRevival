@@ -472,7 +472,15 @@ public:
 		void					SetRoad ( const CHexCoord & hexSrc, const CHexCoord & hexDest);
 		void					SetRoadHex (CHexCoord const & hex) { m_hexStart = m_hexEnd = hex; }
 		void					SetRoadHex (CHexCoord const & hexStart, CHexCoord const & hexEnd) { m_hexStart = hexStart; m_hexEnd = hexEnd; }
+		CHexCoord const & GetRoadStart () const { return (m_hexStart); }	// #38 road ghost: SetRoad's two ends
+		CHexCoord const & GetRoadEnd () const { return (m_hexEnd); }
 		void					SetBridgeHex (CHexCoord const & hexStart, CHexCoord const & hexEnd, DWORD dwID, int iAlt);
+
+		// #38 ROAD GHOST: the one step _NextRoadHex advances by, pulled out to a pure
+		// static so the queued/in-flight road indicator (SDL2Terrain.cpp) can walk the
+		// exact same chain the crane will actually lay - it cannot drift from NextRoadHex,
+		// because NextRoadHex calls this too (vehicle.cpp).
+		static CHexCoord	RoadStepToward (CHexCoord const & hexFrom, CHexCoord const & hexEnd);
 
 		void					GetPath (BOOL bNoOcc);
 		BOOL					HavePath () const;

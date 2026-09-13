@@ -82,6 +82,14 @@ foreach ($opt in @('/Od', '/O2')) {
     if ($LASTEXITCODE -ne 0) { $failed = 1 }
 }
 
+# The ROAD-GHOST suite (queue-road indicator) extracts CVehicle::RoadStepToward from
+# vehicle.cpp verbatim and lints that _NextRoadHex still calls it - both optimisations.
+foreach ($opt in @('/Od', '/O2')) {
+    Write-Host "--- road-ghost $opt ---"
+    python (Join-Path $here 'run-road-ghost.py') --opt $opt
+    if ($LASTEXITCODE -ne 0) { $failed = 1 }
+}
+
 if ($failed -ne 0) { Write-Host '[orders] FAILURES'; exit 1 }
 Write-Host '[orders] all suites pass (/Od and /O2)'
 exit 0
