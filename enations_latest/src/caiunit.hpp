@@ -40,6 +40,8 @@ protected:
 	DWORD			m_dwErrHex;			// error-restage: last error position, MAKELPARAM (transient)
 	WORD			m_wErrCnt;			// consecutive error-restages from that hex (traffic-knot escape)
 	DWORD			m_dwRoadStopSeen;	// dead-run guard: first stopped observation (transient)
+	DWORD			m_dwClaimHex;		// #69 router claim liveness: last observed head hex, MAKELPARAM (transient)
+	DWORD			m_dwClaimStill;		// #69 router claim liveness: start of the current standstill (transient)
 
 	DWORD m_dwID;
 	int m_iOwner;
@@ -90,7 +92,8 @@ public:
 	    : m_bControl( ), m_dwData( ), m_dwID( ), m_iOwner( ), m_iType( ), m_iTypeUnit( ), m_pdwaParams( ),
 	      m_pwaParams( ), m_plCopyData( ), m_timeLastDest( ), m_wGoal( ), m_wStatus( ), m_wTask( ),
 	      m_dwTimeLastAtkCmd( 0 ), m_dwStuckSince( 0 ), m_dwStuckHex( 0 ), m_dwResendDest( 0 ), m_wResendCnt( 0 ),
-	      m_dwInBldgSince( 0 ), m_dwErrHex( 0 ), m_wErrCnt( 0 ), m_dwRoadStopSeen( 0 ) {};
+	      m_dwInBldgSince( 0 ), m_dwErrHex( 0 ), m_wErrCnt( 0 ), m_dwRoadStopSeen( 0 ), m_dwClaimHex( 0 ),
+	      m_dwClaimStill( 0 ) {};
 
 	// attack-alert feedback-loop cooldown (see CAITaskMgr::AttackAlert)
 	DWORD GetTimeLastAtkCmd( void ) const { return m_dwTimeLastAtkCmd; }
@@ -124,6 +127,24 @@ public:
 		m_dwRoadStopSeen = 0; return TRUE;
 	}
 	void ClearRoadStop( void ) { m_dwRoadStopSeen = 0; }
+	// #69 router claim liveness (CAIRouter::ClaimIsLive). How long, in ms, this
+	// truck has stood on the SAME hex: 0 the moment it changes hex (and on the
+	// first observation of a hex). What is stored is the START of the standstill,
+	// not a count, so several observations in one router pass cannot inflate the
+	// dwell and the answer does not depend on the sampling rate. Transient.
+	DWORD NoteClaimStill( DWORD dwHex, DWORD dwNow )
+	{
+		if ( dwHex != m_dwClaimHex || m_dwClaimStill == 0 )
+		{
+			m_dwClaimHex   = dwHex;
+			m_dwClaimStill = dwNow ? dwNow : 1;	// 0 is the "no standstill yet" sentinel
+			return 0;
+		}
+		return dwNow - m_dwClaimStill;
+	}
+	// every (re)assignment earns a full fresh window - without this a truck that
+	// just lost a claim for standing still would lose the next one on sight
+	void ClearClaimProgress( void ) { m_dwClaimHex = 0; m_dwClaimStill = 0; }
 	// bypass the 30s same-dest dedupe for ONE deliberate retry (clamped-path resume)
 	void  ForceNextDest( void ) { m_timeLastDest = 0; }
 

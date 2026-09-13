@@ -44,12 +44,23 @@ $exeLogic   = Join-Path $outDir 'ai_tests.exe'
 $exeData    = Join-Path $outDir 'ai_data_tests.exe'
 $exePaths   = Join-Path $outDir 'ai_path_tests.exe'
 $exeStopgap = Join-Path $outDir 'ai_stopgap_tests.exe'
+$srcClaim   = Join-Path $here 'test_ai_claim.cpp'
+$exeClaimOd = Join-Path $outDir 'ai_claim_tests_Od.exe'
+$exeClaimO2 = Join-Path $outDir 'ai_claim_tests_O2.exe'
 $caigmgr    = Join-Path $here '..\..\enations_latest\src\caigmgr.cpp'
+$cairoute   = Join-Path $here '..\..\enations_latest\src\cairoute.cpp'
+$caiunit    = Join-Path $here '..\..\enations_latest\src\caiunit.hpp'
+$vehicleH   = Join-Path $here '..\..\enations_latest\src\vehicle.h'
 
 $clLogic   = "cl /nologo /EHsc /std:c++17 /W4 `"$srcLogic`" /Fo`"$outDir\ai_tests.obj`" /Fe`"$exeLogic`""
 $clData    = "cl /nologo /EHsc /std:c++17 /W4 `"$srcData`" /Fo`"$outDir\ai_data.obj`" /Fe`"$exeData`""
 $clPaths   = "cl /nologo /EHsc /std:c++17 /W4 `"$srcPaths`" /Fo`"$outDir\ai_paths.obj`" /Fe`"$exePaths`""
 $clStopgap = "cl /nologo /EHsc /std:c++17 /W4 `"$srcStopgap`" /Fo`"$outDir\ai_stopgap.obj`" /Fe`"$exeStopgap`""
+# BUGS #69 claim-liveness suite: built BOTH unoptimised and optimised, because the
+# predicate is timestamp arithmetic on unsigned DWORDs and /O2 is where that kind
+# of code changes behaviour if anything in it is UB.
+$clClaimOd = "cl /nologo /EHsc /std:c++17 /W4 /Od `"$srcClaim`" /Fo`"$outDir\ai_claim_Od.obj`" /Fe`"$exeClaimOd`""
+$clClaimO2 = "cl /nologo /EHsc /std:c++17 /W4 /O2 `"$srcClaim`" /Fo`"$outDir\ai_claim_O2.obj`" /Fe`"$exeClaimO2`""
 
 # compile + run logic suite
 cmd /c "`"$vcvars`" >nul 2>&1 && $clLogic && `"$exeLogic`""
@@ -94,5 +105,22 @@ if (Test-Path $caigmgr) {
     $stopgapExit = $LASTEXITCODE
 }
 
-if ($logicExit -ne 0 -or $dataExit -ne 0 -or $pathsExit -ne 0 -or $stopgapExit -ne 0) { exit 1 }
+# compile + run the #69 claim-liveness suite at /Od and /O2 (source lint skips
+# cleanly per path, like the others)
+$claimExit = 0
+foreach ($pair in @(@($clClaimOd, $exeClaimOd, 'Od'), @($clClaimO2, $exeClaimO2, 'O2'))) {
+    cmd /c "`"$vcvars`" >nul 2>&1 && $($pair[0])"
+    if ($LASTEXITCODE -ne 0) { exit 2 }
+    $claimArgs = @()
+    foreach ($p in @($cairoute, $caiunit, $vehicleH)) {
+        if (Test-Path $p) { $claimArgs += (Resolve-Path $p).Path } else { break }
+    }
+    Write-Host "[ai_claim] /$($pair[2])"
+    & $pair[1] @claimArgs
+    $rc = $LASTEXITCODE
+    if ($rc -eq 2) { Write-Host "[ai_claim] SKIP (cannot open a source path)"; $rc = 0 }
+    if ($rc -ne 0) { $claimExit = $rc }
+}
+
+if ($logicExit -ne 0 -or $dataExit -ne 0 -or $pathsExit -ne 0 -or $stopgapExit -ne 0 -or $claimExit -ne 0) { exit 1 }
 exit 0
