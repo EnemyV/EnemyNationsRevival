@@ -461,7 +461,21 @@ bool IsMainThread()
 
 namespace { const int kFrameMsgTypes = 128;
            uint64_t g_frameMsgUs[kFrameMsgTypes] = {0};
-           int      g_frameMsgTop = -1; }
+           int      g_frameMsgTop = -1;
+           int      g_frameInvalHexes = -1;
+           uint64_t g_frameInvalUs    = 0; }
+
+// The render-bound slow frames are 54% of the judder burden and their mechanism is
+// dirty-hex VOLUME (7.03x per frame) with per-hex cost flat. What is NOT established
+// is the direction: a long frame simulates more movement, so a big dirty set may be
+// the CONSEQUENCE of a slow frame rather than its cause. Per-second aggregates cannot
+// separate those. Pairing the dirty count with the frame time on the same line can.
+void NoteFrameInval( int dirtyHexes, uint64_t invalUs )
+{
+    if ( !g_enabled ) return;
+    g_frameInvalHexes = dirtyHexes;
+    g_frameInvalUs    = invalUs;
+}
 
 void NoteMsgUs( int msgType, uint64_t us )
 {
@@ -585,13 +599,18 @@ void FrameMark()
                 if ( g_frameMsgTop >= 0 && g_frameMsgUs[g_frameMsgTop] > 0 )
                     fprintf( s_fp, "  topmsg=%d/%.1fms", g_frameMsgTop,
                              (double)g_frameMsgUs[g_frameMsgTop] / 1000.0 );
+                if ( g_frameInvalHexes >= 0 )
+                    fprintf( s_fp, "  invalhex=%d  invalms=%.1f", g_frameInvalHexes,
+                             (double)g_frameInvalUs / 1000.0 );
                 fprintf( s_fp, "\n" );
                 fflush( s_fp );
             }
         }
         for ( int i = 0; i < SEC_COUNT; ++i ) g_prevFrameSec[i] = g_secTicks[i];
         for ( int i = 0; i < kFrameMsgTypes; ++i ) g_frameMsgUs[i] = 0;
-        g_frameMsgTop = -1;
+        g_frameMsgTop     = -1;
+        g_frameInvalHexes = -1;
+        g_frameInvalUs    = 0;
     }
 
     g_frames++;

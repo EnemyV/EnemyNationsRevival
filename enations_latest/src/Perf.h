@@ -100,6 +100,9 @@ namespace Perf
     // FrameMark names the costliest type on the [SLOWFRAME] line and then resets,
     // so the label belongs to THAT frame and not to the session.
     void NoteMsgUs( int msgType, uint64_t us );
+    // per-FRAME invalidate sample for [SLOWFRAME]: dirty-hex count and the cost of
+    // the invalidate pass, so dirty-set SIZE and frame TIME can be paired per frame.
+    void NoteFrameInval( int dirtyHexes, uint64_t invalUs );
 
     // RAII scoped timer for a NAMED counter. (Audit note: this is functionally the
     // same shape as ScopeCounter; kept separate only because it early-outs on

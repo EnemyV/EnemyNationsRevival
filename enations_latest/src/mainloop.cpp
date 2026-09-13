@@ -837,6 +837,7 @@ void CConquerApp::_RenderScreens( )
                 ANIM_THROTTLE_MS = 0;
         }
         DWORD dwAnimNow = timeGetTime( );
+        const uint64_t _qInval = Perf::NowIfEnabled( );   // paired with the dirty count below
         {
             Perf::ScopeCounter _ci( "r.inval" );   // invalidate pass (theMap.Update)
             for ( CWndAnim* pWnd : theAnimList )
@@ -863,7 +864,13 @@ void CConquerApp::_RenderScreens( )
         // Item 5 (dirty-rects) de-risk probe: how many hexes were invalidated this
         // frame (sim moves + render-time marks). If this is O(moving-units) and not
         // O(visible-hexes), the push-based dirty-rect source is viable.
-        Perf::CounterAdd( "inval.hexes", theMap.GetHexValidMatrix( )->GetDirtyCount( ) );
+        {
+            const int _nDirty = theMap.GetHexValidMatrix( )->GetDirtyCount( );
+            Perf::CounterAdd( "inval.hexes", _nDirty );
+            // same value onto the [SLOWFRAME] line, so dirty-set SIZE and frame TIME
+            // are paired PER FRAME - the per-second view cannot tell cause from effect
+            Perf::NoteFrameInval( _nDirty, Perf::ElapsedUs( _qInval ) );
+        }
 
         CHexCoord::ClearInvalidated( );  // Set terrain invalidated flags to FALSE
 
