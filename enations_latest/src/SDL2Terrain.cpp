@@ -1212,24 +1212,39 @@ static void AppendQueuedBuildGhosts( const CAnimAtr& aa, std::vector<SDL_Vertex>
 // building does. Walks the exact chain CVehicle::_NextRoadHex advances by, one hex at
 // a time, calling CVehicle::RoadStepToward - the SAME pure function _NextRoadHex now
 // calls (vehicle.cpp) - so this indicator cannot drift from what the crane actually
-// lays. Capped at kMaxRoadGhostHexes; no legit run approaches that length, and the
-// scratch array is static so this allocates nothing per frame.
+// lays. Capped by RoadGhostCap() (below), sized off the loaded map so a legitimate
+// long run is never truncated; the scratch buffer only reallocates when that cap
+// grows (map load), not per frame.
 //
 // Skips the leading run of hexes that already have a road (CHex::GetType()==road -
 // the same "nothing to lay here" test CVehicle::BuildRoad itself makes; there is no
 // separate GetUnits() road bit). A crane always lays a run in chain order starting
 // from its own end, so what is already built is always a contiguous PREFIX of the
 // chain - skipping it is what makes the drawn line shorten as the crane lays.
-static const int kMaxRoadGhostHexes = 256;
+
+// RoadStepToward moves exactly one axis one hex closer per call, and CHexCoord::Diff
+// (terrain.inl) wraps each axis to within half the map's span before that decision -
+// so the longest possible chain (opposite corners of the map, worst-case axis tie)
+// is half the width plus half the height of hexes to close, plus the starting hex
+// itself. The +2 covers rounding on an odd-sized map; this is a strict upper bound
+// on RoadStepToward's own walk, not a guess independent of the step rule it bounds.
+static int RoadGhostCap( )
+{
+    const int cap = ( theMap.Get_eX( ) + theMap.Get_eY( ) ) / 2 + 2;
+    return ( cap > 0 ) ? cap : 1;   // guard: never a zero/negative loop bound
+}
 
 static void AppendRoadGhostLine( const CAnimAtr& aa, CHexCoord const& hexFrom,
                                  CHexCoord const& hexEnd, std::vector<SDL_Vertex>& verts )
 {
-    static CHexCoord s_aHex[kMaxRoadGhostHexes];
+    static std::vector<CHexCoord> s_aHex;
+    const int cap = RoadGhostCap( );
+    if ( (int)s_aHex.size( ) < cap )
+        s_aHex.resize( cap );
 
     int       n   = 0;
     CHexCoord hex = hexFrom;
-    while ( n < kMaxRoadGhostHexes )
+    while ( n < cap )
     {
         s_aHex[n++] = hex;
         if ( hex == hexEnd )
@@ -1245,8 +1260,18 @@ static void AppendRoadGhostLine( const CAnimAtr& aa, CHexCoord const& hexFrom,
             break;
         ++iStart;
     }
+    if ( iStart >= n )
+        return;   // fully built already - nothing left to lay
+
+    // A lone unbuilt endpoint still needs to draw: back the anchor up onto the last
+    // BUILT hex so the segment INTO the final hex is emitted - the same segment the
+    // crane physically lays last. A genuine single-hex order (iStart==0, n==1) has no
+    // earlier hex to anchor on and still can't draw a directional line from nothing.
+    if ( ( n - iStart == 1 ) && ( iStart > 0 ) )
+        --iStart;
+
     if ( n - iStart < 2 )
-        return;   // nothing left to lay, or a zero-length order
+        return;   // a genuine single-hex order - no direction to draw
 
     // one seam shift for the whole line (AppendFootprintHatch's technique), anchored
     // on the run's start, plus a per-hex UN-wrapped projection relative to that same
