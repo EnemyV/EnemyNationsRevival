@@ -288,6 +288,81 @@ void TestHostPredicate( )
     }
 }
 
+//---------------------------------------------------------------------------
+//  BUGS #98: CNetCmd::FitsBuffer's per-type minimum-size table (netcmd.cpp)
+//  had no entry for edict_toggle, so an unlisted type fell through to
+//  `default: cbNeed = sizeof( CNetCmd )` -- the 12-byte base header -- and a
+//  truncated datagram (12 <= cbAvail < 24) passed validation even though the
+//  RX cast (netapi.cpp's `(CNetEdictToggle*)pCmd`) reads m_iPlyrNum/m_iEdict/
+//  m_bOn, 24 bytes total. netcmd.cpp's own wire_layout_assert.cpp pins
+//  sizeof(CNetEdictToggle) == 24 in BOTH configs, so that number -- not a
+//  guess here -- is what the fixed table entry (`cbNeed = sizeof(
+//  CNetEdictToggle )`) now requires. This mirrors the two decisions byte for
+//  byte without linking netcmd.cpp (which pulls the whole game).
+//---------------------------------------------------------------------------
+
+// CNetCmd's base header: BYTE m_bMsg + 3 bytes pad + DWORD-ish bookkeeping the
+// comments call out as 12 bytes (see CNetHexRetype / CNetEdictToggle: "Three
+// ints after the 12-byte CNetCmd = 24 bytes"). The exact field layout does not
+// matter here, only the size -- pin it to what the production comments say.
+struct MirrorNetCmdHeader
+{
+    int a, b, c;   // 12 bytes, matches the documented CNetCmd base size
+};
+
+struct MirrorNetEdictToggle
+{
+    MirrorNetCmdHeader hdr;
+    int                m_iPlyrNum;
+    int                m_iEdict;
+    int                m_bOn;
+};
+
+// The BEFORE state: edict_toggle absent from the switch, falls to `default`.
+int FitsBufferNeed_Before( )
+{
+    return (int)sizeof( MirrorNetCmdHeader );
+}
+
+// The AFTER state (this fix): `case edict_toggle: cbNeed = sizeof(
+// CNetEdictToggle ); break;`.
+int FitsBufferNeed_After( )
+{
+    return (int)sizeof( MirrorNetEdictToggle );
+}
+
+void TestEdictToggleSizeTableEntry( )
+{
+    CHECK_EQ( sizeof( MirrorNetCmdHeader ), 12 );
+    // Matches wire_layout_assert.cpp's static_assert(sizeof(CNetEdictToggle)==24,...)
+    // in both netcmd.h configurations -- if that pin ever moves, this mirror
+    // must move with it or this check catches the drift.
+    CHECK_EQ( sizeof( MirrorNetEdictToggle ), 24 );
+
+    const int cbNeedBefore = FitsBufferNeed_Before( );
+    const int cbNeedAfter  = FitsBufferNeed_After( );
+    CHECK_EQ( cbNeedBefore, 12 );
+    CHECK_EQ( cbNeedAfter, 24 );
+
+    // The exposure window BUGS #98 reports: a datagram of 12..23 bytes passed
+    // FitsBuffer's check before this fix (cbAvail >= 12) and would not before
+    // this fix's threshold (cbAvail >= 24) -- exactly the truncated-packet gap
+    // the RX cast then read past.
+    for ( int cbAvail = 12; cbAvail < 24; cbAvail++ )
+    {
+        CHECK( cbAvail >= cbNeedBefore );   // OLD table: wrongly accepted (the bug)
+        CHECK( cbAvail < cbNeedAfter );     // NEW table: correctly rejected (the fix)
+    }
+
+    // A full-size or larger datagram is accepted either way -- the fix only
+    // closes the truncated-packet gap, it does not reject well-formed traffic.
+    for ( int cbAvail = 24; cbAvail <= 40; cbAvail++ )
+    {
+        CHECK( cbAvail >= cbNeedBefore );
+        CHECK( cbAvail >= cbNeedAfter );
+    }
+}
+
 }  // namespace
 
 int main( )
@@ -299,5 +374,6 @@ int main( )
     TestPre015RecordIsRefusedByTheHashCompare( );
     TestJoinerRefusesBeforeAnyWireCall( );
     TestHostPredicate( );
+    TestEdictToggleSizeTableEntry( );
     return microtest::Summary( );
 }

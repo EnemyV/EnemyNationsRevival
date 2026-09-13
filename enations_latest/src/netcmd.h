@@ -1513,6 +1513,11 @@ class CNetEdictToggle : public CNetCmd
     int m_iPlyrNum;
     int m_iEdict;
     int m_bOn;       // 0/1 (int for fixed-size serialization)
+
+#ifdef _DEBUG
+  public:
+    void AssertValid( ) const;
+#endif
 };
 
 // One map hex retyped at runtime. Modelled on _CMsgRoad (an existing hex-terrain mutation
