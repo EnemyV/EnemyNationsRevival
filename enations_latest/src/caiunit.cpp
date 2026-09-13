@@ -57,6 +57,8 @@ CAIUnit::CAIUnit( DWORD dwID, int iOwner, int iType, int iTypeUnit )
     m_dwErrHex         = 0;
     m_wErrCnt          = 0;
     m_dwRoadStopSeen   = 0;
+    m_dwClaimHex       = 0;  // #69 router claim liveness (transient)
+    m_dwClaimStill     = 0;
 
     ASSERT_VALID( this );
 

@@ -85,6 +85,11 @@ public:
 	void RemovePlayerUnitsFromLists( int iPlayer );
 
 	BOOL TrucksAreEnroute( CAIUnit *pBldg );
+	// #69: the ONE place the enroute test and the ghost-claim reaper both ask
+	// "is this truck's claim on this building a delivery that is happening?",
+	// and the release that unbinds a claim that is not.
+	BOOL ClaimIsLive( CAIUnit *pTruck, CAIUnit *pBldg );
+	void DropClaim( CAIUnit *pBldg, DWORD dwTruckID );
 	void UnassignTruck( DWORD dwTruckID );
 	void UnassignTrucks( DWORD dwTruckID );
 	void UnassignTrucks( CAIUnit *pBldg );

@@ -893,6 +893,7 @@ void CAIRouter::IdleTruckTask( int iMat, int iFromBldg, int iToBldg )
     // update the truck and building as need commodiaties
     ReleaseTruckReservations( pTruck );  // drop any stale claims before repurposing this truck
     pTruck->ClearParam( );
+    pTruck->ClearClaimProgress( );  // #69: this assignment starts its own idle window
 
     WORD wStatus = 0;
     wStatus |= CAI_IN_USE;
@@ -1018,6 +1019,7 @@ BOOL CAIRouter::FindTransport( CAIUnit* pCAIBldg )
     pTruck->SetDataDW( pCAIBldg->GetID( ) );  // id of building needing
     ReleaseTruckReservations( pTruck );       // drop any stale claims before re-assigning this truck
     pTruck->ClearParam( );
+    pTruck->ClearClaimProgress( );  // #69: this assignment starts its own idle window
 
     // get truck's location to help find source (snapshot read, lock-free)
     CHexCoord hexTruck;
@@ -1939,6 +1941,90 @@ CAIUnit* CAIRouter::GetNearestSource( int iMaterial, int iQtyNeeded, int* piDist
 #endif
     return ( pClosest );
 }
+// BUGS #69. Wall-clock a CLAIMED truck may stand on one hex and still count as
+// a delivery in flight. DERIVED from the traffic layer's own holds (vehicle.h),
+// because those are the episodes where a truck legitimately keeps its job while
+// standing still:
+//   jam recovery  JAM_STUCK_FRAMES 30s (stagnation before it may even ask for
+//                 clearance) + JAM_WINDOW_FRAMES 30s + JAM_STAGGER_FRAMES 8s = ~68s
+//   parked hold   GIVEUP_HOLD_FRAMES 30s, or HOLD_FRAMES 10s + up to 3s stagger
+//                 after a retreat (vehmove.cpp:455 parks in mode `stop`)
+// 90s clears the worst of those with margin, and still fires far inside the
+// rescuers that were MASKING this hole - the 240s stuck sweep (caimgr.cpp:340)
+// and the vanilla 300s resend (caimgr.cpp:2147) - so the router heals itself
+// first instead of waiting for a sweep to re-task the truck.
+#define AI_CLAIM_IDLE_MS 90000
+//
+// BUGS #69: is this truck's claim on this building a delivery that is actually
+// happening? The name match ALONE (alive + still names the building) was the
+// bug: one truck that went idle while assigned silenced the site forever,
+// because FindTransport reported "enroute" and FillPriorities then dropped the
+// site from m_plBldgsNeed with no path back in.
+//
+// Liveness is read from POSITION, not from mode: a wedged truck can sit in
+// blocked/traffic/contention indefinitely while a LEGITIMATE traffic hold sits
+// in `stop`, so mode cannot separate them. A delivery that is happening changes
+// hexes; a dead one does not.
+//
+BOOL CAIRouter::ClaimIsLive( CAIUnit* pTruck, CAIUnit* pBldg )
+{
+    if ( pTruck == NULL || pBldg == NULL )
+        return FALSE;
+
+    // the truck must still hold THIS building as its current job
+    if ( pTruck->GetDataDW( ) != pBldg->GetID( ) )
+        return FALSE;
+
+    // ...and must be observably getting there (lock-free snapshot read, with the
+    // locked fallback inside ReadVeh; FALSE = the vehicle does not exist at all)
+    AiVehSnap snapTruck;
+    if ( !AiSnap::ReadVeh( pTruck->GetID( ), snapTruck ) )
+        return FALSE;
+
+    DWORD dwStill =
+        pTruck->NoteClaimStill( MAKELPARAM( snapTruck.iHeadX, snapTruck.iHeadY ), theGame.GettimeGetTime( ) );
+    return ( dwStill < AI_CLAIM_IDLE_MS );
+}
+//
+// BUGS #69: this claim is not a delivery - unbind it at BOTH ends, the same
+// release LoadMaterials' no-exit-hex branch does (UnassignTrucks+UnassignTruck),
+// so TrucksAreEnroute reports FALSE and the site goes back into m_plBldgsNeed.
+//
+// Deliberately does NOT push the truck into m_plTrucksAvailable and does NOT
+// touch m_plBldgsNeed: this runs with the site popped off the head of that list
+// (FillPriorities) and under a live walk of it (SetPriorities), so re-listing
+// here would double-enter the site; and re-pooling here would make the truck
+// that just starved the site its nearest candidate in the SAME pass. The
+// existing GetTrucksAvailable re-scan (FillPriorities, every 10 passes) re-pools
+// it once it reads as idle and untasked, so the bench is bounded without a new
+// sweeper.
+//
+void CAIRouter::DropClaim( CAIUnit* pBldg, DWORD dwTruckID )
+{
+    if ( pBldg == NULL || dwTruckID == 0 )
+        return;
+
+    for ( int i = 0; i < CMaterialTypes::num_types; ++i )
+    {
+        if ( pBldg->GetParamDW( i ) == dwTruckID )
+            pBldg->SetParamDW( i, 0 );
+    }
+
+    // the truck side comes off ONLY for a truck that still names this building:
+    // a claim left behind by a truck that has since been re-tasked to another
+    // site is a building-side fossil, and unbinding there would cancel that
+    // truck's CURRENT, healthy delivery (the pre-fix reaper cleared only the
+    // building side for exactly this reason).
+    CAIUnit* pTruck = m_plUnits->GetUnit( dwTruckID );
+    if ( pTruck != NULL && pTruck->GetDataDW( ) == pBldg->GetID( ) )
+    {
+        ReleaseTruckReservations( pTruck );  // free this truck's source claims
+        pTruck->SetDataDW( 0 );              // it no longer names that building
+        pTruck->ClearParam( );
+        pTruck->SetStatus( 0 );
+        pTruck->ClearClaimProgress( );  // a later assignment gets a fresh window
+    }
+}
 //
 // check all trucks that are assigned to this building
 //
@@ -1950,15 +2036,27 @@ BOOL CAIRouter::TrucksAreEnroute( CAIUnit* pBldg )
         // and are those materials still needed
         if ( pBldg->GetParamDW( i ) && pBldg->GetParam( i ) )
         {
-            CAIUnit* pTruck = m_plUnits->GetUnit( pBldg->GetParamDW( i ) );
-            if ( pTruck != NULL )
+            DWORD    dwTruck = pBldg->GetParamDW( i );
+            CAIUnit* pTruck  = m_plUnits->GetUnit( dwTruck );
+            if ( pTruck == NULL )
             {
-                // if truck is assigned
-                if ( pTruck->GetDataDW( ) == pBldg->GetID( ) )
-                    return TRUE;
-            }
-            else
                 pBldg->SetParamDW( i, 0 );  // truck is gone
+                continue;
+            }
+            // if truck is assigned AND the delivery is actually moving (#69)
+            if ( ClaimIsLive( pTruck, pBldg ) )
+                return TRUE;
+
+            // a claim that is not a delivery must not speak for this site
+            DropClaim( pBldg, dwTruck );
+#if EN_AI_PROBES_ECON && defined(_WIN32)
+            {
+                char szD[112];
+                sprintf( szD, "[DEADCLAIM] plyr %d bldg %lu mat %d truck %lu released (enroute test)\n", m_iPlayer,
+                         (unsigned long)pBldg->GetID( ), i, (unsigned long)dwTruck );
+                OutputDebugStringA( szD );
+            }
+#endif
         }
     }
     return FALSE;
@@ -2545,23 +2643,31 @@ void CAIRouter::SetUnitPriority( CAIUnit* pCAIBldg )
         // if material is needed
         if ( pCAIBldg->GetParam( i ) )
         {
-            // validate the claim exactly like TrucksAreEnroute: a truck that is
-            // gone or re-tasked elsewhere is no claim at all. A false claim here
-            // silences this building's requests FOREVER (savegame19 carries such
-            // fossils - the sites that never built across every round).
+            // validate the claim through the SAME predicate TrucksAreEnroute
+            // uses (ClaimIsLive, #69): a truck that is gone, re-tasked elsewhere,
+            // or standing still past AI_CLAIM_IDLE_MS is no claim at all. A false
+            // claim here silences this building's requests FOREVER (savegame19
+            // carries such fossils - the sites that never built across every
+            // round). The two tests shared the name-match-only bug by design,
+            // which is why the release lives in one place now.
             DWORD dwClaim = pCAIBldg->GetParamDW( i );
             if ( dwClaim )
             {
                 CAIUnit* pClaimT = m_plUnits->GetUnit( dwClaim );
-                if ( pClaimT == NULL || pClaimT->GetDataDW( ) != pCAIBldg->GetID( ) )
+                if ( !ClaimIsLive( pClaimT, pCAIBldg ) )
                 {
-                    pCAIBldg->SetParamDW( i, 0 );  // stale/ghost claim
+#if EN_AI_PROBES_ECON && defined(_WIN32)
+                    // read the reason BEFORE the release clears the binding
+                    char const* pszWhy = ( pClaimT == NULL )                                    ? "gone"
+                                         : ( pClaimT->GetDataDW( ) != pCAIBldg->GetID( ) ) ? "re-tasked"
+                                                                                           : "idle";
+#endif
+                    DropClaim( pCAIBldg, dwClaim );  // stale/ghost/idle claim
 #if EN_AI_PROBES_ECON && defined(_WIN32)
                     {
                         char szG[112];
                         sprintf( szG, "[GHOSTCLAIM] plyr %d bldg %lu mat %d truck %lu %s\n", m_iPlayer,
-                                 (unsigned long)pCAIBldg->GetID( ), i, (unsigned long)dwClaim,
-                                 ( pClaimT == NULL ) ? "gone" : "re-tasked" );
+                                 (unsigned long)pCAIBldg->GetID( ), i, (unsigned long)dwClaim, pszWhy );
                         OutputDebugStringA( szG );
                     }
 #endif
