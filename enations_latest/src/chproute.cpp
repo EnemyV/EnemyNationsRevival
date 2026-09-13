@@ -4998,6 +4998,13 @@ BOOL CHPRouter::_NeedsCommodities( CAIUnit* pCAIBldg )
     // now apply what is enroute to building via trucks
     // that contain the needed materials
 
+    // Total already on the road to this building, per material. The loop below
+    // discounts it from the NEED; the auto-stock ceiling further down also has to
+    // discount it from the ROOM, or a building one truckload under its ceiling
+    // orders another full truckload and lands over the top of it.
+    int aiEnroute[CMaterialTypes::num_types];
+    for ( int i = 0; i < CMaterialTypes::num_types; ++i ) aiEnroute[i] = 0;
+
     POSITION pos = m_plUnits->GetHeadPosition( );
     while ( pos != NULL )
     {
@@ -5024,6 +5031,8 @@ BOOL CHPRouter::_NeedsCommodities( CAIUnit* pCAIBldg )
                 // for if it helps out on the needs of building
                 for ( int i = 0; i < CMaterialTypes::num_types; ++i )
                 {
+                    aiEnroute[i] += m_iStore[i];
+
                     // a needed material of the building
                     if ( m_aiMatsNeeded[i] )
                     {
@@ -5081,6 +5090,33 @@ BOOL CHPRouter::_NeedsCommodities( CAIUnit* pCAIBldg )
         for ( int i = 0; i < CMaterialTypes::num_types; ++i ) m_iStore[i] = 0;
     }
 
+    // Auto-stock ceilings (operator 2026-09-13). Warehouses/rocket/seaports and vehicle
+    // factories cap how much the router will pile up; every other building answers -1
+    // and is left exactly as it was. Collected for ALL materials under ONE lock -- this
+    // runs per needing-building on every routing event, and re-entering the global
+    // critical section ten times per building is pure overhead on the AI worker thread.
+    //
+    // Construction and repair are never denied: GetBldgMatReq is what this building
+    // still needs to FINISH BUILDING or REPAIR ITSELF (0 for a finished, undamaged one,
+    // and 0 for anything that is not a build material), and the ceiling is raised to at
+    // least that. Exempting damaged/unfinished buildings outright would instead have let
+    // a half-built or lightly scratched warehouse go right back to filling unbounded.
+    int aiCap[CMaterialTypes::num_types];
+    for ( int i = 0; i < CMaterialTypes::num_types; ++i ) aiCap[i] = -1;
+
+    EnterCriticalSection( &cs );
+    CBuilding* pCapBldg = theBuildingMap.GetBldg( pCAIBldg->GetID( ) );
+    if ( pCapBldg != NULL )
+        for ( int i = 0; i < CMaterialTypes::num_types; ++i )
+        {
+            int iCap = pCapBldg->GetAutoStockCap( i );
+            if ( iCap < 0 )
+                continue;                                    // uncapped
+            int iFloor = pCapBldg->GetBldgMatReq( i, FALSE ); // construction / repair
+            aiCap[i]   = ( iCap < iFloor ) ? iFloor : iCap;
+        }
+    LeaveCriticalSection( &cs );
+
     BOOL bNeedSomething = FALSE;
     // now apply what is on-hand at the building against needs
     for ( int i = 0; i < CMaterialTypes::num_types; ++i )
@@ -5089,47 +5125,23 @@ BOOL CHPRouter::_NeedsCommodities( CAIUnit* pCAIBldg )
         // with id offset of commodity, needed amount, on-hand amount
         SetNeeded( i, m_aiMatsNeeded, m_iStore[i] );
 
-        // Auto-stock ceiling (operator 2026-09-13). Warehouses/rocket and vehicle
-        // factories now cap how much the router will pile up; every other building
-        // answers -1 and is untouched.
-        //
-        // Construction and repair are never denied: GetBldgMatReq is what this
-        // building still needs to FINISH BUILDING or to REPAIR ITSELF (0 for a
-        // finished, undamaged one, and 0 for anything that is not a build material),
-        // and the ceiling is raised to at least that. Exempting damaged/unfinished
-        // buildings outright would instead have let a half-built or lightly scratched
-        // warehouse go right back to filling without bound.
-        if ( m_aiMatsNeeded[i] )
+        // Trim the remaining need to the room left under the ceiling. Room counts what
+        // is already on the floor AND what trucks are already bringing, so a series of
+        // routing passes cannot each order a truckload against the same empty space.
+        if ( m_aiMatsNeeded[i] && ( aiCap[i] >= 0 ) )
         {
-            EnterCriticalSection( &cs );
-            CBuilding* pCap   = theBuildingMap.GetBldg( pCAIBldg->GetID( ) );
-            int        iCap   = -1;
-            int        iFloor = 0;
-            if ( pCap != NULL )
+            int iRoom = aiCap[i] - aiRealStore[i] - aiEnroute[i];
+            if ( iRoom < 0 )
+                iRoom = 0;
+            if ( m_aiMatsNeeded[i] > iRoom )
             {
-                iCap   = pCap->GetAutoStockCap( i );
-                iFloor = pCap->GetBldgMatReq( i, FALSE );
-            }
-            LeaveCriticalSection( &cs );
-
-            if ( iCap >= 0 )
-            {
-                if ( iCap < iFloor )
-                    iCap = iFloor;
-
-                int iRoom = iCap - aiRealStore[i];
-                if ( iRoom < 0 )
-                    iRoom = 0;
-                if ( m_aiMatsNeeded[i] > iRoom )
-                {
 #ifdef _LOGOUT
-                    logPrintf( LOG_PRI_ALWAYS, LOG_HP_ROUTER,
-                               "building %d id=%ld material %d need %d trimmed to %d (cap %d, on hand %d)",
-                               pCAIBldg->GetTypeUnit( ), pCAIBldg->GetID( ), i, m_aiMatsNeeded[i], iRoom, iCap,
-                               aiRealStore[i] );
+                logPrintf( LOG_PRI_ALWAYS, LOG_HP_ROUTER,
+                           "building %d id=%ld material %d need %d trimmed to %d (cap %d, on hand %d, enroute %d)",
+                           pCAIBldg->GetTypeUnit( ), pCAIBldg->GetID( ), i, m_aiMatsNeeded[i], iRoom, aiCap[i],
+                           aiRealStore[i], aiEnroute[i] );
 #endif
-                    m_aiMatsNeeded[i] = iRoom;
-                }
+                m_aiMatsNeeded[i] = iRoom;
             }
         }
 

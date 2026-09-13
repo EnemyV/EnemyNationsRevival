@@ -1176,7 +1176,13 @@ public:
 		// Both used to be bottomless: the router hands a warehouse every surplus it
 		// can find (SetExcessMaterials) and never subtracted what the warehouse was
 		// already holding, so idle trucks shuttled forever.
-		enum { ROCKET_STOCK_CAP = 5000, WAREHOUSE_STOCK_CAP = 2000 };
+		//
+		// NOTE a SEAPORT is also UTwarehouse in ENATIONS.DAT -- it is warehouse-class
+		// for every existing router behaviour (it already shows a Storage section and
+		// already absorbs surplus), so it is capped too. Broken out as its own constant
+		// because a dock is a transfer point, not a depot, and may well want a
+		// different number once this has been played.
+		enum { ROCKET_STOCK_CAP = 5000, WAREHOUSE_STOCK_CAP = 2000, SEAPORT_STOCK_CAP = 2000 };
 
 		virtual int		GetAutoStockCap (int iInd) const;
 

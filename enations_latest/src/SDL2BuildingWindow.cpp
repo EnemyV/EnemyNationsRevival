@@ -570,7 +570,8 @@ static bool secBuilding(CBuilding* b) {
 enum {
     SEC_STORAGE, SEC_PRODUCTION, SEC_BUILDING, SEC_FERTILITY, SEC_INPUTS,
     SEC_OUTPUTS, SEC_UNITS, SEC_REPAIR, SEC_MILITARY, SEC_POWER, SEC_OFFICE,
-    SEC_WORKFORCE, SEC_APT, SEC_TURRET, SEC_EDICTS, SEC_ALTOUTPUT, SEC_AUTOSTOCK
+    SEC_WORKFORCE, SEC_APT, SEC_TURRET, SEC_EDICTS, SEC_ALTOUTPUT, SEC_AUTOSTOCK,
+    SEC_COUNT   // sentinel — keep last; sizes the layout arrays
 };
 
 // AltOutput "Production Mode" section: one outlined box with a checkbox row (+ scope (i)
@@ -580,10 +581,16 @@ static const int ALTOUTPUT_H = BOX_PAD + HDR_H + ROW_H + BOX_PAD;
 
 struct SecRec { int id; int h; };
 
+// One slot per section id, so the arrays below cannot overflow no matter how many
+// sections a single building qualifies for. (The richest real case is the rocket at
+// ~12; the previous fixed 16 happened to fit but left no margin for a new section --
+// computeLayout appends with an unchecked secs[n++].)
+static const int MAX_SECS = SEC_COUNT;
+
 struct BldgLayout {
-    SecRec secs[16];
+    SecRec secs[MAX_SECS];
     int    n         = 0;
-    int    colOf[16] = {};     // column index this section lands in, 0-based
+    int    colOf[MAX_SECS] = {};     // column index this section lands in, 0-based
     int    nCols     = 1;      // 1..3; 3 is what the Rocket Ship needs to fit a short screen
     bool   twoCol    = false;  // kept as (nCols > 1) for readability at the use sites
     int    bodyH     = 0;      // height of the tallest column (incl. SEC_PAD)

@@ -2688,8 +2688,9 @@ void CWarehouseBuilding::GetAccepts( int* pVals ) const
             *pVals++ = 0;
 }
 
-// Rocket 5000 / warehouse 2000 per material. GetBldgType folds rocket and warehouse
-// together into `warehouse`, so test the concrete type instead.
+// Rocket 5000 / seaport 2000 / warehouse 2000 per material. GetBldgType folds rocket
+// and warehouse together into `warehouse` and a seaport is UTwarehouse as well, so all
+// three have to be told apart by the CONCRETE type.
 int CWarehouseBuilding::GetAutoStockCap( int iInd ) const
 {
     ASSERT_VALID( this );
@@ -2697,8 +2698,12 @@ int CWarehouseBuilding::GetAutoStockCap( int iInd ) const
     if ( IsMatBlocked( iInd ) )
         return ( 0 );   // vetoed: haul nothing here
 
-    return ( GetData( )->GetType( ) == CStructureData::rocket ? (int)ROCKET_STOCK_CAP
-                                                              : (int)WAREHOUSE_STOCK_CAP );
+    switch ( GetData( )->GetType( ) )
+    {
+    case CStructureData::rocket:  return ( (int)ROCKET_STOCK_CAP );
+    case CStructureData::seaport: return ( (int)SEAPORT_STOCK_CAP );
+    default:                      return ( (int)WAREHOUSE_STOCK_CAP );
+    }
 }
 
 // STOCK_UNITS times the DEAREST single-unit requirement for iInd across everything
