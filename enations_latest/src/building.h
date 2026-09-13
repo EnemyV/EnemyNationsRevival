@@ -725,11 +725,18 @@ public:
 
 		// ---- automatic routing membership ---------------------------------------
 		// Is this building part of the auto-router's network? Default TRUE. When a
-		// player turns it off the router treats the building as if it did not exist:
-		// no deliveries TO it, no pickups FROM it, and its surplus no longer counts
-		// toward what warehouses are told to absorb. Player-drawn routes and the
-		// Load Truck dialog keep working exactly as before -- this is a switch for
-		// hand-managing one building, not for shutting it down.
+		// player turns it off the router stops all OPEN-ENDED stocking of it: no
+		// production inputs, vehicle-build materials, power-plant fuel or warehouse
+		// surplus delivered in; no pickups FROM it; and its own surplus no longer
+		// counts toward what warehouses are told to absorb.
+		//
+		// CONSTRUCTION and REPAIR materials are the exception and keep flowing --
+		// those needs are finite and are what lets the building exist at all, so
+		// stalling them would just be a way to silently strand a half-built or
+		// bombed-out structure. (Same carve-out the auto-stock ceilings make.)
+		//
+		// Player-drawn routes and the Load Truck dialog are unaffected either way --
+		// this is a switch for hand-managing one building, not for shutting it down.
 		BOOL					IsAutoRouteEnabled () const;
 		void					SetAutoRouteEnabled (BOOL bEnable);
 		// TRUE if this building type takes part in material routing at all, i.e.

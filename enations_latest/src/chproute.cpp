@@ -4603,20 +4603,24 @@ BOOL CHPRouter::_NeedsCommodities( CAIUnit* pCAIBldg )
     if ( iProduces == CStructureData::num_union_types )
         return FALSE;
 
-    // Player took this building out of the automatic network: it never wants
-    // anything as far as the router is concerned. Reporting no need here is what
-    // keeps it out of m_plBldgsNeed (GetBuildingNeeding and the bldg_new/bldg_stat
-    // paths all decide membership through this function), and NeedsCommodities(NULL)
-    // then drops it from the list as soon as any truck already enroute has landed.
-    if ( !bAutoRoute )
-    {
-        for ( int i = 0; i < CMaterialTypes::num_types; ++i ) pCAIBldg->SetParam( i, 0 );
+    // Player took this building out of the automatic network (operator 2026-09-13).
+    // CONSTRUCTION and REPAIR are the exceptions and still get delivered: those needs
+    // are finite, they are what lets the building exist at all, and silently stalling
+    // a half-built or bombed-out structure is a trap. What the exclusion suppresses is
+    // the OPEN-ENDED stocking -- production inputs, vehicle-build materials, power-plant
+    // fuel and warehouse surplus absorption -- which is handled by skipping the running-
+    // production branch below. The building is still never used as a SOURCE, and its own
+    // surplus still never counts toward warehouse demand (GetNearestSource,
+    // Set/HaveExcessMaterials, SecondaryStocking, CheckWarehouses).
+    //
+    // A building with nothing to build or repair therefore computes no needs at all,
+    // returns FALSE, and drops out of m_plBldgsNeed exactly as before.
 #ifdef _LOGOUT
-        logPrintf( LOG_PRI_ALWAYS, LOG_HP_ROUTER, "building %d id=%ld excluded from autorouting ",
+    if ( !bAutoRoute )
+        logPrintf( LOG_PRI_ALWAYS, LOG_HP_ROUTER,
+                   "building %d id=%ld excluded from autorouting (construction/repair still supplied) ",
                    pCAIBldg->GetTypeUnit( ), pCAIBldg->GetID( ) );
 #endif
-        return FALSE;
-    }
 
 #ifdef _LOGOUT
     logPrintf( LOG_PRI_ALWAYS, LOG_HP_ROUTER, "\nCHPRouter::NeedsCommodities for player %d ", m_iPlayer );
@@ -4718,7 +4722,7 @@ BOOL CHPRouter::_NeedsCommodities( CAIUnit* pCAIBldg )
         }
 #endif
     }
-    else if ( !bIsPaused )  // building is built and running
+    else if ( !bIsPaused && bAutoRoute )  // building is built and running (and in the auto network)
     {
         // does this building produce materials?
         if ( iProduces == CStructureData::UTmaterials )

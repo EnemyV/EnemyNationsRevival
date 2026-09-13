@@ -1078,19 +1078,20 @@ int SDL2BuildingWindow::BuildAutoStock(int x, int y, int w) {
 
     CBuilding* pBldg = m_pBldg;          // capture by value: the callback outlives this frame
 
-    // Master switch. Unticking it takes the building out of the automatic truck
-    // network entirely -- no deliveries in, no pickups out, and its surplus stops
-    // counting toward what warehouses are asked to absorb. Hand-loading and
-    // player-drawn routes are unaffected, which is the point: this is how you take
-    // one building under manual control without stopping it.
+    // Master switch. Unticking it stops the automatic trucks stocking this building
+    // and collecting from it, and stops its surplus counting toward what warehouses
+    // are asked to absorb -- but construction and repair materials keep arriving, so
+    // turning it off can never silently strand a half-built or damaged structure.
+    // Hand-loading and player-drawn routes are unaffected, which is the point: this
+    // is how you take one building under manual control without stopping it.
     m_chkAutoRoute = AddWidget<SDL2Checkbox>(
         cbX, yh, cbW - ( kInfoSz + 4 ), ROW_H, "Enable Autorouting", pBldg->IsAutoRouteEnabled() != FALSE,
         [pBldg]( bool on ) { pBldg->SetAutoRouteEnabled( on ? TRUE : FALSE ); } );
     AddWidget<SDL2InfoIcon>( cbX + cbW - kInfoSz, yh + ( ROW_H - kInfoSz ) / 2, kInfoSz, kInfoSz,
                              "This building only\n"
-                             "Off: automatic trucks neither deliver here nor collect from here,\n"
-                             "including materials for CONSTRUCTION and REPAIR - supply those by hand.\n"
-                             "Hand-loaded trucks and routes you draw yourself still work." );
+                             "Off: automatic trucks stop stocking this building and stop\n"
+                             "collecting from it. Materials for CONSTRUCTION and REPAIR are\n"
+                             "still delivered. Hand-loading and your own routes always work." );
 
     if ( !pBldg->CanBlockMaterials() )
         return y + H + SEC_PAD;
