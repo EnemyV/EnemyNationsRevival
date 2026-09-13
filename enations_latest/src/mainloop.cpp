@@ -624,7 +624,10 @@ BOOL CConquerApp::CheckYield( )
 // ProcessAllMessages(100) after the Operate block) because they hold different
 // traffic. Whole body is inert unless Perf::IsEnabled().
 namespace {
-    const int kMsgTypes = 64;
+    // Sized from the enum, not a magic number: CNetCmd's ordinals run to 95, so a
+    // 64-slot table silently dropped shoot_gun (75), veh_comp_loc (85) and
+    // comp_unit_damage (86) - exactly the combat types the second arm needs.
+    const int kMsgTypes = 128;
     struct MsgStat { long long n; long long us; long long maxUs; };
     MsgStat g_msgStat[2][kMsgTypes] = {};
     int     g_enMsgDrain = 0;
@@ -638,6 +641,9 @@ namespace {
         g_msgDumpLast = now;
         FILE* f = fopen( EnLogPath( "msgtype.log" ).c_str( ), "a" );
         if ( f == NULL ) return;
+        // INTERVAL statistics: without the reset below, n and us accumulate for the
+        // whole session and maxUs is a LIFETIME max, so no two dumps can name the
+        // slowest handler in the current interval - the question this exists to answer.
         for ( int d = 0; d < 2; ++d )
             for ( int t = 0; t < kMsgTypes; ++t )
                 if ( g_msgStat[d][t].n > 0 )
@@ -647,6 +653,9 @@ namespace {
                              (double)g_msgStat[d][t].us / 1000.0,
                              (double)g_msgStat[d][t].maxUs / 1000.0 );
         fclose( f );
+        for ( int d = 0; d < 2; ++d )
+            for ( int t = 0; t < kMsgTypes; ++t )
+                g_msgStat[d][t] = MsgStat();   // reset: each dump is ONE interval
     }
 }
 
@@ -705,6 +714,7 @@ void CConquerApp::ProcessAllMessages( DWORD dwBudgetMs )
                 MsgStat& st = g_msgStat[ g_enMsgDrain ? 1 : 0 ][ iMsgType ];
                 st.n++; st.us += _us;
                 if ( _us > st.maxUs ) st.maxUs = _us;
+                Perf::NoteMsgUs( iMsgType, (uint64_t)_us );   // per-FRAME top type for [SLOWFRAME]
             }
             DWORD dwMsgMs = timeGetTime( ) - dwMsgT0;
             if ( dwMsgMs > 40 )   // was 250: tests ONE message, but msg= is a SUM - never fired
@@ -715,7 +725,24 @@ void CConquerApp::ProcessAllMessages( DWORD dwBudgetMs )
             }
         }
 #else
-        theGame.ProcessMessage((CNetCmd *) pBuf);
+        // PER-TYPE HISTOGRAM on the path that ACTUALLY RUNS when EN_PERF_PROBES is 0
+        // (the lane default). My first cut put this only inside the #if branch above,
+        // so with lane gates it compiled out entirely and wrote an EMPTY msgtype.log -
+        // which would have read as "no messages in the drain" rather than as a broken
+        // probe. Runtime-gated on Perf::IsEnabled() only, per the audit.
+        {
+            const int      _mhTy = (int)( (CNetCmd*)pBuf )->GetType( );
+            const uint64_t _mhT0 = Perf::NowIfEnabled( );
+            theGame.ProcessMessage((CNetCmd *) pBuf);
+            if ( Perf::IsEnabled( ) && _mhTy >= 0 && _mhTy < kMsgTypes )
+            {
+                const long long _us = (long long)Perf::ElapsedUs( _mhT0 );
+                MsgStat& st = g_msgStat[ g_enMsgDrain ? 1 : 0 ][ _mhTy ];
+                st.n++; st.us += _us;
+                if ( _us > st.maxUs ) st.maxUs = _us;
+                Perf::NoteMsgUs( _mhTy, (uint64_t)_us );   // per-FRAME top type for [SLOWFRAME]
+            }
+        }
 #endif
         theGame.FreeQueueElement((CNetCmd *) pBuf);
 
@@ -772,11 +799,13 @@ void CConquerApp::_RenderScreens( )
         Perf::CounterInc( "clk.future" );
     div_t dtFrame             = div( dwNow - theGame.m_dwFrameTimeLast, 1000 / FRAME_RATE );
     theGame.m_dwFramesElapsed = dtFrame.quot;
-    // PROBE BRANCH: lane behaviour is kept deliberately (`+ dtFrame.rem`). The fix for
-    // this line lives on winopus/015-anim-clock as 2f62b51f and is NOT merged here, so
-    // the histogram measures what the LANE does, not what my fix does. anim.step* then
-    // records the lane's real animation cadence.
-    theGame.m_dwFrameTimeLast = dwNow + dtFrame.rem;
+    // CARRY the unconsumed remainder, don't ADD it. quot whole 1/24s frames were
+    // consumed; rem ms are left over and must be carried INTO the next interval.
+    // (This IS the lane's arithmetic - 1aa0b262 is an ancestor of 0076db78. My
+    // cherry-pick of 067a9d36 resolved the conflict to the STALE side and put
+    // `+ rem` back, reverting a landed fix on the measurement branch and in the
+    // play-dir exe QA was testing. Restored; the counters below stay.)
+    theGame.m_dwFrameTimeLast = dwNow - dtFrame.rem;
     Perf::CounterInc( dtFrame.quot == 0 ? "anim.step0"
                     : ( dtFrame.quot == 1 ? "anim.step1"
                     : ( dtFrame.quot == 2 ? "anim.step2" : "anim.step3plus" ) ) );

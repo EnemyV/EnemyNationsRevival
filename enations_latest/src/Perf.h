@@ -92,6 +92,11 @@ namespace Perf
     // accumulators instead of a named counter. Returns 0 when profiling is off.
     uint64_t ElapsedUs( uint64_t startTicks );
 
+    // PER-FRAME message attribution. The drain records each handler's cost here;
+    // FrameMark names the costliest type on the [SLOWFRAME] line and then resets,
+    // so the label belongs to THAT frame and not to the session.
+    void NoteMsgUs( int msgType, uint64_t us );
+
     // RAII scoped timer for a NAMED counter. (Audit note: this is functionally the
     // same shape as ScopeCounter; kept separate only because it early-outs on
     // IsEnabled() at construction. Collapse into ScopeCounter when that is confirmed
