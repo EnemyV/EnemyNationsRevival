@@ -107,6 +107,11 @@ namespace Perf
     // contains and the cost of its single WORST one. A per-frame budget can only
     // spread MANY searches; it cannot split ONE - an A* is atomic.
     void NoteFrameSearch( uint64_t us );
+    // per-FRAME sleep decision for [SLOWFRAME]: the FRESH SLACK at the decision point
+    // (ms to the next sim tick; negative = already behind) and what we actually slept.
+    // @WinAstra's gate on the sleep fix: 266 ms/s is only waste if the slow cohort shows
+    // negative slack. If slack is positive there, the 10 ms was pacing.
+    void NoteFrameSleep( int slackMs, uint64_t sleptUs );
 
     // RAII scoped timer for a NAMED counter. (Audit note: this is functionally the
     // same shape as ScopeCounter; kept separate only because it early-outs on

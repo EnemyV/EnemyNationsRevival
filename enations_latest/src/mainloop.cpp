@@ -1046,8 +1046,23 @@ void CConquerApp::GraphicsEnginePump( )
           ::Sleep( __minmax( 10, 2 * 1000 / FRAME_RATE, iExtra ) ); }
     }
     else
-        { Perf::ScopeSlot _perfSleep( Perf::SEC_SLEEP );
-          Perf::ScopeCounter _cs( "slp.net" ); ::Sleep( 10 ); }  // give network some time
+    {
+        Perf::ScopeSlot _perfSleep( Perf::SEC_SLEEP );
+        // @WinAstra's decision-time instrument. This branch has no slack test at all -
+        // it sleeps 10 ms whether the tick is early or 40 ms late. Compute the SAME
+        // quantity the repaired render path uses, for MEASUREMENT ONLY: ms remaining to
+        // the next sim tick, negative when we are already behind. The Sleep is unchanged.
+        int _slack = 0;
+        if ( Perf::IsEnabled( ) )   // consistent with audit (4): no clock read when off
+        {
+            _slack = (int)( 1000 / FRAME_RATE )
+                   - (int)( theGame.GettimeGetTime( ) - theGame.m_dwOperTimeLast );
+            Perf::CounterInc( _slack > 0 ? "slp.net.ahead" : "slp.net.behind" );
+        }
+        const uint64_t _t0 = Perf::NowIfEnabled( );
+        { Perf::ScopeCounter _cs( "slp.net" ); ::Sleep( 10 ); }  // give network some time
+        Perf::NoteFrameSleep( _slack, Perf::ElapsedUs( _t0 ) );
+    }
 
     // animate if 1/24 of a second has passed
     div_t dtFrame             = div( theGame.GettimeGetTime( ) - theGame.m_dwOperTimeLast, 1000 / FRAME_RATE );

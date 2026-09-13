@@ -485,7 +485,18 @@ namespace { const int kFrameMsgTypes = 128;
            uint64_t g_frameInvalUs    = 0;
            int      g_frameSearches   = 0;
            uint64_t g_frameSearchUs   = 0;
-           uint64_t g_frameSearchMax  = 0; }
+           uint64_t g_frameSearchMax  = 0;
+           int      g_frameSlackMs    = 0;
+           bool     g_frameSlackSet   = false;
+           uint64_t g_frameSleptUs    = 0; }
+
+void NoteFrameSleep( int slackMs, uint64_t sleptUs )
+{
+    if ( !g_enabled ) return;
+    g_frameSlackMs  = slackMs;
+    g_frameSlackSet = true;
+    g_frameSleptUs += sleptUs;
+}
 
 // Sizes the "budget/amortise the A* per frame" fix candidate. Budgeting can only
 // help if a slow frame holds MANY searches to spread across later frames. If the
@@ -642,6 +653,9 @@ void FrameMark()
                     fprintf( s_fp, "  srch=%d  srchms=%.1f  srchmax=%.1f", g_frameSearches,
                              (double)g_frameSearchUs / 1000.0,
                              (double)g_frameSearchMax / 1000.0 );
+                if ( g_frameSlackSet )
+                    fprintf( s_fp, "  slack=%d  slept=%.1f", g_frameSlackMs,
+                             (double)g_frameSleptUs / 1000.0 );
                 fprintf( s_fp, "\n" );
                 fflush( s_fp );
             }
@@ -654,6 +668,9 @@ void FrameMark()
         g_frameSearches   = 0;
         g_frameSearchUs   = 0;
         g_frameSearchMax  = 0;
+        g_frameSlackMs    = 0;
+        g_frameSlackSet   = false;
+        g_frameSleptUs    = 0;
     }
 
     g_frames++;
