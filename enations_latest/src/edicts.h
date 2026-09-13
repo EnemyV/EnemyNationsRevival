@@ -128,15 +128,32 @@ extern const AltOutput::AltMat DESPERATE_BASE_RATES[DESPERATE_RATE_LINES];
 
 // --- Resonance Sweep tuning (EDICT_RESONANCE_SWEEP) -----------------------------------------
 // The Command Center broadcasts on the frequency every colony ship's drive core rings at and
-// takes a bearing off whatever rings back. Each RESONANCE_SWEEP_SECS game-seconds it picks ONE
-// enemy rocket at random and resolves it: one we have never seen is revealed, one we already
-// know has its displayed state refreshed, and one that has since been destroyed is cleared off
-// the map. Those last two are why the edict keeps earning its power after every rocket has been
-// found -- a fogged enemy building otherwise keeps the look it had when we last saw it (leaving
-// vision only pauses its animations), so without a ping its damage is however stale our last
-// sighting was, and a ship blown up out of sight would sit on our map intact forever. What the
-// sweep buys late is CURRENT information rather than new contacts. See CPlayer::ResonanceSweep.
-const int RESONANCE_SWEEP_SECS  = 10;   // game-seconds between pings
-const int RESONANCE_SWEEP_POWER = 500;  // flat power drawn while active (iFlatEnergyUpkeep)
+// takes a bearing off whatever rings back. Each recharge it picks ONE enemy rocket at random and
+// resolves it: one we have never seen is revealed, one we already know has its displayed state
+// refreshed, and one that has since been destroyed is cleared off the map. Those last two are
+// why the edict keeps earning its power after every rocket has been found -- a fogged enemy
+// building otherwise keeps the look it had when we last saw it (leaving vision only pauses its
+// animations), so without a ping its damage is however stale our last sighting was, and a ship
+// blown up out of sight would sit on our map intact forever. What the sweep buys late is CURRENT
+// information rather than new contacts.
+//
+// From Drive-Core Resonance tier 2 the ping also lights REAL GROUND: a ring of hexes around the
+// rocket it found, 1 hex wide at tier 2 up to 5 at tier 6 (CPlayer::GetSweepRings), held for
+// RESONANCE_SWEEP_LIT_SECS and then released. That window is ordinary hex visibility, the same
+// counter a scouting unit drives, so enemy VEHICLES inside it appear while it is lit and vanish
+// when it goes dark, while buildings and terrain it uncovers stay remembered exactly as if we
+// had walked past them.
+//
+// RECHARGE SCALES WITH POWER. At full power the recharge is RESONANCE_SWEEP_RELOAD_SECS. Brown
+// the colony out and it stretches in proportion: CPlayer::m_fPwrMult is the fraction of demand
+// actually met, so half power doubles the wait, quarter power quadruples it, and so on, capped
+// at RESONANCE_SWEEP_MAX_RELOAD so a total blackout stalls the sweep rather than dividing by
+// zero. The edict's own draw is part of that demand, so switching it on when the grid is
+// already tight slows the very thing you switched on. See CPlayer::GetSweepReloadSecs.
+const int RESONANCE_SWEEP_RELOAD_SECS = 30;   // game-seconds to recharge at FULL power
+const int RESONANCE_SWEEP_MAX_RELOAD  = 600;  // recharge cap in a deep brownout (10 minutes)
+const int RESONANCE_SWEEP_LIT_SECS    = 10;   // how long a ping's lit ring is held
+const int RESONANCE_SWEEP_POWER       = 500;  // flat power at tier 1 (EdictDef iFlatEnergyUpkeep)
+const int RESONANCE_SWEEP_POWER_TIER  = 100;  // extra flat power per tier above 1
 
 #endif // ENATIONS_EDICTS_H

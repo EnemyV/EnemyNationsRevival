@@ -363,7 +363,7 @@ static int nCivEdictsFor(CBuilding* b) {
         CStructureData::BLDG_TYPE host = g_aEdicts[id].hostBuilding;
         if ( host != bt && host != gt ) continue;
         // Research-gate (#2, §10): edict hidden until its topic is discovered.
-        if ( o && !o->GetRsrch( g_aEdicts[id].researchTopic ).m_bDiscovered ) continue;
+        if ( o && !o->HasRsrch( g_aEdicts[id].researchTopic ) ) continue;
         ++n;
     }
     return n;
@@ -1061,7 +1061,7 @@ int SDL2BuildingWindow::BuildEdicts(int x, int y, int w) {
         if ( e.scope != EDICT_CIVWIDE || ( e.hostBuilding != bt && e.hostBuilding != gt ) )
             continue;
         // Research-gate (#2, §10): hide the edict until its topic is discovered (matches nCivEdictsFor).
-        if ( me && !me->GetRsrch( e.researchTopic ).m_bDiscovered )
+        if ( me && !me->HasRsrch( e.researchTopic ) )
             continue;
         bool checked = me->IsEdictActive(id);
         int  eid     = id;   // capture by value for the callback

@@ -1280,37 +1280,97 @@ void CRsrchArray::Open( )
             pRi->m_sResult = aszDpRslt[iOn];
         }
     }
-    // ---- Drive-Core Resonance (in-code) --------------------------------------
-    // A single late topic whose only effect is to unlock the Resonance Sweep edict at the
-    // Command Center (see edicts.h / CPlayer::ResonanceSweep). Priced at 6x the spot_3
-    // topic -- 1,488,000, dearer than anything in the DAT but well short of the end-game
-    // combat tiers -- and gated behind the top of the sensor line plus the reactor physics
-    // that says what a drive core sounds like and the plant that can drive the emitter.
-    // The AI's frozen research path doesn't pursue it (optional human tier).
+    // ---- Drive-Core Resonance 1-6 (in-code) ----------------------------------
+    // A late six-tier line whose only effect is the Resonance Sweep edict at the Command
+    // Center (see edicts.h / CPlayer::ResonanceSweep). Tier 1 is a bare contact -- it finds
+    // one enemy rocket and shows the ship itself. Tiers 2-6 turn the ping into REAL VISION,
+    // lighting a 1- to 5-hex ring of ground around whatever it finds for a few seconds.
+    //
+    // Tier 1 is priced at 6x the spot_3 topic (1,488,000: dearer than anything in the DAT,
+    // well short of the end-game combat tiers) and gated behind the top of the sensor line
+    // plus the reactor physics that says what a drive core sounds like and the plant that can
+    // drive the emitter. Tiers 2-6 each cost 5x the tier below and chain it.
+    //
+    // CEILING: the 5x ladder is 1.488M / 7.44M / 37.2M / 186M / 930M / 4.65 BILLION, and that
+    // last one does not fit in the int m_iPtsRequired -- worse, CPlayer::Research compares
+    // against m_iPtsRequired * 2, so anything above INT_MAX/2 overflows to negative and the
+    // topic would complete instantly or never. The ladder is therefore computed in 64-bit and
+    // clamped to RSRCH_PTS_CEILING, which lands tier 6 at ~1.07e9 instead of 4.65e9. Tiers 5
+    // and 6 end up close in price as a result; retune the multiplier (3x keeps the whole
+    // ladder under the ceiling) if that matters.
+    // The AI's frozen research path doesn't author these, though its cheapest-available
+    // fallback can still reach them.
     {
-        CRsrchItem* pRi = &ElementAt( drive_core_resonance );
+        const int RESONANCE_TIERS = 6;
 
-        static const int aiReq[3] = { (int)spot_3, (int)nuclear, (int)advanced_facilities };
+        // INT_MAX/2, because Research( ) evaluates m_iPtsRequired * 2.
+        const long long RSRCH_PTS_CEILING = 1073741823LL;
 
-        pRi->m_iPtsRequired      = ElementAt( spot_3 ).m_iPtsRequired * 6;   // 1,488,000
-        pRi->m_iNumBldgsRequired = 0;
-        pRi->m_iNumRsrchRequired = 3;
-        pRi->m_piRsrchRequired   = new int[3];
+        static const int aiIdx[RESONANCE_TIERS] = {
+            drive_core_resonance,   drive_core_resonance_2, drive_core_resonance_3,
+            drive_core_resonance_4, drive_core_resonance_5, drive_core_resonance_6 };
 
-        // Take the LATEST scenario any prereq needs -- the topic cannot be started before
-        // every one of its gates is itself reachable (same rule the late combat tier uses).
-        int iScen = 0;
-        for ( int iReq = 0; iReq < 3; iReq++ )
+        static char const* aszName[RESONANCE_TIERS] = {
+            "Drive-Core Resonance", "Phase-Locked Return",   "Harmonic Triangulation",
+            "Standing-Wave Imaging", "Core Echo Mapping",    "Full-Spectrum Resonance" };
+        static char const* aszDesc[RESONANCE_TIERS] = {
+            "Every one of those ships came down on the same kind of core. If we hit the right frequency it will ring, and we will hear which way it rang from.",
+            "We hear the ship but we see nothing around it. If we lock onto the phase of the return we could read the ground it is standing on as well.",
+            "One bearing gives us a point. Reading the harmonics off several of our own emitters at once would let us work outward and see a good deal more of the ground.",
+            "The return sets up a standing wave across the whole site. If we can image that wave properly we will see much further out from the ship than we do now.",
+            "The echo off the core carries the shape of everything it passed on the way back. Mapping that echo should open the ground out well past the ship itself.",
+            "If we open the emitter across the full spectrum at once we will get back everything there is to get. It will drink power like nothing we have built, but we will see their whole position." };
+        static char const* aszRslt[RESONANCE_TIERS] = {
+            "We can make their drive cores ring. Our Command Centers can now run a Resonance Sweep and take a bearing on one enemy ship at a time.",
+            "The phase lock holds. A sweep now lights the ground immediately around the ship it finds, not just the ship.",
+            "Harmonic triangulation is working. Our sweeps now open up a good deal more ground around each ship we find.",
+            "We can image the standing wave. Our sweeps now show much more of the ground around the ships they locate.",
+            "The echo mapping is running. A sweep now opens the ground well out past the ship itself.",
+            "Full-spectrum resonance is in service. A sweep now lays open their whole position around the ship, for as long as the emitter can hold it." };
+
+        // Tier 1 reaches across the sensor, reactor and facility lines; tiers 2-6 chain the
+        // tier below. -1 pads the unused slots.
+        static const int aiReq[RESONANCE_TIERS][3] = {
+            { (int)spot_3,                 (int)nuclear, (int)advanced_facilities },
+            { (int)drive_core_resonance,   -1,           -1                       },
+            { (int)drive_core_resonance_2, -1,           -1                       },
+            { (int)drive_core_resonance_3, -1,           -1                       },
+            { (int)drive_core_resonance_4, -1,           -1                       },
+            { (int)drive_core_resonance_5, -1,           -1                       } };
+
+        long long llPts = (long long)ElementAt( spot_3 ).m_iPtsRequired * 6;   // 1,488,000
+
+        for ( int iOn = 0; iOn < RESONANCE_TIERS; iOn++ )
         {
-            pRi->m_piRsrchRequired[iReq] = aiReq[iReq];
-            if ( ElementAt( aiReq[iReq] ).m_iScenarioReq > iScen )
-                iScen = ElementAt( aiReq[iReq] ).m_iScenarioReq;
-        }
-        pRi->m_iScenarioReq = iScen;
+            CRsrchItem* pRi = &ElementAt( aiIdx[iOn] );
 
-        pRi->m_sName   = "Drive-Core Resonance";
-        pRi->m_sDesc   = "Every one of those ships came down on the same kind of core. If we hit the right frequency it will ring, and we will hear which way it rang from.";
-        pRi->m_sResult = "We can make their drive cores ring. Our Command Centers can now run a Resonance Sweep and take a bearing on one enemy ship at a time.";
+            if ( iOn > 0 )
+                llPts *= 5;
+            pRi->m_iPtsRequired      = (int)( ( llPts > RSRCH_PTS_CEILING ) ? RSRCH_PTS_CEILING : llPts );
+            pRi->m_iNumBldgsRequired = 0;
+
+            // Count the real prereqs and take the LATEST scenario any of them needs -- the
+            // topic cannot be started before every gate is itself reachable.
+            int nReq  = 0;
+            int iScen = 0;
+            for ( int iReq = 0; iReq < 3; iReq++ )
+                if ( aiReq[iOn][iReq] >= 0 )
+                {
+                    nReq++;
+                    if ( ElementAt( aiReq[iOn][iReq] ).m_iScenarioReq > iScen )
+                        iScen = ElementAt( aiReq[iOn][iReq] ).m_iScenarioReq;
+                }
+            pRi->m_iScenarioReq      = iScen;
+            pRi->m_iNumRsrchRequired = nReq;
+            pRi->m_piRsrchRequired   = new int[nReq];
+            for ( int iReq = 0, iPut = 0; iReq < 3; iReq++ )
+                if ( aiReq[iOn][iReq] >= 0 )
+                    pRi->m_piRsrchRequired[iPut++] = aiReq[iOn][iReq];
+
+            pRi->m_sName   = aszName[iOn];
+            pRi->m_sDesc   = aszDesc[iOn];
+            pRi->m_sResult = aszRslt[iOn];
+        }
     }
 #ifdef _DEBUG
     theDataFile.DisableNegativeSeekChecking( );

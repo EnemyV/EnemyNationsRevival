@@ -150,12 +150,12 @@ const EdictDef g_aEdicts[EDICT_COUNT] =
       1.0f, 1.0f, 1.0f, 1.0f, 1.0f },
 
     // EDICT_RESONANCE_SWEEP -- Command Center, civ-wide BEHAVIOR edict (every multiplier neutral;
-    // the work is in CPlayer::ResonanceSweep). Once per RESONANCE_SWEEP_SECS it locates one enemy
+    // the work is in CPlayer::ResonanceSweep). Once per recharge it locates one enemy
     // rocket at random and resolves what we know of it -- reveal, refresh, or clear it if it died.
     // The cost is a FLAT RESONANCE_SWEEP_POWER through iFlatEnergyUpkeep (the last field) rather
     // than a percentage: one emitter draws one emitter's worth of power no matter how big the
     // colony around it is. Gate: drive_core_resonance, a topic that exists only for this edict.
-    { "Resonance Sweep", "Civ-wide: every 10 seconds, locates one enemy rocket at random and refreshes what we know of it.\nCost: a flat 500 power while active.",
+    { "Resonance Sweep", "Civ-wide: every 30 seconds, locates one enemy rocket at random and refreshes what we know of it.\nHigher Drive-Core Resonance tiers also light the ground around it for 10 seconds.\nCost: a flat 500 power (+100 per tier). Low power slows the recharge.",
       CStructureData::command_center, EDICT_CIVWIDE, CRsrchArray::drive_core_resonance,
       1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f,
       0.0f, 0.0f, 0.0f,

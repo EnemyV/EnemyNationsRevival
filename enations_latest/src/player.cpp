@@ -117,7 +117,10 @@ void CPlayer::ctor( )
     m_bAutoRsrchPending   = FALSE;  // runtime-only AutoResearch set_rsrch-in-flight guard
     m_iSweepSecs          = 0;      // runtime-only Resonance Sweep timer phase
     m_uSweepRand          = 1;      // runtime-only Resonance Sweep private RNG (1 == the CRT seed)
-    m_iEdictFlatPwr       = 0;
+    m_bSweepLit           = FALSE;  // runtime-only: no lit ring outstanding
+    m_iSweepLitSecs       = 0;
+    m_iSweepLitCX         = 0;
+    m_iSweepLitCY         = 0;
     m_fEdictConstMult     = 1.0f;
     m_fEdictMineMult      = 1.0f;
     m_fEdictRsrchMult     = 1.0f;
@@ -269,7 +272,6 @@ void CPlayer::RecomputeEdictMults( )
     m_fEdictEnergyUpkeepPct    = 0.0f;
     m_fEdictWorkforceUpkeepPct = 0.0f;
     m_fEdictFoodUpkeepPct      = 0.0f;
-    m_iEdictFlatPwr            = 0;
 
     for ( int id = 0; id < EDICT_COUNT; ++id )
     {
@@ -296,8 +298,6 @@ void CPlayer::RecomputeEdictMults( )
         m_fEdictBldgDmgMult    *= e.fBldgDmgMult;
         // Upkeep is additive across active edicts (a pct of the relevant per-loop demand).
         m_fEdictEnergyUpkeepPct    += e.fEnergyUpkeepPct;
-        // Flat upkeep sums like the pcts do, but in absolute power rather than a share.
-        m_iEdictFlatPwr            += e.iFlatEnergyUpkeep;
         m_fEdictWorkforceUpkeepPct += e.fWorkforceUpkeepPct;
         m_fEdictFoodUpkeepPct      += e.fFoodUpkeepPct;
     }
@@ -676,8 +676,9 @@ void CPlayer::StartLoop( )
     // host building, so owning three Command Centers does not triple the bill. Like the pct
     // above this rides the raw member only until the loop resets it; GetPwrNeed re-adds it for
     // display. Unaffordable means the whole colony browns out through m_fPwrMult below, which
-    // is the intended pressure: 500 power is a real commitment on a small grid.
-    m_iPwrNeed += m_iEdictFlatPwr;
+    // is the intended pressure -- and for the sweep specifically that same m_fPwrMult is what
+    // stretches its recharge, so an emitter you cannot power throttles itself.
+    m_iPwrNeed += GetEdictFlatPwrNeed( );
     if ( m_fEdictWorkforceUpkeepPct > 0.0f ) m_iPplNeedBldg += (int)( m_iPplNeedBldg * m_fEdictWorkforceUpkeepPct );
 
     // #82/#87: never divide by a zero (or negative) need; a negative have against zero need produced -inf, then NaN in GetFrameProd, then an INT_MIN fire rate whose product with AVG_SPEED_MUL overflowed to 0 at the Shoot divide.
@@ -934,7 +935,8 @@ void CPlayer::Research( int iNumSec )
 
 //---------------------------------------------------------------------------
 // Resonance Sweep (EDICT_RESONANCE_SWEEP, unlocked by CRsrchArray::drive_core_resonance).
-// Every RESONANCE_SWEEP_SECS game-seconds, pick ONE enemy rocket at random and resolve what
+// Once per recharge (RESONANCE_SWEEP_RELOAD_SECS at full power, longer when the grid is short
+// -- see GetSweepReloadSecs), pick ONE enemy rocket at random and resolve what
 // we know of it. The three outcomes are deliberately the SAME three the engine already runs
 // when one of our own units scouts an enemy building (the reveal block in
 // CUnit::IncrementSpotting, unit.cpp) -- this is that block reached by a different trigger,
@@ -958,21 +960,156 @@ void CPlayer::Research( int iNumSec )
 // view-only path would advance that shared stream by a different amount on every machine.
 // Which rocket lights up has no business being part of the simulation.
 //---------------------------------------------------------------------------
+// Flat (absolute) power drawn by the active civ-wide edicts, plus the Resonance Sweep's
+// per-tier surcharge. Live rather than cached: researching a Drive-Core Resonance tier while
+// the edict is already on must raise the draw immediately, and a copy cached in
+// RecomputeEdictMults would not move until the next toggle.
+int CPlayer::GetEdictFlatPwrNeed( ) const
+{
+    int iPwr = 0;
+    for ( int id = 0; id < EDICT_COUNT; ++id )
+    {
+        if ( ( m_dwEdicts & ( 1u << id ) ) == 0 )
+            continue;
+        if ( g_aEdicts[id].scope != EDICT_CIVWIDE )
+            continue;
+        iPwr += g_aEdicts[id].iFlatEnergyUpkeep;
+    }
+
+    // The catalog holds the tier-1 emitter; each tier above it widens the ring and costs more.
+    if ( IsEdictActive( EDICT_RESONANCE_SWEEP ) )
+    {
+        int iTier = GetResonanceTier( );
+        if ( iTier > 1 )
+            iPwr += RESONANCE_SWEEP_POWER_TIER * ( iTier - 1 );
+    }
+    return ( iPwr );
+}
+
+// Recharge time for one ping. m_fPwrMult is the fraction of our power demand actually met
+// (StartLoop), so this stretches in proportion to the shortfall: full power = the base, half
+// power = double, quarter = quadruple. Capped rather than allowed to divide by ~0, so a total
+// blackout stalls the sweep at RESONANCE_SWEEP_MAX_RELOAD instead of producing a nonsense or
+// negative interval.
+int CPlayer::GetSweepReloadSecs( ) const
+{
+    float fPwr = m_fPwrMult;
+    if ( fPwr > 1.0f )
+        fPwr = 1.0f;
+
+    int iSecs;
+    if ( fPwr <= 0.0f )
+        iSecs = RESONANCE_SWEEP_MAX_RELOAD;
+    else
+        iSecs = (int)( (float)RESONANCE_SWEEP_RELOAD_SECS / fPwr );
+
+    if ( iSecs > RESONANCE_SWEEP_MAX_RELOAD )
+        iSecs = RESONANCE_SWEEP_MAX_RELOAD;
+    if ( iSecs < RESONANCE_SWEEP_RELOAD_SECS )
+        iSecs = RESONANCE_SWEEP_RELOAD_SECS;
+    return ( iSecs );
+}
+
+// Light one hex of a sweep ring. The visibility counter is ours to drive here exactly as a
+// scouting unit drives it, and the shared reveal handler does the rest on the transition.
+static int fnSweepLight( CHex* pHex, CHexCoord hex, void* pData )
+{
+    pHex->IncVisible( );
+    if ( pHex->GetVisibility( ) == 1 )
+        EnHexBecameVisible( pHex, hex, (CPlayer*)pData );
+    return ( FALSE );
+}
+
+// Release one hex of a sweep ring. Mirrors CUnit::DecrementSpotting, including re-freezing an
+// enemy building's ambients once it drops out of sight again.
+static int fnSweepUnlight( CHex* pHex, CHexCoord hex, void* pData )
+{
+    // m_bVisible is a BYTE: decrementing one that is already 0 wraps it to 255 and pins the hex
+    // lit for the rest of the game. SweepLight/SweepUnlight always walk the same stored rect so
+    // this cannot trip, but the cost of being wrong is permanent and invisible, so check.
+    ASSERT( pHex->GetVisibility( ) );
+    if ( pHex->GetVisible( ) <= 0 )
+        return ( FALSE );
+
+    pHex->DecVisible( );
+    if ( !pHex->GetVisibility( ) )
+    {
+        hex.SetInvalidated( );
+        if ( pHex->GetUnits( ) & CHex::bldg )
+        {
+            CBuilding* pBldg = theBuildingHex._GetBuilding( hex );
+            if ( ( pBldg != NULL ) && ( pBldg->GetOwner( ) != (CPlayer*)pData ) && !pBldg->IsLive( ) )
+                pBldg->PauseAnimations( TRUE );
+        }
+    }
+    return ( FALSE );
+}
+
+// Light the ground around a rocket the sweep just found. Tier 1 lights nothing -- it is a bare
+// contact and the ship itself is handled by the caller.
+void CPlayer::SweepLight( CBuilding* pRocket )
+{
+    if ( m_bSweepLit )
+        SweepUnlight( );              // never stack two rings
+
+    int iRing = GetSweepRings( );
+    if ( ( iRing <= 0 ) || ( pRocket == NULL ) )
+        return;
+
+    CHexCoord hexOrg( pRocket->GetHex( ).X( ) - iRing, pRocket->GetHex( ).Y( ) - iRing );
+    hexOrg.Wrap( );
+
+    m_hexSweepLit   = hexOrg;
+    m_iSweepLitCX   = pRocket->GetCX( ) + 2 * iRing;
+    m_iSweepLitCY   = pRocket->GetCY( ) + 2 * iRing;
+    m_bSweepLit     = TRUE;
+    m_iSweepLitSecs = RESONANCE_SWEEP_LIT_SECS;
+
+    theMap.EnumHexes( m_hexSweepLit, m_iSweepLitCX, m_iSweepLitCY, fnSweepLight, this );
+}
+
+// Release the lit ring. Walks the SAME rect it lit, which is what keeps the BYTE counter
+// balanced; safe to call when nothing is lit.
+void CPlayer::SweepUnlight( )
+{
+    if ( !m_bSweepLit )
+        return;
+
+    m_bSweepLit     = FALSE;          // cleared FIRST so re-entry cannot decrement twice
+    m_iSweepLitSecs = 0;
+    theMap.EnumHexes( m_hexSweepLit, m_iSweepLitCX, m_iSweepLitCY, fnSweepUnlight, this );
+}
+
 void CPlayer::ResonanceSweep( int iNumSec )
 {
-    // Only the local human view, and only while the edict is on. Zero the bank when it is off
-    // so re-arming the edict starts a fresh cycle rather than firing instantly on time that
-    // accrued while it was switched off.
-    if ( ( !IsMe( ) ) || ( !IsEdictActive( EDICT_RESONANCE_SWEEP ) ) )
+    // Age out any lit ring FIRST, and release it unconditionally if the sweep is no longer
+    // running -- the edict can be switched off, or revoked with our last Command Center
+    // (EdictHostLost), while a ring is up, and the hexes must come back either way.
+    BOOL bRunning = IsMe( ) && IsEdictActive( EDICT_RESONANCE_SWEEP );
+    if ( m_bSweepLit )
+    {
+        m_iSweepLitSecs -= iNumSec;
+        if ( ( m_iSweepLitSecs <= 0 ) || ( !bRunning ) )
+            SweepUnlight( );
+    }
+
+    // Only the local human view. Zero the bank when the edict is off so re-arming starts a
+    // fresh cycle rather than firing instantly on time that accrued while it was switched off.
+    if ( !bRunning )
     {
         m_iSweepSecs = 0;
         return;
     }
 
     m_iSweepSecs += iNumSec;
-    if ( m_iSweepSecs < RESONANCE_SWEEP_SECS )
+    int iReload = GetSweepReloadSecs( );
+    if ( m_iSweepSecs < iReload )
         return;
-    m_iSweepSecs = 0;
+    // Carry the remainder rather than zeroing: m_dwOperSecElapsed is seconds-since-last-loop
+    // and can exceed 1 after a stall, so assigning 0 would quietly throw away banked time.
+    m_iSweepSecs -= iReload;
+    if ( m_iSweepSecs >= iReload )
+        m_iSweepSecs = iReload - 1;   // a long stall carries the remainder, never a free ping
 
     // Pass 1 - count the candidates. Allies are skipped: their rockets are already visible to
     // us, so pinging one would burn the sweep to learn nothing.
@@ -1031,6 +1168,11 @@ void CPlayer::ResonanceSweep( int iNumSec )
 
     std::string sWho = pRocket->GetOwner( )->GetName( );
 
+    // Always name the map location. A bearing the player cannot act on is not intel: without
+    // this the status line says a ship was found and leaves them to hunt a big map for it.
+    char sWhere[64];
+    sprintf( sWhere, " at %d,%d", pRocket->GetHex( ).X( ), pRocket->GetHex( ).Y( ) );
+
     // Destroyed: drop the corpse. Mirrors the dead-building branch of the scouting reveal --
     // our map has been showing a ship that no longer exists, and this is how the player finds
     // out. Nothing below this line may touch pRocket.
@@ -1038,7 +1180,7 @@ void CPlayer::ResonanceSweep( int iNumSec )
     {
         delete pRocket;
         theApp.m_wndBar.SetStatusText(
-            0, ( "Resonance Sweep: no return from " + sWho + ". That ship has been destroyed." ).c_str( ),
+            0, ( "Resonance Sweep: no return from " + sWho + sWhere + ". That ship has been destroyed." ).c_str( ),
             CStatInst::status );
         return;
     }
@@ -1057,10 +1199,14 @@ void CPlayer::ResonanceSweep( int iNumSec )
         pRocket->PauseAnimations( FALSE );
     }
 
+    // From tier 2 the ping also opens the ground around it for a few seconds (real vision:
+    // their vehicles show while it is lit). Tier 1 lights nothing and this is a no-op.
+    SweepLight( pRocket );
+
     theApp.m_wndBar.SetStatusText(
         0,
-        ( bNew ? ( "Resonance Sweep: contact. Located the ship belonging to " + sWho + "." )
-               : ( "Resonance Sweep: re-acquired the ship belonging to " + sWho + "." ) ).c_str( ),
+        ( ( bNew ? ( "Resonance Sweep: contact. Located the ship belonging to " + sWho )
+                 : ( "Resonance Sweep: re-acquired the ship belonging to " + sWho ) ) + sWhere + "." ).c_str( ),
         CStatInst::status );
 }
 
@@ -1557,6 +1703,13 @@ void CPlayer::Serialize( CArchive& ar )
 
         ar >> m_iRsrchHave;
         ar >> m_iRsrchItem;
+
+        // Resonance Sweep's lit ring is runtime-only and is NOT serialized. Hex visibility is
+        // rebuilt from our own units on load, so a ring recorded before the save refers to
+        // counts that no longer exist -- drop it rather than releasing it (see SweepUnlight).
+        m_bSweepLit     = FALSE;
+        m_iSweepLitSecs = 0;
+        m_iSweepSecs    = 0;
         // Read research statuses element-by-element to preserve valid object layout.
         {
             DWORD_PTR nNewSize = ar.ReadCount( );

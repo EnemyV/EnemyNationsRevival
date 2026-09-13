@@ -168,9 +168,11 @@ class CPlayer : public CObject
     void StartLoop( );
     void PeopleAndFood( int iNumSec );
     void Research( int iNumSec );
-    // Resonance Sweep edict: one enemy-rocket ping per RESONANCE_SWEEP_SECS. Called from the
-    // same per-player block in mainloop.cpp as Research, with the same game-seconds elapsed.
+    // Resonance Sweep edict: recharge, ping, and age out the lit ring. Called from the same
+    // per-player block in mainloop.cpp as Research, with the same game-seconds elapsed.
     void ResonanceSweep( int iNumSec );
+    void SweepLight( CBuilding* pRocket );   // light the ring around a pinged rocket
+    void SweepUnlight( );                    // release it (safe to call when nothing is lit)
     void CPlayer::CitizenConstruction( );
 
     void UpdateRacialAttributes( int iRsrch );
@@ -202,9 +204,9 @@ class CPlayer : public CObject
         // cost (e.g. Mining Subsidy +25% power). StartLoop applies the same pct to the raw
         // member transiently for the m_fPwrMult drag, but resets it before render — so
         // without this the displayed need never moved. See player.cpp StartLoop.
-        // m_iEdictFlatPwr is ABSOLUTE, so it is added outside the pct scaling above --
+        // The flat edict draw is ABSOLUTE, so it is added outside the pct scaling above --
         // scaling it by the base need would make one emitter cost more in a big colony.
-        return ( m_iPwrNeed + (int)( m_iPwrNeed * m_fEdictEnergyUpkeepPct ) + m_iEdictFlatPwr );
+        return ( m_iPwrNeed + (int)( m_iPwrNeed * m_fEdictEnergyUpkeepPct ) + GetEdictFlatPwrNeed( ) );
     }
     int GetPwrHave( ) const
     {
@@ -491,6 +493,48 @@ class CPlayer : public CObject
     int           GetExists( int iIndex ) const { return m_piBldgExists[iIndex]; }
     void          AddExists( int iIndex, int iNum ) { m_piBldgExists[iIndex] += iNum; }
     CRsrchStatus& GetRsrch( int iInd ) { return ( m_aRsrch.ElementAt( iInd ) ); }
+
+    // Bounds-checked "have we researched this?". GetRsrch above is an unchecked ElementAt, and
+    // m_aRsrch is NOT guaranteed to be num_types long for every player -- a net game saved
+    // early leaves some players short until the load path resizes them (see Serialize, and the
+    // GetRsrchSize guard in netapi.cpp's research_disc). Every high-index reader in this header
+    // hand-rolls the same size test; this is that test, once, for callers that index the TAIL
+    // of the enum where the in-code topics live.
+    BOOL HasRsrch( int iInd ) const
+    {
+        return ( ( iInd >= 0 ) && ( iInd < (int)m_aRsrch.GetSize( ) ) &&
+                 ( m_aRsrch.GetAt( iInd ).m_bDiscovered != 0 ) );
+    }
+
+    // --- Drive-Core Resonance / Resonance Sweep (see edicts.h) ---
+    // Highest tier researched, 0 (none) .. 6. The six topics are contiguous at the enum tail and
+    // form a strict chain, so this stops at the first gap.
+    int GetResonanceTier( ) const
+    {
+        int iTier = 0;
+        for ( int iOn = 0; iOn < 6; iOn++ )
+        {
+            if ( !HasRsrch( (int)CRsrchArray::drive_core_resonance + iOn ) )
+                break;
+            iTier = iOn + 1;
+        }
+        return ( iTier );
+    }
+    // Hexes of ground lit around a pinged rocket: none at tier 1 (the ship only), then one more
+    // per tier to 5 at tier 6.
+    int GetSweepRings( ) const
+    {
+        int iTier = GetResonanceTier( );
+        return ( ( iTier >= 2 ) ? ( iTier - 1 ) : 0 );
+    }
+    // Game-seconds to recharge a ping. Scales INVERSELY with how much of our power demand is
+    // actually being met: full power is the base, half power doubles it, and so on, capped so a
+    // blackout stalls the sweep instead of dividing by zero.
+    int GetSweepReloadSecs( ) const;
+    // Flat (absolute, non-pct) power drawn by the active civ-wide edicts. Computed live rather
+    // than cached, because the Resonance Sweep's draw grows with the tier researched and a
+    // cached copy would go stale the moment a tier completed with the edict already on.
+    int GetEdictFlatPwrNeed( ) const;
     int           GetRsrchSize( ) const { return ( (int)m_aRsrch.GetSize( ) ); }
     BOOL          CanRsrch( int iIndex );
 
@@ -993,10 +1037,20 @@ class CPlayer : public CObject
     // recorded in the buildings' own visibility, which already persists.
     int   m_iSweepSecs;            // game-seconds banked toward the next ping
     unsigned int m_uSweepRand;     // private LCG state -- never MyRand (see ResonanceSweep)
+    // The lit ring. Stored as the RECT we incremented, not as the rocket pointer: CHex::m_bVisible
+    // is a BYTE, so an unbalanced decrement wraps to 255 and pins a hex lit for the rest of the
+    // game. Releasing the exact rect we lit is what guarantees the pairing even if the rocket is
+    // destroyed, or the edict revoked, while the ring is up. Hex visibility is NOT serialized
+    // (CHex::Serialize writes type/alt/unit/sprite only; it is rebuilt from our own units on
+    // load), so a save taken mid-ping cannot leak one.
+    BOOL      m_bSweepLit;         // a ring is currently up
+    int       m_iSweepLitSecs;     // game-seconds left before it is released
+    CHexCoord m_hexSweepLit;       // origin of the lit rect
+    int       m_iSweepLitCX;       // its extent
+    int       m_iSweepLitCY;
     // Upkeep — recurring cost (sum of active edicts' pct), applied as extra per-loop demand:
     float m_fEdictEnergyUpkeepPct;     // added to m_iPwrNeed in StartLoop (pre-throttle)
-    LONG  m_iEdictFlatPwr;             // FLAT power (sum of active edicts' iFlatEnergyUpkeep),
-                                       // added to m_iPwrNeed in StartLoop and to GetPwrNeed
+
     float m_fEdictWorkforceUpkeepPct;  // added to m_iPplNeedBldg in StartLoop (pre-throttle)
     float m_fEdictFoodUpkeepPct;       // added to m_iFoodNeed in PeopleAndFood
 
