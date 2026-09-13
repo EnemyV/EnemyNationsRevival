@@ -2587,11 +2587,16 @@ static void SetVehDest( CMsgVehSetDest* pMsg )
     // Sampled BEFORE SetEvent/SetDest mutate the vehicle. Inert unless EN_PERF is set.
     if ( Perf::IsEnabled( ) )
     {
-        const BOOL bSameHex = ( pVeh->m_hexDest == pMsg->m_hex );
+        // public accessor, not the protected member: this function is declared static
+        // but befriended, so touching m_hexDest compiled here and would be the first
+        // unguarded protected access from it (WinFable re-audit fix 3).
+        const BOOL bSameHex = ( pVeh->GetHexDest( ) == pMsg->m_hex );
         Perf::CounterInc( bSameHex ? "vsd.samedest" : "vsd.newdest" );
         Perf::CounterInc( pVeh->GetOwner( )->IsAI( ) ? "vsd.ai" : "vsd.human" );
-        if ( pVeh->m_cMode == CVehicle::stop )
-            Perf::CounterInc( bSameHex ? "vsd.samedest.stopped" : "vsd.newdest.stopped" );
+        // the .stopped split is DROPPED rather than kept: m_cMode is protected and has
+        // no public equivalent (IsOnTheMove() is not "== stop"), so keeping it would
+        // mean adding a production accessor for a probe. The finding it produced -
+        // 63% of new destinations go to vehicles in stop mode - is already on the board.
         // discriminates the suspected LEAK in the AI dedupe: CAIUnit::SetDestination's
         // building and sub-hex overloads (caiunit.cpp:1016, 1070) short-circuit the whole
         // 30s guard on !bInBldg, so a vehicle parked INSIDE a building is deduped not at

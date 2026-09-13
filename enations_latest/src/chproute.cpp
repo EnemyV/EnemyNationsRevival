@@ -2580,7 +2580,7 @@ void CHPRouter::ConsiderLandWater( CAIUnit* pTruck, CHexCoord& hex )
 
                     iPathLen = 0;
                     Perf::CounterInc( "pq.hprtr" );   // BURST PROBE: HP material router
-    pPath = thePathMgr.GetPath( NULL, hexVeh, hexBldg, iPathLen, pTruck->GetTypeUnit( ), FALSE, TRUE );
+                    pPath = thePathMgr.GetPath( NULL, hexVeh, hexBldg, iPathLen, pTruck->GetTypeUnit( ), FALSE, TRUE );
                     if ( pPath != NULL )
                     {
 
@@ -2975,7 +2975,7 @@ BOOL CHPRouter::ConsiderLandWater( CAIUnit* pUnit, CAIHex* pHex )
                 bCanGetThere = FALSE;
                 iPathLen     = 0;
                 Perf::CounterInc( "pq.hprtr" );   // BURST PROBE: HP material router
-    pPath = thePathMgr.GetPath( NULL, hexBldg, hexDest, iPathLen, pTruck->GetTypeUnit( ), FALSE, TRUE );
+                pPath = thePathMgr.GetPath( NULL, hexBldg, hexDest, iPathLen, pTruck->GetTypeUnit( ), FALSE, TRUE );
                 if ( pPath != NULL )
                 {
                     // check last step
