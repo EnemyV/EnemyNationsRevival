@@ -66,7 +66,13 @@ namespace
     long         g_leakDumpAtSec = 0;
 
     // ---- named counters ----------------------------------------------------
-    const int  MAX_COUNTERS = 160;
+    // RAISED FROM 160 (WinFable re-audit, 2026-09-13). At 160 the probe branch
+    // registered EXACTLY 160 names and FindOrAdd then returned NULL, so every
+    // counter whose FIRST touch came after the table filled silently no-opped and
+    // read as "never fired" - which is indistinguishable from "the code never ran".
+    // That voided several of my own results. 512 costs 24 KB and the overflow is
+    // now visible instead of silent: see g_countersDropped below.
+    const int  MAX_COUNTERS = 512;
     struct Counter
     {
         const char* name;
@@ -74,6 +80,7 @@ namespace
         bool        isGauge;   // gauges aren't reset each interval
     };
     Counter g_counters[MAX_COUNTERS];
+    long    g_countersDropped = 0;   // distinct names refused because the table was full
     int     g_numCounters = 0;
 
     CRITICAL_SECTION g_counterCs;
@@ -101,7 +108,19 @@ namespace
                  ( g_counters[i].name && strcmp( g_counters[i].name, name ) == 0 ) )
                 return &g_counters[i];
         if ( g_numCounters >= MAX_COUNTERS )
+        {
+            // Make the drop LOUD. A silent NULL here is a zero no reader can
+            // distinguish from a real one.
+            static bool s_warned = false;
+            if ( !s_warned )
+            {
+                s_warned = true;
+                fprintf( stderr, "[PERF] counter table FULL at %d - '%s' and later names are DROPPED; "
+                                 "zeros for them are NOT results\n", MAX_COUNTERS, name );
+            }
+            g_countersDropped++;
             return NULL;
+        }
         Counter* c = &g_counters[g_numCounters++];
         // COPY the name (never freed — process-lifetime registry, <=160 x 48 bytes).
         // Storing the caller's pointer let stack-temporary names rot into garbage in
@@ -693,6 +712,12 @@ void FrameMark()
         GaugeSet( "alloc.sites", g_numSites );
         GaugeSet( "alloc.liveKB", (int64_t)( liveSum / 1024 ) );
     }
+
+    // Table occupancy, on every line, so a reader can never again mistake a dropped
+    // counter for a measured zero. These two go through GaugeSet like anything else -
+    // they are registered on the first interval, long before the table could fill.
+    GaugeSet( "perf.counters", g_numCounters );
+    GaugeSet( "perf.counters.dropped", g_countersDropped );
 
     // One-shot: dump the top leaking allocation call stacks (symbolized) once we
     // reach EN_PERF_LEAKDUMP seconds. This is the real attribution — file:line of
