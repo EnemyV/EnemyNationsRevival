@@ -471,6 +471,11 @@ void NoteMsgUs( int msgType, uint64_t us )
         g_frameMsgTop = msgType;
 }
 
+unsigned long MatchSec()
+{
+    return (unsigned long)( ( GetTickCount() - g_startTickMs ) / 1000 );
+}
+
 uint64_t ElapsedUs( uint64_t startTicks )
 {
     if ( !g_enabled || startTicks == 0 ) return 0;

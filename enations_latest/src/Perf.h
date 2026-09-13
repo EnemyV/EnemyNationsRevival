@@ -91,6 +91,10 @@ namespace Perf
     // Microseconds since a NowIfEnabled() stamp, for probes that keep their own
     // accumulators instead of a named counter. Returns 0 when profiling is off.
     uint64_t ElapsedUs( uint64_t startTicks );
+    // Session-relative seconds, the SAME base perf.log's t= column uses. msgtype.log
+    // stamped absolute GetTickCount()/1000, so joining the two logs gave a 2,758,756 s
+    // offset and ZERO overlapping windows - which reads as "no data", not as a bug.
+    unsigned long MatchSec();
 
     // PER-FRAME message attribution. The drain records each handler's cost here;
     // FrameMark names the costliest type on the [SLOWFRAME] line and then resets,

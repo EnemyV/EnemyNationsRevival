@@ -648,7 +648,7 @@ namespace {
             for ( int t = 0; t < kMsgTypes; ++t )
                 if ( g_msgStat[d][t].n > 0 )
                     fprintf( f, "[MSGTYPE] t=%lu drain=%s type=%d n=%lld total_ms=%.1f max_ms=%.1f\n",
-                             (unsigned long)( now / 1000 ), d ? "tail" : "head", t,
+                             (unsigned long)Perf::MatchSec( ), d ? "tail" : "head", t,
                              g_msgStat[d][t].n,
                              (double)g_msgStat[d][t].us / 1000.0,
                              (double)g_msgStat[d][t].maxUs / 1000.0 );
