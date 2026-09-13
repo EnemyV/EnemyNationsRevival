@@ -618,7 +618,9 @@ void FrameMark()
         }
         if ( frameMs > s_thresh )
         {
-            if ( s_fp == NULL ) s_fp = fopen( "slowframe.log", "a" );
+            // audit (4): relative path wrote beside the exe, not the launch dir, unlike
+            // every other probe sink. Through EnLogPath like perf.log and leakstacks.
+            if ( s_fp == NULL ) s_fp = fopen( EnLogPath( "slowframe.log" ).c_str( ), "a" );
             if ( s_fp != NULL )
             {
                 static const char* kName[SEC_COUNT] =

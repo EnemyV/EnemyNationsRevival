@@ -45,7 +45,9 @@ CHexCoord *CPathMap::GetRoadPath(
 	// is a frame stall; an AI-worker wait is not. QPC, not timeGetTime - a 1ms tick
 	// cannot see a contention pattern that stalls a 35ms frame.
 	const uint64_t _qWait = Perf::NowIfEnabled( );
-	const bool     _qMain = Perf::IsMainThread( );
+	// audit (4): short-circuit so nothing runs with EN_PERF unset; _qMain only
+	// picks a counter name, and CounterInc no-ops when disabled anyway.
+	const bool     _qMain = Perf::IsEnabled( ) && Perf::IsMainThread( );
 #if EN_PERF_PROBES && defined(_WIN32)
 	DWORD dwT0 = timeGetTime( );
 #endif
@@ -326,7 +328,9 @@ BOOL CPathMap::GetPath( CHexCoord& hexFrom, CHexCoord& hexTo,
 	Perf::ScopeCounter _t( "path.us" );
 	// See the contention note in GetRoadPath: wait vs work, main thread vs AI worker.
 	const uint64_t _qWait = Perf::NowIfEnabled( );
-	const bool     _qMain = Perf::IsMainThread( );
+	// audit (4): short-circuit so nothing runs with EN_PERF unset; _qMain only
+	// picks a counter name, and CounterInc no-ops when disabled anyway.
+	const bool     _qMain = Perf::IsEnabled( ) && Perf::IsMainThread( );
 	Perf::CounterInc( _qMain ? "path.calls.main" : "path.calls.ai" );
 #if EN_PERF_PROBES && defined(_WIN32)
 	DWORD dwT0 = timeGetTime( );

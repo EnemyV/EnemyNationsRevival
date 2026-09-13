@@ -1013,9 +1013,15 @@ bool GameWindow::PollEvents() {
             // call that blocks, with what it returned, so the trigger names itself.
             const uint64_t _pt0 = Perf::NowIfEnabled( );
             _have = SDL_PollEvent(&event);
-            static LARGE_INTEGER s_qpf = { 0 };
-            if ( s_qpf.QuadPart == 0 ) QueryPerformanceFrequency( &s_qpf );
-            const double _pms = (double)( Perf::NowIfEnabled( ) - _pt0 ) * 1000.0 / (double)s_qpf.QuadPart;
+            // audit (4): the frequency query and the FP divide ran on EVERY poll even
+            // with EN_PERF unset. Both are inside the gate now; _pms stays 0 otherwise.
+            double _pms = 0.0;
+            if ( Perf::IsEnabled( ) )
+            {
+                static LARGE_INTEGER s_qpf = { 0 };
+                if ( s_qpf.QuadPart == 0 ) QueryPerformanceFrequency( &s_qpf );
+                _pms = (double)( Perf::NowIfEnabled( ) - _pt0 ) * 1000.0 / (double)s_qpf.QuadPart;
+            }
             // WHOLE-BODY GATED (audit item c): this opened and wrote with EN_PERF unset,
             // behind only a 15ms threshold that alt-tab and device-lost trip in a shipped
             // Release. Now nothing here runs unless profiling is on, and the sink goes

@@ -704,7 +704,6 @@ void CConquerApp::ProcessAllMessages( DWORD dwBudgetMs )
             // hang-regression probe: the drain budget checks BETWEEN messages,
             // so one slow handler = one multi-second frame (t=632: 9,958ms in
             // ProcessAllMessages under a 400ms budget). Name the message type.
-            DWORD dwMsgT0  = timeGetTime( );
             int   iMsgType = (int)( (CNetCmd*)pBuf )->GetType( );
             const uint64_t _mhT0 = Perf::NowIfEnabled( );
             theGame.ProcessMessage( (CNetCmd*)pBuf );
@@ -715,13 +714,15 @@ void CConquerApp::ProcessAllMessages( DWORD dwBudgetMs )
                 st.n++; st.us += _us;
                 if ( _us > st.maxUs ) st.maxUs = _us;
                 Perf::NoteMsgUs( iMsgType, (uint64_t)_us );   // per-FRAME top type for [SLOWFRAME]
-            }
-            DWORD dwMsgMs = timeGetTime( ) - dwMsgT0;
-            if ( dwMsgMs > 40 )   // was 250: tests ONE message, but msg= is a SUM - never fired
-            {
-                char szM[80];
-                sprintf( szM, "[SLOWMSG] type %d took %lu ms\n", iMsgType, dwMsgMs );
-                OutputDebugStringA( szM );
+                // audit (4): [SLOWMSG] used its own pair of bare timeGetTime calls, two
+                // per message with EN_PERF unset - about 2,900 clock calls a second at the
+                // measured 1,460 messages/s. It now shares the one gated clock above.
+                if ( _us > 40000 )   // 40ms; was 250ms, which tests ONE message while msg= is a SUM
+                {
+                    char szM[80];
+                    sprintf( szM, "[SLOWMSG] type %d took %lld ms\n", iMsgType, _us / 1000 );
+                    OutputDebugStringA( szM );
+                }
             }
         }
 #else
