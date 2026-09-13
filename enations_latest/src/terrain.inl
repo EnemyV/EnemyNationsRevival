@@ -64,6 +64,14 @@ inline CSubHex::CSubHex( CMapLoc const& pt ) {
     y = pt.y >> HEX_HT_PWR - 1;
 }
 
+// BUGS #65: every Wrap here masks with m_iHexMask alone -- the WIDTH mask -- for BOTH
+// axes, and CGameMap::GetHex/_GetHex apply it to x AND y. That is only safe because
+// theMap is always SQUARE (m_eX == m_eY, enforced by an ASSERT at CGameMap::Init,
+// wrldinit.cpp) and a power of two (m_iHexMask == m_eX - 1). On a hypothetical
+// non-square map, a Y that masks to >= the (different) height would produce an
+// out-of-array offset in CGameMap::_GetHex -- GetHex() never returns NULL, so nothing
+// downstream could catch it. Do not add a non-square map size without giving CHexCoord
+// an independent height mask first.
 inline CHexCoord& CHexCoord::Wrap() {
     m_iX &= theMap.m_iHexMask;
     m_iY &= theMap.m_iHexMask;
@@ -78,6 +86,8 @@ inline CHexCoord& CHexCoord::WrapY() {
     return ( *this );
 }
 
+// Same width-mask-for-both-axes assumption as CHexCoord::Wrap() above -- see that
+// comment. Callers use this for both X and Y coordinates.
 inline int CHexCoord::Wrap( int iVal ) {
     return ( iVal & theMap.m_iHexMask );
 }

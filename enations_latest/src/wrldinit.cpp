@@ -407,6 +407,13 @@ void CGameMap::Init( int iSide, int iSideSize, int iScenario )
     m_eY        = iSide * iSideSize;
     m_iSideSize = iSideSize;
 
+    // BUGS #65: CHexCoord::Wrap (terrain.inl) masks BOTH axes with the single width mask
+    // m_iHexMask, and CGameMap::GetHex/_GetHex apply it to x and y alike -- safe only
+    // because the map is always square. This assert pins that invariant at its one
+    // creation site so a future non-square map size fails loudly here instead of as an
+    // out-of-array AI-thread access violation down in _GetHex.
+    ASSERT( m_eX == m_eY );
+
     int iTmp     = m_eX;
     m_iSideShift = 0;
     while ( iTmp > 1 )
