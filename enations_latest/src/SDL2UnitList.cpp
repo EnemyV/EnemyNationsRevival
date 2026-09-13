@@ -198,7 +198,10 @@ EnSb::Metrics SDL2UnitList::SbMetrics() const {
     const int w = m_panel->GetWidth();
     const int h = m_panel->GetHeight();
     SDL_Rect bar = { w - SB_WIDTH, 0, SB_WIDTH, h };
-    return EnSb::Layout(bar, (int)m_items.size() * ITEM_HT, h, m_scrollY);
+    // 24px thumb floor, not the shared 12px default: this bar is 14px wide and its
+    // rows are 64px tall, so a 12px thumb would be a square blob. That floor is what
+    // this widget has always used - only the arrows are new.
+    return EnSb::Layout(bar, (int)m_items.size() * ITEM_HT, h, m_scrollY, 24);
 }
 
 // Scroll by pixels (negative = up), clamped to the contents. Forces the next frame
@@ -253,6 +256,10 @@ void SDL2UnitList::Render() {
     if (now - s_lastRebuild > 2000) {
         Rebuild();
         s_lastRebuild = now;
+        // Units die, so the list shrinks under a scrolled view. Nothing clamped
+        // m_scrollY on a rebuild (only the event handlers did), which left the panel
+        // scrolled past the end showing blank rows until the player touched the bar.
+        ScrollPixels(0);
     }
 
     // Content width excludes scrollbar (always reserved)
