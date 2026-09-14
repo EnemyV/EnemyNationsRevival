@@ -1308,6 +1308,64 @@ BOOL CVehicle::GetNextHex(BOOL bNew) {
                 //    deferral to a single sub-hex and cannot loop.
                 BOOL bCorner = bAheadOpen && bInLane && (iCross != 0) && (rx != 0) && (ry != 0) &&
                                (!_ahead.SameHex(m_ptHead)) && OnPavement(_turn);
+
+                // 1b. THE TRAILING-CORNER APPROACH - THE SAME BEND, ONE TICK EARLIER.
+                //    Body 1 requires the sub-hex ahead to be in a DIFFERENT hex, and
+                //    that requirement is what hides the commonest corner cut there is.
+                //    A road laid by RoadStepToward is a 4-connected STAIRCASE, and the
+                //    path re-diagonalises it (GetCellAt expands the diagonals,
+                //    GetCellCosts prices only the destination hex), so a truck walking
+                //    an arm is routinely handed a DIAGONALLY adjacent m_hexNext. When
+                //    its head is on the TRAILING corner sub-hex of its own hex - the
+                //    sub-hex furthest from that route hex on BOTH axes - the far-target
+                //    split above (:1012-1021) finds |xStep| == |yStep| == 2, zeroes
+                //    NEITHER axis, and the clamp (:1203-1204) hands back a diagonal
+                //    that lands INSIDE THIS HEX. _ahead is then this hex too, so body 1
+                //    declines it; body 2 wants a single-axis route and body 3 wants a
+                //    different hex ahead, so NO BODY EXAMINES IT AT ALL. The tick
+                //    after, the head stands on the leading corner with a DIAGONAL HULL
+                //    and the whole block is shut out by the angle guard above - so the
+                //    truck crosses the shared CORNER of the two road hexes instead of
+                //    walking through the paved corner hex between them. That corner
+                //    ride is what QA reports; measured over a 1,247 s capture it is
+                //    98.5% of every diagonal-hull-on-pavement event, on 100% of the
+                //    transports that appear in [ROAD-DIAG] at all, at bend after bend.
+                //    THE FIX BELONGS HERE, NOT AT THE ANGLE GUARD. One tick later the
+                //    hull is diagonal and this block's lane arithmetic is meaningless:
+                //    bInLane reads the hull through a (hx != 0) ternary that silently
+                //    drops hy, and a diagonal run holds (x+y) mod 2 invariant, so a
+                //    diagonal has no right side of the street in this coordinate
+                //    system at all. HERE the hull is still axial and bInLane is well
+                //    defined, which is the whole reason to intervene one tick early.
+                //    The angle guard is a soundness guard and stays exactly as it is.
+                //    The correction is body 1's: carry the heading one sub-hex. Every
+                //    other term is body 1's too, and this is the EXACT COMPLEMENT of
+                //    its same-hex guard - _ahead.SameHex here, !_ahead.SameHex there -
+                //    so the two can never both fire and nothing body 1 already handles
+                //    changes. Bodies 2 and 3 are disjoint from it as well: body 2
+                //    needs a single-axis route where this needs a diagonal one, and
+                //    body 3 carries !_ahead.SameHex like body 1.
+                //    IT CANNOT LOOP AND IT CANNOT LEAVE THE PAVEMENT. _turn staying in
+                //    this hex forces the head onto the trailing corner of BOTH axes,
+                //    and _ahead staying in this hex forces the hull to agree in sign
+                //    with the step on the hull axis - so hx IS xStep (or hy IS yStep),
+                //    and the deferral moves exactly one sub-hex the way the step
+                //    already wanted to go, cutting the sub-hex distance to m_hexNext on
+                //    that axis by one and raising nothing. The target is inside our own
+                //    hex, which the guard above has already proved paved and not a
+                //    bridge, so no step here can reach grass. And it fires at most once
+                //    per hex: after it the head is on the LEADING corner of the hull
+                //    axis, so _turn leaves the hex and this test is false. What follows
+                //    is the geometry bodies 1, 2 and 3 were written for.
+                //    AN OCCUPIED TARGET IS LEFT ALONE. Body 1 hands an occupied
+                //    deferral to CanEnter and the wait ladder; here the untouched step
+                //    is still a legal move, so it is left exactly as it was rather than
+                //    turned into a wait. This body never makes a truck stop where it
+                //    used to move - it only changes which paved sub-hex it moves to.
+                BOOL bIntra = bAheadOpen && bInLane && (iCross != 0) && (rx != 0) && (ry != 0) &&
+                              (xStep != 0) && (yStep != 0) &&
+                              _ahead.SameHex(m_ptHead) && _turn.SameHex(m_ptHead) &&
+                              OnPavement(_turn) && CanEnter(_ahead);
                 const char *pszWhy = NULL;
 
                 if (bArrival) {
@@ -1326,6 +1384,10 @@ BOOL CVehicle::GetNextHex(BOOL bNew) {
                     xStep = hx;
                     yStep = hy;
                     pszWhy = "corner-deferred";
+                } else if (bIntra) {
+                    xStep = hx;
+                    yStep = hy;
+                    pszWhy = "corner-deferred-intra";
                 }
 
                 // 2. the turn itself: put it in the outgoing arm's lane. Only a
