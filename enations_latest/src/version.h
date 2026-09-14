@@ -56,7 +56,18 @@ const char GameLogFile[] = "ENations.log";
 //   - CRoute::Serialize: the order-queue payload (m_iBldgType, m_iDir, m_hexEnd) for
 //     BUGS #38, so a queued build/road order survives save/load as an order rather than
 //     decaying into a bare movement stop (pre-8 entries are movement stops only).
-#define         VER_RELEASE     8
+// Release 9: CRsrchStatus::m_iPtsDiscovered widened from a 32-bit LONG to a 64-bit
+// LONGLONG, so research-points-so-far can climb past 2^31. This is a WIDTH change to an
+// existing field, not a new one, so the read is gated both ways: a save at release >= 9
+// carries 8 bytes, anything older carries 4 and is widened on load (see
+// CRsrchStatus::Serialize). The WRITER always writes 64-bit. The matching wire field,
+// CNetSaveInfo::m_iPtsDiscovered, widened with it, taking that message from 40 to 44 bytes
+// -- a PROTOCOL change, so release-9 clients cannot play against older ones (the join-time
+// gameplay hash already refuses the mismatch). Why: the in-code research ladders now price
+// their top tiers in the hundreds of millions, and m_iPtsRequired went 64-bit first; a
+// 32-bit accumulator could not climb to meet them, capping any topic at ~2^31 and wrapping
+// negative on the way (which trips the RandNum assert in CPlayer::Research).
+#define         VER_RELEASE     9
 
 // 3.1.001: display version only. No HEADER change - VER_MAJOR/VER_MINOR stay 3/0, so
 // every 3.00.x save still passes the major/minor check and loads. (VER_RELEASE is

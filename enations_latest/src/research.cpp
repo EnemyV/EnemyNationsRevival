@@ -92,12 +92,25 @@ void CRsrchStatus::Serialize( CArchive& ar )
         ASSERT_VALID( this );
         //TRAP( );
 
+        // Always 64-bit (save release 9+). The reader below is what copes with older saves.
         ar << m_bDiscovered << m_iPtsDiscovered;
     }
     else
     {
         //TRAP( );
-        ar >> m_bDiscovered >> m_iPtsDiscovered;
+        ar >> m_bDiscovered;
+
+        // m_iPtsDiscovered WIDENED from 32 to 64 bits at save release 9. A width change has to
+        // be gated on BOTH sides or the stream desyncs for every later field: pre-9 saves put 4
+        // bytes here, so read exactly that and widen it.
+        if ( theGame.m_dwVer >= 9 )
+            ar >> m_iPtsDiscovered;
+        else
+        {
+            LONG lOld = 0;
+            ar >> lOld;
+            m_iPtsDiscovered = lOld;
+        }
     }
 }
 

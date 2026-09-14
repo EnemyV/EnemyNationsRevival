@@ -33,7 +33,16 @@ public:
 		virtual void	Serialize (CArchive & ar);
 
 	BYTE			m_bDiscovered;					// TRUE if has been discovered
-	LONG			m_iPtsDiscovered;				// points researched so far
+	// 64-bit (save release 9). LONG is int32_t on EVERY platform here (win32_compat.h pins it,
+	// "NOT long (LP64!)"), so this used to cap research progress at ~2^31 no matter how dear the
+	// topic -- and the in-code tier ladders now price their top tiers in the hundreds of
+	// millions, where the guaranteed-completion test (m_iPtsDiscovered > m_iPtsRequired * 2)
+	// needs headroom above 2^31 to ever fire. Declared LONGLONG rather than `long long` on
+	// purpose: CArchive's operators are generated for LONGLONG, which is `long` on LP64, and a
+	// `long long&` will not bind to that `operator>>( LONGLONG& )`.
+	// SERIALIZED and ON THE WIRE -- see CRsrchStatus::Serialize (version-gated read) and
+	// CNetSaveInfo. Do not change this width again without bumping VER_RELEASE.
+	LONGLONG		m_iPtsDiscovered;				// points researched so far
 
 };
 

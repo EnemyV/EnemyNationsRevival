@@ -104,7 +104,7 @@ static_assert(sizeof(CNetRsrchDisc)==20, "CNetRsrchDisc");
 static_assert(sizeof(CNetEdictToggle)==24, "CNetEdictToggle");   // Edicts v1 net-sync (CNetCmd 12 + 3 ints); pins cross-compiler wire size
 static_assert(sizeof(CNetHexRetype)==24, "CNetHexRetype");   // Slash and Burn terrain sync (CNetCmd 12 + 3 ints); pins cross-compiler wire size
 static_assert(sizeof(CNetNeedSaveInfo)==16, "CNetNeedSaveInfo");
-static_assert(sizeof(CNetSaveInfo)==40, "CNetSaveInfo");
+static_assert(sizeof(CNetSaveInfo)==44, "CNetSaveInfo");   // 40 -> 44: m_iPtsDiscovered is 64-bit (save release 9)
 #else   // Release == the on-the-wire layout
 static_assert(sizeof(CNetCmd)==12, "CNetCmd");
 static_assert(sizeof(CNetReady)==140, "CNetReady");
@@ -190,5 +190,5 @@ static_assert(sizeof(CNetRsrchDisc)==20, "CNetRsrchDisc");
 static_assert(sizeof(CNetEdictToggle)==24, "CNetEdictToggle");   // Edicts v1 net-sync (CNetCmd 12 + 3 ints); pins cross-compiler wire size
 static_assert(sizeof(CNetHexRetype)==24, "CNetHexRetype");   // Slash and Burn terrain sync (CNetCmd 12 + 3 ints); pins cross-compiler wire size
 static_assert(sizeof(CNetNeedSaveInfo)==16, "CNetNeedSaveInfo");
-static_assert(sizeof(CNetSaveInfo)==40, "CNetSaveInfo");
+static_assert(sizeof(CNetSaveInfo)==44, "CNetSaveInfo");   // 40 -> 44: m_iPtsDiscovered is 64-bit (save release 9)
 #endif
