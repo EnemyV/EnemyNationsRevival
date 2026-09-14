@@ -796,6 +796,318 @@ void CheckApproaches() {
     }
 }
 
+// ------------------------------------------- the STAIRCASE CORRIDOR ----
+//
+// Everything above builds arms RADIATING FROM ONE JUNCTION, and every approach
+// starts on the LEADING corner sub-hex of its hex. The live map is neither.
+// RoadStepToward (vehicle.cpp:1888-1911) advances exactly one axis one hex per
+// call, so every road it lays is a 4-CONNECTED STAIRCASE - (x,y) (x+1,y)
+// (x+1,y+1) (x+2,y+1) ... - and the path re-diagonalises it, because GetCellAt
+// expands the diagonal neighbours and GetCellCosts prices only the destination
+// hex, never the two corners a diagonal passes between. A truck walking a
+// staircase is therefore handed a DIAGONALLY ADJACENT m_hexNext over and over.
+//
+// That makes the TRAILING corner sub-hex - the one furthest from the route hex
+// on BOTH axes - a routine place to stand, and it is the hole:
+//   tick 1  xDif == yDif == 2, so the far-target split zeroes NEITHER axis and
+//           the clamp hands back a diagonal that stays INSIDE the truck's own
+//           hex. _ahead is that hex too, so body 1's same-hex guard declines it,
+//           body 2 wants a single-axis route and body 3 wants a different hex
+//           ahead. No body examines it; [ROAD-DIAG] cannot see it either,
+//           because both axis neighbours of an intra-hex diagonal are that same
+//           paved hex.
+//   tick 2  the head is on the leading corner with a DIAGONAL HULL, so the whole
+//           block is shut out by the angle guard, and the raw diagonal crosses
+//           the SHARED CORNER of two road hexes - the corner ride QA reports -
+//           instead of walking through the paved corner hex between them.
+// Measured over a 1,247 s capture: 98.5% of all 20,381 angled-hull events, on
+// 100% of the transports that appear in [ROAD-DIAG] at all.
+//
+// Driven here in all four staircase directions and both chain phases (x step
+// first / y step first). A lane is fixed by the direction of travel, so the four
+// directions cover both sub-hex parities of both axes. In each the chain is
+// scanned for the first hex whose incoming hull axis makes the trailing corner
+// IN LANE - exactly one of the two bend types on a given staircase can be, since
+// the convention is "+x rides odd y, +y rides even x" and the staircase's own
+// two axis directions fix which - and the truck is placed there.
+//
+//   "pre"  runs with TrafficOpts bit 16 clear: the junction block is off, which
+//          is the geometry as it stood before any of it existed. It records the
+//          defect and must keep recording it.
+//   "post" runs with the block on. Before body 1b it behaves exactly like "pre"
+//          (no body examines the step), which is what --baseline-ref proves.
+
+const int STAIR_N = 8;                 // hexes in the corridor
+const int STAIR_BX = 20, STAIR_BY = 20;
+
+struct Stair {
+    int n;
+    CHexCoord h[STAIR_N];
+};
+
+// alternate one-axis steps, the only shape RoadStepToward can lay
+Stair BuildStair(int sx, int sy, bool xFirst) {
+    Stair S;
+    S.n = STAIR_N;
+    S.h[0] = CHexCoord(STAIR_BX, STAIR_BY);
+    for (int k = 0; k + 1 < STAIR_N; ++k) {
+        bool takeX = xFirst ? ((k % 2) == 0) : ((k % 2) == 1);
+        S.h[k + 1] = CHexCoord(S.h[k].X() + (takeX ? sx : 0), S.h[k].Y() + (takeX ? 0 : sy));
+    }
+    return S;
+}
+void PaveStair(const Stair &S) {
+    ClearMap();
+    for (int k = 0; k < S.n; ++k)
+        theMap.hex[S.h[k].X()][S.h[k].Y()].type = CHex::road;
+}
+int StairIndex(const Stair &S, CHexCoord c) {
+    for (int k = 0; k < S.n; ++k)
+        if (S.h[k] == c)
+            return k;
+    return -1;
+}
+
+struct StairResult {
+    bool valid;          // a placement satisfying the geometry was found
+    bool recovered;      // a step came from a recovery path, not the step arithmetic
+    bool offPavement;    // a requested step targets something unpaved
+    bool offCorridor;    // the head leaves the staircase's own hexes
+    bool intraFirst;     // tick 1's step is a diagonal that stays in the head's hex
+    bool axialFirst;     // tick 1's step is axis-aligned
+    bool laneFirst;      // tick 1's step lands in the lane for the hull's direction
+    bool cornerRide;     // some step crosses a hex CORNER (both hex axes change)
+    bool diagAtCorner;   // the head stands on a shared-corner sub-hex with a diagonal hull
+    bool walkedCorner;   // the head enters the corner hex the staircase actually paves
+    bool revisit;        // the hull returns to a sub-hex it already left
+    bool converged;      // the head reaches the diagonal route hex
+    int ticks;
+    char why[64];        // the reason keyword of tick 1's correction, if any
+};
+
+// One trailing-corner approach on one staircase, driven until it reaches the
+// route hex that was diagonally adjacent when it started.
+StairResult RunStair(int sx, int sy, bool xFirst, int traffic, bool blockAhead = false) {
+    StairResult r;
+    std::memset(&r, 0, sizeof(r));
+    Stair S = BuildStair(sx, sy, xFirst);
+    PaveStair(S);
+    g_traffic = traffic;
+    g_recovery = 0;
+
+    // The in-lane trailing corner exists on exactly one of the staircase's two
+    // bend types. Find it rather than assert which: pick the first hex i with a
+    // predecessor and two successors whose trailing corner is in lane for the
+    // hull it arrives with.
+    int i = -1, hx = 0, hy = 0, hxs = 0, hys = 0;
+    for (int k = 1; k + 2 < S.n; ++k) {
+        int dx = S.h[k].X() - S.h[k - 1].X(), dy = S.h[k].Y() - S.h[k - 1].Y();
+        int cx = S.h[k + 2].X() - S.h[k].X(), cy = S.h[k + 2].Y() - S.h[k].Y();
+        if ((cx == 0) || (cy == 0))
+            continue;                                  // not a diagonal route hex
+        // the trailing corner: furthest from the route hex on BOTH axes
+        int px = S.h[k].X() * 2 + ((cx > 0) ? 0 : 1);
+        int py = S.h[k].Y() * 2 + ((cy > 0) ? 0 : 1);
+        BOOL inLane = (dx != 0) ? ((py & 1) == ((dx > 0) ? 1 : 0))
+                                : ((px & 1) == ((dy > 0) ? 0 : 1));
+        if (!inLane)
+            continue;
+        i = k; hx = dx; hy = dy; hxs = px; hys = py;
+        break;
+    }
+    if (i < 0)
+        return r;                                      // r.valid stays false
+    r.valid = true;
+
+    static CVehicle v;
+    v = CVehicle();
+    v.id = 80;
+    v.m_ptHead = CSubHex(hxs, hys);
+    v.m_ptTail = CSubHex(hxs - hx, hys - hy);
+    v.m_ptNext = v.m_ptHead;
+    // the far end of the corridor: never within the near-destination relaxation
+    v.m_ptDest = CSubHex(S.h[S.n - 1].X() * 2, S.h[S.n - 1].Y() * 2);
+    v.m_hexDest = S.h[S.n - 1];
+    v.m_hexNext = S.h[i + 2];
+    v.m_cMode = CVehicle::moving;
+    theVehicleHex.Set(v.m_ptHead, &v);
+    theVehicleHex.Set(v.m_ptTail, &v);
+
+    // a parked truck on the deferral target - the leading corner of this hex
+    static CVehicle blocker;
+    if (blockAhead) {
+        blocker = CVehicle();
+        blocker.id = 81;
+        blocker.m_ptHead = CSubHex(hxs + hx, hys + hy);
+        blocker.m_ptTail = CSubHex(hxs + hx * 2, hys + hy * 2);
+        blocker.m_cMode = CVehicle::stop;
+        theVehicleHex.Set(blocker.m_ptHead, &blocker);
+        theVehicleHex.Set(blocker.m_ptTail, &blocker);
+    }
+
+    const CHexCoord hexTarget = S.h[i + 2];            // the diagonal route hex
+    const CHexCoord hexCorner = S.h[i + 1];            // the paved corner hex between
+    CSubHex seen[12];
+    int nSeen = 0;
+    seen[nSeen++] = v.m_ptHead;
+    g_lastTurn[0] = 0;
+
+    for (int t = 0; t < 8; ++t) {
+        // the pathfinder on a staircase: take the diagonal hop when there is one,
+        // which is what GetCellCosts' destination-only pricing always prefers
+        int k = StairIndex(S, CHexCoord(v.m_ptHead));
+        if (k < 0) { r.offCorridor = true; break; }
+        if (k + 1 >= S.n)
+            break;
+        int j = k + 1;
+        if ((k + 2 < S.n) && (S.h[k + 2].X() != S.h[k].X()) && (S.h[k + 2].Y() != S.h[k].Y()))
+            j = k + 2;
+        v.m_hexNext = S.h[j];
+
+        if (!v.GetNextHex(FALSE)) { r.recovered = true; break; }
+        CSubHex n = v.m_ptNext;
+        if (n == v.m_ptHead)
+            break;
+        int stx = CSubHex::Diff(n.x - v.m_ptHead.x), sty = CSubHex::Diff(n.y - v.m_ptHead.y);
+        if (!v.OnPavement(n))
+            r.offPavement = true;
+        if ((stx != 0) && (sty != 0) && (!n.SameHex(v.m_ptHead)) &&
+            ((n.x >> 1) != (v.m_ptHead.x >> 1)) && ((n.y >> 1) != (v.m_ptHead.y >> 1)))
+            r.cornerRide = true;                       // crossed the shared hex corner
+        if (t == 0) {
+            r.intraFirst = (stx != 0) && (sty != 0) && n.SameHex(v.m_ptHead);
+            r.axialFirst = (stx == 0) || (sty == 0);
+            r.laneFirst = (hx != 0) ? ((n.y & 1) == ((hx > 0) ? 1 : 0))
+                                    : ((n.x & 1) == ((hy > 0) ? 0 : 1));
+            std::snprintf(r.why, sizeof(r.why), "%s",
+                          (std::strstr(g_lastTurn, "reason ") != nullptr)
+                              ? std::strstr(g_lastTurn, "reason ") + 7 : "-");
+            for (char *p = r.why; *p; ++p)
+                if (*p == ' ') { *p = 0; break; }
+        }
+        for (int q = 0; q < nSeen; ++q)
+            if (seen[q] == n)
+                r.revisit = true;
+        if (nSeen < 12)
+            seen[nSeen++] = n;
+
+        theVehicleHex.Set(v.m_ptHead, nullptr);
+        theVehicleHex.Set(v.m_ptTail, nullptr);
+        v.m_ptTail = v.m_ptHead;
+        v.m_ptHead = n;
+        v.m_ptNext = n;
+        theVehicleHex.Set(v.m_ptHead, &v);
+        theVehicleHex.Set(v.m_ptTail, &v);
+        r.ticks = t + 1;
+
+        // standing on a sub-hex that is a corner shared with an UNPAVED hex,
+        // carrying a diagonal hull - the state the angle guard can never correct
+        int uhx = CSubHex::Diff(v.m_ptHead.x - v.m_ptTail.x);
+        int uhy = CSubHex::Diff(v.m_ptHead.y - v.m_ptTail.y);
+        if ((uhx != 0) && (uhy != 0)) {
+            CSubHex _sideX(v.m_ptHead.x + uhx, v.m_ptHead.y), _sideY(v.m_ptHead.x, v.m_ptHead.y + uhy);
+            _sideX.Wrap(); _sideY.Wrap();
+            if ((!v.OnPavement(_sideX)) || (!v.OnPavement(_sideY)))
+                r.diagAtCorner = true;
+        }
+        if (CHexCoord(v.m_ptHead) == hexCorner)
+            r.walkedCorner = true;
+        if (CHexCoord(v.m_ptHead) == hexTarget) {
+            r.converged = true;
+            break;
+        }
+    }
+    if (g_recovery != 0)
+        r.recovered = true;
+    theVehicleHex.Set(v.m_ptHead, nullptr);
+    theVehicleHex.Set(v.m_ptTail, nullptr);
+    return r;
+}
+
+void CheckStaircase() {
+    for (int d = 0; d < 4; ++d) {
+        int sx = (d & 1) ? -1 : 1, sy = (d & 2) ? -1 : 1;
+        for (int ph = 0; ph < 2; ++ph) {
+            bool xFirst = (ph == 0);
+            char tag[48], line[220];
+            std::snprintf(tag, sizeof(tag), "staircase %+d,%+d %s", sx, sy, xFirst ? "x-first" : "y-first");
+
+            StairResult pre = RunStair(sx, sy, xFirst, 63 & ~16);
+            StairResult post = RunStair(sx, sy, xFirst, 63);
+
+            std::snprintf(line, sizeof(line), "%s: a trailing-corner approach exists on this corridor", tag);
+            check(pre.valid && post.valid, line);
+            if (!pre.valid || !post.valid)
+                continue;
+
+            // the defect, with the junction block off: the tick-1 step is the
+            // intra-hex diagonal, and the corner is ridden on the tick after.
+            std::snprintf(line, sizeof(line), "%s pre: tick 1 is a diagonal that stays inside the hex", tag);
+            check(pre.intraFirst, line);
+            std::snprintf(line, sizeof(line), "%s pre: tick 2 rides the shared corner of two road hexes", tag);
+            check(pre.cornerRide, line);
+            std::snprintf(line, sizeof(line), "%s pre: the hull stands on a shared corner sub-hex angled", tag);
+            check(pre.diagAtCorner, line);
+            std::snprintf(line, sizeof(line), "%s pre: the paved corner hex is never entered", tag);
+            check(!pre.walkedCorner, line);
+
+            // the fix: tick 1 is axial and in lane, and the corner hex is walked
+            std::snprintf(line, sizeof(line), "%s post: tick 1 is axis-aligned, not the intra-hex diagonal", tag);
+            check(post.axialFirst && !post.intraFirst, line);
+            std::snprintf(line, sizeof(line), "%s post: tick 1 stays in the lane for the hull's direction", tag);
+            check(post.laneFirst, line);
+            std::snprintf(line, sizeof(line), "%s post: tick 1's correction is named corner-deferred-intra", tag);
+            check(std::strcmp(post.why, "corner-deferred-intra") == 0, line);
+            std::snprintf(line, sizeof(line), "%s post: no step crosses the shared corner of two road hexes", tag);
+            check(!post.cornerRide, line);
+            std::snprintf(line, sizeof(line), "%s post: never angled on a sub-hex cornering unpaved ground", tag);
+            check(!post.diagAtCorner, line);
+            std::snprintf(line, sizeof(line), "%s post: the truck walks through the paved corner hex", tag);
+            check(post.walkedCorner, line);
+            std::snprintf(line, sizeof(line), "%s post: no requested step targets grass", tag);
+            check(!post.offPavement, line);
+            std::snprintf(line, sizeof(line), "%s post: the head never leaves the corridor's own hexes", tag);
+            check(!post.offCorridor, line);
+            std::snprintf(line, sizeof(line), "%s post: no oscillation - the hull never returns to a sub-hex it left", tag);
+            check(!post.revisit, line);
+            std::snprintf(line, sizeof(line), "%s post: every step comes from the step arithmetic", tag);
+            check(!post.recovered, line);
+            std::snprintf(line, sizeof(line), "%s post: the truck reaches the diagonal route hex within 8 ticks", tag);
+            check(post.converged, line);
+
+            std::printf("%-28s pre %s/%d  post %s/%d ticks %d\n", tag,
+                        pre.cornerRide ? "corner-ride" : "clean", pre.ticks,
+                        post.cornerRide ? "corner-ride" : "clean", post.ticks, post.ticks);
+        }
+    }
+
+    // THE DEFERRAL TARGET OCCUPIED. CanEnter(_ahead) is a term of the new body,
+    // so a truck parked on the leading corner of this hex declines it and the
+    // step is left exactly as it was - the pre-fix intra-hex diagonal, which is
+    // still a legal move into the truck's own paved hex. The new body never
+    // turns a move into a wait; it only ever changes which paved sub-hex is
+    // asked for.
+    for (int d = 0; d < 4; ++d) {
+        int sx = (d & 1) ? -1 : 1, sy = (d & 2) ? -1 : 1;
+        char line[220];
+        StairResult blocked = RunStair(sx, sy, true, 63, true);
+        std::snprintf(line, sizeof(line),
+                      "staircase %+d,%+d occupied: the approach is still the trailing-corner one", sx, sy);
+        check(blocked.valid, line);
+        if (!blocked.valid)
+            continue;
+        std::snprintf(line, sizeof(line),
+                      "staircase %+d,%+d occupied: an occupied deferral target leaves the step alone", sx, sy);
+        check(blocked.intraFirst, line);
+        std::snprintf(line, sizeof(line),
+                      "staircase %+d,%+d occupied: declining the deferral is not a blocked/FindSub recovery", sx, sy);
+        check(!blocked.recovered, line);
+        std::snprintf(line, sizeof(line),
+                      "staircase %+d,%+d occupied: the untouched step still targets pavement", sx, sy);
+        check(!blocked.offPavement, line);
+    }
+}
+
 // ------------------------------------------------- occupied-T (WinAstra) ----
 //
 // WinAstra's 2026-09-13 review of bbcc2327: the corner-cut fix's body-3
@@ -1513,6 +1825,9 @@ int main() {
 
     // every approach of every L, T and X
     CheckApproaches();
+
+    // the staircase corridor: the trailing-corner approach
+    CheckStaircase();
 
     // one named bend-turn line, so QA can grep the reason keyword
     {
