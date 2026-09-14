@@ -1286,6 +1286,61 @@ int main() {
         check(g_roadDiag == 0, "road-diag: a corrected step on a fully paved bend is silent");
     }
 
+    // [ROAD-DIAG-ENTRY] gated on a non-silent verdict. A solid 2x2 block of
+    // pavement (a city block, a two-wide road): hex A(20,20), hex C(21,21)
+    // diagonally adjacent, and BOTH connecting hexes (21,20) and (20,21)
+    // paved too. An axial-hull vehicle heading +y, head already on the corner
+    // sub-hex of A next to C, crosses straight into C on its very first
+    // diagonal - the corner test finds BOTH neighbours paved, so the verdict
+    // is silent. The escape here is bInLane FALSE (heading +y from an odd-x
+    // sub-hex is out of lane by the shipped convention, vehmove.cpp:1265-1266),
+    // not same-hex - a DIFFERENT guard than the trailing-corner fixture below,
+    // chosen so the junction block's own corner-deferred correction (which
+    // would otherwise fire here and turn this into an axis-aligned step, as
+    // it correctly does for an in-lane approach to the same geometry) does
+    // not intercept it before the probe ever sees a diagonal. The entry line
+    // must not fire on bHullWasAxial alone when the verdict is silent, or it
+    // would dilute the reason histogram with a population the read said to
+    // leave alone.
+    {
+        ClearMap();
+        theMap.hex[20][20].type = CHex::road;   // hex A
+        theMap.hex[21][21].type = CHex::road;   // hex C, diagonally adjacent
+        theMap.hex[21][20].type = CHex::road;   // BOTH corners paved this time
+        theMap.hex[20][21].type = CHex::road;
+
+        static CVehicle v;
+        v = CVehicle();
+        v.id = 82;
+        v.m_ptTail = CSubHex(41, 40);          // axial hull, heading +y
+        v.m_ptHead = CSubHex(41, 41);          // the corner sub-hex of hex A next to hex C
+        v.m_ptNext = v.m_ptHead;
+        v.m_ptDest = CSubHex(2, 2);             // far away: bAtDest stays FALSE
+        v.m_hexDest = CHexCoord(1, 1);
+        v.m_hexNext = CHexCoord(21, 21);        // hex C, diagonally adjacent
+        v.m_cMode = CVehicle::moving;
+        theVehicleHex.Set(v.m_ptHead, &v);
+        theVehicleHex.Set(v.m_ptTail, &v);
+
+        g_roadDiag = 0; g_roadDiagEntry = 0; g_roadTurns = 0; g_recovery = 0;
+        g_lastDiag[0] = 0; g_lastDiagEntry[0] = 0;
+        BOOL got = v.GetNextHex(FALSE);
+        check((got != FALSE) && (v.m_ptNext == CSubHex(42, 42)),
+              "wide-pavement: an axial hull crosses straight into hex C on the first diagonal");
+        check(!v.m_ptNext.SameHex(v.m_ptHead),
+              "wide-pavement: the step leaves hex A on this very first diagonal");
+        check(g_roadTurns == 0,
+              "wide-pavement: out-of-lane keeps the junction block from engaging");
+        check(g_recovery == 0, "wide-pavement: this is the step arithmetic, not a recovery path");
+        check(g_roadDiag == 0,
+              "wide-pavement: both corner sub-hexes paved - no [ROAD-DIAG] line, as today");
+        check(g_roadDiagEntry == 0,
+              "wide-pavement: a silent verdict must not emit [ROAD-DIAG-ENTRY] either");
+
+        theVehicleHex.Set(v.m_ptHead, nullptr);
+        theVehicleHex.Set(v.m_ptTail, nullptr);
+    }
+
     // [ROAD-DIAG] TWO-TICK MECHANISM (the trailing-corner approach). A truck
     // stands on the TRAILING corner sub-hex of hex A with an AXIAL hull, and its
     // route hex C is diagonally adjacent. Tick 1's diagonal step stays INSIDE

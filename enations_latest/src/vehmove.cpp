@@ -1628,21 +1628,67 @@ BOOL CVehicle::GetNextHex(BOOL bNew) {
             // RUN LENGTH. Counts every consecutive on-pavement diagonal
             // sub-hex step, intra-hex and corner-crossing alike; reset to 0
             // below whenever this tick is NOT one (axis-aligned, or a
-            // diagonal that leaves pavement's OnPavement(m_ptHead) test).
+            // diagonal that leaves pavement's OnPavement(m_ptHead) test). This
+            // is a run-length counter, not a verdict, so it counts regardless
+            // of whether the verdict below turns out to be silent.
             m_iDiagRunLen++;
 
+            // STAIRCASE-AWARE VERDICT. Computed BEFORE the entry line below,
+            // so the entry line can be gated on it: a legitimate first
+            // diagonal across WIDE pavement (both corner sub-hexes paved - a
+            // city block, a two-wide road) must stay silent end-to-end,
+            // entry line included, exactly as the read said to leave it.
+            const char *pszVerdict;
+            if (m_ptNext.SameHex(m_ptHead))
+                // TICK 1: the diagonal stays inside the vehicle's own hex (the
+                // trailing-corner approach). Both axis-neighbour sub-hexes are
+                // this same paved hex, so the corner test below would always
+                // read "silent" - which is exactly why this step was invisible
+                // before. Emit unconditionally: this is the step that makes the
+                // hull diagonal, not a corner cut.
+                pszVerdict = "intra-hex-diag";
+            else if (!OnPavement(m_ptNext))
+                // the destination sub-hex itself is off pavement - a real cut
+                pszVerdict = "cut-offroad";
+            else {
+                CSubHex _sideX(m_ptHead.x + dxOut, m_ptHead.y);
+                CSubHex _sideY(m_ptHead.x, m_ptHead.y + dyOut);
+                _sideX.Wrap();
+                _sideY.Wrap();
+                BOOL bSideXPaved = OnPavement(_sideX);
+                BOOL bSideYPaved = OnPavement(_sideY);
+                if (bSideXPaved && bSideYPaved)
+                    pszVerdict = NULL;  // both corners paved - silent, as today
+                else if (bSideXPaved != bSideYPaved)
+                    // TICK 2: destination paved, exactly one corner paved - the
+                    // staircase corner. The truck rides the shared corner of two
+                    // road hexes instead of walking the paved corner hex between
+                    // them: an out-of-lane cut, not an off-road one.
+                    pszVerdict = "corner-ride";
+                else
+                    // destination paved but BOTH corners unpaved: a true corner
+                    // cut over open ground on both sides. Not part of the
+                    // measured 98.5% mechanism, but the verdict must be
+                    // exhaustive rather than silently falling through.
+                    pszVerdict = "cut-corner";
+            }
+
             // ENTRY LINE, once per run: fires only on the tick that turns an
-            // axial hull into a diagonal one. Names the guard term that
-            // declined to correct THIS step, read off the junction block
-            // (vehmove.cpp:1228-1411) in its own short-circuit order and
-            // recomputed here read-only (no shared state with that block).
-            // Where the block's own intermediate step is gone by the time we
-            // get here (m_ptNext may have been rewritten again by the angle
-            // clamp, the building-X recovery, FindSub or the terrain detour),
-            // the FINAL out-step (m_ptNext/dxOut/dyOut) stands in for the
-            // candidate the block would have tested - an approximation, not
-            // a re-derivation of the block's own control flow.
-            if (bHullWasAxial) {
+            // axial hull into a diagonal one, AND only when the verdict above
+            // is non-silent - a silent verdict (both corners paved) is
+            // exactly the wide-pavement population the read said to leave
+            // alone, and must not dilute the reason histogram the capture
+            // recipe counts. Names the guard term that declined to correct
+            // THIS step, read off the junction block (vehmove.cpp:1228-1411)
+            // in its own short-circuit order and recomputed here read-only
+            // (no shared state with that block). Where the block's own
+            // intermediate step is gone by the time we get here (m_ptNext may
+            // have been rewritten again by the angle clamp, the building-X
+            // recovery, FindSub or the terrain detour), the FINAL out-step
+            // (m_ptNext/dxOut/dyOut) stands in for the candidate the block
+            // would have tested - an approximation, not a re-derivation of
+            // the block's own control flow.
+            if (bHullWasAxial && (pszVerdict != NULL)) {
                 const char *pszEntry;
                 if ((strcmp(pszDiag, "atdest") == 0) || (strcmp(pszDiag, "bit16-off") == 0) ||
                     (strcmp(pszDiag, "reversing") == 0) || (strcmp(pszDiag, "unowned") == 0) ||
@@ -1686,42 +1732,6 @@ BOOL CVehicle::GetNextHex(BOOL bNew) {
                         GetID(), pszClass, m_ptHead.x, m_ptHead.y, m_ptTail.x, m_ptTail.y,
                         m_ptNext.x, m_ptNext.y, m_hexNext.X(), m_hexNext.Y(),
                         m_hexDest.X(), m_hexDest.Y(), hxOut, hyOut, pszEntry);
-            }
-
-            // STAIRCASE-AWARE VERDICT.
-            const char *pszVerdict;
-            if (m_ptNext.SameHex(m_ptHead))
-                // TICK 1: the diagonal stays inside the vehicle's own hex (the
-                // trailing-corner approach). Both axis-neighbour sub-hexes are
-                // this same paved hex, so the corner test below would always
-                // read "silent" - which is exactly why this step was invisible
-                // before. Emit unconditionally: this is the step that makes the
-                // hull diagonal, not a corner cut.
-                pszVerdict = "intra-hex-diag";
-            else if (!OnPavement(m_ptNext))
-                // the destination sub-hex itself is off pavement - a real cut
-                pszVerdict = "cut-offroad";
-            else {
-                CSubHex _sideX(m_ptHead.x + dxOut, m_ptHead.y);
-                CSubHex _sideY(m_ptHead.x, m_ptHead.y + dyOut);
-                _sideX.Wrap();
-                _sideY.Wrap();
-                BOOL bSideXPaved = OnPavement(_sideX);
-                BOOL bSideYPaved = OnPavement(_sideY);
-                if (bSideXPaved && bSideYPaved)
-                    pszVerdict = NULL;  // both corners paved - silent, as today
-                else if (bSideXPaved != bSideYPaved)
-                    // TICK 2: destination paved, exactly one corner paved - the
-                    // staircase corner. The truck rides the shared corner of two
-                    // road hexes instead of walking the paved corner hex between
-                    // them: an out-of-lane cut, not an off-road one.
-                    pszVerdict = "corner-ride";
-                else
-                    // destination paved but BOTH corners unpaved: a true corner
-                    // cut over open ground on both sides. Not part of the
-                    // measured 98.5% mechanism, but the verdict must be
-                    // exhaustive rather than silently falling through.
-                    pszVerdict = "cut-corner";
             }
 
             if (pszVerdict != NULL)
