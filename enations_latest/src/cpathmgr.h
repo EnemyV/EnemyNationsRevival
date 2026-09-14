@@ -229,8 +229,31 @@ public:
 	private:
     CHexCoord* _GetPath( CVehicle* pVehicle, CHexCoord& hexFrom, CHexCoord& hexTo, int& iPathLen, int iVehType = 0,
                          BOOL bVehBlock = FALSE, BOOL bDirectPath = FALSE );
+
+#if EN_PATH_PROBES
+    // GetPathProd() is the body GetPath() has always had, verbatim, including its
+    // mpath.us scope timer - so a shadow search started after it returns lands
+    // outside EVERY production timing counter, not just outside the exit counters.
+    // With EN_PATH_PROBES compiled out this split does not exist: the body is
+    // CPathMgr::GetPath again (see EN_PM_PROD_ENTRY in cpathmgr.cpp).
+    CHexCoord* GetPathProd  ( CVehicle* pVehicle, CHexCoord& hexFrom, CHexCoord& hexTo, int& iPathLen, int iVehType,
+                              BOOL bVehBlock, BOOL bDirectPath );
+    CHexCoord* ShadowGetPath( CVehicle* pVehicle, CHexCoord& hexFrom, CHexCoord& hexTo, int& iPathLen, int iVehType,
+                              BOOL bVehBlock, BOOL bDirectPath );
+#endif
 };
 
 extern CPathMgr thePathMgr;
+
+#if EN_PATH_PROBES
+// Ladder step A: ONE private CPathMgr that re-runs each main-thread movement search
+// behind the production one and compares the two answers. Measurement only - it is
+// constructed only when EN_PATH_SHADOW is set in the environment, it never feeds the
+// game, nothing reads its route, and every counter it emits is namespaced. Init and
+// Close mirror thePathMgr's, at the same call sites.
+BOOL EnPathShadowOn  ( void );                      // EN_PATH_SHADOW, non-empty = on, read once
+void EnPathShadowInit( int iMapEX, int iMapEY );
+void EnPathShadowClose( void );
+#endif
 
 #endif // __CPATHMGR_H__
