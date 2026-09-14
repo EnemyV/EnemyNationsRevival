@@ -132,6 +132,9 @@ public:
     // cycling even when the scene is otherwise static — the compositor's
     // dirty-gate (which spares idle list windows) would otherwise freeze it.
     bool HasGpuTerrain() const { return m_ownRenderer != nullptr && m_terrainAA != nullptr; }
+    // The condition under which RenderDetached composites from the sprite layer and
+    // never reads m_surface. Defined in the .cpp so the header need not pull in SDL2Terrain.h.
+    bool PresentsGpuTerrain() const;
     DWORD GetLastRenderMs() const { return m_lastRenderMs; }
 
     // T2: the area panel hands us its CAnimAtr so PresentOwn can draw the GPU

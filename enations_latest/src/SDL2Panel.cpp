@@ -1300,6 +1300,13 @@ void SDL2Panel::DestroyOwnWindow() {
     }
 }
 
+// The condition under which RenderDetached composites from the sprite layer and
+// never reads m_surface. Single source of truth for that gate, so callers outside
+// this file (CWndArea::Draw) can skip work whose only consumer is m_surface.
+bool SDL2Panel::PresentsGpuTerrain() const {
+    return HasGpuTerrain() && SDL2Terrain::IsLoaded();
+}
+
 void SDL2Panel::RenderDetached() {
     if (!m_ownWindow || !m_visible || !m_surface)
         return;
@@ -1337,7 +1344,7 @@ void SDL2Panel::RenderDetached() {
     // OVERLAY — only the color-keyed sprite layer + chrome are opaque; the
     // content area stays transparent so the GPU terrain mesh (drawn in
     // PresentOwn, underneath) shows through.
-    bool bGpuTerrain = m_ownRenderer && m_terrainAA && SDL2Terrain::IsLoaded();
+    bool bGpuTerrain = PresentsGpuTerrain();
 
     SDL_Rect dstRect = { 0, tbH, m_width, m_height };
     if (bGpuTerrain) {
