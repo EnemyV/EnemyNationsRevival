@@ -2579,7 +2579,12 @@ void CWndArea::Draw( )
 
     // Re-copy DIB to SDL panel after overlays (selection rect) are drawn.
     // CAnimAtr::Render() copied the DIB before overlays, so we need a second pass.
-    if ( m_aa.m_sdlPanel )
+    // On the GPU-terrain path RenderDetached composites from the sprite layer and never
+    // reads m_surface, so this copy is skipped there, mirroring the IsGpuFull gate in
+    // CAnimAtr::Render(). It must stay on when the own renderer exists but the terrain
+    // mesh is not loaded, because Render() has already skipped its copy and RenderDetached
+    // then blits m_surface, so this is the only feed on that edge.
+    if ( m_aa.m_sdlPanel && !m_aa.m_sdlPanel->PresentsGpuTerrain( ) )
     {
         Perf::ScopeCounter _cap( "a.topanel" );
         RenderingAdapter::RenderToPanel( &m_aa, m_aa.m_sdlPanel );
