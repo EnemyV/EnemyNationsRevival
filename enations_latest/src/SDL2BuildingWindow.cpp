@@ -68,6 +68,10 @@ static int slotRowH(int iconIdx) {
 }
 static int matRowH()       { return slotRowH( ICON_MATERIALS ); }
 static int storageHeight() { return BOX_PAD + HDR_H + SDL2BuildingWindow::kNumStoreMats * matRowH() + BOX_PAD; }
+// Auto-Routing: the master switch, plus one veto checkbox per stored material on
+// warehouse-class hosts. Plain ROW_H rows (no material icon strip).
+static int nAutoStockRows(CBuilding* b);
+static int autoStockHeight(CBuilding* b) { return BOX_PAD + HDR_H + nAutoStockRows(b) * ROW_H + BOX_PAD; }
 // graph + the tiny time-range button row underneath it
 static const int RANGE_ROW_H  = 24;   // height of the 10s/10m/1h/10h button row — was 18, which
                                       // downscaled the labels to ~12pt mush ("difficult to read",
@@ -163,6 +167,21 @@ static bool secStorage(CBuilding* b) {
     return ( b->GetData()->GetUnionType() == CStructureData::UTwarehouse );   // warehouse + rocket
 }
 static bool secAltPowerActive(CBuilding* b);   // fwd (defined below; used to gate secPower for C6)
+// Auto-Routing: the "Enable Autorouting" master switch for this building, plus (on
+// warehouse-class buildings only) the per-material "don't haul this here" vetoes and
+// the ceiling readout. Shown on any routing participant we own -- there is nothing to
+// configure on somebody else's building.
+static bool secAutoStock(CBuilding* b) {
+    return b->CanAutoRoute() && b->GetOwner() && b->GetOwner()->IsMe();
+}
+// How many rows the section needs: the master switch, plus a material row each when
+// this building supports the per-material vetoes.
+static int nAutoStockRows(CBuilding* b) {
+    return 1 + ( b->CanBlockMaterials() ? SDL2BuildingWindow::kNumStoreMats : 0 );
+}
+// MERGE: storage-caps also forward-declared secCoalLiqActive( ) here; dropped because the
+// lane renamed that helper to secAltPowerActive( ) (declared above) and nothing calls the
+// old name any more -- it would declare a function that is never defined.
 static bool secPower(CBuilding* b) {
     // C6: a plant in a power-stopping alt mode is shown as a PRODUCER (Production/Inputs/Outputs),
     // not as a Power section — so suppress Power while it is active. (The rocket always has Power.)
@@ -573,7 +592,8 @@ static bool secBuilding(CBuilding* b) {
 enum {
     SEC_STORAGE, SEC_PRODUCTION, SEC_BUILDING, SEC_FERTILITY, SEC_INPUTS,
     SEC_OUTPUTS, SEC_UNITS, SEC_REPAIR, SEC_MILITARY, SEC_POWER, SEC_OFFICE,
-    SEC_WORKFORCE, SEC_APT, SEC_TURRET, SEC_EDICTS, SEC_ALTOUTPUT
+    SEC_WORKFORCE, SEC_APT, SEC_TURRET, SEC_EDICTS, SEC_ALTOUTPUT, SEC_AUTOSTOCK,
+    SEC_COUNT   // sentinel — keep last; sizes the layout arrays
 };
 
 // AltOutput "Production Mode" section: one outlined box with a checkbox row (+ scope (i)
@@ -583,10 +603,16 @@ static const int ALTOUTPUT_H = BOX_PAD + HDR_H + ROW_H + BOX_PAD;
 
 struct SecRec { int id; int h; };
 
+// One slot per section id, so the arrays below cannot overflow no matter how many
+// sections a single building qualifies for. (The richest real case is the rocket at
+// ~12; the previous fixed 16 happened to fit but left no margin for a new section --
+// computeLayout appends with an unchecked secs[n++].)
+static const int MAX_SECS = SEC_COUNT;
+
 struct BldgLayout {
-    SecRec secs[16];
+    SecRec secs[MAX_SECS];
     int    n         = 0;
-    int    colOf[16] = {};     // column index this section lands in, 0-based
+    int    colOf[MAX_SECS] = {};     // column index this section lands in, 0-based
     int    nCols     = 1;      // 1..3; 3 is what the Rocket Ship needs to fit a short screen
     bool   twoCol    = false;  // kept as (nCols > 1) for readability at the use sites
     int    bodyH     = 0;      // height of the tallest column (incl. SEC_PAD)
@@ -599,6 +625,7 @@ static BldgLayout computeLayout(CBuilding* b) {
     int& n = L.n;
     // Order here is the display order; must match BuildSection's dispatch.
     if ( secStorage(b)    ) L.secs[n++] = { SEC_STORAGE,    storageHeight() };
+    if ( secAutoStock(b)  ) L.secs[n++] = { SEC_AUTOSTOCK,  autoStockHeight(b) };
     if ( secProduction(b) ) L.secs[n++] = { SEC_PRODUCTION, PRODUCTION_H };
     if ( secBuilding(b)   ) L.secs[n++] = { SEC_BUILDING,   BUILDING_H };
     if ( secFertility(b)  ) L.secs[n++] = { SEC_FERTILITY,  fertilityHeight(b) };
@@ -814,6 +841,7 @@ void SDL2BuildingWindow::RecomputeSections() {
     m_bWorkforce  = secOfc(m_pBldg);   // workforce section rides with the office sections
     m_bApt        = secApt(m_pBldg);
     m_bTurret     = secTurret(m_pBldg);
+    m_bAutoStock  = secAutoStock(m_pBldg);
 }
 
 // C6: after ClearWidgets() frees every widget, null ALL cached raw widget pointers so a stale one
@@ -823,6 +851,8 @@ void SDL2BuildingWindow::NullSectionWidgets() {
     m_imgFertility = nullptr; m_lblFertility = nullptr;
     m_imgStorage = nullptr;
     for ( int i = 0; i < kNumStoreMats; i++ ) { m_lblStoreName[i] = nullptr; m_lblStoreCount[i] = nullptr; }
+    m_chkAutoRoute = nullptr;
+    for ( int i = 0; i < kNumStoreMats; i++ ) { m_chkAutoStock[i] = nullptr; m_lblAutoStock[i] = nullptr; }
     m_lblPowerHdr = nullptr; m_imgPowerHdrIcon = nullptr; m_lblPowerBldg = nullptr;
     m_lblPowerColony = nullptr; m_imgPowerGraph = nullptr;
     m_lblPowerOilHdr = nullptr; m_lblPowerOil = nullptr; m_lblPowerOilCol = nullptr;
@@ -1040,6 +1070,68 @@ int SDL2BuildingWindow::BuildAltOutput(int x, int y, int w) {
     return y + H + SEC_PAD;
 }
 
+// Auto-Stock — per-material control over what the AUTO-ROUTER is allowed to bring here,
+// plus the ceiling it stops at. Hosted on warehouses and the rocket (CanBlockMaterials).
+//
+// A TICKED box means "haul this here", which is the default for every material and for
+// every building loaded out of an older save: the underlying flag bit is stored with the
+// opposite sense (set == blocked) precisely so that a zeroed flags word reads as
+// "everything allowed" and nothing changes for existing games.
+//
+// Unticking is what builds a single-material depot: untick all but Iron and idle trucks
+// will only ever bring iron here. It governs AUTOMATIC hauling only -- a hand-loaded truck
+// or a player-drawn route still delivers whatever the player tells it to.
+int SDL2BuildingWindow::BuildAutoStock(int x, int y, int w) {
+    int H = autoStockHeight(m_pBldg);
+    AddOutline(x, y, w, H);
+    int yh = Header(x + BOX_PAD, y + BOX_PAD, w - 2 * BOX_PAD, "Auto-Routing", kAccentGold,
+                    ICON_MATERIALS, CMaterialTypes::lumber);
+
+    // checkbox (name) on the left, "held / cap" right-aligned like the Storage counts
+    const int capW    = 96;
+    const int kInfoSz = 14;
+    int       cbX     = x + BOX_PAD + 4;
+    int       cbW     = ( x + w - BOX_PAD - capW - 4 ) - cbX;
+
+    CBuilding* pBldg = m_pBldg;          // capture by value: the callback outlives this frame
+
+    // Master switch. Unticking it stops the automatic trucks stocking this building
+    // and collecting from it, and stops its surplus counting toward what warehouses
+    // are asked to absorb -- but construction and repair materials keep arriving, so
+    // turning it off can never silently strand a half-built or damaged structure.
+    // Hand-loading and player-drawn routes are unaffected, which is the point: this
+    // is how you take one building under manual control without stopping it.
+    m_chkAutoRoute = AddWidget<SDL2Checkbox>(
+        cbX, yh, cbW - ( kInfoSz + 4 ), ROW_H, "Enable Autorouting", pBldg->IsAutoRouteEnabled() != FALSE,
+        [pBldg]( bool on ) { pBldg->SetAutoRouteEnabled( on ? TRUE : FALSE ); } );
+    AddWidget<SDL2InfoIcon>( cbX + cbW - kInfoSz, yh + ( ROW_H - kInfoSz ) / 2, kInfoSz, kInfoSz,
+                             "This building only\n"
+                             "Off: automatic trucks stop stocking this building and stop\n"
+                             "collecting from it. Materials for CONSTRUCTION and REPAIR are\n"
+                             "still delivered. Hand-loading and your own routes always work." );
+
+    if ( !pBldg->CanBlockMaterials() )
+        return y + H + SEC_PAD;
+
+    // Per-material vetoes (warehouse / rocket / seaport). Ticked == this material may
+    // be auto-hauled here; the underlying flag bit is stored with the opposite sense
+    // (set == blocked) so a zeroed flags word -- every older save -- reads as "allow
+    // everything" and nothing changes for existing games. Unticking all but Iron is
+    // what makes an iron-only warehouse.
+    for ( int i = 0; i < kNumStoreMats; i++ ) {
+        int mat = kStoreMats[i];
+        int ry  = yh + ( i + 1 ) * ROW_H;
+
+        m_chkAutoStock[i] = AddWidget<SDL2Checkbox>(
+            cbX, ry, cbW, ROW_H, kStoreNames[i], !pBldg->IsMatBlocked( mat ),
+            [pBldg, mat]( bool on ) { pBldg->SetMatBlocked( mat, on ? FALSE : TRUE ); } );
+
+        m_lblAutoStock[i] = AddWidget<SDL2Label>(x + w - BOX_PAD - capW, ry, capW, ROW_H, "");
+        m_lblAutoStock[i]->SetRightAligned(true);
+    }
+    return y + H + SEC_PAD;
+}
+
 // Dispatch a section id to its builder. Order of ids matches computeLayout().
 // Edicts v1 — civ-wide policy toggles hosted at this building (rocket/command-center/embassy).
 // One SDL2Checkbox per edict; toggling calls CPlayer::ToggleEdictNet, which applies the
@@ -1115,6 +1207,7 @@ int SDL2BuildingWindow::BuildSection(int id, int x, int y, int w) {
         case SEC_TURRET:     return BuildTurret    (x, y, w);
         case SEC_EDICTS:     return BuildEdicts    (x, y, w);
         case SEC_ALTOUTPUT:  return BuildAltOutput (x, y, w);
+        case SEC_AUTOSTOCK:  return BuildAutoStock (x, y, w);
     }
     return y;
 }
@@ -2205,6 +2298,38 @@ void SDL2BuildingWindow::Refresh() {
         for ( int i = 0; i < kNumStoreMats; i++ )
             if ( m_lblStoreCount[i] )
                 m_lblStoreCount[i]->SetText( FmtNum( m_pBldg->GetStore( kStoreMats[i] ) ) );
+    }
+
+    if ( m_bAutoStock ) {
+        // Re-sync the ticks from the live flags: the harness can set them, and the same
+        // building may be open in more than one window.
+        bool bRouting = ( m_pBldg->IsAutoRouteEnabled() != FALSE );
+        if ( m_chkAutoRoute && m_chkAutoRoute->IsChecked() != bRouting )
+            m_chkAutoRoute->SetChecked( bRouting );
+
+        for ( int i = 0; i < kNumStoreMats; i++ ) {
+            int mat     = kStoreMats[i];
+            bool bAllow = !m_pBldg->IsMatBlocked( mat );
+            if ( m_chkAutoStock[i] ) {
+                if ( m_chkAutoStock[i]->IsChecked() != bAllow )
+                    m_chkAutoStock[i]->SetChecked( bAllow );
+                // With the master switch off the per-material vetoes decide nothing --
+                // grey them rather than leave live-looking controls that do nothing.
+                m_chkAutoStock[i]->SetEnabled( bRouting );
+            }
+            if ( m_lblAutoStock[i] ) {
+                if ( !bRouting )
+                    m_lblAutoStock[i]->SetText( FmtNum( m_pBldg->GetStore( mat ) ) + " (manual)" );
+                else if ( !bAllow )
+                    m_lblAutoStock[i]->SetText( "blocked" );
+                else {
+                    int iCap = m_pBldg->GetAutoStockCap( mat );
+                    m_lblAutoStock[i]->SetText(
+                        iCap < 0 ? FmtNum( m_pBldg->GetStore( mat ) )
+                                 : FmtNum( m_pBldg->GetStore( mat ) ) + " / " + FmtNum( iCap ) );
+                }
+            }
+        }
     }
 
     if ( m_bProduction && m_lblProduction ) {

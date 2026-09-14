@@ -7428,6 +7428,11 @@ void CUnit::AssertValid( ) const
     ASSERT( ( 0 <= m_fDamageMult ) && ( m_fDamageMult <= 1 ) );
     ASSERT( ( 0.5 <= m_fDamPerfMult ) && ( m_fDamPerfMult <= 1 ) );
 #ifdef STRICTER_ASSERTS
+    // MERGE (storage-caps): that side asserted the same property against
+    // CUnit::UNIT_FLAGS_VALID_MASK (0x7FFFF). Kept the lane form: with the veto bits
+    // and no_autoroute now OR-ed into all_flags (unit.h) the two bounds are the SAME
+    // value, and the derived one cannot go stale when the next flag is added. Neither
+    // assert is weakened -- one duplicate of the pair is dropped, not the check.
     // Bound derived from the UNIT_FLAGS enum itself (unit.h), not hand-written, so it
     // cannot go stale again the way the old ~0x07FF mask did (BUGS #89: it predated
     // alt_oil = 0x0800 and rejected any unit with an AltOutput toggle ON).

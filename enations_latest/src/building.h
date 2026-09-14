@@ -698,6 +698,56 @@ public:
 		virtual void GetAccepts (int * pVals) const;
 		virtual void ConstComplete () { }
 
+		// ---- auto-stock ceilings -------------------------------------------------
+		// How much of iInd the AUTO-ROUTER (CHPRouter) is willing to pile up here.
+		// -1 == uncapped, which is the answer for every building whose demand is
+		// already self-limiting (mines/farms need nothing; smelters and power plants
+		// ask for a bounded number of minutes of input via GetNextMinuteMat).
+		//
+		// Only the sinks that used to grow without bound override this: warehouses
+		// and the rocket (flat ceilings, below) and vehicle factories (a multiple of
+		// the dearest thing they can build). Construction and repair are NEVER capped
+		// -- a building that needs materials to finish gets them regardless.
+		//
+		// This bounds AUTOMATIC hauling only. Hand-loading a truck and a player-drawn
+		// route still move whatever the player asks for.
+		virtual int		GetAutoStockCap (int /*iInd*/) const { return ( -1 ); }
+
+		// Per-material auto-stock veto ("no iron in this warehouse"). Player-set, one
+		// bit per haulable material, riding m_unitFlags -- see CUnit::UNIT_FLAGS. The
+		// sense is BLOCKED-when-set so zero (every pre-existing building, and every
+		// building in an older save) means "accept everything", exactly as before.
+		BOOL					IsMatBlocked (int iInd) const;
+		void					SetMatBlocked (int iInd, BOOL bBlock);
+		// TRUE if this building type exposes the per-material checkboxes at all.
+		BOOL					CanBlockMaterials () const;
+		// TRUE if this building type exposes the per-material checkboxes at all.
+		// TRUE if iInd is one of the materials that HAS a veto bit (the six haulable
+		// ones). Callers index by MATERIAL id, never by bit position, so the UI is
+		// free to list them in whatever order reads best.
+		static BOOL				IsBlockableMat (int iInd);
+
+		// ---- automatic routing membership ---------------------------------------
+		// Is this building part of the auto-router's network? Default TRUE. When a
+		// player turns it off the router stops all OPEN-ENDED stocking of it: no
+		// production inputs, vehicle-build materials, power-plant fuel or warehouse
+		// surplus delivered in; no pickups FROM it; and its own surplus no longer
+		// counts toward what warehouses are told to absorb.
+		//
+		// CONSTRUCTION and REPAIR materials are the exception and keep flowing --
+		// those needs are finite and are what lets the building exist at all, so
+		// stalling them would just be a way to silently strand a half-built or
+		// bombed-out structure. (Same carve-out the auto-stock ceilings make.)
+		//
+		// Player-drawn routes and the Load Truck dialog are unaffected either way --
+		// this is a switch for hand-managing one building, not for shutting it down.
+		BOOL					IsAutoRouteEnabled () const;
+		void					SetAutoRouteEnabled (BOOL bEnable);
+		// TRUE if this building type takes part in material routing at all, i.e.
+		// whether the toggle is worth showing. Housing/command/embassy/fort/research
+		// neither consume nor supply haulable materials, so they never do.
+		BOOL					CanAutoRoute () const;
+
 		void					AnimateOperating (BOOL bOper);
 		void					SetAmbientHalfSpeed (BOOL bHalf);
 		void					StopUnit () { CUnit::StopUnit (); AnimateOperating (FALSE); }
@@ -965,6 +1015,13 @@ public:
 		virtual void GetInputs (int * pVals) const;
 		virtual void GetAccepts (int * pVals) const { GetInputs (pVals); }
 
+		// A factory hoards up to STOCK_UNITS times the largest per-material demand of
+		// anything it can currently build -- so a plant whose dearest unit takes 200
+		// steel tops out at 1000 steel, and never accumulates a material nothing in
+		// its catalogue uses. Inherited unchanged by CShipyardBuilding.
+		enum { STOCK_UNITS = 5 };
+		virtual int		GetAutoStockCap (int iInd) const;
+
 		void					DestroyAllWindows ();
 
 		virtual BOOL	IsOperating () const;
@@ -1166,7 +1223,7 @@ class CWarehouseBuilding : public CBuilding
 public:
 
 									CWarehouseBuilding () { }
-									CWarehouseBuilding (int iBldg, int iBldgDir, int iOwner=0, DWORD ID = 0) : 
+									CWarehouseBuilding (int iBldg, int iBldgDir, int iOwner=0, DWORD ID = 0) :
 																	CBuilding (iBldg, iBldgDir, iOwner, ID) { }
 
 		virtual void GetAccepts (int * pVals) const;
@@ -1188,6 +1245,20 @@ public:
 		int				GetScroungeCoalMult ();
 		void			UpdateScrounge ();
 		void			InvalidateScrounge ();
+		// Flat per-material ceiling for the auto-router. The rocket is the colony's
+		// central store so it gets the bigger one; a warehouse is a local depot.
+		// Both used to be bottomless: the router hands a warehouse every surplus it
+		// can find (SetExcessMaterials) and never subtracted what the warehouse was
+		// already holding, so idle trucks shuttled forever.
+		//
+		// NOTE a SEAPORT is also UTwarehouse in ENATIONS.DAT -- it is warehouse-class
+		// for every existing router behaviour (it already shows a Storage section and
+		// already absorbs surplus), so it is capped too. Broken out as its own constant
+		// because a dock is a transfer point, not a depot, and may well want a
+		// different number once this has been played.
+		enum { ROCKET_STOCK_CAP = 5000, WAREHOUSE_STOCK_CAP = 2000, SEAPORT_STOCK_CAP = 2000 };
+
+		virtual int		GetAutoStockCap (int iInd) const;
 
 protected:
 

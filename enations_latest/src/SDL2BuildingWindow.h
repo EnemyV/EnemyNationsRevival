@@ -66,6 +66,7 @@ private:
     bool m_bFertility  = false;   // farm: soil fertility (green ICON_DENSITY "X"s)
     bool m_bUnits      = false;   // seaport: vehicles currently docked inside
     bool m_bBuilding   = false;   // vehicle plant / shipyard: unit under construction
+    bool m_bAutoStock  = false;   // warehouse / rocket: per-material auto-haul vetoes + ceiling
 
     // chrome helpers
     void LoadIcons();
@@ -104,6 +105,7 @@ private:
     int BuildTurret    (int x, int y, int w);
     int BuildEdicts    (int x, int y, int w);   // Edicts v1: civ-wide policy toggles (host buildings)
     int BuildAltOutput (int x, int y, int w);   // #40: building-scoped AltOutput toggle (checkbox + scope)
+    int BuildAutoStock (int x, int y, int w);   // warehouse/rocket: per-material auto-haul vetoes
     int BuildProduction(int x, int y, int w);
     int BuildMilitary  (int x, int y, int w);
     int BuildRepair    (int x, int y, int w);
@@ -216,6 +218,11 @@ private:
     // the shared AltOutput::Convert production hook reads); label comes from the def. Scope
     // ("This building only") is shown via an adjacent SDL2InfoIcon (#36).
     SDL2Checkbox* m_chkAltOut      = nullptr;
+    // Master "Enable Autorouting" switch for this building.
+    SDL2Checkbox* m_chkAutoRoute = nullptr;
+    // One veto checkbox per stored material, plus the "x / cap" readout beside it.
+    SDL2Checkbox* m_chkAutoStock[kNumStoreMats] = {};
+    SDL2Label*    m_lblAutoStock[kNumStoreMats] = {};
     // Edicts section rows, kept live: Refresh() re-syncs each checkbox from the player's
     // edict bitmask (a toggle can originate outside this window — harness `setedict`, or
     // the edict being auto-revoked when its last host building dies, §29) and requests a

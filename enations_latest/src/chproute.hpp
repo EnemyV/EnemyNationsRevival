@@ -146,6 +146,11 @@ protected:
 
     void FillPriorities( void );
 	void SecondaryStocking( int iMat, int iFromBldg, int iToBldg );
+	// Headroom left under this building's auto-stock ceiling for iMat: cap minus what
+	// it already holds, floored at 0. INT_MAX when the building is uncapped (which is
+	// every building except warehouses/rocket and vehicle factories), so callers can
+	// compare against it without special-casing. Takes the global critical section.
+	int AutoStockRoom( DWORD dwBldgID, int iMat );
 	int GetVehicleCount( CBuilding *pBldg );
 	BOOL NeedTransports( void );
     BOOL FindTransport( CAIUnit *pCAIBldg );
