@@ -165,6 +165,7 @@ protected:
 
 	BOOL TrucksAreEnroute( CAIUnit *pBldg );
 	void UnAssignShip( CAIUnit *pShip );
+	void ReleasePickupShips( DWORD dwTruckID );
 	void UnassignTrucks( DWORD dwTruckID );
 	void UnassignTrucks( CAIUnit *pBldg );
 
