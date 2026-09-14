@@ -2525,7 +2525,13 @@ void CWndArea::OnMouseMove( UINT nFlags, CPoint point )
 //--------------------------------------------------------------------------
 void CWndArea::Draw( )
 {
-    m_aa.Render( );
+    // SPLIT (2026-09-13): CWndArea::Draw is 78.9 ms/s on the VM = 97.3% of r.draw and
+    // 64.4% of SEC_RENDER, and nothing inside it was timed - the same shape the sprite
+    // full-branch and the radar walk had before they were measured. Three scopes:
+    // the terrain/sprite render, the dirty-rect blit, and the SECOND DIB->panel copy
+    // that exists only because overlays are drawn after Render( ) already copied once.
+    { Perf::ScopeCounter _car( "a.render" );
+      m_aa.Render( ); }
 
     // Draw any overlays here
 
@@ -2568,12 +2574,16 @@ void CWndArea::Draw( )
     if ( Perf::IsEnabled() )
         Perf::CounterAdd( "area.paintrects", m_aa.GetDirtyRects( )->m_nRectPaintCur );
 
-    m_aa.GetDirtyRects( )->BltRects( );
+    { Perf::ScopeCounter _cab( "a.blt" );
+      m_aa.GetDirtyRects( )->BltRects( ); }
 
     // Re-copy DIB to SDL panel after overlays (selection rect) are drawn.
     // CAnimAtr::Render() copied the DIB before overlays, so we need a second pass.
     if ( m_aa.m_sdlPanel )
+    {
+        Perf::ScopeCounter _cap( "a.topanel" );
         RenderingAdapter::RenderToPanel( &m_aa, m_aa.m_sdlPanel );
+    }
 
     // Sync area static bar position and z-order to area panel
     // Resize the bar panel surface to match the area panel width
