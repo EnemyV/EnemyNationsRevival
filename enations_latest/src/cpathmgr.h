@@ -28,6 +28,7 @@ const int MAX_BOTH_INDEX = 4096;
 #include "stdafx.h"
 #include "unit.inl"
 #include "terrain.inl"
+#include "enprobes.h"  // EN_PATH_PROBES compile gate (shadow-instance members below)
 
 class CCell
 {
@@ -56,6 +57,13 @@ public:
 class CPathMgr
 {
     CRITICAL_SECTION m_cs;  // internal use only
+    // m_cs lifetime, tracked explicitly instead of being inferred from m_paCells.
+    // Close() frees the arena but deliberately LEAVES m_cs live, so "m_paCells != NULL"
+    // never was the same question as "m_cs is initialised": after a Close()+Init() pair
+    // the old section got re-Initialize()d with no matching Delete, and ~CPathMgr after
+    // a Close() deleted nothing at all. Invisible for one process-lifetime global,
+    // wrong for any second instance that is created and destroyed per game.
+    BOOL m_bCsInit;
 
 	// BUGBUG
 	// these are used only if the array of cells is used
@@ -119,6 +127,13 @@ public:
 	CPathMgr( int iMapEX, int iMapEY );
 	CPathMgr( void );
 	~CPathMgr();
+
+	// A CRITICAL_SECTION must never be copied and the CCell arena is owned, so a
+	// copied CPathMgr would alias one arena and duplicate one lock handle. Nothing
+	// copies one today; make it a compile error before there is a second instance
+	// around to be copied by accident.
+	CPathMgr( CPathMgr const & ) = delete;
+	CPathMgr & operator = ( CPathMgr const & ) = delete;
 	BOOL Init( int iMapEX, int iMapEY );
         void Close ();
 

@@ -1734,6 +1734,11 @@ void CPathMgr::ClearArray( void )
 //
 CPathMgr::CPathMgr( int iMapEX, int iMapEY )
 {
+    // NOTE: unused today (thePathMgr and the shadow instance both use the default
+    // ctor + Init()). It does NOT set m_iMaxPath/m_pTD, so Init() is still required
+    // before a search - but it must at least leave m_cs in a legal state, because it
+    // allocates the arena and ~CPathMgr used to read "arena != NULL" as "section live".
+    m_bCsInit   = FALSE;
     m_iWidth    = iMapEX;
     m_iHeight   = iMapEY;
     m_iMapEX    = iMapEX - 1;
@@ -1756,6 +1761,10 @@ CPathMgr::CPathMgr( int iMapEX, int iMapEY )
     ClearArray( );
     m_iNextSlot   = 0;
     m_iLowestBoth = 0;
+
+    memset( &m_cs, 0, sizeof( m_cs ) );
+    InitializeCriticalSection( &m_cs );
+    m_bCsInit = TRUE;
 
     return;
 }
@@ -1807,9 +1816,15 @@ BOOL CPathMgr::Init( int iMapEX, int iMapEY )
     */
 
     if ( m_paCells != NULL )
-    {
         delete[] m_paCells;
+
+    // Tear the OLD section down whenever one exists. Keying this off m_paCells meant a
+    // Close()+Init() pair (new game after a game) re-Initialize()d a live section with
+    // no matching Delete. See m_bCsInit in cpathmgr.h.
+    if ( m_bCsInit )
+    {
         DeleteCriticalSection( &m_cs );
+        m_bCsInit = FALSE;
     }
 
     m_paCells = new CCell[m_iNumOfCells];
@@ -1839,6 +1854,7 @@ BOOL CPathMgr::Init( int iMapEX, int iMapEY )
     // private critical section
     memset( &m_cs, 0, sizeof( m_cs ) );
     InitializeCriticalSection( &m_cs );
+    m_bCsInit = TRUE;
 
     return TRUE;
 }
@@ -1858,14 +1874,21 @@ CPathMgr::CPathMgr( void )
     m_iLowestBoth = 0;
     memset( m_acBoth, 0, sizeof( m_acBoth ) );
     m_paCells = NULL;
+    m_bCsInit = FALSE;  // Init() creates m_cs; nothing may enter it before that
 }
 
 CPathMgr::~CPathMgr( )
 {
-    if ( m_paCells != NULL )
+    // Close() nulls m_paCells but leaves m_cs live, so the old "arena != NULL" test
+    // leaked the section on every Close()d instance.
+    if ( m_bCsInit )
+    {
         DeleteCriticalSection( &m_cs );
+        m_bCsInit = FALSE;
+    }
 
     delete[] m_paCells;
+    m_paCells = NULL;
 
     m_mapCell.RemoveAll( );
 }
