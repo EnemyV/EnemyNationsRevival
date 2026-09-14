@@ -752,6 +752,7 @@ protected:
 		LONG					m_iBlockCount;					// number of consecutive times blocked
 		CHexCoord			m_hexStagnant;					// blocked-stagnation watch: last hex seen blocked at (transient, not saved)
 		DWORD					m_dwStagnantSince;			// real ms when we first saw it blocked at that hex (0 = not watching)
+		int						m_iDiagRunLen;					// [ROAD-DIAG] probe: consecutive on-pavement diagonal sub-hex steps (transient, not saved)
 #if EN_PATH_PROBES
 		CHexCoord			m_hexLastClamp;					// mpath.reclamp probe: hex of last clamped path, (-1,-1) = none (transient, not saved)
 #endif

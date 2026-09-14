@@ -5509,6 +5509,7 @@ void CVehicle::ctor( )
 
     m_hexStagnant     = CHexCoord( 0, 0 );
     m_dwStagnantSince = 0;
+    m_iDiagRunLen     = 0;  // [ROAD-DIAG] probe: no run under way yet
     m_dwTrafficWait    = TRAFFIC_WAIT_MSG;
     m_bWaitedForMover  = FALSE;
     m_subWaitNext.x    = m_subWaitNext.y = -1;
