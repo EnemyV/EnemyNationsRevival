@@ -50,6 +50,35 @@ foreach ($opt in @('/Od', '/O2')) {
     if ($LASTEXITCODE -ne 0) { $failed = 1 }
 }
 
+# --- radar / world-map background BAKE CADENCE -------------------------------
+# Compiles the production enations_latest/src/radarbake.h and table-tests
+# RadarShouldBake, then lints world.cpp/world.h for the promotion that pinned the
+# radar to the 140ms cadence. The exe is ALSO run with --baseline, which evaluates
+# the same table against a verbatim replication of the pre-fix decision: that run
+# MUST fail, or the table is not actually pinning the regression.
+$srcRadar = Join-Path $here "test_radar_bake.cpp"
+foreach ($opt in @("/Od", "/O2")) {
+    $tag = $opt.Substring(1)
+    $exe = Join-Path $outDir ("ui_radar_bake_{0}.exe" -f $tag)
+    $obj = Join-Path $outDir ("ui_radar_bake_{0}.obj" -f $tag)
+    $cl  = "cl /nologo /EHsc /std:c++17 /W4 /D_CRT_SECURE_NO_WARNINGS $opt /I`"$srcRoot`" `"$srcRadar`" /Fo`"$obj`" /Fe`"$exe`""
+    cmd /c "`"$vcvars`" >nul 2>&1 && $cl"
+    if ($LASTEXITCODE -ne 0) { Write-Host "[ui] COMPILE FAILED: radar_bake $opt"; exit 2 }
+
+    Write-Host "--- radar bake cadence $opt ---"
+    & $exe "--src=$srcRoot"
+    if ($LASTEXITCODE -ne 0) { $failed = 1 }
+
+    Write-Host "--- radar bake cadence $opt : pre-fix baseline (a FAIL here is the pass) ---"
+    & $exe "--baseline" | Out-Null
+    if ($LASTEXITCODE -eq 0) {
+        Write-Host "[ui] BASELINE DID NOT FAIL -- the radar-bake table no longer discriminates"
+        $failed = 1
+    } else {
+        Write-Host "[ui] pre-fix baseline correctly rejected (exit $LASTEXITCODE)"
+    }
+}
+
 if ($failed -ne 0) { Write-Host '[ui] FAILURES'; exit 1 }
 Write-Host '[ui] all suites pass (/Od and /O2)'
 exit 0

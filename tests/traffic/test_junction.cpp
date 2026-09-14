@@ -26,6 +26,11 @@ constexpr BOOL TRUE = 1, FALSE = 0;
 // vehmove.cpp:31, base.h:74-77
 const int MAX_TIMES_CIRCLE = 16;
 const int MAX_HEX_HT = 64, STEPS_HEX = MAX_HEX_HT / 4, FULL_ROT = STEPS_HEX * 8, EIGHTH_ROT = FULL_ROT / 8;
+// vehicle.h:50,91 - only reached inside WaitForMover's reversing-retreat branch,
+// which none of this fixture's scenes take (both trucks here are forward-moving),
+// so the value is never exercised; it exists to let the extracted body compile.
+const int JAM_WINDOW_FRAMES = 24 * 30;
+const DWORD TRAFFIC_WAIT_MOVER = 24;
 
 // A 64x64 hex map is 128x128 sub-hexes; Diff wraps like the shipped one.
 constexpr int SUBS = 128, HEXES = 64;
@@ -129,6 +134,13 @@ int g_roadDiag = 0;
 char g_lastTurn[256] = "";
 char g_lastExempt[256] = "";
 char g_lastDiag[256] = "";
+// WaitForMover/ResumeWaitedStep probes: the occupied-T cases assert on these so a
+// passing "no overlap" result is known to come from the real [WAIT]/[YIELD]/
+// [RESUME] decision path, not from a scene that happened not to exercise it.
+int g_waitLogged = 0, g_yieldLogged = 0, g_resumeLogged = 0;
+char g_lastWait[256] = "";
+char g_lastYield[256] = "";
+char g_lastResume[256] = "";
 void WaitLog(const char *fmt, ...) {
     char line[512];
     va_list va;
@@ -148,6 +160,18 @@ void WaitLog(const char *fmt, ...) {
     if (std::strstr(line, "[ROAD-DIAG]") != nullptr) {
         ++g_roadDiag;
         std::snprintf(g_lastDiag, sizeof(g_lastDiag), "%s", line);
+    }
+    if (std::strstr(line, "[WAIT]") != nullptr) {
+        ++g_waitLogged;
+        std::snprintf(g_lastWait, sizeof(g_lastWait), "%s", line);
+    }
+    if (std::strstr(line, "[YIELD]") != nullptr) {
+        ++g_yieldLogged;
+        std::snprintf(g_lastYield, sizeof(g_lastYield), "%s", line);
+    }
+    if (std::strstr(line, "[RESUME]") != nullptr) {
+        ++g_resumeLogged;
+        std::snprintf(g_lastResume, sizeof(g_lastResume), "%s", line);
     }
 }
 // Always on here: the harness's own WaitLog stub above has no EN_WAIT_LOG file
@@ -170,6 +194,12 @@ struct VehicleMap {
     CVehicle *_GetVehicle(CSubHex s) { return occ[s.x & (SUBS - 1)][s.y & (SUBS - 1)]; }
     CVehicle *GetVehicle(CSubHex s) { return _GetVehicle(s); }
     void Set(CSubHex s, CVehicle *v) { occ[s.x & (SUBS - 1)][s.y & (SUBS - 1)] = v; }
+    // vehicle.inl's CVehicleHex::GrabHex also does AddSubOwned bookkeeping and ORs a
+    // per-sub-hex occupancy bit into the CHex; neither is read by anything the
+    // extracted ResumeWaitedStep or GetNextHex bodies check, so grabbing here is
+    // just marking occupancy - the same thing Set() already does everywhere else
+    // in this fixture.
+    void GrabHex(CSubHex s, CVehicle *v) { Set(s, v); }
 } theVehicleHex;
 
 struct CVehicle {
@@ -186,6 +216,13 @@ struct CVehicle {
     int m_iHoldFrames = 0, m_iNumRetries = 0, m_cMode = moving;
     BOOL m_cOwn = TRUE;
     DWORD m_dwBlockLog = 0;
+    // vehicle.h:725-745 - state the extracted WaitForMover/ResumeWaitedStep bodies
+    // read and write. x<0 is "not holding a step", matching production's own
+    // uninitialised-to-negative convention (ResumeWaitedStep's own guard checks it).
+    BOOL m_bWaitedForMover = FALSE;
+    CSubHex m_subWaitNext{-1, -1};
+    DWORD m_dwTimeBlocked = 0, m_dwTrafficWait = 0;
+    int m_iJamClear = 0, m_iJamFwd = 0;
 
     int m_iDir = 0;
     int id = 1;
@@ -211,7 +248,22 @@ struct CVehicle {
     void _SetRouteMode(int m) { m_cMode = m; }
     void SetLoc(BOOL) {}
     void CheckNextHex() {}
-    BOOL WaitForMover() { ++waitCalls; ++g_recovery; return FALSE; }
+    // vehicle.h:357, verbatim: on the move if actually moving, or holding a step
+    // in traffic mode (the state WaitForMover puts a waiting vehicle into).
+    BOOL IsOnTheMove() const { return (m_cMode == moving) || (m_cMode == traffic); }
+    // AskToMove is production's "ask a STOPPED blocker to get going" call.
+    // WaitForMover only reaches it when the blocker is NOT IsOnTheMove(), and every
+    // occupied-T scene here uses a moving bar truck as the blocker, so this stub is
+    // never exercised - it exists only so the extracted WaitForMover body compiles.
+    BOOL AskToMove(CVehicle *) { return TRUE; }
+    void SetMoveParams(BOOL) {}
+    // SetHexDest's real body (vehmove.cpp:1658) is arrival-mode bookkeeping keyed
+    // off m_iDestMode, which this fixture's CVehicle does not model (no scene here
+    // calls ResumeWaitedStep within 1 hex of m_hexDest). No-op, matching how
+    // CheckNextHex is already stubbed above for the same reason.
+    void SetHexDest() {}
+    BOOL WaitForMover();
+    BOOL ResumeWaitedStep();
     BOOL FindSub(BOOL = FALSE) { ++findSubCalls; ++g_recovery; return TRUE; }
     BOOL MustKeepLane(CSubHex &step) { step = m_ptNext; return keepLane; }
     BOOL OnPavement(CSubHex const &s) {
@@ -736,6 +788,403 @@ void CheckApproaches() {
     }
 }
 
+// ------------------------------------------- the STAIRCASE CORRIDOR ----
+//
+// Everything above builds arms RADIATING FROM ONE JUNCTION, and every approach
+// starts on the LEADING corner sub-hex of its hex. The live map is neither.
+// RoadStepToward (vehicle.cpp:1888-1911) advances exactly one axis one hex per
+// call, so every road it lays is a 4-CONNECTED STAIRCASE - (x,y) (x+1,y)
+// (x+1,y+1) (x+2,y+1) ... - and the path re-diagonalises it, because GetCellAt
+// expands the diagonal neighbours and GetCellCosts prices only the destination
+// hex, never the two corners a diagonal passes between. A truck walking a
+// staircase is therefore handed a DIAGONALLY ADJACENT m_hexNext over and over.
+//
+// That makes the TRAILING corner sub-hex - the one furthest from the route hex
+// on BOTH axes - a routine place to stand, and it is the hole:
+//   tick 1  xDif == yDif == 2, so the far-target split zeroes NEITHER axis and
+//           the clamp hands back a diagonal that stays INSIDE the truck's own
+//           hex. _ahead is that hex too, so body 1's same-hex guard declines it,
+//           body 2 wants a single-axis route and body 3 wants a different hex
+//           ahead. No body examines it; [ROAD-DIAG] cannot see it either,
+//           because both axis neighbours of an intra-hex diagonal are that same
+//           paved hex.
+//   tick 2  the head is on the leading corner with a DIAGONAL HULL, so the whole
+//           block is shut out by the angle guard, and the raw diagonal crosses
+//           the SHARED CORNER of two road hexes - the corner ride QA reports -
+//           instead of walking through the paved corner hex between them.
+// Measured over a 1,247 s capture: 98.5% of all 20,381 angled-hull events, on
+// 100% of the transports that appear in [ROAD-DIAG] at all.
+//
+// Driven here in all four staircase directions and both chain phases (x step
+// first / y step first). A lane is fixed by the direction of travel, so the four
+// directions cover both sub-hex parities of both axes. In each the chain is
+// scanned for the first hex whose incoming hull axis makes the trailing corner
+// IN LANE - exactly one of the two bend types on a given staircase can be, since
+// the convention is "+x rides odd y, +y rides even x" and the staircase's own
+// two axis directions fix which - and the truck is placed there.
+//
+//   "pre"  runs with TrafficOpts bit 16 clear: the junction block is off, which
+//          is the geometry as it stood before any of it existed. It records the
+//          defect and must keep recording it.
+//   "post" runs with the block on. Before body 1b it behaves exactly like "pre"
+//          (no body examines the step), which is what --baseline-ref proves.
+
+const int STAIR_N = 8;                 // hexes in the corridor
+const int STAIR_BX = 20, STAIR_BY = 20;
+
+struct Stair {
+    int n;
+    CHexCoord h[STAIR_N];
+};
+
+// alternate one-axis steps, the only shape RoadStepToward can lay
+Stair BuildStair(int sx, int sy, bool xFirst) {
+    Stair S;
+    S.n = STAIR_N;
+    S.h[0] = CHexCoord(STAIR_BX, STAIR_BY);
+    for (int k = 0; k + 1 < STAIR_N; ++k) {
+        bool takeX = xFirst ? ((k % 2) == 0) : ((k % 2) == 1);
+        S.h[k + 1] = CHexCoord(S.h[k].X() + (takeX ? sx : 0), S.h[k].Y() + (takeX ? 0 : sy));
+    }
+    return S;
+}
+void PaveStair(const Stair &S) {
+    ClearMap();
+    for (int k = 0; k < S.n; ++k)
+        theMap.hex[S.h[k].X()][S.h[k].Y()].type = CHex::road;
+}
+int StairIndex(const Stair &S, CHexCoord c) {
+    for (int k = 0; k < S.n; ++k)
+        if (S.h[k] == c)
+            return k;
+    return -1;
+}
+
+struct StairResult {
+    bool valid;          // a placement satisfying the geometry was found
+    bool recovered;      // a step came from a recovery path, not the step arithmetic
+    bool offPavement;    // a requested step targets something unpaved
+    bool offCorridor;    // the head leaves the staircase's own hexes
+    bool intraFirst;     // tick 1's step is a diagonal that stays in the head's hex
+    bool axialFirst;     // tick 1's step is axis-aligned
+    bool laneFirst;      // tick 1's step lands in the lane for the hull's direction
+    bool cornerRide;     // some step crosses a hex CORNER (both hex axes change)
+    bool diagAtCorner;   // the head stands on a shared-corner sub-hex with a diagonal hull
+    bool walkedCorner;   // the head enters the corner hex the staircase actually paves
+    bool revisit;        // the hull returns to a sub-hex it already left
+    bool converged;      // the head reaches the diagonal route hex
+    int ticks;
+    char why[64];        // the reason keyword of tick 1's correction, if any
+};
+
+// One trailing-corner approach on one staircase, driven until it reaches the
+// route hex that was diagonally adjacent when it started.
+StairResult RunStair(int sx, int sy, bool xFirst, int traffic, bool blockAhead = false) {
+    StairResult r;
+    std::memset(&r, 0, sizeof(r));
+    Stair S = BuildStair(sx, sy, xFirst);
+    PaveStair(S);
+    g_traffic = traffic;
+    g_recovery = 0;
+
+    // The in-lane trailing corner exists on exactly one of the staircase's two
+    // bend types. Find it rather than assert which: pick the first hex i with a
+    // predecessor and two successors whose trailing corner is in lane for the
+    // hull it arrives with.
+    int i = -1, hx = 0, hy = 0, hxs = 0, hys = 0;
+    for (int k = 1; k + 2 < S.n; ++k) {
+        int dx = S.h[k].X() - S.h[k - 1].X(), dy = S.h[k].Y() - S.h[k - 1].Y();
+        int cx = S.h[k + 2].X() - S.h[k].X(), cy = S.h[k + 2].Y() - S.h[k].Y();
+        if ((cx == 0) || (cy == 0))
+            continue;                                  // not a diagonal route hex
+        // the trailing corner: furthest from the route hex on BOTH axes
+        int px = S.h[k].X() * 2 + ((cx > 0) ? 0 : 1);
+        int py = S.h[k].Y() * 2 + ((cy > 0) ? 0 : 1);
+        BOOL inLane = (dx != 0) ? ((py & 1) == ((dx > 0) ? 1 : 0))
+                                : ((px & 1) == ((dy > 0) ? 0 : 1));
+        if (!inLane)
+            continue;
+        i = k; hx = dx; hy = dy; hxs = px; hys = py;
+        break;
+    }
+    if (i < 0)
+        return r;                                      // r.valid stays false
+    r.valid = true;
+
+    static CVehicle v;
+    v = CVehicle();
+    v.id = 80;
+    v.m_ptHead = CSubHex(hxs, hys);
+    v.m_ptTail = CSubHex(hxs - hx, hys - hy);
+    v.m_ptNext = v.m_ptHead;
+    // the far end of the corridor: never within the near-destination relaxation
+    v.m_ptDest = CSubHex(S.h[S.n - 1].X() * 2, S.h[S.n - 1].Y() * 2);
+    v.m_hexDest = S.h[S.n - 1];
+    v.m_hexNext = S.h[i + 2];
+    v.m_cMode = CVehicle::moving;
+    theVehicleHex.Set(v.m_ptHead, &v);
+    theVehicleHex.Set(v.m_ptTail, &v);
+
+    // a parked truck on the deferral target - the leading corner of this hex
+    static CVehicle blocker;
+    if (blockAhead) {
+        blocker = CVehicle();
+        blocker.id = 81;
+        blocker.m_ptHead = CSubHex(hxs + hx, hys + hy);
+        blocker.m_ptTail = CSubHex(hxs + hx * 2, hys + hy * 2);
+        blocker.m_cMode = CVehicle::stop;
+        theVehicleHex.Set(blocker.m_ptHead, &blocker);
+        theVehicleHex.Set(blocker.m_ptTail, &blocker);
+    }
+
+    const CHexCoord hexTarget = S.h[i + 2];            // the diagonal route hex
+    const CHexCoord hexCorner = S.h[i + 1];            // the paved corner hex between
+    CSubHex seen[12];
+    int nSeen = 0;
+    seen[nSeen++] = v.m_ptHead;
+    g_lastTurn[0] = 0;
+
+    for (int t = 0; t < 8; ++t) {
+        // the pathfinder on a staircase: take the diagonal hop when there is one,
+        // which is what GetCellCosts' destination-only pricing always prefers
+        int k = StairIndex(S, CHexCoord(v.m_ptHead));
+        if (k < 0) { r.offCorridor = true; break; }
+        if (k + 1 >= S.n)
+            break;
+        int j = k + 1;
+        if ((k + 2 < S.n) && (S.h[k + 2].X() != S.h[k].X()) && (S.h[k + 2].Y() != S.h[k].Y()))
+            j = k + 2;
+        v.m_hexNext = S.h[j];
+
+        if (!v.GetNextHex(FALSE)) { r.recovered = true; break; }
+        CSubHex n = v.m_ptNext;
+        if (n == v.m_ptHead)
+            break;
+        int stx = CSubHex::Diff(n.x - v.m_ptHead.x), sty = CSubHex::Diff(n.y - v.m_ptHead.y);
+        if (!v.OnPavement(n))
+            r.offPavement = true;
+        if ((stx != 0) && (sty != 0) && (!n.SameHex(v.m_ptHead)) &&
+            ((n.x >> 1) != (v.m_ptHead.x >> 1)) && ((n.y >> 1) != (v.m_ptHead.y >> 1)))
+            r.cornerRide = true;                       // crossed the shared hex corner
+        if (t == 0) {
+            r.intraFirst = (stx != 0) && (sty != 0) && n.SameHex(v.m_ptHead);
+            r.axialFirst = (stx == 0) || (sty == 0);
+            r.laneFirst = (hx != 0) ? ((n.y & 1) == ((hx > 0) ? 1 : 0))
+                                    : ((n.x & 1) == ((hy > 0) ? 0 : 1));
+            std::snprintf(r.why, sizeof(r.why), "%s",
+                          (std::strstr(g_lastTurn, "reason ") != nullptr)
+                              ? std::strstr(g_lastTurn, "reason ") + 7 : "-");
+            for (char *p = r.why; *p; ++p)
+                if (*p == ' ') { *p = 0; break; }
+        }
+        for (int q = 0; q < nSeen; ++q)
+            if (seen[q] == n)
+                r.revisit = true;
+        if (nSeen < 12)
+            seen[nSeen++] = n;
+
+        theVehicleHex.Set(v.m_ptHead, nullptr);
+        theVehicleHex.Set(v.m_ptTail, nullptr);
+        v.m_ptTail = v.m_ptHead;
+        v.m_ptHead = n;
+        v.m_ptNext = n;
+        theVehicleHex.Set(v.m_ptHead, &v);
+        theVehicleHex.Set(v.m_ptTail, &v);
+        r.ticks = t + 1;
+
+        // standing on a sub-hex that is a corner shared with an UNPAVED hex,
+        // carrying a diagonal hull - the state the angle guard can never correct
+        int uhx = CSubHex::Diff(v.m_ptHead.x - v.m_ptTail.x);
+        int uhy = CSubHex::Diff(v.m_ptHead.y - v.m_ptTail.y);
+        if ((uhx != 0) && (uhy != 0)) {
+            CSubHex _sideX(v.m_ptHead.x + uhx, v.m_ptHead.y), _sideY(v.m_ptHead.x, v.m_ptHead.y + uhy);
+            _sideX.Wrap(); _sideY.Wrap();
+            if ((!v.OnPavement(_sideX)) || (!v.OnPavement(_sideY)))
+                r.diagAtCorner = true;
+        }
+        if (CHexCoord(v.m_ptHead) == hexCorner)
+            r.walkedCorner = true;
+        if (CHexCoord(v.m_ptHead) == hexTarget) {
+            r.converged = true;
+            break;
+        }
+    }
+    if (g_recovery != 0)
+        r.recovered = true;
+    theVehicleHex.Set(v.m_ptHead, nullptr);
+    theVehicleHex.Set(v.m_ptTail, nullptr);
+    return r;
+}
+
+void CheckStaircase() {
+    for (int d = 0; d < 4; ++d) {
+        int sx = (d & 1) ? -1 : 1, sy = (d & 2) ? -1 : 1;
+        for (int ph = 0; ph < 2; ++ph) {
+            bool xFirst = (ph == 0);
+            char tag[48], line[220];
+            std::snprintf(tag, sizeof(tag), "staircase %+d,%+d %s", sx, sy, xFirst ? "x-first" : "y-first");
+
+            StairResult pre = RunStair(sx, sy, xFirst, 63 & ~16);
+            StairResult post = RunStair(sx, sy, xFirst, 63);
+
+            std::snprintf(line, sizeof(line), "%s: a trailing-corner approach exists on this corridor", tag);
+            check(pre.valid && post.valid, line);
+            if (!pre.valid || !post.valid)
+                continue;
+
+            // the defect, with the junction block off: the tick-1 step is the
+            // intra-hex diagonal, and the corner is ridden on the tick after.
+            std::snprintf(line, sizeof(line), "%s pre: tick 1 is a diagonal that stays inside the hex", tag);
+            check(pre.intraFirst, line);
+            std::snprintf(line, sizeof(line), "%s pre: tick 2 rides the shared corner of two road hexes", tag);
+            check(pre.cornerRide, line);
+            std::snprintf(line, sizeof(line), "%s pre: the hull stands on a shared corner sub-hex angled", tag);
+            check(pre.diagAtCorner, line);
+            std::snprintf(line, sizeof(line), "%s pre: the paved corner hex is never entered", tag);
+            check(!pre.walkedCorner, line);
+
+            // the fix: tick 1 is axial and in lane, and the corner hex is walked
+            std::snprintf(line, sizeof(line), "%s post: tick 1 is axis-aligned, not the intra-hex diagonal", tag);
+            check(post.axialFirst && !post.intraFirst, line);
+            std::snprintf(line, sizeof(line), "%s post: tick 1 stays in the lane for the hull's direction", tag);
+            check(post.laneFirst, line);
+            std::snprintf(line, sizeof(line), "%s post: tick 1's correction is named corner-deferred-intra", tag);
+            check(std::strcmp(post.why, "corner-deferred-intra") == 0, line);
+            std::snprintf(line, sizeof(line), "%s post: no step crosses the shared corner of two road hexes", tag);
+            check(!post.cornerRide, line);
+            std::snprintf(line, sizeof(line), "%s post: never angled on a sub-hex cornering unpaved ground", tag);
+            check(!post.diagAtCorner, line);
+            std::snprintf(line, sizeof(line), "%s post: the truck walks through the paved corner hex", tag);
+            check(post.walkedCorner, line);
+            std::snprintf(line, sizeof(line), "%s post: no requested step targets grass", tag);
+            check(!post.offPavement, line);
+            std::snprintf(line, sizeof(line), "%s post: the head never leaves the corridor's own hexes", tag);
+            check(!post.offCorridor, line);
+            std::snprintf(line, sizeof(line), "%s post: no oscillation - the hull never returns to a sub-hex it left", tag);
+            check(!post.revisit, line);
+            std::snprintf(line, sizeof(line), "%s post: every step comes from the step arithmetic", tag);
+            check(!post.recovered, line);
+            std::snprintf(line, sizeof(line), "%s post: the truck reaches the diagonal route hex within 8 ticks", tag);
+            check(post.converged, line);
+
+            std::printf("%-28s pre %s/%d  post %s/%d ticks %d\n", tag,
+                        pre.cornerRide ? "corner-ride" : "clean", pre.ticks,
+                        post.cornerRide ? "corner-ride" : "clean", post.ticks, post.ticks);
+        }
+    }
+
+    // THE DEFERRAL TARGET OCCUPIED. CanEnter(_ahead) is a term of the new body,
+    // so a truck parked on the leading corner of this hex declines it and the
+    // step is left exactly as it was - the pre-fix intra-hex diagonal, which is
+    // still a legal move into the truck's own paved hex. The new body never
+    // turns a move into a wait; it only ever changes which paved sub-hex is
+    // asked for.
+    for (int d = 0; d < 4; ++d) {
+        int sx = (d & 1) ? -1 : 1, sy = (d & 2) ? -1 : 1;
+        char line[220];
+        StairResult blocked = RunStair(sx, sy, true, 63, true);
+        std::snprintf(line, sizeof(line),
+                      "staircase %+d,%+d occupied: the approach is still the trailing-corner one", sx, sy);
+        check(blocked.valid, line);
+        if (!blocked.valid)
+            continue;
+        std::snprintf(line, sizeof(line),
+                      "staircase %+d,%+d occupied: an occupied deferral target leaves the step alone", sx, sy);
+        check(blocked.intraFirst, line);
+        std::snprintf(line, sizeof(line),
+                      "staircase %+d,%+d occupied: declining the deferral is not a blocked/FindSub recovery", sx, sy);
+        check(!blocked.recovered, line);
+        std::snprintf(line, sizeof(line),
+                      "staircase %+d,%+d occupied: the untouched step still targets pavement", sx, sy);
+        check(!blocked.offPavement, line);
+    }
+}
+
+// ------------------------------------------------- occupied-T (WinAstra) ----
+//
+// WinAstra's 2026-09-13 review of bbcc2327: the corner-cut fix's body-3
+// "bend-turn" step (vehmove.cpp:1398-1411) puts a turning truck into the
+// sub-hex the T's two arms SHARE - and that shared hex also carries the bar's
+// through lane. RunApproach's single-truck drive cannot see this: it only
+// checks the OUTGOING arm's lane parity, and the shared hex "belongs to
+// neither arm" by design (LaneVerdict, ArmIndex). These cases put a real bar
+// truck in that hex and check the STEM truck's actual occupancy/wait response,
+// via the REAL WaitForMover/ResumeWaitedStep bodies extracted above - not the
+// old CanEnter-occupancy-only model, which had no wait/resume path at all
+// (WaitForMover was a stub that always returned FALSE and flagged a recovery).
+//
+// Geometry is WinAstra's own witness, made three-way: T-stemS at JX,JY (11,10)
+// - west arm (10,10)(9,10)(8,10), east arm (12,10)(13,10)(14,10), stem south
+// arm (11,11)(11,12)(11,13). The stem truck (head 23,22 tail 23,23, hexNext
+// 10,10 - the west arm's near hex, reached only diagonally from here) is
+// g_bends[0].t[1] "B S>W": already proven above to take the bend-turn step to
+// (23,21) - inside the junction hex, on sub-row y=21, the EASTBOUND bar's lane
+// row (LaneVerdict: +X rides odd y). That is exactly the sub-hex an eastbound
+// bar truck passing through the T would occupy or ask for.
+const int STEM_HX = 23, STEM_HY = 22, STEM_TX = 23, STEM_TY = 23;
+const int CONTESTED_X = 23, CONTESTED_Y = 21;
+
+void PaveOccupiedT() {
+    ClearMap();
+    theMap.hex[11][10].type = CHex::road;                                                     // junction
+    theMap.hex[10][10].type = theMap.hex[9][10].type  = theMap.hex[8][10].type  = CHex::road;  // west arm
+    theMap.hex[12][10].type = theMap.hex[13][10].type = theMap.hex[14][10].type = CHex::road;  // east arm
+    theMap.hex[11][11].type = theMap.hex[11][12].type = theMap.hex[11][13].type = CHex::road;  // stem
+}
+
+void BuildStem(CVehicle &s, int id) {
+    s = CVehicle();
+    s.id = id;
+    s.m_ptHead = CSubHex(STEM_HX, STEM_HY);
+    s.m_ptTail = CSubHex(STEM_TX, STEM_TY);
+    s.m_ptNext = s.m_ptHead;
+    s.m_ptDest = CSubHex(17, 20);
+    s.m_hexDest = CHexCoord(8, 10);
+    s.m_hexNext = CHexCoord(10, 10);
+    s.m_cMode = CVehicle::moving;
+}
+
+// Drive the stem truck up to 4 ticks after a resume, and require: it reaches
+// the west arm, it never revisits a sub-hex it already left (no oscillation),
+// and once inside the west arm's own hex it stays in that arm's lane (-X rides
+// even y - LaneVerdict's convention, same as every other case in this file).
+void DriveStemToWestArm(CVehicle &stem) {
+    CSubHex seen[6];
+    int nSeen = 0;
+    seen[nSeen++] = stem.m_ptHead;
+    bool reachedWestArm = false, revisited = false, offLane = false;
+    int ri = 0;
+    const int route[3][2] = {{10, 10}, {9, 10}, {8, 10}};
+    g_recovery = 0;
+    for (int t = 0; t < 4; ++t) {
+        BOOL step = stem.GetNextHex(FALSE);
+        check(step != FALSE, "occupied-T: after resuming the stem truck keeps producing a step every tick");
+        if (!step)
+            break;
+        CSubHex n = stem.m_ptNext;
+        for (int k = 0; k < nSeen; ++k)
+            if (seen[k] == n)
+                revisited = true;
+        seen[nSeen++] = n;
+        if (((n.x >> 1) == 10) && ((n.y >> 1) == 10) && ((n.y & 1) != 0))
+            offLane = true;               // west/-X rides EVEN y
+        Occupy(&stem, nullptr);
+        stem.m_ptTail = stem.m_ptHead;
+        stem.m_ptHead = n;
+        Occupy(&stem, &stem);
+        if ((stem.m_ptHead.x >> 1) <= 10)
+            reachedWestArm = true;
+        if (stem.m_hexNext.SameHex(stem.m_ptHead) && (ri + 1 < 3)) {
+            ++ri;
+            stem.m_hexNext = CHexCoord(route[ri][0], route[ri][1]);
+        }
+    }
+    check(reachedWestArm, "occupied-T: within 4 ticks of release the stem truck reaches the west arm");
+    check(!revisited, "occupied-T: no oscillation - the hull never returns to a sub-hex it left");
+    check(!offLane, "occupied-T: progress into the west arm stays in its lane (-X rides even y)");
+    check(g_recovery == 0, "occupied-T: the post-release progress is step arithmetic, not a recovery path");
+}
+
 int main() {
     std::printf("bend  truck   tick  pre-fix      post-fix\n");
     for (int b = 0; b < 4; ++b) {
@@ -1144,6 +1593,9 @@ int main() {
     // every approach of every L, T and X
     CheckApproaches();
 
+    // the staircase corridor: the trailing-corner approach
+    CheckStaircase();
+
     // one named bend-turn line, so QA can grep the reason keyword
     {
         g_roadTurns = 0;
@@ -1219,6 +1671,213 @@ int main() {
               "diagonal-target sweep: no diagonal lands in the hex between - case (c) is unreachable");
         g_traffic = 63;
         g_recovery = 0;
+    }
+
+    // occupied-T case 1: the bar truck is ALREADY sitting in the contested
+    // sub-hex when the stem truck decides.
+    {
+        PaveOccupiedT();
+        static CVehicle stem, bar;
+        BuildStem(stem, 1);
+        bar = CVehicle();
+        bar.id = 2;
+        bar.m_ptHead = CSubHex(CONTESTED_X, CONTESTED_Y);          // 23,21
+        bar.m_ptTail = CSubHex(CONTESTED_X - 1, CONTESTED_Y);      // 22,21 - heading east
+        bar.m_ptNext = bar.m_ptHead;
+        bar.m_ptDest = CSubHex(29, 21);
+        bar.m_hexDest = CHexCoord(14, 10);
+        bar.m_hexNext = CHexCoord(12, 10);
+        bar.m_cMode = CVehicle::moving;
+        Occupy(&stem, &stem);
+        Occupy(&bar, &bar);
+
+        g_recovery = 0;
+        g_waitLogged = 0;
+        g_lastWait[0] = 0;
+        BOOL got = stem.GetNextHex(FALSE);
+        check(got == FALSE, "occupied-T static: the stem truck's turn into the bar's sub-hex WAITS, it does not move");
+        check(stem.m_ptNext == stem.m_ptHead,
+              "occupied-T static: while waiting m_ptNext stays at m_ptHead, no step is taken");
+        check(stem.m_cMode == CVehicle::traffic, "occupied-T static: the wait puts the stem truck into traffic mode");
+        check(stem.m_subWaitNext == CSubHex(CONTESTED_X, CONTESTED_Y),
+              "occupied-T static: the held step is the contested sub-hex, ready to resume");
+        check(theVehicleHex.GetVehicle(CSubHex(CONTESTED_X, CONTESTED_Y)) == &bar,
+              "occupied-T static: no overlap - the bar truck alone still occupies the contested sub-hex");
+        check(g_waitLogged >= 1, "occupied-T static: the real WaitForMover path is what produced the wait ([WAIT] logged)");
+        check(g_recovery == 0, "occupied-T static: waiting is not a FindSub/blocked recovery path");
+        std::printf("occupied-T static %s\n", g_lastWait);
+
+        // Release: the bar truck moves on, clear of the contested sub-hex (both
+        // head and tail - a single-step advance would leave the tail sitting on
+        // it, which is not what "moved on" means).
+        Occupy(&bar, nullptr);
+        bar.m_ptTail = CSubHex(CONTESTED_X + 1, CONTESTED_Y);
+        bar.m_ptHead = CSubHex(CONTESTED_X + 2, CONTESTED_Y);
+        Occupy(&bar, &bar);
+
+        g_resumeLogged = 0;
+        g_lastResume[0] = 0;
+        BOOL resumed = stem.ResumeWaitedStep();
+        check(resumed != FALSE, "occupied-T static: after release, ResumeWaitedStep succeeds");
+        check(stem.m_ptNext == CSubHex(CONTESTED_X, CONTESTED_Y),
+              "occupied-T static: it resumes into the SAME step it was holding for");
+        check(stem.m_cMode == CVehicle::moving, "occupied-T static: resuming returns the stem truck to moving mode");
+        check(g_resumeLogged >= 1, "occupied-T static: the resume is the real ResumeWaitedStep path ([RESUME] logged)");
+        std::printf("occupied-T resume %s\n", g_lastResume);
+
+        Occupy(&stem, nullptr);
+        stem.m_ptTail = stem.m_ptHead;
+        stem.m_ptHead = stem.m_ptNext;
+        Occupy(&stem, &stem);
+        DriveStemToWestArm(stem);
+
+        Occupy(&stem, nullptr);
+        Occupy(&bar, nullptr);
+    }
+
+    // occupied-T case 2: the bar truck does not yet occupy the contested
+    // sub-hex, but its OWN natural step this same tick is also the contested
+    // sub-hex - straight through traffic, no turn. Run both processing orders:
+    // whichever truck updates first legitimately takes the free sub-hex; the
+    // other must then see it occupied and wait, in BOTH orders - never both
+    // stepping in.
+    for (int order = 0; order < 2; ++order) {
+        PaveOccupiedT();
+        static CVehicle stem, bar;
+        BuildStem(stem, 1);
+        bar = CVehicle();
+        bar.id = 2;
+        bar.m_ptHead = CSubHex(CONTESTED_X - 1, CONTESTED_Y);      // 22,21
+        bar.m_ptTail = CSubHex(CONTESTED_X - 2, CONTESTED_Y);      // 21,21 - heading east
+        bar.m_ptNext = bar.m_ptHead;
+        bar.m_ptDest = CSubHex(29, 21);
+        bar.m_hexDest = CHexCoord(14, 10);
+        bar.m_hexNext = CHexCoord(12, 10);
+        bar.m_cMode = CVehicle::moving;
+        Occupy(&stem, &stem);
+        Occupy(&bar, &bar);
+
+        CVehicle *first = (order == 0) ? &stem : &bar;
+        CVehicle *second = (order == 0) ? &bar : &stem;
+        const char *firstName = (order == 0) ? "stem" : "bar";
+        const char *secondName = (order == 0) ? "bar" : "stem";
+
+        g_recovery = 0;
+        BOOL gotFirst = first->GetNextHex(FALSE);
+        check(gotFirst != FALSE, "occupied-T same-tick: the first-processed truck produces a step");
+        check(first->m_ptNext == CSubHex(CONTESTED_X, CONTESTED_Y),
+              "occupied-T same-tick: unobstructed, the first-processed truck's natural step is the contested sub-hex");
+        // commit the first truck's step so the second one decides against the
+        // scene it actually left, exactly as a single-threaded tick processes
+        // vehicles one at a time
+        Occupy(first, nullptr);
+        first->m_ptTail = first->m_ptHead;
+        first->m_ptHead = first->m_ptNext;
+        Occupy(first, first);
+
+        g_waitLogged = 0;
+        BOOL gotSecond = second->GetNextHex(FALSE);
+        char msg[176];
+        std::snprintf(msg, sizeof(msg),
+                      "occupied-T same-tick (%s first): %s waits for the contested sub-hex rather than overlapping",
+                      firstName, secondName);
+        check((gotSecond == FALSE) && (second->m_ptNext == second->m_ptHead) &&
+                  (second->m_subWaitNext == CSubHex(CONTESTED_X, CONTESTED_Y)),
+              msg);
+        std::snprintf(msg, sizeof(msg),
+                      "occupied-T same-tick (%s first): no overlap - %s and %s are never in the same sub-hex",
+                      firstName, firstName, secondName);
+        check(first->m_ptHead != second->m_ptHead, msg);
+        check(g_recovery == 0, "occupied-T same-tick: the second truck's wait is not a FindSub/blocked recovery path");
+        check(g_waitLogged >= 1, "occupied-T same-tick: the second truck's wait is the real WaitForMover path");
+
+        // release: the first truck moves on, clear of the contested sub-hex;
+        // the truck that waited must resume into it.
+        Occupy(first, nullptr);
+        first->m_ptTail = CSubHex(CONTESTED_X + 1, CONTESTED_Y);
+        first->m_ptHead = CSubHex(CONTESTED_X + 2, CONTESTED_Y);
+        Occupy(first, first);
+
+        g_resumeLogged = 0;
+        BOOL resumed = second->ResumeWaitedStep();
+        std::snprintf(msg, sizeof(msg), "occupied-T same-tick (%s first): after release, %s resumes",
+                      firstName, secondName);
+        check(resumed != FALSE, msg);
+        check(second->m_ptNext == CSubHex(CONTESTED_X, CONTESTED_Y),
+              "occupied-T same-tick: it resumes into the contested sub-hex it was holding for");
+        check(second->m_cMode == CVehicle::moving, "occupied-T same-tick: resuming returns it to moving mode");
+        check(g_resumeLogged >= 1, "occupied-T same-tick: the resume is the real ResumeWaitedStep path");
+
+        Occupy(&stem, nullptr);
+        Occupy(&bar, nullptr);
+    }
+
+    // occupied-T case 3 (the "reserved-step" variant): a genuine mutual
+    // conflict - the bar truck's own m_ptNext this tick is the stem truck's
+    // CURRENT head, at the same time the stem truck wants the bar truck's
+    // current sub-hex. This is the one place WaitForMover looks past plain
+    // occupancy at another vehicle's held/requested step - the stable-priority
+    // tie-break behind TrafficOpts bit 2 (vehmove.cpp:2773-2791): the lower id
+    // holds and waits, the higher id yields.
+    for (int lowerIsStem = 0; lowerIsStem < 2; ++lowerIsStem) {
+        PaveOccupiedT();
+        static CVehicle stem, bar;
+        BuildStem(stem, lowerIsStem ? 1 : 2);
+        bar = CVehicle();
+        bar.id = lowerIsStem ? 2 : 1;
+        bar.m_ptHead = CSubHex(CONTESTED_X, CONTESTED_Y);          // 23,21
+        bar.m_ptTail = CSubHex(CONTESTED_X, CONTESTED_Y - 1);      // 23,20
+        bar.m_ptNext = stem.m_ptHead;    // bar has already decided to step onto the stem truck's cell
+        bar.m_ptDest = CSubHex(23, 15);
+        bar.m_hexDest = CHexCoord(11, 7);
+        bar.m_hexNext = CHexCoord(11, 9);
+        bar.m_cMode = CVehicle::moving;
+        Occupy(&stem, &stem);
+        Occupy(&bar, &bar);
+
+        g_recovery = 0;
+        g_waitLogged = 0;
+        g_yieldLogged = 0;
+        g_lastWait[0] = 0;
+        g_lastYield[0] = 0;
+        BOOL got = stem.GetNextHex(FALSE);
+
+        if (lowerIsStem) {
+            check(got == FALSE, "occupied-T reserved-step: lower id HOLDS - the stem truck still waits");
+            check(stem.m_ptNext == stem.m_ptHead, "occupied-T reserved-step: holding takes no step");
+            check(stem.m_subWaitNext == CSubHex(CONTESTED_X, CONTESTED_Y),
+                  "occupied-T reserved-step: the lower id holds for the same contested sub-hex");
+            check(g_waitLogged >= 1, "occupied-T reserved-step: the hold is logged as [WAIT]");
+
+            Occupy(&bar, nullptr);
+            bar.m_ptTail = CSubHex(CONTESTED_X + 1, CONTESTED_Y);
+            bar.m_ptHead = CSubHex(CONTESTED_X + 2, CONTESTED_Y);
+            Occupy(&bar, &bar);
+            g_resumeLogged = 0;
+            BOOL resumed = stem.ResumeWaitedStep();
+            check(resumed != FALSE, "occupied-T reserved-step: after release, the holding truck resumes");
+            check(stem.m_ptNext == CSubHex(CONTESTED_X, CONTESTED_Y),
+                  "occupied-T reserved-step: it resumes into the contested sub-hex it held for");
+            check(g_resumeLogged >= 1, "occupied-T reserved-step: the resume is the real ResumeWaitedStep path");
+        } else {
+            check(got != FALSE, "occupied-T reserved-step: higher id YIELDS - GetNextHex does not report a wait");
+            check(g_yieldLogged >= 1, "occupied-T reserved-step: the yield is logged as [YIELD]");
+            check(!stem.m_bWaitedForMover,
+                  "occupied-T reserved-step: yielding does not arm a wait - the higher id goes around instead");
+            // NOT ASSERTED: what m_ptNext becomes after a yield. Production sends
+            // a yielding vehicle into FindSub's real go-around search; this
+            // fixture's FindSub is still the pre-existing stub (always returns
+            // TRUE, never rerouting - see the file header), so the step left
+            // behind here is not a faithful model of the real detour. g_recovery,
+            // not m_ptNext, is the honest signal that a stub path was taken.
+            check(g_recovery != 0,
+                  "occupied-T reserved-step: yield's go-around is the FindSub stub, not modelled here");
+        }
+        std::printf("occupied-T reserved-step lowerIsStem=%d %s\n", lowerIsStem,
+                    lowerIsStem ? g_lastWait : g_lastYield);
+
+        Occupy(&stem, nullptr);
+        Occupy(&bar, nullptr);
     }
 
     checkRoadDiagGuarded();
