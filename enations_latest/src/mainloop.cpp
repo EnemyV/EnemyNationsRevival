@@ -1337,6 +1337,11 @@ void CConquerApp::GraphicsEnginePump( )
                 {
                     pPlr->PeopleAndFood( theGame.GetOperSecElapsed( ) );
                     pPlr->Research( theGame.GetOperSecElapsed( ) );
+                    // Resonance Sweep edict: one enemy-rocket ping per recharge, and ageing out
+                    // the lit ring a ping leaves behind.
+                    // Same cadence source as Research; the call itself no-ops unless this is
+                    // the local human and the edict is on (see CPlayer::ResonanceSweep).
+                    pPlr->ResonanceSweep( theGame.GetOperSecElapsed( ) );
                 }
 
                 // if we're the server decide if a player is dead

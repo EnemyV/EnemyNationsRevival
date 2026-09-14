@@ -33,7 +33,16 @@ public:
 		virtual void	Serialize (CArchive & ar);
 
 	BYTE			m_bDiscovered;					// TRUE if has been discovered
-	LONG			m_iPtsDiscovered;				// points researched so far
+	// 64-bit (save release 9). LONG is int32_t on EVERY platform here (win32_compat.h pins it,
+	// "NOT long (LP64!)"), so this used to cap research progress at ~2^31 no matter how dear the
+	// topic -- and the in-code tier ladders now price their top tiers in the hundreds of
+	// millions, where the guaranteed-completion test (m_iPtsDiscovered > m_iPtsRequired * 2)
+	// needs headroom above 2^31 to ever fire. Declared LONGLONG rather than `long long` on
+	// purpose: CArchive's operators are generated for LONGLONG, which is `long` on LP64, and a
+	// `long long&` will not bind to that `operator>>( LONGLONG& )`.
+	// SERIALIZED and ON THE WIRE -- see CRsrchStatus::Serialize (version-gated read) and
+	// CNetSaveInfo. Do not change this width again without bumping VER_RELEASE.
+	LONGLONG		m_iPtsDiscovered;				// points researched so far
 
 };
 
@@ -47,7 +56,13 @@ public:
 		CRsrchItem ();
 		virtual ~CRsrchItem ();
 
-	int				m_iPtsRequired;					// points required to discover
+	// 64-bit: the in-code tier ladders multiply up fast, and CPlayer::Research evaluates
+	// m_iPtsRequired * 2, so a 32-bit field overflowed that product to NEGATIVE and completed
+	// the topic on its first tick. NOT serialized (rebuilt from the DAT + the in-code setup on
+	// every load), so widening it is save- and wire-safe. The PRACTICAL ceiling is still ~2^31
+	// though: m_iPtsDiscovered, the accumulator that has to climb to this, is a 32-bit LONG and
+	// is both serialized and on the wire. See RSRCH_PTS_CEILING in research.cpp.
+	long long		m_iPtsRequired;					// points required to discover
 	int *			m_piRsrchRequired;			// other items that must be researched first
 	int				m_iNumRsrchRequired;
 	int *			m_piBldgsRequired;			// buildings that must be built first
@@ -396,6 +411,35 @@ public:
 					// idea as the attack tiers and the same FLAT cost ramp. See CPlayer::GetBldgArmorMult.
 					bldg_armor_2,
 					bldg_armor_3,
+					// Drive-Core Resonance (in-code) -- ONE topic, no tiers, and the only research
+					// whose entire payload is an EDICT. It unlocks Resonance Sweep at the Command
+					// Center (EDICT_RESONANCE_SWEEP): while that edict is on, the colony pings for
+					// enemy ROCKETS and resolves a random one each recharge -- revealing it,
+					// refreshing what we know of it, or clearing it if it has since been destroyed
+					// (CPlayer::ResonanceSweep). The recharge is RESONANCE_SWEEP_RELOAD_SECS at full
+					// power and stretches when the grid is short. Costs 6x the 248,000-point
+					// spot_3 topic (1,488,000: dearer than every DAT topic, well under the deep
+					// combat tiers) and is gated on spot_3 + nuclear + advanced_facilities -- the
+					// sensor line to hear the return, the reactor physics to know what a drive core
+					// sounds like, and the plant to drive the emitter. Appended LAST so no earlier
+					// enum index shifts (old saves store discovered-flags positionally;
+					// RDPATH_SAVE_COUNT==53 stays put).
+					drive_core_resonance,
+					// Drive-Core Resonance 2-6 (in-code). Each tier widens the Resonance Sweep's
+					// ping from a bare contact into REAL VISION: tier 2 lights a 1-hex ring of
+					// ground around the rocket it finds, up to a 5-hex ring at tier 6
+					// (CPlayer::GetSweepRings), for RESONANCE_SWEEP_LIT_SECS before it goes dark
+					// again. Each tier also costs 3x the previous in points and adds
+					// RESONANCE_SWEEP_POWER_TIER to the edict's flat power draw. Kept CONTIGUOUS
+					// with tier 1 above so the tier arithmetic stays a subtraction, and appended
+					// LAST so no earlier enum index shifts (RDPATH_SAVE_COUNT==53 stays put).
+					// NOTE the multiplier is capped by what an int can hold -- see RSRCH_PTS_CEILING
+					// in research.cpp before raising it.
+					drive_core_resonance_2,
+					drive_core_resonance_3,
+					drive_core_resonance_4,
+					drive_core_resonance_5,
+					drive_core_resonance_6,
 					num_types	};
 
 	CRsrchArray () {}

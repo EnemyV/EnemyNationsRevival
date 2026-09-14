@@ -2140,12 +2140,12 @@ int CAIGoalMgr::NextResearchTopic( CPlayer* pPlayer )
     // Prioritize the CHEAPEST available topic (not uniform-random), so the AI grabs the
     // cheap early tiers of the in-code lines first. Two passes: min cost, then random
     // tie-break among topics sharing it. GetRandom keeps it multiplayer-deterministic.
-    int iMinCost = 0x7FFFFFFF;
+    long long iMinCost = 0x7FFFFFFFFFFFFFFFLL;   // 64-bit: m_iPtsRequired is
     for ( int i = 1; i < CRsrchArray::num_types; ++i )
         if ( pPlayer->CanRsrch( i ) && theRsrch[i].m_iPtsRequired < iMinCost )
             iMinCost = theRsrch[i].m_iPtsRequired;
 
-    if ( iMinCost != 0x7FFFFFFF )
+    if ( iMinCost != 0x7FFFFFFFFFFFFFFFLL )
     {
         int aiCheapest[CRsrchArray::num_types];
         int nCheapest = 0;

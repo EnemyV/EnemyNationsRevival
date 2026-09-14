@@ -45,6 +45,7 @@ enum EdictId
     EDICT_MEAT_SHIELD,          // Command Center: buildings take less damage, +worker requirement
     EDICT_AUTO_RESEARCH,        // Office: auto-researches the next-cheapest available tech (behavior flag)
     EDICT_DESPERATE_MEASURES,   // Rocket (civ-wide): scrounge a multi-resource trickle for +100 workers
+    EDICT_RESONANCE_SWEEP,      // Command Center: pings enemy rockets into view, flat power cost
     EDICT_COUNT
 };
 
@@ -85,6 +86,15 @@ struct EdictDef
     float fInfPopMult;          // infantry population cost at build (PplBldgToVeh; 3.0 = +200%)
     float fMineEnergyMult;      // mine power requirement (BuildMine AddPwrNeed; 1.10 = +10%)
     float fMineWorkerMult;      // mine worker requirement (BuildMine AddPplNeedBldg; 1.10 = +10%)
+
+    // Flat upkeep -- an ABSOLUTE recurring cost while the edict is active, charged ONCE for the
+    // civilization (not once per host building) in CPlayer::StartLoop. Unlike fEnergyUpkeepPct
+    // above, which taxes a share of whatever the empire already draws and so costs a big colony
+    // far more than a small one, this is a fixed number the player can budget against: it bites
+    // hardest early and fades to noise late, which is the right shape for a single emitter that
+    // draws what it draws. 0 = none. Declared LAST so the existing catalog entries, which are
+    // positionally initialised and stop short of it, keep their values and zero-fill this one.
+    int   iFlatEnergyUpkeep;    // added straight to m_iPwrNeed (Resonance Sweep: 500)
 };
 
 // The catalog. Definition in edicts.cpp. Indexed by EdictId; size == EDICT_COUNT.
@@ -115,5 +125,35 @@ const int DESPERATE_RATE_PER    = 200;  // workers that buy one helping of DESPE
 // so the number on screen and the number credited come from this one table. Def in edicts.cpp.
 const int DESPERATE_RATE_LINES = 4;
 extern const AltOutput::AltMat DESPERATE_BASE_RATES[DESPERATE_RATE_LINES];
+
+// --- Resonance Sweep tuning (EDICT_RESONANCE_SWEEP) -----------------------------------------
+// The Command Center broadcasts on the frequency every colony ship's drive core rings at and
+// takes a bearing off whatever rings back. Each recharge it picks ONE enemy rocket at random and
+// resolves it: one we have never seen is revealed, one we already know has its displayed state
+// refreshed, and one that has since been destroyed is cleared off the map. Those last two are
+// why the edict keeps earning its power after every rocket has been found -- a fogged enemy
+// building otherwise keeps the look it had when we last saw it (leaving vision only pauses its
+// animations), so without a ping its damage is however stale our last sighting was, and a ship
+// blown up out of sight would sit on our map intact forever. What the sweep buys late is CURRENT
+// information rather than new contacts.
+//
+// From Drive-Core Resonance tier 2 the ping also lights REAL GROUND: a ring of hexes around the
+// rocket it found, 1 hex wide at tier 2 up to 5 at tier 6 (CPlayer::GetSweepRings), held for
+// RESONANCE_SWEEP_LIT_SECS and then released. That window is ordinary hex visibility, the same
+// counter a scouting unit drives, so enemy VEHICLES inside it appear while it is lit and vanish
+// when it goes dark, while buildings and terrain it uncovers stay remembered exactly as if we
+// had walked past them.
+//
+// RECHARGE SCALES WITH POWER. At full power the recharge is RESONANCE_SWEEP_RELOAD_SECS. Brown
+// the colony out and it stretches in proportion: CPlayer::m_fPwrMult is the fraction of demand
+// actually met, so half power doubles the wait, quarter power quadruples it, and so on, capped
+// at RESONANCE_SWEEP_MAX_RELOAD so a total blackout stalls the sweep rather than dividing by
+// zero. The edict's own draw is part of that demand, so switching it on when the grid is
+// already tight slows the very thing you switched on. See CPlayer::GetSweepReloadSecs.
+const int RESONANCE_SWEEP_RELOAD_SECS = 30;   // game-seconds to recharge at FULL power
+const int RESONANCE_SWEEP_MAX_RELOAD  = 600;  // recharge cap in a deep brownout (10 minutes)
+const int RESONANCE_SWEEP_LIT_SECS    = 10;   // how long a ping's lit ring is held
+const int RESONANCE_SWEEP_POWER       = 500;  // flat power at tier 1 (EdictDef iFlatEnergyUpkeep)
+const int RESONANCE_SWEEP_POWER_TIER  = 100;  // extra flat power per tier above 1
 
 #endif // ENATIONS_EDICTS_H

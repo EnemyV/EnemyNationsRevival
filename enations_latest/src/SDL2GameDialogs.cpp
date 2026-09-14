@@ -222,10 +222,12 @@ static int ResearchCurrentPercent() {
     if (!pMe) return 0;
     int iSel = pMe->GetRsrchItem();
     if (iSel <= 0) return 0;
-    int disc = pMe->GetRsrch(iSel).m_iPtsDiscovered;
-    int req  = theRsrch.ElementAt(iSel).m_iPtsRequired;
+    // 64-bit throughout: req is now a long long, and disc * 50 overflows an int well before
+    // disc reaches its own 2^31 ceiling.
+    long long disc = pMe->GetRsrch(iSel).m_iPtsDiscovered;
+    long long req  = theRsrch.ElementAt(iSel).m_iPtsRequired;
     if (req <= 0) return 0;
-    int per = (disc * 50) / req;
+    int per = (int)((disc * 50) / req);
     per = __min(per, 99);
     per = __max(1, per);
     return per;

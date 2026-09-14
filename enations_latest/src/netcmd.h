@@ -1560,7 +1560,10 @@ class CNetSaveInfo : public CNetCmd
     int m_iFood;
     int m_iGas;
     int m_iRsrchItem;
-    int m_iPtsDiscovered;
+    // 64-bit with CRsrchStatus::m_iPtsDiscovered (save release 9). Takes this message from 40
+    // to 44 bytes under pack(1) -- a wire-layout change, pinned by wire_layout_assert.cpp and
+    // refused across versions by the join-time gameplay hash.
+    LONGLONG m_iPtsDiscovered;
 };
 
 

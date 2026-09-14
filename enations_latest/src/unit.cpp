@@ -1069,6 +1069,89 @@ void CUnit::DecrementSpotting( )
     }
 }
 
+// A hex just crossed from unseen to seen for pViewer. Extracted verbatim from
+// CUnit::IncrementSpotting so a SECOND caller can reuse it: the Resonance Sweep edict
+// lights a ring of hexes around an enemy rocket and must run exactly the same reveal
+// rules a scouting unit does (road/bridge/slash re-sync, dead-building cleanup, enemy
+// building reveal + state refresh). Duplicating this logic instead would leave the two
+// copies to drift; this is the one place it lives.
+//
+// The CALLER owns the visibility counter: call IncVisible( ) first and only call this
+// when GetVisibility( ) has just become 1.
+void EnHexBecameVisible( CHex* pHex, CHexCoord& hex, CPlayer* pViewer )
+{
+    hex.SetInvalidated( );
+    if ( ( pHex->GetType( ) == CHex::road ) && ( pHex->GetVisibleType( ) != CHex::road ) )
+        pHex->ChangeToRoad( hex );
+
+    // Bridge fog reveal (BUGS #30): mark the bridge as seen (the
+    // persistent IsBridge display bit — road semantics: seen once,
+    // stays shown) and reveal the flattened forest under it that
+    // GrabHex deferred while the hex was unlit.
+    if ( ( pHex->GetUnits( ) & CHex::bridge ) && ( !pHex->IsBridge( ) ) )
+    {
+        pHex->SetBridge( );
+        if ( pHex->GetVisibleType( ) != pHex->GetType( ) )
+        {
+            pHex->SetVisibleType( pHex->GetType( ) );
+            extern void g_enEditHex( int, int );
+            g_enEditHex( hex.X( ), hex.Y( ) );
+        }
+    }
+
+    // Slash and Burn fog reveal (E22). A hex clear-cut while we could not see
+    // it kept its remembered FOREST ground (SlashHex restores the visible
+    // type when the hex is unlit), so without this it would read as forest
+    // forever after we sight it. Runs AFTER the road and bridge clauses above
+    // on purpose: a fogged road-over-forest belongs to ChangeToRoad, and the
+    // bridge clause has already re-synced its own hex.
+    // Deliberately NARROW, not a blanket "visible != type -> sync": visible
+    // forest over non-forest soil can only come from a slash, whereas crop
+    // fields intentionally carry visible `fields` over a different soil type
+    // and a blanket sync would wipe them. SetVisibleType calls g_enEditHex
+    // itself, so no explicit re-mesh is needed here.
+    if ( ( pHex->GetVisibleType( ) == CHex::forest )
+         && ( pHex->GetType( ) != CHex::forest ) )
+        pHex->SetVisibleType( pHex->GetType( ) );
+
+    if ( pHex->GetUnits( ) & CHex::bldg )
+    {
+        CBuilding* pBldg = theBuildingHex._GetBuilding( hex );
+        if ( ( pBldg != NULL ) && ( pBldg->GetOwner( ) != pViewer ) )
+        {
+            // did it die?
+            if ( pBldg->IsFlag( CUnit::dead ) )
+            {
+                if ( theApp.m_pLogFile != NULL )
+                {
+                    TRAP( );
+                    char sBuf[80];
+                    sprintf( sBuf, "Dead building visible %d at %d,%d", pBldg->GetID( ),
+                             pBldg->GetHex( ).X( ), pBldg->GetHex( ).Y( ) );
+                    theApp.Log( sBuf );
+                }
+                delete pBldg;
+            }
+            else
+
+            {
+                if ( !pBldg->IsVisible( ) )
+                    pBldg->MakeBldgVisible( );
+
+                // building just became visible so we update all of this
+                pBldg->SetConstPer( );
+                pBldg->UpdateDamageLevel( );
+                if ( ( !pBldg->IsConstructing( ) ) && ( !pBldg->IsFlag( CUnit::stopped ) ) )
+                {
+                    if ( !pBldg->GetAmbient( CSpriteView::ANIM_FRONT_1 )->IsEnabled( ) )
+                        pBldg->EnableAnimations( TRUE );
+                    pBldg->PauseAnimations( FALSE );
+                }
+            }
+        }
+    }
+}
+
 // we increment the visibility counter for all hexes this unit can see
 void CUnit::IncrementSpotting( CHexCoord const& hex )
 {
@@ -1109,78 +1192,7 @@ void CUnit::IncrementSpotting( CHexCoord const& hex )
 
                     // if just became visible
                     if ( pHex->GetVisibility( ) == 1 )
-                    {
-                        _hex.SetInvalidated( );
-                        if ( ( pHex->GetType( ) == CHex::road ) && ( pHex->GetVisibleType( ) != CHex::road ) )
-                            pHex->ChangeToRoad( _hex );
-
-                        // Bridge fog reveal (BUGS #30): mark the bridge as seen (the
-                        // persistent IsBridge display bit — road semantics: seen once,
-                        // stays shown) and reveal the flattened forest under it that
-                        // GrabHex deferred while the hex was unlit.
-                        if ( ( pHex->GetUnits( ) & CHex::bridge ) && ( !pHex->IsBridge( ) ) )
-                        {
-                            pHex->SetBridge( );
-                            if ( pHex->GetVisibleType( ) != pHex->GetType( ) )
-                            {
-                                pHex->SetVisibleType( pHex->GetType( ) );
-                                extern void g_enEditHex( int, int );
-                                g_enEditHex( _hex.X( ), _hex.Y( ) );
-                            }
-                        }
-
-                        // Slash and Burn fog reveal (E22). A hex clear-cut while we could not see
-                        // it kept its remembered FOREST ground (SlashHex restores the visible
-                        // type when the hex is unlit), so without this it would read as forest
-                        // forever after we sight it. Runs AFTER the road and bridge clauses above
-                        // on purpose: a fogged road-over-forest belongs to ChangeToRoad, and the
-                        // bridge clause has already re-synced its own hex.
-                        // Deliberately NARROW, not a blanket "visible != type -> sync": visible
-                        // forest over non-forest soil can only come from a slash, whereas crop
-                        // fields intentionally carry visible `fields` over a different soil type
-                        // and a blanket sync would wipe them. SetVisibleType calls g_enEditHex
-                        // itself, so no explicit re-mesh is needed here.
-                        if ( ( pHex->GetVisibleType( ) == CHex::forest )
-                             && ( pHex->GetType( ) != CHex::forest ) )
-                            pHex->SetVisibleType( pHex->GetType( ) );
-
-                        if ( pHex->GetUnits( ) & CHex::bldg )
-                        {
-                            CBuilding* pBldg = theBuildingHex._GetBuilding( _hex );
-                            if ( ( pBldg != NULL ) && ( pBldg->GetOwner( ) != GetOwner( ) ) )
-                            {
-                                // did it die?
-                                if ( pBldg->IsFlag( CUnit::dead ) )
-                                {
-                                    if ( theApp.m_pLogFile != NULL )
-                                    {
-                                        TRAP( );
-                                        char sBuf[80];
-                                        sprintf( sBuf, "Dead building visible %d at %d,%d", pBldg->GetID( ),
-                                                 pBldg->GetHex( ).X( ), pBldg->GetHex( ).Y( ) );
-                                        theApp.Log( sBuf );
-                                    }
-                                    delete pBldg;
-                                }
-                                else
-
-                                {
-                                    if ( !pBldg->IsVisible( ) )
-                                        pBldg->MakeBldgVisible( );
-
-                                    // building just became visible so we update all of this
-                                    pBldg->SetConstPer( );
-                                    pBldg->UpdateDamageLevel( );
-                                    if ( ( !pBldg->IsConstructing( ) ) && ( !pBldg->IsFlag( stopped ) ) )
-                                    {
-                                        if ( !pBldg->GetAmbient( CSpriteView::ANIM_FRONT_1 )->IsEnabled( ) )
-                                            pBldg->EnableAnimations( TRUE );
-                                        pBldg->PauseAnimations( FALSE );
-                                    }
-                                }
-                            }
-                        }
-                    }
+                        EnHexBecameVisible( pHex, _hex, GetOwner( ) );
 
 
                     // check to see if this is a scenario objective

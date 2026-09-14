@@ -92,12 +92,25 @@ void CRsrchStatus::Serialize( CArchive& ar )
         ASSERT_VALID( this );
         //TRAP( );
 
+        // Always 64-bit (save release 9+). The reader below is what copes with older saves.
         ar << m_bDiscovered << m_iPtsDiscovered;
     }
     else
     {
         //TRAP( );
-        ar >> m_bDiscovered >> m_iPtsDiscovered;
+        ar >> m_bDiscovered;
+
+        // m_iPtsDiscovered WIDENED from 32 to 64 bits at save release 9. A width change has to
+        // be gated on BOTH sides or the stream desyncs for every later field: pre-9 saves put 4
+        // bytes here, so read exactly that and widen it.
+        if ( theGame.m_dwVer >= 9 )
+            ar >> m_iPtsDiscovered;
+        else
+        {
+            LONG lOld = 0;
+            ar >> lOld;
+            m_iPtsDiscovered = lOld;
+        }
     }
 }
 
@@ -261,7 +274,7 @@ void CRsrchArray::Open( )
         CRsrchItem* pFull = &ElementAt( bridge );
         CRsrchItem* pMid  = &ElementAt( medium_facilities );   // "Mid-sized Buildings"
 
-        pRi->m_iPtsRequired      = __max( 1, pFull->m_iPtsRequired / 2 );  // half of Bridge Building
+        pRi->m_iPtsRequired      = __max( 1LL, pFull->m_iPtsRequired / 2 );  // half of Bridge Building
         pRi->m_iScenarioReq      = pMid->m_iScenarioReq;                   // same gate as Mid-sized Buildings
         pRi->m_iNumRsrchRequired = 0;                                      // no research prereq
 
@@ -310,7 +323,7 @@ void CRsrchArray::Open( )
         static const int aiExtra[4] = {
             (int)manf_1, (int)const_2, (int)const_3, (int)nuclear };
 
-        int iPts = ElementAt( bridge ).m_iPtsRequired;
+        long long iPts = ElementAt( bridge ).m_iPtsRequired;
         for ( int iOn = 0; iOn < 4; iOn++ )
         {
             CRsrchItem* pRi = &ElementAt( bridge_2 + iOn );
@@ -355,7 +368,7 @@ void CRsrchArray::Open( )
         static const int aiExtra[3] = {
             (int)manf_1, (int)manf_2, (int)nuclear };
 
-        int iPts = ElementAt( cargo_handling ).m_iPtsRequired;
+        long long iPts = ElementAt( cargo_handling ).m_iPtsRequired;
         for ( int iOn = 0; iOn < 3; iOn++ )
         {
             CRsrchItem* pRi = &ElementAt( cargo_handling_2 + iOn );
@@ -466,8 +479,8 @@ void CRsrchArray::Open( )
             fuel_efficiency_19, fuel_efficiency_20, fuel_efficiency_21, fuel_efficiency_22,
             fuel_efficiency_23 };
 
-        int iBase = ElementAt( gas_turbine ).m_iPtsRequired;   // B = gas_turbine cost
-        int iPts  = iBase;                                     // level 1 = B
+        long long iBase = ElementAt( gas_turbine ).m_iPtsRequired;   // B = gas_turbine cost
+        long long iPts  = iBase;                               // level 1 = B
         for ( int iOn = 0; iOn < 23; iOn++ )
         {
             CRsrchItem* pRi = &ElementAt( aiIdx[iOn] );
@@ -545,7 +558,7 @@ void CRsrchArray::Open( )
         static const int aiExtra[10] = {
             -1, -1, -1, -1, -1, (int)atk_3, -1, -1, -1, -1 };
 
-        int iBase = ElementAt( gas_turbine ).m_iPtsRequired;   // B, same base as Fuel Efficiency
+        long long iBase = ElementAt( gas_turbine ).m_iPtsRequired;   // B, same base as Fuel Efficiency
         for ( int iOn = 0; iOn < 10; iOn++ )
         {
             CRsrchItem* pRi = &ElementAt( vehicle_speed_1 + iOn );
@@ -599,7 +612,7 @@ void CRsrchArray::Open( )
             "Fluidic drives are fielded. Our vehicles move 1% faster.",
             "Gyroscopic stabilizers are perfected. Our vehicles reach their top speed." };
 
-        int iBase = ElementAt( gas_turbine ).m_iPtsRequired;   // B, same base as Fuel Efficiency
+        long long iBase = ElementAt( gas_turbine ).m_iPtsRequired;   // B, same base as Fuel Efficiency
         for ( int iOn = 0; iOn < 2; iOn++ )
         {
             CRsrchItem* pRi = &ElementAt( vehicle_speed_11 + iOn );
@@ -728,7 +741,7 @@ void CRsrchArray::Open( )
         static const int aiFrIdx[7] = {
             fracking_1, fracking_2, fracking_3, fracking_4, fracking_5, fracking_6, fracking_7 };
 
-        int iPts = ElementAt( gas_turbine ).m_iPtsRequired;
+        long long iPts = ElementAt( gas_turbine ).m_iPtsRequired;
         for ( int iOn = 0; iOn < 7; iOn++ )
         {
             CRsrchItem* pRi = &ElementAt( aiFrIdx[iOn] );
@@ -785,7 +798,7 @@ void CRsrchArray::Open( )
         // raised from farm_1 (an early ag tech) to gas_turbine so every tier costs more, and the
         // T1 entry gate now also requires ADVANCED MANUFACTURING (manf_3) -- the same high gate
         // coal-liquefaction sits behind -- so Biomass Digestion can't be reached early.
-        int iPts = ElementAt( gas_turbine ).m_iPtsRequired;
+        long long iPts = ElementAt( gas_turbine ).m_iPtsRequired;
         for ( int iOn = 0; iOn < 6; iOn++ )
         {
             CRsrchItem* pRi = &ElementAt( biofuel_1 + iOn );
@@ -902,7 +915,7 @@ void CRsrchArray::Open( )
         static const int aiChIdx[5] = {
             charcoal_1, charcoal_2, charcoal_3, charcoal_4, charcoal_5 };
 
-        int iPts = ElementAt( gas_turbine ).m_iPtsRequired;
+        long long iPts = ElementAt( gas_turbine ).m_iPtsRequired;
         for ( int iOn = 0; iOn < 5; iOn++ )
         {
             CRsrchItem* pRi = &ElementAt( aiChIdx[iOn] );
@@ -1071,7 +1084,7 @@ void CRsrchArray::Open( )
         // so a future append cannot silently shift the line.
         static const int aiMoIdx[5] = { moho_2, moho_3, moho_4, moho_5, moho_6 };
 
-        int iPts = ElementAt( mine_2 ).m_iPtsRequired;   // basis: the topic that grants base Moho
+        long long iPts = ElementAt( mine_2 ).m_iPtsRequired;   // basis: the topic that grants base Moho
         for ( int iOn = 0; iOn < 5; iOn++ )
         {
             CRsrchItem* pRi = &ElementAt( aiMoIdx[iOn] );
@@ -1186,7 +1199,7 @@ void CRsrchArray::Open( )
             "The fast neutron cores are online. They burn what the old piles threw away and our nuclear plants give more power still.",
             "The fuel cycle is closed. Nothing leaves our nuclear plants but electricity, and they give more power than we thought those piles had in them." };
 
-        int iPts = ElementAt( nuclear ).m_iPtsRequired;   // basis: the topic that unlocks the plant
+        long long iPts = ElementAt( nuclear ).m_iPtsRequired;   // basis: the topic that unlocks the plant
         for ( int iOn = 0; iOn < 5; iOn++ )
         {
             CRsrchItem* pRi = &ElementAt( aiNkIdx[iOn] );
@@ -1278,6 +1291,106 @@ void CRsrchArray::Open( )
             pRi->m_sName   = aszDpName[iOn];
             pRi->m_sDesc   = aszDpDesc[iOn];
             pRi->m_sResult = aszDpRslt[iOn];
+        }
+    }
+    // ---- Drive-Core Resonance 1-6 (in-code) ----------------------------------
+    // A late six-tier line whose only effect is the Resonance Sweep edict at the Command
+    // Center (see edicts.h / CPlayer::ResonanceSweep). Tier 1 is a bare contact -- it finds
+    // one enemy rocket and shows the ship itself. Tiers 2-6 turn the ping into REAL VISION,
+    // lighting a 1- to 5-hex ring of ground around whatever it finds for a few seconds.
+    //
+    // Tier 1 is priced at 6x the spot_3 topic (1,488,000: dearer than anything in the DAT,
+    // well short of the end-game combat tiers) and gated behind the top of the sensor line
+    // plus the reactor physics that says what a drive core sounds like and the plant that can
+    // drive the emitter. Tiers 2-6 each cost RESONANCE_COST_MULT x the tier below and chain it,
+    // giving 1.488M / 4.464M / 13.392M / 40.176M / 120.528M / 361.584M.
+    //
+    // CEILING -- read this before raising RESONANCE_COST_MULT. m_iPtsRequired is now 64-bit, so
+    // the cost itself no longer overflows, but the topic still has to be REACHED: the accumulator
+    // CPlayer::Research adds into, CRsrchStatus::m_iPtsDiscovered, is a 32-bit LONG (and is
+    // serialized + sent in CNetSaveInfo at that width, so it cannot be widened without a save and
+    // protocol bump). It therefore tops out near 2^31, and the guaranteed-completion branch needs
+    // it to pass m_iPtsRequired * 2 -- which puts the real ceiling at INT_MAX/2, RSRCH_PTS_CEILING
+    // below. A cost above that can only ever complete through the random branch, and one above
+    // ~2^31 can never complete at all. At 5x this line ran 1.488M .. 4.65 BILLION and sailed past
+    // both, so the multiplier is 3x: the whole ladder lands under the ceiling with the top tier at
+    // ~361M, the same order as the existing end-game techs (atk_8 is 9.92M). The clamp stays as a
+    // backstop so a future retune degrades to a squashed top tier rather than an unwinnable one.
+    // The AI's frozen research path doesn't author these, though its cheapest-available
+    // fallback can still reach them.
+    {
+        const int RESONANCE_TIERS = 6;
+
+        // Cost step per tier. See the CEILING note above before raising this.
+        const long long RESONANCE_COST_MULT = 3;
+
+        // INT_MAX/2, because Research( ) evaluates m_iPtsRequired * 2.
+        const long long RSRCH_PTS_CEILING = 1073741823LL;
+
+        static const int aiIdx[RESONANCE_TIERS] = {
+            drive_core_resonance,   drive_core_resonance_2, drive_core_resonance_3,
+            drive_core_resonance_4, drive_core_resonance_5, drive_core_resonance_6 };
+
+        static char const* aszName[RESONANCE_TIERS] = {
+            "Drive-Core Resonance", "Phase-Locked Return",   "Harmonic Triangulation",
+            "Standing-Wave Imaging", "Core Echo Mapping",    "Full-Spectrum Resonance" };
+        static char const* aszDesc[RESONANCE_TIERS] = {
+            "Every one of those ships came down on the same kind of core. If we hit the right frequency it will ring, and we will hear which way it rang from.",
+            "We hear the ship but we see nothing around it. If we lock onto the phase of the return we could read the ground it is standing on as well.",
+            "One bearing gives us a point. Reading the harmonics off several of our own emitters at once would let us work outward and see a good deal more of the ground.",
+            "The return sets up a standing wave across the whole site. If we can image that wave properly we will see much further out from the ship than we do now.",
+            "The echo off the core carries the shape of everything it passed on the way back. Mapping that echo should open the ground out well past the ship itself.",
+            "If we open the emitter across the full spectrum at once we will get back everything there is to get. It will drink power like nothing we have built, but we will see their whole position." };
+        static char const* aszRslt[RESONANCE_TIERS] = {
+            "We can make their drive cores ring. Our Command Centers can now run a Resonance Sweep and take a bearing on one enemy ship at a time.",
+            "The phase lock holds. A sweep now lights the ground immediately around the ship it finds, not just the ship.",
+            "Harmonic triangulation is working. Our sweeps now open up a good deal more ground around each ship we find.",
+            "We can image the standing wave. Our sweeps now show much more of the ground around the ships they locate.",
+            "The echo mapping is running. A sweep now opens the ground well out past the ship itself.",
+            "Full-spectrum resonance is in service. A sweep now lays open their whole position around the ship, for as long as the emitter can hold it." };
+
+        // Tier 1 reaches across the sensor, reactor and facility lines; tiers 2-6 chain the
+        // tier below. -1 pads the unused slots.
+        static const int aiReq[RESONANCE_TIERS][3] = {
+            { (int)spot_3,                 (int)nuclear, (int)advanced_facilities },
+            { (int)drive_core_resonance,   -1,           -1                       },
+            { (int)drive_core_resonance_2, -1,           -1                       },
+            { (int)drive_core_resonance_3, -1,           -1                       },
+            { (int)drive_core_resonance_4, -1,           -1                       },
+            { (int)drive_core_resonance_5, -1,           -1                       } };
+
+        long long llPts = (long long)ElementAt( spot_3 ).m_iPtsRequired * 6;   // 1,488,000
+
+        for ( int iOn = 0; iOn < RESONANCE_TIERS; iOn++ )
+        {
+            CRsrchItem* pRi = &ElementAt( aiIdx[iOn] );
+
+            if ( iOn > 0 )
+                llPts *= RESONANCE_COST_MULT;
+            pRi->m_iPtsRequired      = ( llPts > RSRCH_PTS_CEILING ) ? RSRCH_PTS_CEILING : llPts;
+            pRi->m_iNumBldgsRequired = 0;
+
+            // Count the real prereqs and take the LATEST scenario any of them needs -- the
+            // topic cannot be started before every gate is itself reachable.
+            int nReq  = 0;
+            int iScen = 0;
+            for ( int iReq = 0; iReq < 3; iReq++ )
+                if ( aiReq[iOn][iReq] >= 0 )
+                {
+                    nReq++;
+                    if ( ElementAt( aiReq[iOn][iReq] ).m_iScenarioReq > iScen )
+                        iScen = ElementAt( aiReq[iOn][iReq] ).m_iScenarioReq;
+                }
+            pRi->m_iScenarioReq      = iScen;
+            pRi->m_iNumRsrchRequired = nReq;
+            pRi->m_piRsrchRequired   = new int[nReq];
+            for ( int iReq = 0, iPut = 0; iReq < 3; iReq++ )
+                if ( aiReq[iOn][iReq] >= 0 )
+                    pRi->m_piRsrchRequired[iPut++] = aiReq[iOn][iReq];
+
+            pRi->m_sName   = aszName[iOn];
+            pRi->m_sDesc   = aszDesc[iOn];
+            pRi->m_sResult = aszRslt[iOn];
         }
     }
 #ifdef _DEBUG
