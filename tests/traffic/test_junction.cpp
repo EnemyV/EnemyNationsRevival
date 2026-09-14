@@ -131,9 +131,11 @@ int g_recovery = 0;
 int g_roadTurns = 0;
 int g_roadExempt = 0;
 int g_roadDiag = 0;
+int g_roadDiagEntry = 0;
 char g_lastTurn[256] = "";
 char g_lastExempt[256] = "";
 char g_lastDiag[256] = "";
+char g_lastDiagEntry[256] = "";
 // WaitForMover/ResumeWaitedStep probes: the occupied-T cases assert on these so a
 // passing "no overlap" result is known to come from the real [WAIT]/[YIELD]/
 // [RESUME] decision path, not from a scene that happened not to exercise it.
@@ -157,7 +159,12 @@ void WaitLog(const char *fmt, ...) {
         if (g_lastExempt[0] == 0)
             std::snprintf(g_lastExempt, sizeof(g_lastExempt), "%s", line);
     }
-    if (std::strstr(line, "[ROAD-DIAG]") != nullptr) {
+    // Order matters: "[ROAD-DIAG]" is a substring of "[ROAD-DIAG-ENTRY]", so the
+    // entry line must be tested first or every entry line would double-count.
+    if (std::strstr(line, "[ROAD-DIAG-ENTRY]") != nullptr) {
+        ++g_roadDiagEntry;
+        std::snprintf(g_lastDiagEntry, sizeof(g_lastDiagEntry), "%s", line);
+    } else if (std::strstr(line, "[ROAD-DIAG]") != nullptr) {
         ++g_roadDiag;
         std::snprintf(g_lastDiag, sizeof(g_lastDiag), "%s", line);
     }
@@ -216,6 +223,7 @@ struct CVehicle {
     int m_iHoldFrames = 0, m_iNumRetries = 0, m_cMode = moving;
     BOOL m_cOwn = TRUE;
     DWORD m_dwBlockLog = 0;
+    int m_iDiagRunLen = 0;   // vehicle.h: [ROAD-DIAG] probe run-length counter
     // vehicle.h:725-745 - state the extracted WaitForMover/ResumeWaitedStep bodies
     // read and write. x<0 is "not holding a step", matching production's own
     // uninitialised-to-negative convention (ResumeWaitedStep's own guard checks it).
@@ -1588,6 +1596,176 @@ int main() {
         g_roadDiag = 0;
         OneStep(g_bends[0], g_bends[0].t[0], 63, 0);
         check(g_roadDiag == 0, "road-diag: a corrected step on a fully paved bend is silent");
+    }
+
+    // [ROAD-DIAG] TWO-TICK MECHANISM (the trailing-corner approach). A truck
+    // stands on the TRAILING corner sub-hex of hex A with an AXIAL hull, and its
+    // route hex C is diagonally adjacent. Tick 1's diagonal step stays INSIDE
+    // hex A (the equal-magnitude far-target split zeroes neither axis,
+    // vehmove.cpp:1012-1021), so no body of the junction block can even see it
+    // as a turn - _ahead is still hex A. Tick 2 then crosses the shared corner
+    // into hex C with a now-diagonal hull, and the angle guard ("angled-hull")
+    // is what silences the block from there on. Hex A(20,20) and hex C(21,21)
+    // are paved; hex(21,20) - the chain's own corner, as a real RoadStepToward
+    // staircase would build it - is paved too; hex(20,21) stays grass, the
+    // OTHER corner.
+    {
+        ClearMap();
+        theMap.hex[20][20].type = CHex::road;   // hex A - truck starts here
+        theMap.hex[21][21].type = CHex::road;   // hex C - the diagonal route hex
+        theMap.hex[21][20].type = CHex::road;   // the chain's own corner - paved
+        // hex(20,21) stays grass: the OTHER corner, per the staircase mechanism
+
+        static CVehicle v;
+        v = CVehicle();
+        v.id = 80;
+        v.m_ptTail = CSubHex(39, 40);          // axial hull, heading +x
+        v.m_ptHead = CSubHex(40, 40);          // trailing corner sub-hex of hex A
+        v.m_ptNext = v.m_ptHead;
+        v.m_ptDest = CSubHex(2, 2);             // far away: bAtDest stays FALSE
+        v.m_hexDest = CHexCoord(1, 1);
+        v.m_hexNext = CHexCoord(21, 21);        // hex C, diagonally adjacent
+        v.m_cMode = CVehicle::moving;
+        theVehicleHex.Set(v.m_ptHead, &v);
+        theVehicleHex.Set(v.m_ptTail, &v);
+
+        g_roadDiag = 0; g_roadDiagEntry = 0; g_roadTurns = 0; g_recovery = 0;
+        g_lastDiag[0] = 0; g_lastDiagEntry[0] = 0;
+
+        // tick 1: the intra-hex diagonal - invisible before this probe change
+        BOOL got1 = v.GetNextHex(FALSE);
+        check((got1 != FALSE) && (v.m_ptNext == CSubHex(41, 41)),
+              "trailing-corner: tick 1 is the intra-hex diagonal, still inside hex A");
+        check(v.m_ptNext.SameHex(v.m_ptHead),
+              "trailing-corner: tick 1's destination is the SAME hex as the head");
+        check(g_roadTurns == 0, "trailing-corner: tick 1 - the junction block never engages");
+        check(g_recovery == 0, "trailing-corner: tick 1 is the step arithmetic, not a recovery path");
+        check(g_roadDiag == 1, "trailing-corner: tick 1 - the probe fires once");
+        check(std::strstr(g_lastDiag, "verdict intra-hex-diag") != nullptr,
+              "trailing-corner: tick 1 verdict is intra-hex-diag");
+        check(std::strstr(g_lastDiag, "run 1 ") != nullptr,
+              "trailing-corner: tick 1 run length is 1");
+        check(std::strstr(g_lastDiag, "reason none-corrected") != nullptr,
+              "trailing-corner: tick 1's coarse reason chain still falls to none-corrected "
+              "(the pszDiag chain has no same-hex bucket - motivating the entry line)");
+        check(g_roadDiagEntry == 1, "trailing-corner: tick 1 fires exactly one [ROAD-DIAG-ENTRY]");
+        check(std::strstr(g_lastDiagEntry, "reason same-hex") != nullptr,
+              "trailing-corner: the entry line names the same-hex guard");
+        std::printf("trailing-corner tick1 %s\n", g_lastDiag);
+        std::printf("trailing-corner entry %s\n", g_lastDiagEntry);
+
+        // commit tick 1's step
+        theVehicleHex.Set(v.m_ptHead, nullptr);
+        theVehicleHex.Set(v.m_ptTail, nullptr);
+        v.m_ptTail = v.m_ptHead;
+        v.m_ptHead = v.m_ptNext;
+        theVehicleHex.Set(v.m_ptHead, &v);
+        theVehicleHex.Set(v.m_ptTail, &v);
+
+        // tick 2: the corner crossing - now with a diagonal hull
+        g_roadDiag = 0; g_roadDiagEntry = 0; g_roadTurns = 0; g_recovery = 0;
+        g_lastDiag[0] = 0; g_lastDiagEntry[0] = 0;
+        BOOL got2 = v.GetNextHex(FALSE);
+        check((got2 != FALSE) && (v.m_ptNext == CSubHex(42, 42)),
+              "trailing-corner: tick 2 crosses the shared corner into hex C");
+        check(!v.m_ptNext.SameHex(v.m_ptHead),
+              "trailing-corner: tick 2's destination LEAVES hex A");
+        check(g_roadTurns == 0, "trailing-corner: tick 2 - angled-hull locks the block out too");
+        check(g_recovery == 0, "trailing-corner: tick 2 is the step arithmetic, not a recovery path");
+        check(g_roadDiag == 1, "trailing-corner: tick 2 - the probe fires once");
+        check(std::strstr(g_lastDiag, "verdict corner-ride") != nullptr,
+              "trailing-corner: tick 2 verdict is corner-ride - a lane cut, not an off-road one");
+        check(std::strstr(g_lastDiag, "run 2 ") != nullptr,
+              "trailing-corner: tick 2 run length is 2, continuing tick 1's run");
+        check(std::strstr(g_lastDiag, "reason angled-hull") != nullptr,
+              "trailing-corner: tick 2's exclusion reason is angled-hull");
+        check(g_roadDiagEntry == 0,
+              "trailing-corner: tick 2 does NOT re-fire the entry line - one per run");
+        std::printf("trailing-corner tick2 %s\n", g_lastDiag);
+
+        theVehicleHex.Set(v.m_ptHead, nullptr);
+        theVehicleHex.Set(v.m_ptTail, nullptr);
+    }
+
+    // [ROAD-DIAG] STAIRCASE CORRIDOR (the ratchet, pinned as current behaviour).
+    // RoadStepToward can only build a 4-connected staircase - never a diagonal
+    // chain (vehicle.cpp:1888-1911) - but the pathfinder collapses it back into
+    // diagonal hex jumps (cpathmgr.cpp:1298-1329), so a transport ALREADY
+    // carrying a diagonal hull and a diagonal m_hexNext rides the shared corner
+    // of every hex in the chain, hex after hex, and nothing in GetNextHex ever
+    // returns it to an in-lane axis-aligned walk. Corridor hex(30,30)-(31,30)-
+    // (31,31)-(32,31)-(32,32) is exactly the shape RoadStepToward produces;
+    // (30,31) and (31,32) stay grass - the staircase's own missing corners. The
+    // route is walked off the end of the corridor on the last leg so the final
+    // tick is a genuine off-road cut, not another corner-ride.
+    {
+        ClearMap();
+        const int corridor[5][2] = {{30,30},{31,30},{31,31},{32,31},{32,32}};
+        for (const auto &h : corridor)
+            theMap.hex[h[0]][h[1]].type = CHex::road;
+
+        static CVehicle v;
+        v = CVehicle();
+        v.id = 81;
+        // already mid-run: a diagonal hull from the start, no entry to look for
+        v.m_ptTail = CSubHex(60, 60);
+        v.m_ptHead = CSubHex(61, 61);           // hex(30,30), leading corner
+        v.m_ptNext = v.m_ptHead;
+        v.m_ptDest = CSubHex(2, 2);
+        v.m_hexDest = CHexCoord(1, 1);
+        v.m_hexNext = CHexCoord(31, 31);        // the pathfinder's diagonal jump
+        v.m_cMode = CVehicle::moving;
+        theVehicleHex.Set(v.m_ptHead, &v);
+        theVehicleHex.Set(v.m_ptTail, &v);
+
+        const char *expectVerdict[5] = {"corner-ride", "intra-hex-diag", "corner-ride",
+                                         "intra-hex-diag", "cut-offroad"};
+        int ri = 0;
+        g_roadTurns = 0;
+        for (int t = 0; t < 5; ++t) {
+            g_roadDiag = 0; g_roadDiagEntry = 0; g_recovery = 0; g_lastDiag[0] = 0;
+            BOOL got = v.GetNextHex(FALSE);
+            int stepX = CSubHex::Diff(v.m_ptNext.x - v.m_ptHead.x);
+            int stepY = CSubHex::Diff(v.m_ptNext.y - v.m_ptHead.y);
+            char msg[200];
+            std::snprintf(msg, sizeof(msg), "staircase corridor: tick %d is a diagonal step, "
+                          "hull stays diagonal (the ratchet)", t);
+            check((got != FALSE) && (stepX != 0) && (stepY != 0), msg);
+            std::snprintf(msg, sizeof(msg), "staircase corridor: tick %d - the junction block "
+                          "never engages", t);
+            check(g_roadTurns == 0, msg);
+            char want[64];
+            std::snprintf(want, sizeof(want), "verdict %s", expectVerdict[t]);
+            std::snprintf(msg, sizeof(msg), "staircase corridor: tick %d verdict is %s", t,
+                          expectVerdict[t]);
+            check(std::strstr(g_lastDiag, want) != nullptr, msg);
+            char wantRun[32];
+            std::snprintf(wantRun, sizeof(wantRun), "run %d ", t + 1);
+            std::snprintf(msg, sizeof(msg), "staircase corridor: tick %d run length is %d, "
+                          "never resets mid-corridor", t, t + 1);
+            check(std::strstr(g_lastDiag, wantRun) != nullptr, msg);
+            std::snprintf(msg, sizeof(msg), "staircase corridor: tick %d fires no entry line - "
+                          "the hull is diagonal from the start, no transition to find", t);
+            check(g_roadDiagEntry == 0, msg);
+            std::printf("staircase tick%d %s\n", t, g_lastDiag);
+
+            theVehicleHex.Set(v.m_ptHead, nullptr);
+            theVehicleHex.Set(v.m_ptTail, nullptr);
+            v.m_ptTail = v.m_ptHead;
+            v.m_ptHead = v.m_ptNext;
+            theVehicleHex.Set(v.m_ptHead, &v);
+            theVehicleHex.Set(v.m_ptTail, &v);
+
+            // advance the route once the head enters hexNext; aim the final leg
+            // off the corridor entirely so the last tick is a genuine off-road
+            // cut rather than another corner-ride.
+            if (v.m_hexNext.SameHex(v.m_ptHead)) {
+                ++ri;
+                v.m_hexNext = (ri == 1) ? CHexCoord(32, 32) : CHexCoord(33, 33);
+            }
+        }
+        theVehicleHex.Set(v.m_ptHead, nullptr);
+        theVehicleHex.Set(v.m_ptTail, nullptr);
     }
 
     // every approach of every L, T and X

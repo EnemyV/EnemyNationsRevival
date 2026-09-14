@@ -1669,44 +1669,145 @@ BOOL CVehicle::GetNextHex(BOOL bNew) {
         int dxOut = CSubHex::Diff(m_ptNext.x - m_ptHead.x);
         int dyOut = CSubHex::Diff(m_ptNext.y - m_ptHead.y);
         if ((dxOut != 0) && (dyOut != 0) && OnPavement(m_ptHead)) {
-            CSubHex _sideX(m_ptHead.x + dxOut, m_ptHead.y);
-            CSubHex _sideY(m_ptHead.x, m_ptHead.y + dyOut);
-            _sideX.Wrap();
-            _sideY.Wrap();
-            if ((!OnPavement(_sideX)) || (!OnPavement(_sideY))) {
-                int hxOut = CSubHex::Diff(m_ptHead.x - m_ptTail.x);
-                int hyOut = CSubHex::Diff(m_ptHead.y - m_ptTail.y);
-                CSubHex _aheadOut(m_ptHead.x + hxOut, m_ptHead.y + hyOut);
-                _aheadOut.Wrap();
-                CSubHex _blockedOut;
-                const char *pszClass = GetData()->IsBoat() ? "boat"
-                                     : (GetData()->IsCrane() ? "crane"
-                                     : (GetData()->IsTransport() ? "transport" : "military"));
-                // the guard chain above, in its own order, first term that fired
-                const char *pszDiag =
-                    bAtDest                                  ? "atdest" :
-                    (!(TrafficOpts() & 16))                  ? "bit16-off" :
-                    m_bReversing                             ? "reversing" :
-                    (!m_cOwn)                                ? "unowned" :
-                    IsHpControl()                            ? "hpcontrol" :
-                    ((!(GetData()->IsTransport() || GetData()->IsCrane())) ||
-                     GetData()->IsBoat())                    ? "not-transport" :
-                    ((hxOut == 0) == (hyOut == 0))           ? "angled-hull" :
-                    MustKeepLane(_blockedOut)                ? "mustkeeplane" :
-                    ((!OnPavement(_aheadOut)) ||
-                     (theMap._GetHex(m_ptHead)->GetUnits() & CHex::bridge) ||
-                     (theMap._GetHex(_aheadOut)->GetUnits() & CHex::bridge))
-                                                             ? "offpavement" :
-                    m_ptNext.SameHex(m_hexDest)              ? "arrival" :
-                                                               "none-corrected";
+            int hxOut = CSubHex::Diff(m_ptHead.x - m_ptTail.x);
+            int hyOut = CSubHex::Diff(m_ptHead.y - m_ptTail.y);
+            CSubHex _aheadOut(m_ptHead.x + hxOut, m_ptHead.y + hyOut);
+            _aheadOut.Wrap();
+            CSubHex _blockedOut;
+            // the hull we arrived with was axis-aligned - this tick's diagonal
+            // step is what MAKES the hull diagonal. Angled-hull runs cannot
+            // start any other way, so this is the run's first (and only) tick.
+            BOOL bHullWasAxial = (hxOut == 0) != (hyOut == 0);
+            const char *pszClass = GetData()->IsBoat() ? "boat"
+                                 : (GetData()->IsCrane() ? "crane"
+                                 : (GetData()->IsTransport() ? "transport" : "military"));
+            // the guard chain above, in its own order, first term that fired
+            const char *pszDiag =
+                bAtDest                                  ? "atdest" :
+                (!(TrafficOpts() & 16))                  ? "bit16-off" :
+                m_bReversing                             ? "reversing" :
+                (!m_cOwn)                                ? "unowned" :
+                IsHpControl()                            ? "hpcontrol" :
+                ((!(GetData()->IsTransport() || GetData()->IsCrane())) ||
+                 GetData()->IsBoat())                    ? "not-transport" :
+                (!bHullWasAxial)                          ? "angled-hull" :
+                MustKeepLane(_blockedOut)                ? "mustkeeplane" :
+                ((!OnPavement(_aheadOut)) ||
+                 (theMap._GetHex(m_ptHead)->GetUnits() & CHex::bridge) ||
+                 (theMap._GetHex(_aheadOut)->GetUnits() & CHex::bridge))
+                                                         ? "offpavement" :
+                m_ptNext.SameHex(m_hexDest)              ? "arrival" :
+                                                           "none-corrected";
+
+            // RUN LENGTH. Counts every consecutive on-pavement diagonal
+            // sub-hex step, intra-hex and corner-crossing alike; reset to 0
+            // below whenever this tick is NOT one (axis-aligned, or a
+            // diagonal that leaves pavement's OnPavement(m_ptHead) test).
+            m_iDiagRunLen++;
+
+            // ENTRY LINE, once per run: fires only on the tick that turns an
+            // axial hull into a diagonal one. Names the guard term that
+            // declined to correct THIS step, read off the junction block
+            // (vehmove.cpp:1228-1411) in its own short-circuit order and
+            // recomputed here read-only (no shared state with that block).
+            // Where the block's own intermediate step is gone by the time we
+            // get here (m_ptNext may have been rewritten again by the angle
+            // clamp, the building-X recovery, FindSub or the terrain detour),
+            // the FINAL out-step (m_ptNext/dxOut/dyOut) stands in for the
+            // candidate the block would have tested - an approximation, not
+            // a re-derivation of the block's own control flow.
+            if (bHullWasAxial) {
+                const char *pszEntry;
+                if ((strcmp(pszDiag, "atdest") == 0) || (strcmp(pszDiag, "bit16-off") == 0) ||
+                    (strcmp(pszDiag, "reversing") == 0) || (strcmp(pszDiag, "unowned") == 0) ||
+                    (strcmp(pszDiag, "hpcontrol") == 0) || (strcmp(pszDiag, "not-transport") == 0))
+                    pszEntry = pszDiag;  // the junction block never looked at this vehicle/tick at all
+                else if (MustKeepLane(_blockedOut))
+                    pszEntry = "MustKeepLane";
+                else if (theMap._GetHex(m_ptHead)->GetUnits() & CHex::bridge)
+                    pszEntry = "bridge";
+                else if (_aheadOut.SameHex(m_ptHead))
+                    // THE dominant cause (measured 98.5% of angled-hull events):
+                    // continuing straight on the incoming hull direction stays
+                    // inside the vehicle's OWN hex, so bCorner and body 3 both
+                    // fail their "(!_ahead.SameHex(m_ptHead))" term - the block
+                    // cannot even see this step as a turn.
+                    pszEntry = "same-hex";
+                else if (m_ptNext.SameHex(m_hexDest))
+                    pszEntry = "bArrival";
+                else {
+                    BOOL bInLaneE = (hxOut != 0) ? ((m_ptHead.y & 1) == ((hxOut > 0) ? 1 : 0))
+                                                 : ((m_ptHead.x & 1) == ((hyOut > 0) ? 0 : 1));
+                    BOOL bAheadRoadE = OnPavement(_aheadOut);
+                    BOOL bAheadOpenE = bAheadRoadE &&
+                                       (!(theMap._GetHex(_aheadOut)->GetUnits() & CHex::bridge));
+                    if (!bInLaneE)
+                        pszEntry = "bInLane";
+                    else if (!bAheadOpenE)
+                        pszEntry = bAheadRoadE ? "bridge" : "arm-ends";
+                    else if (!OnPavement(m_ptNext))
+                        pszEntry = "OnPavement(_turn)";
+                    else
+                        // reached body 2/3 territory (single-axis lane step or
+                        // bend-turn candidate) and neither's candidate sub-hex
+                        // was pavement; FindSub/SetNext-beeline cannot be told
+                        // apart from here without restructuring the function,
+                        // so this is the honest residual bucket for all of them.
+                        pszEntry = "parity-fix";
+                }
+                WaitLog("[ROAD-DIAG-ENTRY] veh %d class %s head %d,%d tail %d,%d next %d,%d "
+                        "hexnext %d,%d hexdest %d,%d hull %d,%d reason %s",
+                        GetID(), pszClass, m_ptHead.x, m_ptHead.y, m_ptTail.x, m_ptTail.y,
+                        m_ptNext.x, m_ptNext.y, m_hexNext.X(), m_hexNext.Y(),
+                        m_hexDest.X(), m_hexDest.Y(), hxOut, hyOut, pszEntry);
+            }
+
+            // STAIRCASE-AWARE VERDICT.
+            const char *pszVerdict;
+            if (m_ptNext.SameHex(m_ptHead))
+                // TICK 1: the diagonal stays inside the vehicle's own hex (the
+                // trailing-corner approach). Both axis-neighbour sub-hexes are
+                // this same paved hex, so the corner test below would always
+                // read "silent" - which is exactly why this step was invisible
+                // before. Emit unconditionally: this is the step that makes the
+                // hull diagonal, not a corner cut.
+                pszVerdict = "intra-hex-diag";
+            else if (!OnPavement(m_ptNext))
+                // the destination sub-hex itself is off pavement - a real cut
+                pszVerdict = "cut-offroad";
+            else {
+                CSubHex _sideX(m_ptHead.x + dxOut, m_ptHead.y);
+                CSubHex _sideY(m_ptHead.x, m_ptHead.y + dyOut);
+                _sideX.Wrap();
+                _sideY.Wrap();
+                BOOL bSideXPaved = OnPavement(_sideX);
+                BOOL bSideYPaved = OnPavement(_sideY);
+                if (bSideXPaved && bSideYPaved)
+                    pszVerdict = NULL;  // both corners paved - silent, as today
+                else if (bSideXPaved != bSideYPaved)
+                    // TICK 2: destination paved, exactly one corner paved - the
+                    // staircase corner. The truck rides the shared corner of two
+                    // road hexes instead of walking the paved corner hex between
+                    // them: an out-of-lane cut, not an off-road one.
+                    pszVerdict = "corner-ride";
+                else
+                    // destination paved but BOTH corners unpaved: a true corner
+                    // cut over open ground on both sides. Not part of the
+                    // measured 98.5% mechanism, but the verdict must be
+                    // exhaustive rather than silently falling through.
+                    pszVerdict = "cut-corner";
+            }
+
+            if (pszVerdict != NULL)
                 WaitLog("[ROAD-DIAG] veh %d class %s head %d,%d tail %d,%d next %d,%d "
-                        "dest %d,%d hexnext %d,%d hexdest %d,%d reversing %d reason %s",
+                        "dest %d,%d hexnext %d,%d hexdest %d,%d reversing %d verdict %s run %d "
+                        "reason %s",
                         GetID(), pszClass, m_ptHead.x, m_ptHead.y, m_ptTail.x, m_ptTail.y,
                         m_ptNext.x, m_ptNext.y, m_ptDest.x, m_ptDest.y,
                         m_hexNext.X(), m_hexNext.Y(), m_hexDest.X(), m_hexDest.Y(),
-                        m_bReversing ? 1 : 0, pszDiag);
-            }
-        }
+                        m_bReversing ? 1 : 0, pszVerdict, m_iDiagRunLen, pszDiag);
+        } else
+            m_iDiagRunLen = 0;
     }
 
     CheckNextHex();
