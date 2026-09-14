@@ -1918,6 +1918,8 @@ BOOL CPathMgr::Init( int iMapEX, int iMapEY )
 
     if ( m_paCells != NULL )
         delete[] m_paCells;
+    // Null it immediately: if the new[] below throws, the dtor must not delete the freed arena again.
+    m_paCells = NULL;
 
     // Tear the OLD section down whenever one exists. Keying this off m_paCells meant a
     // Close()+Init() pair (new game after a game) re-Initialize()d a live section with

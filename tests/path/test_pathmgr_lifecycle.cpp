@@ -342,6 +342,33 @@ int main( )
     }
     CHECK( CsLiveCount( ) == 0, "dimension-constructed instance released its section" );
 
+    // ---- 6. Init TWICE with NO intervening Close ---------------------------
+    //
+    // Init is re-entrant on a live instance: it frees the arena, tears the old section
+    // down, then allocates both again. The freed arena pointer is nulled between the
+    // delete[] and the new[] so a throwing new cannot leave the dtor a dangling arena;
+    // that window is not observable from here (this scaffold has no allocation-failure
+    // injection and the reallocated block may reuse the freed address), so what is
+    // asserted is the post-state: one live section, no leak, a usable arena.
+    {
+        CPathMgr pm;
+        pm.Init( 64, 64 );
+        int initMid = g_csInitCalls, delMid = g_csDeleteCalls;
+
+        CHECK( pm.Init( 40, 40 ) == TRUE, "second Init with no Close returns TRUE" );
+        CHECK( g_csDeleteCalls == delMid + 1, "Init with no Close DELETES the old section first" );
+        CHECK( g_csInitCalls == initMid + 1, "Init with no Close creates exactly one new section" );
+        CHECK( CsLiveCount( ) == 1, "Init with no Close leaks no section" );
+        CHECK( g_csDoubleInit == 0, "Init with no Close never re-initialises a live section" );
+        CHECK( pm.m_paCells != NULL, "Init with no Close leaves a live arena" );
+        CHECK( pm.m_iNumOfCells == ( 40 + 40 ) * 5, "the second Init's dimensions won" );
+
+        pm.FakeSearch( );
+        CHECK( g_csDeadEnter == 0, "search after a Close-less re-Init enters a live section" );
+    }
+    CHECK( CsLiveCount( ) == 0, "destructor after a Close-less re-Init deletes the section" );
+    CHECK( g_csInitCalls == g_csDeleteCalls, "balanced after the Close-less re-Init cycle" );
+
     // ---- totals ------------------------------------------------------------
     CHECK( g_csInitCalls == g_csDeleteCalls, "final: create/destroy balanced" );
     CHECK( g_csDoubleInit == 0, "final: no double initialisation" );
