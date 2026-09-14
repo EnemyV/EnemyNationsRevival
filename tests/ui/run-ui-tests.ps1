@@ -18,16 +18,18 @@ $ErrorActionPreference = 'Stop'
 $here = Split-Path -Parent $MyInvocation.MyCommand.Path
 
 # Same VS 2022 roots build.ps1 keys off of.
-$roots = @(
-    'C:\Program Files\Microsoft Visual Studio\2022\Community',
-    'C:\Program Files\Microsoft Visual Studio\2022\Enterprise',
-    'C:\Program Files\Microsoft Visual Studio\2022\Professional'
-)
+$roots = @()
+foreach ( $vsBase in @( "$env:ProgramFiles\Microsoft Visual Studio\2022",
+                        "${env:ProgramFiles(x86)}\Microsoft Visual Studio\2022" ) ) {
+    foreach ( $vsEd in @( 'Community', 'Enterprise', 'Professional', 'BuildTools' ) ) {
+        $roots += ( Join-Path $vsBase $vsEd )
+    }
+}
 $vs = $roots | Where-Object { Test-Path (Join-Path $_ 'VC\Auxiliary\Build\vcvars64.bat') } | Select-Object -First 1
 if (-not $vs) { Write-Error 'VS 2022 vcvars64.bat not found (edit roots in run-ui-tests.ps1).'; exit 2 }
 $vcvars = Join-Path $vs 'VC\Auxiliary\Build\vcvars64.bat'
 
-$outDir = 'd:\tmp\uitests'
+$outDir = (Join-Path $env:TEMP 'uitests')
 New-Item -ItemType Directory -Force -Path $outDir | Out-Null
 
 # repo root = two levels up from tests/ui
