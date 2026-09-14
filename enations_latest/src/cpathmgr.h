@@ -65,6 +65,19 @@ class CPathMgr
     // wrong for any second instance that is created and destroyed per game.
     BOOL m_bCsInit;
 
+    // TRUE on a private instance that re-runs a search purely to be compared with
+    // the production answer. Nothing in this class may ask "am I thePathMgr?" - it
+    // asks this instead. Two things depend on it: the endpoint-repeat probe ring in
+    // GetPath() (one function-level static, so it must only ever see the production
+    // instance's requests) and every mpath.* emission inside _GetPath(), which is
+    // renamed to mpath.shadow.in.* so no production counter can move. Always FALSE
+    // for thePathMgr, and there is no path that sets it except MarkShadow().
+    BOOL m_bShadow;
+#if EN_PATH_PROBES
+    int  m_iProbeOutcome;  // PROBE_OUTCOME of the last _GetPath() on this instance
+    BOOL m_bProbeCapHit;   // that search ended on the iHang/arena budget cap
+#endif
+
 	// BUGBUG
 	// these are used only if the array of cells is used
 	CCell *m_paCells;	// array version
@@ -134,6 +147,29 @@ public:
 	// around to be copied by accident.
 	CPathMgr( CPathMgr const & ) = delete;
 	CPathMgr & operator = ( CPathMgr const & ) = delete;
+
+	// Mark this instance as a comparison-only shadow. One-way, called once right
+	// after construction; thePathMgr never calls it.
+	void MarkShadow( void ) { m_bShadow = TRUE; }
+	BOOL IsShadow( void ) const { return m_bShadow; }
+
+#if EN_PATH_PROBES
+	// Exit class of the last _GetPath() on this instance, recorded at exactly the
+	// points the mpath.* exit counters are emitted. A comparison needs the class of
+	// ONE call; the counters are process-global and reset per perf interval, so they
+	// cannot answer that.
+	enum PROBE_OUTCOME
+	{
+		po_none = 0,  // did not run, or exited somewhere no counter classifies
+		po_trivial,   // rejected before searching (off-map, or already there)
+		po_ok,        // path returned and it reaches the requested destination
+		po_clamped,   // path returned, but only as far as the closest reachable cell
+		po_nopath,    // NULL returned
+		po_blocked    // destination hex cannot be entered
+	};
+	int  GetProbeOutcome( void ) const { return m_iProbeOutcome; }
+	BOOL GetProbeCapHit ( void ) const { return m_bProbeCapHit; }
+#endif
 	BOOL Init( int iMapEX, int iMapEY );
         void Close ();
 

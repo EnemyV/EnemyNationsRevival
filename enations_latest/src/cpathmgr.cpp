@@ -29,6 +29,19 @@ extern CAIData* pGameData;  // pointer to API object for game data
 
 CPathMgr thePathMgr;
 
+#if EN_PATH_PROBES
+// Counter-name router for in-search probes. A shadow instance runs the SAME _GetPath
+// over the same inputs, so every mpath.* emission inside it would silently double the
+// production exit mix. m_bShadow is FALSE on thePathMgr, so on the production instance
+// this expands to the identical string literal the tree emitted before.
+// Both arms must be literals: Perf interns counter names, and a runtime-built buffer
+// would burn one of the 512 name slots (and print garbage) on every call.
+// The prefix is mpath.shadow.in.* - deliberately NOT mpath.shadow.*, which is the
+// namespace the A/B COMPARISON counters live in (mpath.shadow.ok is "production said
+// ok on a compared call", mpath.shadow.in.ok is "the shadow search itself said ok").
+#define MPATH_INC( suffix ) Perf::CounterInc( m_bShadow ? "mpath.shadow.in." suffix : "mpath." suffix )
+#endif
+
 #define new DEBUG_NEW
 #define MAX_PATH_RANGE 80
 
@@ -90,7 +103,11 @@ CHexCoord* CPathMgr::GetPath( CVehicle* pVehicle, CHexCoord& hexFrom, CHexCoord&
     // main-thread search repeat a (from -> to) pair seen recently? A ring of the
     // last 512 keys, scanned linearly - ~130 searches/s makes that free, and it is
     // main-thread only so the static ring needs no lock. Inert unless EN_PERF is set.
-    if ( _qMain && Perf::IsEnabled( ) )
+    // !m_bShadow: the ring is ONE function-level static shared by every instance, so a
+    // second CPathMgr coming through here would interleave its keys with production's
+    // and corrupt the hit-distance histogram. (Today the shadow calls _GetPath directly
+    // and never reaches this line - the guard is what makes that not load-bearing.)
+    if ( _qMain && Perf::IsEnabled( ) && !m_bShadow )
     {
         static uint64_t s_ring[512] = { 0 };
         static int      s_next      = 0;
@@ -163,6 +180,11 @@ CHexCoord* CPathMgr::_GetPath( CVehicle* pVehicle, CHexCoord& hexFrom, CHexCoord
 #endif
 #endif
 
+#if EN_PATH_PROBES
+    m_iProbeOutcome = po_none;   // per-call, re-derived below at every exit
+    m_bProbeCapHit  = FALSE;
+#endif
+
     // BUGBUG count types of calls
     m_iPaths++;
     if ( pVehicle == NULL )
@@ -185,7 +207,8 @@ CHexCoord* CPathMgr::_GetPath( CVehicle* pVehicle, CHexCoord& hexFrom, CHexCoord
 #endif
 #endif
 #if EN_PATH_PROBES
-        Perf::CounterInc( "mpath.trivial" );
+        MPATH_INC( "trivial" );
+        m_iProbeOutcome = po_trivial;
 #endif
         return ( NULL );
     }
@@ -204,7 +227,8 @@ CHexCoord* CPathMgr::_GetPath( CVehicle* pVehicle, CHexCoord& hexFrom, CHexCoord
     if ( hexFrom == hexTo )
     {
 #if EN_PATH_PROBES
-        Perf::CounterInc( "mpath.trivial" );
+        MPATH_INC( "trivial" );
+        m_iProbeOutcome = po_trivial;
 #endif
         return ( NULL );
     }
@@ -358,7 +382,7 @@ CHexCoord* CPathMgr::_GetPath( CVehicle* pVehicle, CHexCoord& hexFrom, CHexCoord
             if ( pAdjCell == NULL )
             {
 #if EN_PATH_PROBES
-                Perf::CounterInc( "mpath.arena_full" );
+                MPATH_INC( "arena_full" );
                 bProbeArenaFull = TRUE;
 #endif
                 iHang = 1;  // cause early termination
@@ -414,7 +438,8 @@ CHexCoord* CPathMgr::_GetPath( CVehicle* pVehicle, CHexCoord& hexFrom, CHexCoord
 #endif
 
 #if EN_PATH_PROBES
-                        Perf::CounterInc( phexPath != NULL ? "mpath.ok" : "mpath.nopath" );
+                        if ( phexPath != NULL ) { MPATH_INC( "ok" );     m_iProbeOutcome = po_ok; }
+                        else                    { MPATH_INC( "nopath" ); m_iProbeOutcome = po_nopath; }
 #endif
                         return ( phexPath );
                     }
@@ -444,7 +469,8 @@ CHexCoord* CPathMgr::_GetPath( CVehicle* pVehicle, CHexCoord& hexFrom, CHexCoord
 #endif
 
 #if EN_PATH_PROBES
-                            Perf::CounterInc( phexPath != NULL ? "mpath.ok" : "mpath.nopath" );
+                            if ( phexPath != NULL ) { MPATH_INC( "ok" );     m_iProbeOutcome = po_ok; }
+                            else                    { MPATH_INC( "nopath" ); m_iProbeOutcome = po_nopath; }
 #endif
                             return ( phexPath );
                         }
@@ -502,7 +528,8 @@ CHexCoord* CPathMgr::_GetPath( CVehicle* pVehicle, CHexCoord& hexFrom, CHexCoord
 #endif  // PATH_TIMING
 
 #if EN_PATH_PROBES
-                        Perf::CounterInc( "mpath.blocked" );  // dest hex unenterable; partial path or NULL
+                        MPATH_INC( "blocked" );  // dest hex unenterable; partial path or NULL
+                        m_iProbeOutcome = po_blocked;
 #endif
                         return ( phexPath );
                     }
@@ -520,7 +547,7 @@ CHexCoord* CPathMgr::_GetPath( CVehicle* pVehicle, CHexCoord& hexFrom, CHexCoord
         if ( pTest == NULL )
         {
 #if EN_PATH_PROBES
-            Perf::CounterInc( "mpath.exhausted" );  // open list empty pre-dest: unreachable-goal signature
+            MPATH_INC( "exhausted" );  // open list empty pre-dest: unreachable-goal signature
 #endif
             if ( !bDirectPath )
                 pTest = GetClosestCell( );
@@ -543,8 +570,12 @@ CHexCoord* CPathMgr::_GetPath( CVehicle* pVehicle, CHexCoord& hexFrom, CHexCoord
         if ( !iHang )
         {
 #if EN_PATH_PROBES
+            // THE cap signal for this search. Both forms land here: the iHang budget
+            // running out, and the arena filling (which sets iHang = 1 to force this
+            // exit). Reusing it, not inventing one.
+            m_bProbeCapHit = TRUE;
             if ( !bProbeArenaFull )
-                Perf::CounterInc( "mpath.ihang" );
+                MPATH_INC( "ihang" );
 #endif
 
 #if PATH_TIMING
@@ -599,7 +630,8 @@ CHexCoord* CPathMgr::_GetPath( CVehicle* pVehicle, CHexCoord& hexFrom, CHexCoord
 #endif
         ClearArray( );
 #if EN_PATH_PROBES
-        Perf::CounterInc( "mpath.nopath" );
+        MPATH_INC( "nopath" );
+        m_iProbeOutcome = po_nopath;
 #endif
         return ( NULL );
     }
@@ -681,20 +713,25 @@ CHexCoord* CPathMgr::_GetPath( CVehicle* pVehicle, CHexCoord& hexFrom, CHexCoord
 
 #if EN_PATH_PROBES
     if ( phexPath == NULL )
-        Perf::CounterInc( "mpath.nopath" );
+    {
+        MPATH_INC( "nopath" );
+        m_iProbeOutcome = po_nopath;
+    }
     else if ( bProbeAtDest )
     {
-        Perf::CounterInc( "mpath.ok" );
+        MPATH_INC( "ok" );
+        m_iProbeOutcome = po_ok;
         if ( pVehicle != NULL )
             pVehicle->m_hexLastClamp = CHexCoord( -1, -1 );  // success clears the re-clamp watch
     }
     else
     {
-        Perf::CounterInc( "mpath.clamped" );  // GetClosestCell fallback path
+        MPATH_INC( "clamped" );  // GetClosestCell fallback path
+        m_iProbeOutcome = po_clamped;
         if ( pVehicle != NULL )
         {
             if ( pVehicle->m_hexLastClamp == hexProbeClamp )
-                Perf::CounterInc( "mpath.reclamp" );  // clamped at the SAME hex again: churn signature
+                MPATH_INC( "reclamp" );  // clamped at the SAME hex again: churn signature
             pVehicle->m_hexLastClamp = hexProbeClamp;
         }
     }
@@ -1739,6 +1776,7 @@ CPathMgr::CPathMgr( int iMapEX, int iMapEY )
     // before a search - but it must at least leave m_cs in a legal state, because it
     // allocates the arena and ~CPathMgr used to read "arena != NULL" as "section live".
     m_bCsInit   = FALSE;
+    m_bShadow   = FALSE;
     m_iWidth    = iMapEX;
     m_iHeight   = iMapEY;
     m_iMapEX    = iMapEX - 1;
@@ -1875,6 +1913,7 @@ CPathMgr::CPathMgr( void )
     memset( m_acBoth, 0, sizeof( m_acBoth ) );
     m_paCells = NULL;
     m_bCsInit = FALSE;  // Init() creates m_cs; nothing may enter it before that
+    m_bShadow = FALSE;  // only MarkShadow() ever changes this
 }
 
 CPathMgr::~CPathMgr( )
