@@ -739,6 +739,12 @@ void CConquerApp::CreateNewWorld(unsigned uRand, AIinit *pAiData, int iSide, int
         return;
     }
 
+#if EN_PATH_PROBES
+    // Same dimensions, same moment: the step-A shadow instance. No-op unless
+    // EN_PATH_SHADOW is set. It never feeds the game - see cpathmgr.cpp.
+    EnPathShadowInit((iSide * iSideSize), (iSide * iSideSize));
+#endif
+
     CpMark( "thePathMgr.Init" );
 
     // create all the windows (in reverse order of importance)
@@ -1559,6 +1565,9 @@ void CConquerApp::DestroyWorld() {
     theMap.Close();
 
     thePathMgr.Close();
+#if EN_PATH_PROBES
+    EnPathShadowClose();
+#endif
 
     CMaterialTypes::dtor();
 
@@ -1683,6 +1692,9 @@ void CConquerApp::ClearWorld() {
     theMinerals.Close();
     theMap.Close();
     thePathMgr.Close();
+#if EN_PATH_PROBES
+    EnPathShadowClose();
+#endif
 
     // clean out the message queue
     theGame.EmptyQueue();
