@@ -2581,28 +2581,8 @@ void CWndArea::Draw( )
     // CAnimAtr::Render() copied the DIB before overlays, so we need a second pass.
     if ( m_aa.m_sdlPanel )
     {
-        if ( Perf::IsEnabled( ) )
-            Perf::GaugeSet( "area.gpufull", m_aa.IsGpuFull( ) ? 1 : 0 );
-
         Perf::ScopeCounter _cap( "a.topanel" );
-
-        // terrain.cpp:717 skips ITS RenderToPanel under IsGpuFull() because "the two
-        // full-screen RenderToPanel blits are pure waste" - m_surface is never
-        // displayed, PresentOwn composites the GPU mesh + m_dibSprite directly. This is
-        // the SECOND of the two blits that comment counts, and it never got the guard,
-        // although this same function gates three other things on IsGpuFull() (1865,
-        // 2554, 2628). Measured on the VM before changing anything: area.gpufull was 1
-        // on 195 of 195 rows, and this copy cost 53.8 ms/s - 68.9% of CWndArea::Draw and
-        // 2.3x the a.render that produced the pixels it was copying.
-        //
-        // The overlays above are why the second pass exists at all, but under the GPU
-        // path they do not land in m_dibwnd: DrawSelectionRectGpu draws into m_dibSprite
-        // (see 2554), which the compositor reads live. So flag the panel exactly as
-        // terrain.cpp does and skip the copy. The CPU path is unchanged.
-        if ( m_aa.IsGpuFull( ) )
-            m_aa.m_sdlPanel->SetDirty( );
-        else
-            RenderingAdapter::RenderToPanel( &m_aa, m_aa.m_sdlPanel );
+        RenderingAdapter::RenderToPanel( &m_aa, m_aa.m_sdlPanel );
     }
 
     // Sync area static bar position and z-order to area panel
