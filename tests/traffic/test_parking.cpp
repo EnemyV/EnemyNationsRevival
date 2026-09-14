@@ -1,6 +1,7 @@
 // Production parking/request/lane methods and flee guard; replace scene services.
 #include <cstdio>
 #include <cstdlib>
+#include <cstdint>
 #include <initializer_list>
 using BOOL = int;
 using DWORD = unsigned long;
@@ -9,6 +10,13 @@ constexpr int PARK_SEARCH_SUBS = 16, CORRIDOR_MIN_HEXES = 3, CORRIDOR_MIN_VEHS =
 constexpr int HOLD_FRAMES = 240, MAX_NUM_RETRIES = 25;
 int TrafficOpts() { return 63; }
 void WaitLog(const char*, ...) {}
+// The extracted flee guard carries the probe counters (netapi.cpp, merge eighteen);
+// they are inert with EN_PERF unset, so the fixture stubs them like the other services.
+namespace Perf {
+    inline void CounterInc(const char*) {}
+    inline uint64_t NowIfEnabled() { return 0; }
+    inline void CounterAddElapsedUs(const char*, uint64_t) {}
+}
 struct CHexCoord;
 struct CSubHex {
     int x = 100, y = 100;
