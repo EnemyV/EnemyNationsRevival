@@ -40,6 +40,10 @@ const char GameLogFile[] = "ENations.log";
 // (was runtime-only + backfilled flat on load, so the workforce graph didn't restore).
 // Release 7: CVehicleBuilding::m_iNum (the vehicle-build queue count) is now serialized,
 // so a factory's remaining build queue survives save/load (was lost -> queue truncated).
+// MERGE (winastra/traffic-retreat-commitment): that branch bumped this to release 8 for the
+// nine traffic detour/recovery fields. Release 9 wins -- it is the strictly later counter and
+// its notes below already document those same nine fields, whose writers gate on m_dwVer >= 8,
+// which a release-9 save still satisfies. CNetSaveInfo stays 44 bytes (wire_layout_assert.cpp).
 // Release 8: the vehicle route cursor's NO-CURSOR case now writes an out-of-range
 // SENTINEL (0xFFFF in the WORD index field) instead of the shipped N-1 (BUGS #99), and
 // it is read back as a NULL cursor only when the loaded save's release is >= 8. Older
