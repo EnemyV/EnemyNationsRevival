@@ -28,6 +28,7 @@ const int MAX_BOTH_INDEX = 4096;
 #include "stdafx.h"
 #include "unit.inl"
 #include "terrain.inl"
+#include "enprobes.h"  // EN_PATH_PROBES compile gate (shadow-instance members below)
 
 class CCell
 {
@@ -56,6 +57,31 @@ public:
 class CPathMgr
 {
     CRITICAL_SECTION m_cs;  // internal use only
+    // m_cs lifetime, tracked explicitly instead of being inferred from m_paCells.
+    // Close() frees the arena but deliberately LEAVES m_cs live, so "m_paCells != NULL"
+    // never was the same question as "m_cs is initialised": after a Close()+Init() pair
+    // the old section got re-Initialize()d with no matching Delete, and ~CPathMgr after
+    // a Close() deleted nothing at all. Invisible for one process-lifetime global,
+    // wrong for any second instance that is created and destroyed per game.
+    BOOL m_bCsInit;
+
+    // TRUE on a private instance that re-runs a search purely to be compared with
+    // the production answer. Nothing in this class may ask "am I thePathMgr?" - it
+    // asks this instead. Two things depend on it: the endpoint-repeat probe ring in
+    // GetPath() (one function-level static, so it must only ever see the production
+    // instance's requests) and every mpath.* emission inside _GetPath(), which is
+    // renamed to mpath.shadow.in.* so no production counter can move. Always FALSE
+    // for thePathMgr, and there is no path that sets it except MarkShadow().
+    BOOL m_bShadow;
+#if EN_PATH_PROBES
+    int  m_iProbeOutcome;   // PROBE_OUTCOME of the last _GetPath() on this instance
+    // The two cap forms are DIFFERENT terminations and must not be merged: the arena
+    // filling means the cell budget was too small for this map, the iteration budget
+    // running out means the search was too long. A shadow that hits one where
+    // production hit the other has diverged even if both routes clamp to the same hex.
+    BOOL m_bProbeCapArena;  // AddCellToArray failed - out of CCell arena
+    BOOL m_bProbeCapIter;   // iHang reached 0 - out of iteration budget
+#endif
 
 	// BUGBUG
 	// these are used only if the array of cells is used
@@ -119,6 +145,49 @@ public:
 	CPathMgr( int iMapEX, int iMapEY );
 	CPathMgr( void );
 	~CPathMgr();
+
+	// A CRITICAL_SECTION must never be copied and the CCell arena is owned, so a
+	// copied CPathMgr would alias one arena and duplicate one lock handle. Nothing
+	// copies one today; make it a compile error before there is a second instance
+	// around to be copied by accident.
+	CPathMgr( CPathMgr const & ) = delete;
+	CPathMgr & operator = ( CPathMgr const & ) = delete;
+
+	// Mark this instance as a comparison-only shadow. One-way, called once right
+	// after construction; thePathMgr never calls it.
+	void MarkShadow( void ) { m_bShadow = TRUE; }
+	BOOL IsShadow( void ) const { return m_bShadow; }
+
+#if EN_PATH_PROBES
+	// Exit class of the last _GetPath() on this instance, recorded at exactly the
+	// points the mpath.* exit counters are emitted. A comparison needs the class of
+	// ONE call; the counters are process-global and reset per perf interval, so they
+	// cannot answer that.
+	enum PROBE_OUTCOME
+	{
+		po_none = 0,  // did not run, or exited somewhere no counter classifies
+		po_trivial,   // rejected before searching (off-map, or already there)
+		po_ok,        // path returned and it reaches the requested destination
+		po_clamped,   // path returned, but only as far as the closest reachable cell
+		po_nopath,    // NULL returned
+		po_blocked    // destination hex cannot be entered
+	};
+	// Everything a shadow comparison needs about ONE call. Filled inside the search's
+	// own critical section, because the members it is copied from are per-instance
+	// scratch that the next caller (an AI worker, on the production instance)
+	// overwrites the moment the lock is released.
+	struct VERDICT
+	{
+		int       iClass;      // PROBE_OUTCOME
+		BOOL      bCapArena;   // arena exhausted
+		BOOL      bCapIter;    // iteration budget exhausted
+		int       iPathLen;    // length AS REPORTED to the caller, not normalised
+		BOOL      bHaveClamp;  // a vehicle was passed, so hexClamp is meaningful
+		CHexCoord hexClamp;    // that vehicle's m_hexLastClamp after the search
+		VERDICT( ) : iClass( 0 ), bCapArena( FALSE ), bCapIter( FALSE ), iPathLen( 0 ),
+		             bHaveClamp( FALSE ) { }
+	};
+#endif
 	BOOL Init( int iMapEX, int iMapEY );
         void Close ();
 
@@ -178,8 +247,35 @@ public:
 	private:
     CHexCoord* _GetPath( CVehicle* pVehicle, CHexCoord& hexFrom, CHexCoord& hexTo, int& iPathLen, int iVehType = 0,
                          BOOL bVehBlock = FALSE, BOOL bDirectPath = FALSE );
+
+#if EN_PATH_PROBES
+    // GetPathProd() is the body GetPath() has always had, verbatim, including its
+    // mpath.us scope timer - so a shadow search started after it returns lands
+    // outside EVERY production timing counter, not just outside the exit counters.
+    // With EN_PATH_PROBES compiled out this split does not exist: the body is
+    // CPathMgr::GetPath again (see EN_PM_PROD_ENTRY in cpathmgr.cpp).
+    CHexCoord* GetPathProd  ( CVehicle* pVehicle, CHexCoord& hexFrom, CHexCoord& hexTo, int& iPathLen, int iVehType,
+                              BOOL bVehBlock, BOOL bDirectPath );
+    CHexCoord* ShadowGetPath( CVehicle* pVehicle, CHexCoord& hexFrom, CHexCoord& hexTo, int& iPathLen, int iVehType,
+                              BOOL bVehBlock, BOOL bDirectPath );
+#endif
 };
 
 extern CPathMgr thePathMgr;
+
+#if EN_PATH_PROBES
+// Ladder step A: ONE private CPathMgr that re-runs each main-thread movement search
+// behind the production one and compares the two answers. Measurement only - it is
+// constructed only when EN_PATH_SHADOW is set in the environment, it never feeds the
+// game, nothing reads its route, and every counter it emits is namespaced. Init and
+// Close mirror thePathMgr's, at the same call sites.
+// EN_PATH_SHADOW must carry a VALUE: 1 / true / on / yes (any case) enable the
+// shadow. Absent, empty, 0, false, off, no - or anything unrecognised - leave it
+// off, so the obvious way to switch it off really does. Resolved once, then cached,
+// and the effective setting is logged at Init whenever the variable was set at all.
+BOOL EnPathShadowOn  ( void );
+void EnPathShadowInit( int iMapEX, int iMapEY );
+void EnPathShadowClose( void );
+#endif
 
 #endif // __CPATHMGR_H__

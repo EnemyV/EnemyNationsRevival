@@ -3037,6 +3037,11 @@ int CGame::StartGame( BOOL bReplace )
         return ( IDCANCEL );
     }
 
+#if EN_PATH_PROBES
+    // Same dimensions, same moment: the step-A shadow instance (load path).
+    EnPathShadowInit( theMap.Get_eX( ), theMap.Get_eY( ) );
+#endif
+
     // center on our rocket
     m_maploc = CMapLoc( 0, 0 );
     pos      = theBuildingMap.GetStartPosition( );

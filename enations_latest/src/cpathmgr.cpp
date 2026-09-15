@@ -16,6 +16,16 @@
 #include "Perf.h"     // EN_PERF counters (mpath.* exit mix)
 #include "enprobes.h" // EN_PATH_PROBES compile gate
 
+#if EN_PATH_PROBES
+#include <stdarg.h>   // shadow diff log
+#include <stdlib.h>   // getenv (EN_PATH_SHADOW)
+#include <string.h>   // strcmp (EN_PATH_SHADOW value parse)
+#include <ctype.h>    // tolower (same)
+#ifdef _WIN32
+#include <share.h>    // _SH_DENYNO: the log must stay readable while the game runs
+#endif
+#endif
+
 //#define TEST_RESULT1		// test GetAt improvement
 //#define TEST_RESULT2			// test GetLowest improvement
 //#define TEST_RESULT3			// anal level of testing
@@ -28,6 +38,19 @@ extern CAIData* pGameData;  // pointer to API object for game data
 
 
 CPathMgr thePathMgr;
+
+#if EN_PATH_PROBES
+// Counter-name router for in-search probes. A shadow instance runs the SAME _GetPath
+// over the same inputs, so every mpath.* emission inside it would silently double the
+// production exit mix. m_bShadow is FALSE on thePathMgr, so on the production instance
+// this expands to the identical string literal the tree emitted before.
+// Both arms must be literals: Perf interns counter names, and a runtime-built buffer
+// would burn one of the 512 name slots (and print garbage) on every call.
+// The prefix is mpath.shadow.in.* - deliberately NOT mpath.shadow.*, which is the
+// namespace the A/B COMPARISON counters live in (mpath.shadow.ok is "production said
+// ok on a compared call", mpath.shadow.in.ok is "the shadow search itself said ok").
+#define MPATH_INC( suffix ) Perf::CounterInc( m_bShadow ? "mpath.shadow.in." suffix : "mpath." suffix )
+#endif
 
 #define new DEBUG_NEW
 #define MAX_PATH_RANGE 80
@@ -64,8 +87,36 @@ static unsigned char ucHeadings[] = {
 };
 */
 
+#if EN_PATH_PROBES
+// With probes compiled in, GetPath() is the selector below and the production body
+// becomes GetPathProd(). With probes compiled out the macro names that body
+// CPathMgr::GetPath, so a probe-less build gets the ORIGINAL single function - no
+// extra frame, no extra branch, nothing to reason about on the movement path.
+#define EN_PM_PROD_ENTRY GetPathProd
+
+// Where GetPathProd() drops the verdict for a shadow comparison, or NULL for an
+// ordinary call. THREAD-LOCAL on purpose: the production instance is shared with the
+// AI worker threads, and only the thread that armed this pointer may fill it.
+static thread_local CPathMgr::VERDICT* t_pPathVerdict = NULL;
+
 CHexCoord* CPathMgr::GetPath( CVehicle* pVehicle, CHexCoord& hexFrom, CHexCoord& hexTo, int& iPathLen, int iVehType,
                               BOOL bVehBlock, BOOL bDirectPath )
+{
+    // Shadow comparison runs on the PRODUCTION instance only (!m_bShadow), on the
+    // MAIN thread only (the AI worker threads share this same object and nothing in
+    // step A is thread-safe beyond that), and only when EN_PATH_SHADOW is set.
+    // Default off: with the variable unset this is one already-cached int test.
+    if ( !m_bShadow && EnPathShadowOn( ) && Perf::IsMainThread( ) )
+        return ( ShadowGetPath( pVehicle, hexFrom, hexTo, iPathLen, iVehType, bVehBlock, bDirectPath ) );
+
+    return ( GetPathProd( pVehicle, hexFrom, hexTo, iPathLen, iVehType, bVehBlock, bDirectPath ) );
+}
+#else
+#define EN_PM_PROD_ENTRY GetPath
+#endif
+
+CHexCoord* CPathMgr::EN_PM_PROD_ENTRY( CVehicle* pVehicle, CHexCoord& hexFrom, CHexCoord& hexTo, int& iPathLen,
+                                       int iVehType, BOOL bVehBlock, BOOL bDirectPath )
 {
 #if EN_PATH_PROBES
     // movement-A* twin of the CPathMap path.* trio (cpathmap.cpp GetPath).
@@ -90,7 +141,11 @@ CHexCoord* CPathMgr::GetPath( CVehicle* pVehicle, CHexCoord& hexFrom, CHexCoord&
     // main-thread search repeat a (from -> to) pair seen recently? A ring of the
     // last 512 keys, scanned linearly - ~130 searches/s makes that free, and it is
     // main-thread only so the static ring needs no lock. Inert unless EN_PERF is set.
-    if ( _qMain && Perf::IsEnabled( ) )
+    // !m_bShadow: the ring is ONE function-level static shared by every instance, so a
+    // second CPathMgr coming through here would interleave its keys with production's
+    // and corrupt the hit-distance histogram. (Today the shadow calls _GetPath directly
+    // and never reaches this line - the guard is what makes that not load-bearing.)
+    if ( _qMain && Perf::IsEnabled( ) && !m_bShadow )
     {
         static uint64_t s_ring[512] = { 0 };
         static int      s_next      = 0;
@@ -121,6 +176,24 @@ CHexCoord* CPathMgr::GetPath( CVehicle* pVehicle, CHexCoord& hexFrom, CHexCoord&
 #endif
     if ( _qMain ) Perf::NoteFrameSearch( Perf::ElapsedUs( _qWork ) );
     Perf::CounterAddElapsedUs( _qMain ? "mpath.work.main.us" : "mpath.work.ai.us", _qWork );
+#if EN_PATH_PROBES
+    // Hand the verdict over while the lock is still held. m_iProbeOutcome and the cap
+    // flags are per-instance scratch: an AI worker waiting on m_cs overwrites them as
+    // soon as this Leave returns, so reading them afterwards is a race. t_pPathVerdict
+    // is thread-local, so that worker's own pass through here sees NULL and writes
+    // nothing.
+    if ( t_pPathVerdict != NULL )
+    {
+        t_pPathVerdict->iClass     = m_iProbeOutcome;
+        t_pPathVerdict->bCapArena  = m_bProbeCapArena;
+        t_pPathVerdict->bCapIter   = m_bProbeCapIter;
+        t_pPathVerdict->iPathLen   = iPathLen;
+        t_pPathVerdict->bHaveClamp = ( pVehicle != NULL );
+        if ( pVehicle != NULL )
+            t_pPathVerdict->hexClamp = pVehicle->m_hexLastClamp;
+        t_pPathVerdict = NULL;   // one call, one verdict
+    }
+#endif
     LeaveCriticalSection( &m_cs );
     return phcPath;
 }
@@ -163,6 +236,12 @@ CHexCoord* CPathMgr::_GetPath( CVehicle* pVehicle, CHexCoord& hexFrom, CHexCoord
 #endif
 #endif
 
+#if EN_PATH_PROBES
+    m_iProbeOutcome  = po_none;   // per-call, re-derived below at every exit
+    m_bProbeCapArena = FALSE;
+    m_bProbeCapIter  = FALSE;
+#endif
+
     // BUGBUG count types of calls
     m_iPaths++;
     if ( pVehicle == NULL )
@@ -185,7 +264,8 @@ CHexCoord* CPathMgr::_GetPath( CVehicle* pVehicle, CHexCoord& hexFrom, CHexCoord
 #endif
 #endif
 #if EN_PATH_PROBES
-        Perf::CounterInc( "mpath.trivial" );
+        MPATH_INC( "trivial" );
+        m_iProbeOutcome = po_trivial;
 #endif
         return ( NULL );
     }
@@ -204,7 +284,8 @@ CHexCoord* CPathMgr::_GetPath( CVehicle* pVehicle, CHexCoord& hexFrom, CHexCoord
     if ( hexFrom == hexTo )
     {
 #if EN_PATH_PROBES
-        Perf::CounterInc( "mpath.trivial" );
+        MPATH_INC( "trivial" );
+        m_iProbeOutcome = po_trivial;
 #endif
         return ( NULL );
     }
@@ -358,7 +439,7 @@ CHexCoord* CPathMgr::_GetPath( CVehicle* pVehicle, CHexCoord& hexFrom, CHexCoord
             if ( pAdjCell == NULL )
             {
 #if EN_PATH_PROBES
-                Perf::CounterInc( "mpath.arena_full" );
+                MPATH_INC( "arena_full" );
                 bProbeArenaFull = TRUE;
 #endif
                 iHang = 1;  // cause early termination
@@ -414,7 +495,8 @@ CHexCoord* CPathMgr::_GetPath( CVehicle* pVehicle, CHexCoord& hexFrom, CHexCoord
 #endif
 
 #if EN_PATH_PROBES
-                        Perf::CounterInc( phexPath != NULL ? "mpath.ok" : "mpath.nopath" );
+                        if ( phexPath != NULL ) { MPATH_INC( "ok" );     m_iProbeOutcome = po_ok; }
+                        else                    { MPATH_INC( "nopath" ); m_iProbeOutcome = po_nopath; }
 #endif
                         return ( phexPath );
                     }
@@ -444,7 +526,8 @@ CHexCoord* CPathMgr::_GetPath( CVehicle* pVehicle, CHexCoord& hexFrom, CHexCoord
 #endif
 
 #if EN_PATH_PROBES
-                            Perf::CounterInc( phexPath != NULL ? "mpath.ok" : "mpath.nopath" );
+                            if ( phexPath != NULL ) { MPATH_INC( "ok" );     m_iProbeOutcome = po_ok; }
+                            else                    { MPATH_INC( "nopath" ); m_iProbeOutcome = po_nopath; }
 #endif
                             return ( phexPath );
                         }
@@ -502,7 +585,8 @@ CHexCoord* CPathMgr::_GetPath( CVehicle* pVehicle, CHexCoord& hexFrom, CHexCoord
 #endif  // PATH_TIMING
 
 #if EN_PATH_PROBES
-                        Perf::CounterInc( "mpath.blocked" );  // dest hex unenterable; partial path or NULL
+                        MPATH_INC( "blocked" );  // dest hex unenterable; partial path or NULL
+                        m_iProbeOutcome = po_blocked;
 #endif
                         return ( phexPath );
                     }
@@ -520,7 +604,7 @@ CHexCoord* CPathMgr::_GetPath( CVehicle* pVehicle, CHexCoord& hexFrom, CHexCoord
         if ( pTest == NULL )
         {
 #if EN_PATH_PROBES
-            Perf::CounterInc( "mpath.exhausted" );  // open list empty pre-dest: unreachable-goal signature
+            MPATH_INC( "exhausted" );  // open list empty pre-dest: unreachable-goal signature
 #endif
             if ( !bDirectPath )
                 pTest = GetClosestCell( );
@@ -543,8 +627,18 @@ CHexCoord* CPathMgr::_GetPath( CVehicle* pVehicle, CHexCoord& hexFrom, CHexCoord
         if ( !iHang )
         {
 #if EN_PATH_PROBES
-            if ( !bProbeArenaFull )
-                Perf::CounterInc( "mpath.ihang" );
+            // THE cap signal for this search, kept as the two DISTINCT terminations it
+            // really is. Both land here - the iHang budget running out, and the arena
+            // filling (which sets iHang = 1 to force this exit) - but they mean
+            // different things, so they are recorded and compared separately.
+            // Reusing the existing signal, not inventing one.
+            if ( bProbeArenaFull )
+                m_bProbeCapArena = TRUE;
+            else
+            {
+                m_bProbeCapIter = TRUE;
+                MPATH_INC( "ihang" );
+            }
 #endif
 
 #if PATH_TIMING
@@ -599,7 +693,8 @@ CHexCoord* CPathMgr::_GetPath( CVehicle* pVehicle, CHexCoord& hexFrom, CHexCoord
 #endif
         ClearArray( );
 #if EN_PATH_PROBES
-        Perf::CounterInc( "mpath.nopath" );
+        MPATH_INC( "nopath" );
+        m_iProbeOutcome = po_nopath;
 #endif
         return ( NULL );
     }
@@ -681,20 +776,25 @@ CHexCoord* CPathMgr::_GetPath( CVehicle* pVehicle, CHexCoord& hexFrom, CHexCoord
 
 #if EN_PATH_PROBES
     if ( phexPath == NULL )
-        Perf::CounterInc( "mpath.nopath" );
+    {
+        MPATH_INC( "nopath" );
+        m_iProbeOutcome = po_nopath;
+    }
     else if ( bProbeAtDest )
     {
-        Perf::CounterInc( "mpath.ok" );
+        MPATH_INC( "ok" );
+        m_iProbeOutcome = po_ok;
         if ( pVehicle != NULL )
             pVehicle->m_hexLastClamp = CHexCoord( -1, -1 );  // success clears the re-clamp watch
     }
     else
     {
-        Perf::CounterInc( "mpath.clamped" );  // GetClosestCell fallback path
+        MPATH_INC( "clamped" );  // GetClosestCell fallback path
+        m_iProbeOutcome = po_clamped;
         if ( pVehicle != NULL )
         {
             if ( pVehicle->m_hexLastClamp == hexProbeClamp )
-                Perf::CounterInc( "mpath.reclamp" );  // clamped at the SAME hex again: churn signature
+                MPATH_INC( "reclamp" );  // clamped at the SAME hex again: churn signature
             pVehicle->m_hexLastClamp = hexProbeClamp;
         }
     }
@@ -1734,6 +1834,12 @@ void CPathMgr::ClearArray( void )
 //
 CPathMgr::CPathMgr( int iMapEX, int iMapEY )
 {
+    // NOTE: unused today (thePathMgr and the shadow instance both use the default
+    // ctor + Init()). It does NOT set m_iMaxPath/m_pTD, so Init() is still required
+    // before a search - but it must at least leave m_cs in a legal state, because it
+    // allocates the arena and ~CPathMgr used to read "arena != NULL" as "section live".
+    m_bCsInit   = FALSE;
+    m_bShadow   = FALSE;
     m_iWidth    = iMapEX;
     m_iHeight   = iMapEY;
     m_iMapEX    = iMapEX - 1;
@@ -1756,6 +1862,10 @@ CPathMgr::CPathMgr( int iMapEX, int iMapEY )
     ClearArray( );
     m_iNextSlot   = 0;
     m_iLowestBoth = 0;
+
+    memset( &m_cs, 0, sizeof( m_cs ) );
+    InitializeCriticalSection( &m_cs );
+    m_bCsInit = TRUE;
 
     return;
 }
@@ -1807,9 +1917,17 @@ BOOL CPathMgr::Init( int iMapEX, int iMapEY )
     */
 
     if ( m_paCells != NULL )
-    {
         delete[] m_paCells;
+    // Null it immediately: if the new[] below throws, the dtor must not delete the freed arena again.
+    m_paCells = NULL;
+
+    // Tear the OLD section down whenever one exists. Keying this off m_paCells meant a
+    // Close()+Init() pair (new game after a game) re-Initialize()d a live section with
+    // no matching Delete. See m_bCsInit in cpathmgr.h.
+    if ( m_bCsInit )
+    {
         DeleteCriticalSection( &m_cs );
+        m_bCsInit = FALSE;
     }
 
     m_paCells = new CCell[m_iNumOfCells];
@@ -1839,6 +1957,7 @@ BOOL CPathMgr::Init( int iMapEX, int iMapEY )
     // private critical section
     memset( &m_cs, 0, sizeof( m_cs ) );
     InitializeCriticalSection( &m_cs );
+    m_bCsInit = TRUE;
 
     return TRUE;
 }
@@ -1858,14 +1977,22 @@ CPathMgr::CPathMgr( void )
     m_iLowestBoth = 0;
     memset( m_acBoth, 0, sizeof( m_acBoth ) );
     m_paCells = NULL;
+    m_bCsInit = FALSE;  // Init() creates m_cs; nothing may enter it before that
+    m_bShadow = FALSE;  // only MarkShadow() ever changes this
 }
 
 CPathMgr::~CPathMgr( )
 {
-    if ( m_paCells != NULL )
+    // Close() nulls m_paCells but leaves m_cs live, so the old "arena != NULL" test
+    // leaked the section on every Close()d instance.
+    if ( m_bCsInit )
+    {
         DeleteCriticalSection( &m_cs );
+        m_bCsInit = FALSE;
+    }
 
     delete[] m_paCells;
+    m_paCells = NULL;
 
     m_mapCell.RemoveAll( );
 }
@@ -2035,5 +2162,364 @@ CCell::CCell( int iX, int iY )
     m_iBothIn    = 0;
     m_bClosed    = 0;
 }
+
+#if EN_PATH_PROBES
+
+////////////////////////////////////////////////////////////////////////////
+//
+//  Pathfinding ladder, step A: the private shadow instance.
+//
+//  Nothing here changes what the game does. One extra CPathMgr runs the same
+//  search over the same inputs right after the production one and the two
+//  answers are compared. It exists to answer, with numbers rather than
+//  argument, whether CPathMgr's search is self-contained enough to be moved
+//  off the main thread - i.e. whether a second instance, fed identical
+//  inputs, produces an identical route.
+//
+//  Everything below is inside EN_PATH_PROBES, and inside that, inert unless
+//  EN_PATH_SHADOW names something.
+//
+////////////////////////////////////////////////////////////////////////////
+
+// A pointer, not a second file-scope object. Three reasons: with EN_PATH_SHADOW
+// unset nothing is constructed at all (a global would cost the m_acBoth array -
+// 32 KB - in every build with probes compiled in, plus a second CCell arena's
+// worth of bookkeeping); there is no static-initialisation-order question against
+// thePathMgr; and "created at Init, destroyed at Close" is then literal instead of
+// implied by a flag.
+static CPathMgr* g_pPathShadow = NULL;
+
+// Effective setting, resolved once. A VALUE is required, not just presence:
+// EN_PATH_SHADOW=0 (and =false, =off, =no, or anything unrecognised) means OFF.
+// Treating any non-empty string as ON made the obvious way to turn the shadow off
+// turn it on instead.
+static int s_iShadowOn      = -1;   // -1 = not resolved yet, 0 = off, 1 = on
+static int s_bShadowAsked   = 0;    // EN_PATH_SHADOW was present in the environment
+
+static void ResolveShadowSwitch( void )
+{
+    if ( s_iShadowOn >= 0 )
+        return;
+
+    const char* pszEnv = getenv( "EN_PATH_SHADOW" );
+    s_bShadowAsked     = ( pszEnv != NULL && pszEnv[0] != '\0' ) ? 1 : 0;
+    s_iShadowOn        = 0;
+    if ( !s_bShadowAsked )
+        return;
+
+    // Accept 1 / true / on / yes, case-insensitively. Everything else is off.
+    char sz[8];
+    int  i = 0;
+    for ( ; i < (int)sizeof( sz ) - 1 && pszEnv[i] != '\0'; ++i )
+        sz[i] = (char)tolower( (unsigned char)pszEnv[i] );
+    sz[i] = '\0';
+
+    if ( strcmp( sz, "1" ) == 0 || strcmp( sz, "true" ) == 0 || strcmp( sz, "on" ) == 0 ||
+         strcmp( sz, "yes" ) == 0 )
+        s_iShadowOn = 1;
+}
+
+BOOL EnPathShadowOn( void )
+{
+    ResolveShadowSwitch( );
+    return ( s_iShadowOn ? TRUE : FALSE );
+}
+
+// One line per shadow event, in the process working directory beside perf.log.
+// Opened SHARED: EN_WAIT_LOG learned that an exclusive open makes a probe log
+// unreadable while the game is running, which is exactly when it is wanted.
+// EN_PATH_SHADOW_LOG renames the file.
+static FILE* s_pShadowLog      = NULL;
+static int   s_iShadowLogTried = 0;
+
+static void ShadowLog( const char* pszFmt, ... )
+{
+    if ( !s_iShadowLogTried )
+    {
+        s_iShadowLogTried   = 1;
+        const char* pszPath = getenv( "EN_PATH_SHADOW_LOG" );
+        if ( pszPath == NULL || pszPath[0] == '\0' )
+            pszPath = "pathshadow.log";
+#ifdef _WIN32
+        s_pShadowLog = _fsopen( pszPath, "w", _SH_DENYNO );
+#else
+        s_pShadowLog = fopen( pszPath, "w" );
+#endif
+    }
+    if ( s_pShadowLog == NULL )
+        return;
+
+    va_list va;
+    va_start( va, pszFmt );
+    vfprintf( s_pShadowLog, pszFmt, va );
+    va_end( va );
+    fputc( '\n', s_pShadowLog );
+    fflush( s_pShadowLog );
+}
+
+static const char* ShadowClassName( int iOutcome )
+{
+    switch ( iOutcome )
+    {
+    case CPathMgr::po_trivial: return ( "trivial" );
+    case CPathMgr::po_ok:      return ( "ok" );
+    case CPathMgr::po_clamped: return ( "clamped" );
+    case CPathMgr::po_nopath:  return ( "nopath" );
+    case CPathMgr::po_blocked: return ( "blocked" );
+    default:                   return ( "none" );
+    }
+}
+
+// "none", "arena", "iter", or "arena+iter" if a search ever managed both.
+static const char* ShadowCapName( BOOL bArena, BOOL bIter )
+{
+    if ( bArena && bIter ) return ( "arena+iter" );
+    if ( bArena )          return ( "arena" );
+    if ( bIter )           return ( "iter" );
+    return ( "none" );
+}
+
+void EnPathShadowInit( int iMapEX, int iMapEY )
+{
+    ResolveShadowSwitch( );
+
+    // Say which arm ran, once, so a tester never has to infer it from counter
+    // presence. Only when the variable was actually SET: an untouched environment
+    // must not cause a log file to appear at all.
+    if ( s_bShadowAsked )
+        ShadowLog( "mpath.shadow: EN_PATH_SHADOW effective=%s", s_iShadowOn ? "on" : "off" );
+
+    if ( !s_iShadowOn )
+        return;
+
+    // A failure to build the shadow must never cost the game a path. Construction and
+    // Init() both allocate (CCell arena, hash table); on any failure the instance is
+    // dropped and every later call counts mpath.shadow.skipped instead of comparing.
+    try
+    {
+        if ( g_pPathShadow == NULL )
+        {
+            g_pPathShadow = new CPathMgr( );
+            g_pPathShadow->MarkShadow( );   // before its first search, and never unset
+        }
+
+        // Same dimensions as thePathMgr, from the same call site, so the arena, the
+        // iHang budget and m_iMapEX/m_iMapEY all match. A different Init() would make
+        // any route difference meaningless.
+        g_pPathShadow->Init( iMapEX, iMapEY );
+    }
+    catch ( ... )
+    {
+        delete g_pPathShadow;
+        g_pPathShadow = NULL;
+        ShadowLog( "[shadow] init FAILED to allocate for map=%dx%d - shadow disabled for this world, "
+                   "production unaffected",
+                   iMapEX, iMapEY );
+        return;
+    }
+
+    // SUBTOTAL, not the instance's full retained footprint. It covers the two fixed
+    // allocations Init() makes that are sized by the map - the CCell arena and the
+    // m_iBoth index array. It does NOT include the CMap hash table's own bucket array,
+    // its per-node CCell* entries, or the EnPoolAllocator free list those nodes are
+    // recycled through (that pool is per-THREAD and shared with the production
+    // instance, so it cannot be attributed to one instance anyway). Bucket count is
+    // printed so the bucket array can be sized separately if step B needs the total.
+    const int    iCells   = ( iMapEX + iMapEY ) * 5;
+    const int    iBuckets = GetPrime( iCells + 1 );
+    const double dArenaKB = (double)( (size_t)iCells * sizeof( CCell ) ) / 1024.0;
+    const double dBothKB  = (double)( ( MAX_BOTH_INDEX + 1 ) * sizeof( CCell* ) ) / 1024.0;
+    ShadowLog( "[shadow] init map=%dx%d  cells=%d  cellSize=%d  arena=%.1f KB  "
+               "bothIndex=%d entries (%.1f KB)  hashBuckets=%d (bucket array, map nodes and the "
+               "per-thread node pool NOT included)  subtotal=%.1f KB",
+               iMapEX, iMapEY, iCells, (int)sizeof( CCell ), dArenaKB,
+               MAX_BOTH_INDEX + 1, dBothKB, iBuckets, dArenaKB + dBothKB );
+}
+
+void EnPathShadowClose( void )
+{
+    if ( g_pPathShadow == NULL )
+        return;
+
+    g_pPathShadow->Close( );
+    delete g_pPathShadow;
+    g_pPathShadow = NULL;
+}
+
+//
+// Run the production search, then the shadow search, compare, and hand the caller
+// the PRODUCTION answer and nothing else.
+//
+CHexCoord* CPathMgr::ShadowGetPath( CVehicle* pVehicle, CHexCoord& hexFrom, CHexCoord& hexTo, int& iPathLen,
+                                    int iVehType, BOOL bVehBlock, BOOL bDirectPath )
+{
+    // Snapshot the request as it was MADE. _GetPath does not write through these
+    // references today (it copies into m_hexFrom/m_hexTo and adjusts those), but the
+    // shadow must be fed the original request, not whatever production left behind.
+    CHexCoord hexShFrom = hexFrom;
+    CHexCoord hexShTo   = hexTo;
+
+    // @WinAstra's pre-call state rule. The one piece of per-vehicle state _GetPath
+    // writes is the re-clamp watch (vehicle.h m_hexLastClamp, probe-only). Save it
+    // BEFORE production, rewind to it for the shadow so the shadow sees the vehicle
+    // production saw, then put production's result back. The vehicle must end this
+    // call exactly as it ends it with the shadow switched off.
+    const BOOL bVeh = ( pVehicle != NULL );
+    CHexCoord  hexClampPre;
+    if ( bVeh )
+        hexClampPre = pVehicle->m_hexLastClamp;
+
+    // Arm the verdict slot. GetPathProd fills it INSIDE m_cs and clears the pointer;
+    // reading m_iProbeOutcome / the cap flags after the lock is released would race an
+    // AI worker's next search on this same instance.
+    VERDICT vProd;
+    t_pPathVerdict = &vProd;
+
+    CHexCoord* phcProd = GetPathProd( pVehicle, hexFrom, hexTo, iPathLen, iVehType, bVehBlock, bDirectPath );
+
+    t_pPathVerdict = NULL;   // belt: GetPathProd always clears it, but never leave it armed
+
+    if ( bVeh )
+        pVehicle->m_hexLastClamp = hexClampPre;   // rewind for the shadow
+
+    if ( g_pPathShadow == NULL || g_pPathShadow->m_paCells == NULL )
+    {
+        // The switch is on but there is no usable shadow (allocation failed, or the
+        // world was Closed under us). Say so out loud - a missing comparison must not
+        // read as a comparison that passed.
+        Perf::CounterInc( "mpath.shadow.skipped" );
+    }
+    else
+    {
+        int        iShLen    = 0;
+        CHexCoord* phcShadow = NULL;
+        VERDICT    vSh;
+        BOOL       bRan      = FALSE;
+
+        // The SHADOW's own section - never this instance's, which GetPathProd has
+        // already taken and released. Held across the whole private search so the
+        // second instance is serialised exactly as the first one is, and its verdict
+        // is read before the lock drops. Lock order is only ever production-then-
+        // shadow, so there is no cycle.
+        EnterCriticalSection( &g_pPathShadow->m_cs );
+        try
+        {
+            phcShadow      = g_pPathShadow->_GetPath( pVehicle, hexShFrom, hexShTo, iShLen, iVehType, bVehBlock,
+                                                      bDirectPath );
+            vSh.iClass     = g_pPathShadow->m_iProbeOutcome;
+            vSh.bCapArena  = g_pPathShadow->m_bProbeCapArena;
+            vSh.bCapIter   = g_pPathShadow->m_bProbeCapIter;
+            vSh.iPathLen   = iShLen;
+            vSh.bHaveClamp = bVeh;
+            if ( bVeh )
+                vSh.hexClamp = pVehicle->m_hexLastClamp;
+            bRan = TRUE;
+        }
+        catch ( ... )
+        {
+            // The shadow's own allocation (CreateHexPath's new CHexCoord[]) or anything
+            // else it throws must not reach the caller: production already has its
+            // answer and it is still valid.
+            phcShadow = NULL;
+        }
+        LeaveCriticalSection( &g_pPathShadow->m_cs );
+
+        if ( !bRan )
+        {
+            Perf::CounterInc( "mpath.shadow.skipped" );
+        }
+        else
+        {
+            Perf::CounterInc( "mpath.shadow.cmp" );
+
+            // Coverage, by the PRODUCTION class: a diff of 0 means nothing until these
+            // show the comparison actually visited each exit.
+            switch ( vProd.iClass )
+            {
+            case po_ok:      Perf::CounterInc( "mpath.shadow.ok" );      break;
+            case po_clamped: Perf::CounterInc( "mpath.shadow.clamped" ); break;
+            case po_nopath:  Perf::CounterInc( "mpath.shadow.nopath" );  break;
+            case po_trivial: Perf::CounterInc( "mpath.shadow.trivial" ); break;
+            case po_blocked: Perf::CounterInc( "mpath.shadow.blocked" ); break;
+            default:         Perf::CounterInc( "mpath.shadow.unclassed" ); break;
+            }
+            if ( vProd.bCapArena ) Perf::CounterInc( "mpath.shadow.cap.arena" );
+            if ( vProd.bCapIter )  Perf::CounterInc( "mpath.shadow.cap.iter" );
+
+            // Equality is EVERY promised output, not just the hexes:
+            //   - both NULL or both non-NULL
+            //   - the reported iPathLen, raw, exactly as each handed it back (NOT
+            //     normalised to 0 on a NULL route: a NULL route that leaves a stale
+            //     non-zero length behind is itself a difference worth seeing)
+            //   - every hex, for all iPathLen entries
+            //   - the exit class
+            //   - the termination reason (arena cap vs iteration cap vs neither)
+            //   - the vehicle's clamp post-state
+            BOOL bEqual     = TRUE;
+            int  iFirstDiff = -1;
+            if ( ( phcProd == NULL ) != ( phcShadow == NULL ) )
+                bEqual = FALSE;
+            if ( vProd.iPathLen != vSh.iPathLen )
+                bEqual = FALSE;
+            else if ( phcProd != NULL && phcShadow != NULL )
+            {
+                for ( int i = 0; i < vProd.iPathLen; ++i )
+                    if ( phcProd[i] != phcShadow[i] )
+                    {
+                        bEqual     = FALSE;
+                        iFirstDiff = i;
+                        break;
+                    }
+            }
+            if ( vProd.iClass != vSh.iClass )
+                bEqual = FALSE;
+            if ( vProd.bCapArena != vSh.bCapArena || vProd.bCapIter != vSh.bCapIter )
+                bEqual = FALSE;
+            if ( vProd.bHaveClamp && vSh.bHaveClamp && vProd.hexClamp != vSh.hexClamp )
+                bEqual = FALSE;
+
+            if ( !bEqual )
+            {
+                Perf::CounterInc( "mpath.shadow.diff" );
+
+                static int s_iDiffLogged = 0;   // main-thread only, like the rest of this
+                if ( s_iDiffLogged < 64 )
+                {
+                    ++s_iDiffLogged;
+                    const int iType = ( bVeh && pVehicle->GetData( ) != NULL )
+                                          ? (int)pVehicle->GetData( )->GetType( )
+                                          : iVehType;
+                    ShadowLog( "[shadow] DIFF #%d  from=%d,%d to=%d,%d  vehType=%d  "
+                               "prodLen=%d shLen=%d  prodNull=%d shNull=%d  prodClass=%s shClass=%s  "
+                               "prodCap=%s shCap=%s  prodClamp=%d,%d shClamp=%d,%d  "
+                               "firstDiff=%d  direct=%d vehBlock=%d",
+                               s_iDiffLogged, hexShFrom.X( ), hexShFrom.Y( ), hexShTo.X( ), hexShTo.Y( ), iType,
+                               vProd.iPathLen, vSh.iPathLen, phcProd == NULL ? 1 : 0, phcShadow == NULL ? 1 : 0,
+                               ShadowClassName( vProd.iClass ), ShadowClassName( vSh.iClass ),
+                               ShadowCapName( vProd.bCapArena, vProd.bCapIter ),
+                               ShadowCapName( vSh.bCapArena, vSh.bCapIter ),
+                               vProd.bHaveClamp ? vProd.hexClamp.X( ) : -1,
+                               vProd.bHaveClamp ? vProd.hexClamp.Y( ) : -1,
+                               vSh.bHaveClamp ? vSh.hexClamp.X( ) : -1,
+                               vSh.bHaveClamp ? vSh.hexClamp.Y( ) : -1,
+                               iFirstDiff, bDirectPath ? 1 : 0, bVehBlock ? 1 : 0 );
+                }
+            }
+        }
+
+        // The shadow route is ours and nobody else's; free it here, exactly once.
+        // The production route belongs to the caller and is never touched.
+        if ( phcShadow != NULL )
+            delete[] phcShadow;
+    }
+
+    // Put the vehicle back the way production left it, on every path out of here.
+    if ( bVeh )
+        pVehicle->m_hexLastClamp = vProd.bHaveClamp ? vProd.hexClamp : hexClampPre;
+
+    return ( phcProd );
+}
+
+#endif  // EN_PATH_PROBES
 
 // end of CPathMgr.cpp

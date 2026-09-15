@@ -67,6 +67,7 @@ __pycache__/
 
 # Native fixture build output (tests/traffic, tests/orders)
 /tests/traffic/remote-loc-out/
+/tests/path/pathmgr-out/
 /tests/orders/lifecycle-out/
 /tests/orders/dragplace-out/
 /tests/orders/roadghost-out/
