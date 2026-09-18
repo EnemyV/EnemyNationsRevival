@@ -2263,6 +2263,44 @@ static const char* ShadowCapName( BOOL bArena, BOOL bIter )
     return ( "none" );
 }
 
+// A route as "x,y x,y ...", capped so one pathological path cannot fill the log. The
+// cap is reported in the line itself (+N more) rather than silently truncating.
+enum { kShadowRouteCap = 128 };
+
+static void ShadowRouteStr( char* pszOut, size_t cbOut, CHexCoord const* pHex, int iLen )
+{
+    if ( cbOut == 0 )
+        return;
+    pszOut[0] = '\0';
+    if ( pHex == NULL )
+    {
+        strncpy( pszOut, "(null)", cbOut - 1 );
+        pszOut[cbOut - 1] = '\0';
+        return;
+    }
+
+    size_t    cb    = 0;
+    const int iShow = ( iLen > (int)kShadowRouteCap ) ? (int)kShadowRouteCap : iLen;
+    for ( int i = 0; i < iShow; ++i )
+    {
+        char sz[32];
+        sprintf( sz, "%s%d,%d", i ? " " : "", pHex[i].X( ), pHex[i].Y( ) );
+        const size_t cbAdd = strlen( sz );
+        if ( cb + cbAdd + 1 >= cbOut )
+            break;
+        memcpy( pszOut + cb, sz, cbAdd + 1 );
+        cb += cbAdd;
+    }
+    if ( iShow < iLen )
+    {
+        char sz[32];
+        sprintf( sz, " +%d more", iLen - iShow );
+        const size_t cbAdd = strlen( sz );
+        if ( cb + cbAdd + 1 < cbOut )
+            memcpy( pszOut + cb, sz, cbAdd + 1 );
+    }
+}
+
 void EnPathShadowInit( int iMapEX, int iMapEY )
 {
     ResolveShadowSwitch( );
@@ -2398,6 +2436,14 @@ CHexCoord* CPathMgr::ShadowGetPath( CVehicle* pVehicle, CHexCoord& hexFrom, CHex
             }
         }
 
+        // The two epochs AS OF THIS SEARCH, read once, before the shadow runs. epochAge
+        // is how many world writes landed since the snapshot was built - 0 means the
+        // snapshot IS this world and a diff cannot be blamed on its age.
+        const uint64_t uWorldEpoch = g_enNavEpoch;
+        const uint64_t uSnapEpoch  = ptrSnap ? ptrSnap->Epoch( ) : 0;
+        const uint64_t uEpochAge   = ptrSnap ? ( uWorldEpoch - uSnapEpoch ) : 0;
+        const BOOL     bStaleSnap  = ( ptrSnap && ( uSnapEpoch != uWorldEpoch ) ) ? TRUE : FALSE;
+
         // The SHADOW's own section - never this instance's, which GetPathProd has
         // already taken and released. Held across the whole private search so the
         // second instance is serialised exactly as the first one is, and its verdict
@@ -2449,7 +2495,7 @@ CHexCoord* CPathMgr::ShadowGetPath( CVehicle* pVehicle, CHexCoord& hexFrom, CHex
                 // The world moved between the snapshot and this search, so a diff on
                 // this comparison may be the age and not the view. Counted, never
                 // excused: the diff still lands in mpath.shadow.diff.
-                if ( ptrSnap->Epoch( ) != g_enNavEpoch )
+                if ( bStaleSnap )
                     Perf::CounterInc( "mpath.shadow.stale" );
             }
 
@@ -2482,9 +2528,13 @@ CHexCoord* CPathMgr::ShadowGetPath( CVehicle* pVehicle, CHexCoord& hexFrom, CHex
                 bEqual = FALSE;
             if ( vProd.iPathLen != vSh.iPathLen )
                 bEqual = FALSE;
-            else if ( phcProd != NULL && phcShadow != NULL )
+            // firstDiff is over the COMMON PREFIX, so two routes of different length
+            // still say where they parted; -1 now means "the common prefix is
+            // identical" and nothing else.
+            if ( phcProd != NULL && phcShadow != NULL )
             {
-                for ( int i = 0; i < vProd.iPathLen; ++i )
+                const int iCommon = __min( vProd.iPathLen, vSh.iPathLen );
+                for ( int i = 0; i < iCommon; ++i )
                     if ( phcProd[i] != phcShadow[i] )
                     {
                         bEqual     = FALSE;
@@ -2521,10 +2571,26 @@ CHexCoord* CPathMgr::ShadowGetPath( CVehicle* pVehicle, CHexCoord& hexFrom, CHex
                     const int iType = ( bVeh && pVehicle->GetData( ) != NULL )
                                           ? (int)pVehicle->GetData( )->GetType( )
                                           : iVehType;
+                    // Only a real diff gets the two routes; the onestep shape is already
+                    // understood and would only pad the log.
+                    static char s_szProd[1400];
+                    static char s_szSh[1400];
+                    if ( bOneStep )
+                    {
+                        s_szProd[0] = '\0';
+                        s_szSh[0]   = '\0';
+                    }
+                    else
+                    {
+                        ShadowRouteStr( s_szProd, sizeof( s_szProd ), phcProd, vProd.iPathLen );
+                        ShadowRouteStr( s_szSh, sizeof( s_szSh ), phcShadow, vSh.iPathLen );
+                    }
+
                     ShadowLog( "[shadow] DIFF #%d  from=%d,%d to=%d,%d  vehType=%d  "
                                "prodLen=%d shLen=%d  prodNull=%d shNull=%d  prodClass=%s shClass=%s  "
                                "prodCap=%s shCap=%s  prodClamp=%d,%d shClamp=%d,%d  "
-                               "firstDiff=%d  direct=%d vehBlock=%d",
+                               "firstDiff=%d  direct=%d vehBlock=%d  "
+                               "snap=%d stale=%d epochAge=%llu snapEpoch=%llu worldEpoch=%llu%s%s%s%s",
                                s_iDiffLogged, hexShFrom.X( ), hexShFrom.Y( ), hexShTo.X( ), hexShTo.Y( ), iType,
                                vProd.iPathLen, vSh.iPathLen, phcProd == NULL ? 1 : 0, phcShadow == NULL ? 1 : 0,
                                ShadowClassName( vProd.iClass ), ShadowClassName( vSh.iClass ),
@@ -2534,7 +2600,12 @@ CHexCoord* CPathMgr::ShadowGetPath( CVehicle* pVehicle, CHexCoord& hexFrom, CHex
                                vProd.bHaveClamp ? vProd.hexClamp.Y( ) : -1,
                                vSh.bHaveClamp ? vSh.hexClamp.X( ) : -1,
                                vSh.bHaveClamp ? vSh.hexClamp.Y( ) : -1,
-                               iFirstDiff, bDirectPath ? 1 : 0, bVehBlock ? 1 : 0 );
+                               iFirstDiff, bDirectPath ? 1 : 0, bVehBlock ? 1 : 0,
+                               ptrSnap ? 1 : 0, bStaleSnap ? 1 : 0,
+                               (unsigned long long)uEpochAge, (unsigned long long)uSnapEpoch,
+                               (unsigned long long)uWorldEpoch,
+                               bOneStep ? "" : "\n  prod:   ", bOneStep ? "" : s_szProd,
+                               bOneStep ? "" : "\n  shadow: ", bOneStep ? "" : s_szSh );
                 }
             }
         }
