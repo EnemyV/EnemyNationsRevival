@@ -218,6 +218,13 @@ public:
 	void SearchSnapshot ( PathWorld const & pw, CHexCoord hexFrom, CHexCoord hexTo, int iVehType,
 	                      BOOL bVehBlock, BOOL bDirectPath, SNAPSEARCH & out );
 
+	// Step D verification, main thread, probes-gated and inert unless
+	// EN_PATH_ASYNC_VERIFY names a value: run the same request synchronously against
+	// the LIVE world on the private shadow instance and diff it against the route
+	// being installed. Counts pa.verify.cmp / pa.verify.diff / pa.verify.diff.stale.
+	static void AsyncVerify ( CVehicle * pVehicle, CHexCoord const & hexFrom, CHexCoord const & hexTo,
+	                          BOOL bVehBlock, CHexCoord const * phexInstall, int iInstallLen, BOOL bStale );
+
 	void		NewBoth ( CCell * pTest );
 
 	//

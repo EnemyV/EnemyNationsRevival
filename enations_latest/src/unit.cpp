@@ -16,6 +16,8 @@
 #include "lastplnt.h"
 #include "cpathmgr.h"
 #include "ennavview.h"
+#include "pathservice.h"
+#include "pathworld.h"
 #include "netapi.h"
 #include "player.h"
 #include "sprite.h"
@@ -3402,6 +3404,12 @@ void CVehicle::KickStart( )
 void CVehicle::DeletePath( )
 {
 
+    // THE cancellation funnel. Every reason the plan lists for dropping a pending
+    // request - a new destination (SetDestAndMode), a stop (ArrivedDest), a detour
+    // handed off - throws the route away here, and an answer to a question whose
+    // route has been thrown away is not wanted.
+    ClearPathPending( "path" );
+
     delete[] m_phexPath;
     m_phexPath = NULL;
     m_iPathOff = m_iPathLen = 0;
@@ -3438,7 +3446,162 @@ BOOL CVehicle::HavePath( ) const
     return ( FALSE );
 }
 
-void CVehicle::GetPath( BOOL bNoOcc )
+////////////////////////////////////////////////////////////////////////////
+//
+//  Pathfinding ladder, step D: the mover's search runs on a worker and the
+//  answer is installed on the main thread a later tick.
+//
+//  Everything below runs on the MAIN thread. The worker owns nothing but its
+//  request's immutable snapshot; no live object is reachable from it.
+//
+//  Off unless BOTH EN_PATH_WORKER and EN_PATH_ASYNC name a value - with either
+//  absent PathAsyncEligible answers FALSE for every vehicle and the movement
+//  path is byte for byte what it was.
+//
+////////////////////////////////////////////////////////////////////////////
+
+// Bumped once per main-loop tick by the drain, so a wait can be reported in ticks
+// without a second clock.
+static uint64_t g_uPathAsyncTick = 0;
+
+uint64_t EnPathAsyncTick( void )
+{
+    return ( g_uPathAsyncTick );
+}
+
+enum { kPathAsyncMaxRetries = 3 };
+
+//
+// THE eligibility predicate. Widening the scope (human owners, bVehBlock searches -
+// plan section 3, phase 5) is a change here and nowhere else.
+//
+static BOOL PathAsyncEligible( CVehicle const* pVeh, BOOL bVehBlock )
+{
+    // Submit, the pending state and the install are all main-thread contracts. The
+    // movement A* is a main-thread caller today; say so here rather than rely on it.
+    if ( !PathService::AsyncEnabled( ) || !thePathService.IsRunning( ) || !Perf::IsMainThread( ) )
+        return ( FALSE );
+
+    // v1 scope, plan section 1.2 D1/D3: occupancy-aware searches keep their
+    // synchronous answer, and the mover must be an AI's local vehicle.
+    if ( bVehBlock )
+    {
+        Perf::CounterInc( "pa.ineligible" );
+        return ( FALSE );
+    }
+
+    std::shared_ptr<const PathWorld> ptrSnap = PathWorld::Current( );
+    if ( !ptrSnap || ( ptrSnap->Generation( ) != EnNavGameGeneration( ) ) )
+    {
+        Perf::CounterInc( "pa.ineligible" );
+        return ( FALSE );
+    }
+
+    CPlayer const* pOwner = pVeh->GetOwner( );
+    if ( ( pOwner == NULL ) || !pOwner->IsLocal( ) || !pOwner->IsAI( ) )
+    {
+        Perf::CounterInc( "pa.ineligible" );
+        return ( FALSE );
+    }
+
+    Perf::CounterInc( "pa.eligible" );
+    return ( TRUE );
+}
+
+//
+// Build the request exactly as the step-C submit does and hand it to the pool.
+// Returns 0 when the queue refused it, and the caller then searches synchronously.
+//
+static uint64_t EnPathAsyncSubmit( CVehicle* pVeh, CHexCoord const& hexFrom, CHexCoord const& hexTo,
+                                   BOOL bVehBlock )
+{
+    std::shared_ptr<const PathWorld> ptrSnap = PathWorld::Current( );
+    if ( !ptrSnap )
+        return ( 0 );
+
+    PathRequest req;
+    req.gameGeneration  = EnNavGameGeneration( );
+    req.vehicleId       = (uint32_t)pVeh->GetID( );
+    req.orderGeneration = (uint32_t)pVeh->GetOrderGen( );
+    req.from            = hexFrom;
+    req.to              = hexTo;
+    // NOT GetData()->GetType(): the index is the slot in theTransports, which is what
+    // GetTransportData() takes. tests/path/run-pathservice.py pins the round trip.
+    req.iVehType    = theTransports.GetIndex( pVeh->GetData( ) );
+    req.bVehBlock   = bVehBlock;
+    req.bDirectPath = FALSE;   // the mover's thePathMgr.GetPath call takes the default
+    req.tSubmit     = Perf::NowIfEnabled( );
+    req.world       = ptrSnap;
+
+    const uint64_t uId = thePathService.Submit( req );
+    if ( uId == 0 )
+    {
+        Perf::CounterInc( "pa.fallback.submit" );
+        return ( 0 );
+    }
+
+    Perf::CounterInc( "pa.submit" );
+    return ( uId );
+}
+
+//
+// The live-world legality gates a search applies to a step, in the shape
+// CPathMgr::GetCellCosts applies them (cpathmgr.cpp GetCellCosts): the hex must be
+// travelable, coastline is closed to most wheel types short of the destination, and a
+// bridge at either end adds the deck-direction test with the same bOnWater expression.
+//
+static BOOL PathStepLegalLive( CTransportData const* pTD, CEnLiveNavView const& view, CHexCoord const& hexFrom,
+                               CHexCoord const& hexDest, CHexCoord const& hexTo )
+{
+    CEnHexFacts const fDest = view.GetHex( hexDest );
+    if ( !fDest.IsValid( ) )
+        return ( FALSE );
+
+    if ( !pTD->CanTravelHex( view, hexDest ) )
+        return ( FALSE );
+
+    if ( fDest.GetType( ) == CHex::coastline )
+        if ( ( pTD->GetWheelType( ) != CWheelTypes::walk ) && ( pTD->GetWheelType( ) != CWheelTypes::hover ) &&
+             ( pTD->GetType( ) != CTransportData::gun_boat ) &&
+             ( pTD->GetType( ) != CTransportData::landing_craft ) && ( hexDest != hexTo ) )
+            if ( !( fDest.GetUnits( ) & CHex::bridge ) )
+                return ( FALSE );
+
+    CEnHexFacts const fFrom = view.GetHex( hexFrom );
+    if ( !fFrom.IsValid( ) )
+        return ( FALSE );
+
+    if ( ( fDest.GetUnits( ) & CHex::bridge ) || ( fFrom.GetUnits( ) & CHex::bridge ) )
+    {
+        BOOL bOnWater = ( pTD->GetWheelType( ) == CWheelTypes::water ) ||
+                        ( fFrom.IsWater( ) & ( ( fFrom.GetUnits( ) & CHex::bridge ) == 0 ) );
+        if ( !pTD->CanEnterHex( view, hexFrom, hexDest, bOnWater ) )
+            return ( FALSE );
+    }
+
+    return ( TRUE );
+}
+
+void CVehicle::ClearPathPending( char const* pszReason )
+{
+    if ( m_dwPathReqId == 0 )
+        return;
+
+    m_dwPathReqId  = 0;
+    m_uPathReqTick = 0;
+    m_iPathRetries = 0;
+
+    if ( pszReason != NULL )
+    {
+        // One counter per reason, built here rather than at the call sites so the
+        // "pa.cancel." prefix cannot drift between them. Perf copies the name.
+        char szName[48];
+        snprintf( szName, sizeof( szName ), "pa.cancel.%s", pszReason );
+        Perf::CounterInc( szName );
+    }
+}
+
+void CVehicle::GetPath( BOOL bNoOcc, BOOL bAllowAsync )
 {
 
 #ifdef _DEBUG
@@ -3446,17 +3609,23 @@ void CVehicle::GetPath( BOOL bNoOcc )
     ASSERT( theGame.IsNetGame( ) || GetOwner( )->IsLocal( ) );  // MP: client simulates remote units (Task#14)
 #endif
 
+    // An answer to this vehicle's question is already in flight. A second request
+    // would race the first and the loser would be installed over the winner.
+    if ( m_dwPathReqId != 0 )
+    {
+        Perf::CounterInc( "pa.pending.skip" );
+        return;
+    }
+
     CHexCoord _dest;
     if ( ( m_iPathOff >= m_iPathLen ) && ( m_iPathLen > 0 ) )
         _dest = *( m_phexPath + m_iPathLen - 1 );
     else
         _dest = m_hexDest;
 
-    // get the path
-    delete[] m_phexPath;
-    m_iPathOff = 0;
-
-    // for a building we use the exit hex as the src/dest
+    // for a building we use the exit hex as the src/dest. Hoisted above the delete
+    // below - which it does not depend on - so the async submit can build its request
+    // from the same two hexes the synchronous search would have been given.
     CHexCoord  _hexSrc = GetHexHead( );
     CBuilding* pBldg   = theBuildingHex._GetBuilding( _hexSrc );
     if ( ( pBldg != NULL ) && ( pBldg->GetOwner( ) == GetOwner( ) ) )
@@ -3468,24 +3637,46 @@ void CVehicle::GetPath( BOOL bNoOcc )
         _hexDest = pBldg->GetExit( GetData( )->GetWheelType( ) );
 
     // get the path (fake one up if same or adjoining)
-    int xDif = CHexCoord::Diff( _hexDest.X( ) - _hexSrc.X( ) );
-    int yDif = CHexCoord::Diff( _hexDest.Y( ) - _hexSrc.Y( ) );
-    if ( ( abs( xDif ) <= 1 ) && ( abs( yDif ) <= 1 ) )
+    int        xDif      = CHexCoord::Diff( _hexDest.X( ) - _hexSrc.X( ) );
+    int        yDif      = CHexCoord::Diff( _hexDest.Y( ) - _hexSrc.Y( ) );
+    const BOOL bAdjacent = ( ( abs( xDif ) <= 1 ) && ( abs( yDif ) <= 1 ) ) ? TRUE : FALSE;
+
+    // The adjacent case is not a search, so it never goes to a worker.
+    if ( !bAdjacent && bAllowAsync && PathAsyncEligible( this, bNoOcc ) )
     {
-        m_phexPath  = new CHexCoord[3];
-        *m_phexPath = _hexSrc;
-        m_iPathLen  = 1;
+        const uint64_t uId = EnPathAsyncSubmit( this, _hexSrc, _hexDest, bNoOcc );
+        if ( uId != 0 )
+        {
+            // Nothing about this vehicle changes but the fact that it is waiting: the
+            // route, the offset and the route mode are exactly as the caller left them.
+            m_dwPathReqId  = uId;
+            m_uPathReqTick = EnPathAsyncTick( );
+            return;
+        }
+    }
+
+    // get the path
+    delete[] m_phexPath;
+    m_iPathOff = 0;
+
+    CHexCoord* phexNew = NULL;
+    int        iLenNew = 0;
+    if ( bAdjacent )
+    {
+        phexNew  = new CHexCoord[3];
+        *phexNew = _hexSrc;
+        iLenNew  = 1;
         CHexCoord _tmp( _hexSrc.X( ) + xDif, _hexSrc.Y( ) + yDif );
         _tmp.Wrap( );
-        if ( *m_phexPath != _tmp )
+        if ( *phexNew != _tmp )
         {
-            *( m_phexPath + 1 ) = _tmp;
-            m_iPathLen          = 2;
+            *( phexNew + 1 ) = _tmp;
+            iLenNew          = 2;
         }
-        if ( *( m_phexPath + m_iPathLen - 1 ) != _hexDest )
+        if ( *( phexNew + iLenNew - 1 ) != _hexDest )
         {
-            *( m_phexPath + 1 ) = _hexDest;
-            m_iPathLen++;
+            *( phexNew + 1 ) = _hexDest;
+            iLenNew++;
         }
     }
     else
@@ -3497,8 +3688,21 @@ void CVehicle::GetPath( BOOL bNoOcc )
         // every short move and a full A* on every one-hex step. Every measurement taken
         // between 03:05Z and this fix was on a build that manufactured searches.
         Perf::CounterInc( "pq.veh" );   // BURST PROBE: CVehicle::GetPath, ordinary movement route
-        m_phexPath = thePathMgr.GetPath( this, _hexSrc, _hexDest, m_iPathLen, 0, bNoOcc );
+        phexNew = thePathMgr.GetPath( this, _hexSrc, _hexDest, iLenNew, 0, bNoOcc );
     }
+
+    ApplyPathResult( phexNew, iLenNew, _hexDest, _dest );
+}
+
+//
+// The post-search half of GetPath, verbatim. The synchronous search and the worker
+// install both come through here, so the two cannot drift.
+//
+void CVehicle::ApplyPathResult( CHexCoord* phexPath, int iPathLen, CHexCoord const& hexDest,
+                                CHexCoord const& hexPrevEnd )
+{
+    m_phexPath = phexPath;
+    m_iPathLen = iPathLen;
 
     // if we have no path we're stuck
     if ( ( m_iPathLen <= 0 ) || ( ( m_iPathLen > 1 ) && ( *m_phexPath == *( m_phexPath + m_iPathLen - 1 ) ) ) )
@@ -3526,7 +3730,7 @@ void CVehicle::GetPath( BOOL bNoOcc )
 
     // is it the same as last time?
     CHexCoord _newDest( *( m_phexPath + m_iPathLen - 1 ) );
-    if ( ( _newDest != _hexDest ) && ( _newDest == m_hexLastDest ) )
+    if ( ( _newDest != hexDest ) && ( _newDest == m_hexLastDest ) )
     {
         delete[] m_phexPath;
         m_phexPath = NULL;
@@ -3535,7 +3739,7 @@ void CVehicle::GetPath( BOOL bNoOcc )
         if ( !m_cOwn && theBuildingHex._GetBuilding( m_ptHead ) != NULL )
         {
             _SetRouteMode( cant_deploy );
-            m_hexLastDest = _dest;
+            m_hexLastDest = hexPrevEnd;
             return;
         }
         _SetRouteMode( blocked );
@@ -3545,7 +3749,217 @@ void CVehicle::GetPath( BOOL bNoOcc )
         logPrintf( LOG_PRI_USEFUL, LOG_VEH_MOVE, "Vehicle %d can't reach dest, same path as 2 ago", GetID( ) );
 #endif
     }
-    m_hexLastDest = _dest;
+    m_hexLastDest = hexPrevEnd;
+}
+
+//
+// One popped worker answer, on the main thread. Validate it, then either install it
+// through ApplyPathResult or free it and let the vehicle's next GetPath re-search.
+// res.path is always disposed of here - either transferred to the vehicle or freed.
+//
+void CVehicle::InstallPathResult( PathResult& res )
+{
+    // Identity first, then the question that was asked, then the world it was
+    // asked about (plan section 2.5).
+    if ( res.gameGeneration != EnNavGameGeneration( ) )
+    {
+        Perf::CounterInc( "pa.reject.gen" );
+        if ( res.requestId == m_dwPathReqId )
+            ClearPathPending( NULL );
+        PathService::FreeResult( res );
+        return;
+    }
+
+    if ( res.requestId != m_dwPathReqId )
+    {
+        // Cancelled, superseded, or evicted: this vehicle is no longer asking.
+        Perf::CounterInc( "pa.reject.id" );
+        PathService::FreeResult( res );
+        return;
+    }
+
+    if ( res.orderGeneration != (uint32_t)m_dwOrderGen )
+    {
+        Perf::CounterInc( "pa.reject.order" );
+        ClearPathPending( NULL );
+        PathService::FreeResult( res );
+        return;
+    }
+
+    CPlayer const* pOwner = GetOwner( );
+    if ( ( pOwner == NULL ) || !pOwner->IsLocal( ) || !pOwner->IsAI( ) )
+    {
+        Perf::CounterInc( "pa.reject.owner" );
+        ClearPathPending( NULL );
+        PathService::FreeResult( res );
+        return;
+    }
+
+    // The two hexes the search was given, recomputed the way GetPath computes them.
+    // Neither can have moved while the vehicle was pending: a new destination bumps
+    // m_dwOrderGen, which is rejected above, and a pending vehicle does not advance.
+    CHexCoord  hexSrc = GetHexHead( );
+    CBuilding* pBldg  = theBuildingHex._GetBuilding( hexSrc );
+    if ( ( pBldg != NULL ) && ( pBldg->GetOwner( ) == GetOwner( ) ) )
+        hexSrc = pBldg->GetExit( GetData( )->GetWheelType( ) );
+
+    CHexCoord hexDest = GetHexDest( );
+    pBldg             = theBuildingHex._GetBuilding( hexDest );
+    if ( ( pBldg != NULL ) && ( pBldg->GetOwner( ) == GetOwner( ) ) )
+        hexDest = pBldg->GetExit( GetData( )->GetWheelType( ) );
+
+    const BOOL bStale = ( res.worldEpoch != g_enNavEpoch ) ? TRUE : FALSE;
+    if ( bStale )
+        Perf::CounterInc( "pa.stale" );
+
+    BOOL bHaveRoute = ( res.success && ( res.path != NULL ) && ( res.pathLen > 0 ) ) ? TRUE : FALSE;
+    BOOL bRetry     = FALSE;
+
+    if ( bStale )
+    {
+        if ( !bHaveRoute )
+            // A failure computed on a world that has since moved is not evidence that
+            // the vehicle is stuck. Ask again on the current snapshot rather than
+            // marking it blocked on a stale answer (plan section 2.5, Sol section 34).
+            bRetry = TRUE;
+        else
+        {
+            const CEnLiveNavView viewLive;
+            CHexCoord const      hexEnd = res.path[res.pathLen - 1];
+            CHexCoord            hexPrev( hexSrc );
+            for ( int i = 0; i < res.pathLen; ++i )
+            {
+                if ( !PathStepLegalLive( GetData( ), viewLive, hexPrev, res.path[i], hexEnd ) )
+                {
+                    bRetry = TRUE;
+                    break;
+                }
+                hexPrev = res.path[i];
+            }
+            if ( bRetry )
+                Perf::CounterInc( "pa.stale.illegal" );
+        }
+    }
+
+    if ( bRetry )
+    {
+        PathService::FreeResult( res );
+        const int iRetries = m_iPathRetries + 1;
+        ClearPathPending( NULL );
+        if ( iRetries >= (int)kPathAsyncMaxRetries )
+        {
+            // No vehicle starves on retries: search now, on this thread, and let the
+            // ordinary post-search half answer.
+            Perf::CounterInc( "pa.fallback.retries" );
+            GetPath( FALSE, FALSE );
+            KickStart( );
+        }
+        else
+        {
+            m_iPathRetries = iRetries;
+            Perf::CounterInc( "pa.retry" );
+        }
+        return;
+    }
+
+    // Sol F-015: _GetPath's foot rejects a one-step route whose single hex is occupied
+    // or can no longer be travelled, and the worker applied that to the SNAPSHOT. Run
+    // the same test against the live world; failing it means the answer IS "no path",
+    // which is what the synchronous search would have handed back here.
+    if ( bHaveRoute && ( res.pathLen == 1 ) )
+    {
+        const CEnLiveNavView viewLive;
+        CHexCoord const      hexOne( res.path[0].X( ), res.path[0].Y( ) );
+        CEnHexFacts const    fDest = viewLive.GetHex( hexOne );
+        if ( fDest.IsValid( ) )
+        {
+            BYTE bUnits = fDest.GetUnits( );
+            if ( ( bUnits & ( CHex::ul | CHex::ur | CHex::ll | CHex::lr ) ) ||
+                 !GetData( )->CanTravelHex( viewLive, hexOne ) )
+            {
+                Perf::CounterInc( "pa.onestep.reject" );
+                delete[] res.path;
+                res.path    = NULL;
+                res.pathLen = 0;
+                bHaveRoute  = FALSE;
+            }
+        }
+    }
+
+    CPathMgr::AsyncVerify( this, hexSrc, hexDest, FALSE, res.path, res.pathLen, bStale );
+
+    CHexCoord hexPrevEnd;
+    if ( ( m_iPathOff >= m_iPathLen ) && ( m_iPathLen > 0 ) )
+        hexPrevEnd = *( m_phexPath + m_iPathLen - 1 );
+    else
+        hexPrevEnd = m_hexDest;
+
+    Perf::CounterInc( "pa.install" );
+    Perf::CounterAdd( "pa.wait.ticks", (int64_t)( g_uPathAsyncTick - m_uPathReqTick ) );
+
+    // Ownership of the route transfers to the vehicle exactly as the synchronous
+    // path's does - the same delete[] and the same m_iPathOff reset GetPath makes.
+    CHexCoord* phexNew = res.path;
+    const int  iLenNew = res.pathLen;
+    res.path           = NULL;
+    res.pathLen        = 0;
+
+    ClearPathPending( NULL );
+
+    delete[] m_phexPath;
+    m_iPathOff = 0;
+    ApplyPathResult( phexNew, iLenNew, hexDest, hexPrevEnd );
+
+    // What the synchronous flow does once GetPath has answered: StartTravel is the
+    // one consumer that turns a route into motion (vehmove.cpp StartTravel), and
+    // KickStart is how the game re-enters it (unit.cpp KickStart). It is a no-op
+    // unless the vehicle is moving, so a route that came back blocked or cant_deploy
+    // is left to HandleBlocked and ExitBuilding, where its own GetPath calls live.
+    KickStart( );
+}
+
+//
+// The main-loop drain, at the snapshot publication point and before the snapshot is
+// replaced, so a result is judged against the world its epoch is compared with.
+//
+void EnPathAsyncDrain( void )
+{
+    ++g_uPathAsyncTick;
+
+    if ( !PathService::AsyncEnabled( ) || !thePathService.IsRunning( ) )
+        return;
+
+    PathResult res;
+    while ( thePathService.PopResult( res ) )
+    {
+        CVehicle* pVeh = theVehicleMap.GetVehicle( (DWORD)res.vehicleId );
+        if ( pVeh == NULL )
+        {
+            Perf::CounterInc( "pa.reject.gone" );
+            PathService::FreeResult( res );
+            continue;
+        }
+
+        pVeh->InstallPathResult( res );
+    }
+}
+
+//
+// Stop / quiesce: nothing may pend across a save, a load or a teardown. Clearing the
+// id is enough - the vehicle's next GetPath re-searches through the ordinary "no
+// path" flow, and any answer still in the queue is rejected by id at the next drain.
+//
+void EnPathAsyncCancelAll( char const* pszReason )
+{
+    POSITION pos = theVehicleMap.GetStartPosition( );
+    while ( pos != NULL )
+    {
+        DWORD     dwID = 0;
+        CVehicle* pVeh = NULL;
+        theVehicleMap.GetNextAssoc( pos, dwID, pVeh );
+        if ( pVeh != NULL )
+            pVeh->ClearPathPending( pszReason );
+    }
 }
 
 void CVehicle::SetLocation( CHexCoord& hex, POSITION pos, int iType )

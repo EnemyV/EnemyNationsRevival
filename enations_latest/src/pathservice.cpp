@@ -48,6 +48,22 @@ BOOL PathService::Enabled( void )
     return ( s_iWorkerOn ? TRUE : FALSE );
 }
 
+BOOL PathService::AsyncEnabled( void )
+{
+    static int s_iAsyncOn = -1;
+    if ( s_iAsyncOn < 0 )
+        s_iAsyncOn = ResolveOnOff( getenv( "EN_PATH_ASYNC" ) );
+    return ( ( s_iAsyncOn && Enabled( ) ) ? TRUE : FALSE );
+}
+
+BOOL PathService::AsyncVerifyEnabled( void )
+{
+    static int s_iVerifyOn = -1;
+    if ( s_iVerifyOn < 0 )
+        s_iVerifyOn = ResolveOnOff( getenv( "EN_PATH_ASYNC_VERIFY" ) );
+    return ( ( s_iVerifyOn && AsyncEnabled( ) ) ? TRUE : FALSE );
+}
+
 int PathService::ConfiguredWorkers( void )
 {
     const char* psz = getenv( "EN_PATH_WORKERS" );
@@ -372,7 +388,12 @@ void EnPathWorkerStart( int iMapEX, int iMapEY )
 
 void EnPathWorkerStop( void )
 {
+    const BOOL bWasRunning = thePathService.IsRunning( );
     thePathService.Stop( );
+
+    // After the join, so no worker can push an answer for an id we just cleared.
+    if ( bWasRunning && PathService::AsyncEnabled( ) )
+        EnPathAsyncCancelAll( "stop" );
 }
 
 void EnPathWorkerQuiesce( void )
@@ -380,6 +401,12 @@ void EnPathWorkerQuiesce( void )
     if ( !thePathService.IsRunning( ) )
         return;
     thePathService.Quiesce( );
+
+    // Quiesce leaves the queue empty and every worker idle, so this is the last
+    // moment at which the set of outstanding ids can change. Clearing them is what
+    // makes "nothing pending is serialized" true rather than merely intended.
+    if ( PathService::AsyncEnabled( ) )
+        EnPathAsyncCancelAll( "stop" );
 }
 
 void EnPathWorkerResume( void )

@@ -130,6 +130,13 @@ class PathService
     static BOOL Enabled( void );
     static int  ConfiguredWorkers( void );
 
+    // Step D. EN_PATH_ASYNC, same value rule, AND the pool must be on: with either
+    // switch absent every mover searches synchronously, as it always has.
+    static BOOL AsyncEnabled( void );
+    // EN_PATH_ASYNC_VERIFY: at install, also run the synchronous live search and
+    // compare. Needs EN_PATH_PROBES compiled in; a no-op without it.
+    static BOOL AsyncVerifyEnabled( void );
+
   private:
     void WorkerMain( void );
 
@@ -155,6 +162,13 @@ extern PathService thePathService;
 
 // The service under the names the game's lifecycle sites use. Each is a no-op when
 // EN_PATH_WORKER is off, and Stop is idempotent.
+// Step D, all main thread (unit.cpp). The drain installs answers into vehicles; the
+// tick counter is bumped by the drain and is what pa.wait.ticks is measured in;
+// CancelAll clears every outstanding id so nothing pends across a save or a teardown.
+void     EnPathAsyncDrain    ( void );
+uint64_t EnPathAsyncTick     ( void );
+void     EnPathAsyncCancelAll( char const* pszReason );
+
 void EnPathWorkerStart  ( int iMapEX, int iMapEY );
 void EnPathWorkerStop   ( void );
 void EnPathWorkerQuiesce( void );

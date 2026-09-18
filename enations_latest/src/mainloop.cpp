@@ -17,6 +17,7 @@
 #include "building.inl"
 #include "chproute.hpp"
 #include "cpathmgr.h"
+#include "pathservice.h"
 #include "cpathmap.h"
 #include "cutscene.h"
 #include "en_harness.h"   // EnHarness_ServiceMainLoop() — main-loop-safe harness ops (save)
@@ -1753,10 +1754,15 @@ NoOper:
     // mutation batch (head message drain, building/vehicle/projectile Operate, tail
     // message drain) is behind us and the next tick's searches are ahead. Both the
     // operate and the skip path reach here. No-op unless EN_PATH_SNAP is set.
+    // Install every worker answer that came back this tick, before the snapshot is
+    // replaced - the stale test compares a result's epoch against the world the tick
+    // ends in. No-op unless EN_PATH_WORKER and EN_PATH_ASYNC are both set.
+    EnPathAsyncDrain( );
+
 #if EN_PATH_PROBES
-    // Before the snapshot is replaced: every worker answer that came back this tick is
-    // compared against its stored same-snapshot reference, and both are freed. Nothing
-    // a worker produces reaches the game in this slice.
+    // Step C's comparison drain. It and the install above are alternatives, never both:
+    // EnPathWorkerSubmit refuses to submit while EN_PATH_ASYNC is on, so with async
+    // live there is nothing here for this to pop.
     EnPathWorkerDrain( );
 #endif
     PathWorld::PublishTick( );

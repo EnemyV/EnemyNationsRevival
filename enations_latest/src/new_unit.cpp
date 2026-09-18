@@ -5538,6 +5538,9 @@ void CVehicle::ctor( )
     m_hexLastClamp    = CHexCoord( -1, -1 );  // no prior clamp
 #endif
     m_dwOrderGen      = 0;
+    m_dwPathReqId     = 0;
+    m_uPathReqTick    = 0;
+    m_iPathRetries    = 0;
 
     m_iStepsLeft = 0;
     m_iSpeed     = 0;
@@ -5901,6 +5904,9 @@ CVehicle::~CVehicle( )
 
     DestroyAllWindows( );
 
+    // Before the id leaves the map: a late answer then finds no vehicle rather than
+    // this address (pa.reject.gone), and the counter says a death cancelled it.
+    ClearPathPending( "die" );
     theVehicleMap.Remove( this );
 
     if ( theApp.m_wndVehicles.m_hWnd != NULL )

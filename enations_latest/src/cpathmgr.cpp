@@ -2499,6 +2499,12 @@ static void EnPathWorkerSubmit( CVehicle* pVehicle, CHexCoord const& hexFrom, CH
     if ( !thePathService.IsRunning( ) )
         return;
 
+    // Step D owns the queue when it is on: it submits from the mover itself and
+    // installs the answer. A shadow submit beside it would put results in the same
+    // queue that the install drain would reject and free.
+    if ( PathService::AsyncEnabled( ) )
+        return;
+
     // The mover, on a snapshot, with occupancy out of scope - the v1 eligibility of
     // plan section 1.2 D1/D3. Everything else keeps its synchronous answer and is
     // counted so the submit rate is never inferred from a silence.
@@ -2913,6 +2919,97 @@ CHexCoord* CPathMgr::ShadowGetPath( CVehicle* pVehicle, CHexCoord& hexFrom, CHex
     return ( phcProd );
 }
 
+//
+// Step D verification. At install time, run the SAME request synchronously against
+// the LIVE world on the private shadow instance and compare it with the route about
+// to be installed. This is what turns "the worker answers quickly" into "the worker
+// answers correctly": an installed route must equal the route the synchronous search
+// would have produced on identical inputs.
+//
+void CPathMgr::AsyncVerify( CVehicle* pVehicle, CHexCoord const& hexFrom, CHexCoord const& hexTo, BOOL bVehBlock,
+                            CHexCoord const* phexInstall, int iInstallLen, BOOL bStale )
+{
+    if ( !PathService::AsyncVerifyEnabled( ) || pVehicle == NULL )
+        return;
+    if ( g_pPathShadow == NULL || g_pPathShadow->m_paCells == NULL )
+        return;
+
+    // The worker had no vehicle (USE_HEADINGS == 0), so neither does the reference:
+    // a pVehicle here would also write the re-clamp watch this call must not disturb.
+    const int  iVehType = theTransports.GetIndex( pVehicle->GetData( ) );
+    CHexCoord  hexF( hexFrom );
+    CHexCoord  hexT( hexTo );
+    int        iRefLen  = 0;
+    CHexCoord* phexRef  = NULL;
+
+    EnterCriticalSection( &g_pPathShadow->m_cs );
+    try
+    {
+        const CEnLiveNavView viewLive;
+        phexRef = g_pPathShadow->_GetPath( viewLive, NULL, hexF, hexT, iRefLen, iVehType, bVehBlock, FALSE );
+    }
+    catch ( ... )
+    {
+        delete[] phexRef;
+        phexRef = NULL;
+        iRefLen = 0;
+    }
+    LeaveCriticalSection( &g_pPathShadow->m_cs );
+
+    Perf::CounterInc( "pa.verify.cmp" );
+
+    BOOL bEqual     = TRUE;
+    int  iFirstDiff = -1;
+    if ( ( phexRef == NULL ) != ( phexInstall == NULL ) )
+        bEqual = FALSE;
+    if ( iRefLen != iInstallLen )
+        bEqual = FALSE;
+    if ( phexRef != NULL && phexInstall != NULL )
+    {
+        const int iCommon = __min( iRefLen, iInstallLen );
+        for ( int i = 0; i < iCommon; ++i )
+            if ( phexRef[i] != phexInstall[i] )
+            {
+                bEqual     = FALSE;
+                iFirstDiff = i;
+                break;
+            }
+    }
+
+    if ( !bEqual )
+    {
+        Perf::CounterInc( "pa.verify.diff" );
+        if ( bStale )
+            Perf::CounterInc( "pa.verify.diff.stale" );
+
+        static int s_iAsyncDiffLogged = 0;
+        if ( s_iAsyncDiffLogged < 64 )
+        {
+            ++s_iAsyncDiffLogged;
+            static char s_szRef[1400];
+            static char s_szIns[1400];
+            ShadowRouteStr( s_szRef, sizeof( s_szRef ), phexRef, iRefLen );
+            ShadowRouteStr( s_szIns, sizeof( s_szIns ), phexInstall, iInstallLen );
+
+            ShadowLog( "[async] DIFF #%d  veh=%lu ordGen=%lu  from=%d,%d to=%d,%d  vehType=%d  "
+                       "refLen=%d insLen=%d  refNull=%d insNull=%d  firstDiff=%d  vehBlock=%d  stale=%d%s%s%s%s",
+                       s_iAsyncDiffLogged, (unsigned long)pVehicle->GetID( ),
+                       (unsigned long)pVehicle->GetOrderGen( ), hexFrom.X( ), hexFrom.Y( ), hexTo.X( ), hexTo.Y( ),
+                       iVehType, iRefLen, iInstallLen, phexRef == NULL ? 1 : 0, phexInstall == NULL ? 1 : 0,
+                       iFirstDiff, bVehBlock ? 1 : 0, bStale ? 1 : 0, "\n  ref:       ", s_szRef,
+                       "\n  installed: ", s_szIns );
+        }
+    }
+
+    delete[] phexRef;
+}
+
 #endif  // EN_PATH_PROBES
+
+#if !EN_PATH_PROBES
+void CPathMgr::AsyncVerify( CVehicle*, CHexCoord const&, CHexCoord const&, BOOL, CHexCoord const*, int, BOOL )
+{
+}
+#endif
 
 // end of CPathMgr.cpp
