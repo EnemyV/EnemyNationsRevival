@@ -18,10 +18,12 @@
 #include "enprobes.h" // EN_PATH_PROBES compile gate
 
 #if EN_PATH_PROBES
+#include "pathservice.h"  // step C: the worker pool the shadow's snapshot answer is compared against
 #include <stdarg.h>   // shadow diff log
 #include <stdlib.h>   // getenv (EN_PATH_SHADOW)
 #include <string.h>   // strcmp (EN_PATH_SHADOW value parse)
 #include <ctype.h>    // tolower (same)
+#include <map>        // outstanding reference routes, keyed by requestId
 #ifdef _WIN32
 #include <share.h>    // _SH_DENYNO: the log must stay readable while the game runs
 #endif
@@ -109,6 +111,14 @@ CHexCoord* CPathMgr::GetPath( CVehicle* pVehicle, CHexCoord& hexFrom, CHexCoord&
     // Default off: with the variable unset this is one already-cached int test.
     if ( !m_bShadow && EnPathShadowOn( ) && Perf::IsMainThread( ) )
         return ( ShadowGetPath( pVehicle, hexFrom, hexTo, iPathLen, iVehType, bVehBlock, bDirectPath ) );
+
+    // Step C submits only from inside ShadowGetPath, because the reference a worker
+    // result is diffed against IS the shadow's same-snapshot answer. With the shadow
+    // off there is no such reference, and diffing against the live answer would
+    // measure snapshot staleness rather than the worker. Say so out loud instead of
+    // letting a zero comparison count read as a comparison that passed.
+    if ( !m_bShadow && pVehicle != NULL && thePathService.IsRunning( ) )
+        Perf::CounterInc( "pq.nosubmit" );
 
     return ( GetPathProd( pVehicle, hexFrom, hexTo, iPathLen, iVehType, bVehBlock, bDirectPath ) );
 }
@@ -2147,6 +2157,57 @@ CCell::CCell( int iX, int iY )
     m_bClosed    = 0;
 }
 
+////////////////////////////////////////////////////////////////////////////
+//
+//  Pathfinding ladder, step C: the one entry a worker thread uses.
+//
+//  Defined here, after the template bodies, and taking no vehicle: with
+//  USE_HEADINGS == 0 the only thing a search does with pVehicle is take
+//  m_pTD from it, and view.GetTransportData( iVehType ) returns the very same
+//  CTransportData* for the index theTransports.GetIndex( veh->GetData() )
+//  hands back. The static_assert makes enabling headings a build failure here
+//  rather than a vehicle routed with no heading.
+//
+////////////////////////////////////////////////////////////////////////////
+
+void CPathMgr::SearchSnapshot( PathWorld const& pw, CHexCoord hexFrom, CHexCoord hexTo, int iVehType,
+                               BOOL bVehBlock, BOOL bDirectPath, SNAPSEARCH& out )
+{
+    static_assert( USE_HEADINGS == 0, "a headings search needs the vehicle; a worker has no live vehicle" );
+
+    out = SNAPSEARCH( );
+    if ( m_paCells == NULL || !m_bCsInit )
+        return;
+
+    // _GetPath takes non-const references and adjusts them (AdjustDestination), so it
+    // gets its own copies and the caller's request is left as it was made.
+    CHexCoord hexF( hexFrom );
+    CHexCoord hexT( hexTo );
+    int       iLen = 0;
+
+    EnterCriticalSection( &m_cs );
+    try
+    {
+        const CEnSnapNavView view( pw );
+        out.phexPath = _GetPath( view, NULL, hexF, hexT, iLen, iVehType, bVehBlock, bDirectPath );
+        out.iPathLen = iLen;
+#if EN_PATH_PROBES
+        out.iClass    = m_iProbeOutcome;
+        out.bCapArena = m_bProbeCapArena;
+        out.bCapIter  = m_bProbeCapIter;
+#endif
+    }
+    catch ( ... )
+    {
+        // CreateHexPath's new CHexCoord[] is the one allocation in here. A throw must
+        // not escape onto a worker thread, where it would take the process down.
+        delete[] out.phexPath;
+        out.phexPath = NULL;
+        out.iPathLen = 0;
+    }
+    LeaveCriticalSection( &m_cs );
+}
+
 #if EN_PATH_PROBES
 
 ////////////////////////////////////////////////////////////////////////////
@@ -2366,6 +2427,229 @@ void EnPathShadowClose( void )
     g_pPathShadow->Close( );
     delete g_pPathShadow;
     g_pPathShadow = NULL;
+}
+
+////////////////////////////////////////////////////////////////////////////
+//
+//  Pathfinding ladder, step C: the worker comparison.
+//
+//  A worker's answer is compared against the SAME-SNAPSHOT reference the
+//  shadow computed for the same request on the main thread. Comparing it
+//  against the live-world answer instead would fold snapshot staleness into
+//  the number and make a clean result unprovable.
+//
+//  Everything here is main-thread only: the submit runs inside ShadowGetPath,
+//  the drain at the snapshot publication point in mainloop.cpp. The workers
+//  touch none of it.
+//
+////////////////////////////////////////////////////////////////////////////
+
+namespace
+{
+// The reference answer for one outstanding request. The route is OUR copy: the
+// shadow frees its own the moment ShadowGetPath returns.
+struct WORKERREF
+{
+    uint32_t   uGameGen;
+    CHexCoord  hexFrom;
+    CHexCoord  hexTo;
+    int        iVehType;
+    BOOL       bVehBlock;
+    BOOL       bDirect;
+    uint64_t   uEpoch;
+    CHexCoord* phexPath;
+    int        iPathLen;
+    int        iClass;
+    BOOL       bCapArena;
+    BOOL       bCapIter;
+
+    WORKERREF( )
+        : uGameGen( 0 ), hexFrom( 0, 0 ), hexTo( 0, 0 ), iVehType( 0 ), bVehBlock( FALSE ), bDirect( FALSE ),
+          uEpoch( 0 ), phexPath( NULL ), iPathLen( 0 ), iClass( 0 ), bCapArena( FALSE ), bCapIter( FALSE )
+    {
+    }
+};
+}  // namespace
+
+// Ordered by requestId, so evicting "the oldest" on overflow is begin() and needs no
+// second structure.
+static std::map<uint64_t, WORKERREF> g_mapWorkerRef;
+
+enum { kWorkerRefCap = 4096 };
+
+static void WorkerRefFree( WORKERREF& ref )
+{
+    delete[] ref.phexPath;
+    ref.phexPath = NULL;
+    ref.iPathLen = 0;
+}
+
+void EnPathWorkerRefsClear( void )
+{
+    for ( std::map<uint64_t, WORKERREF>::iterator it = g_mapWorkerRef.begin( ); it != g_mapWorkerRef.end( ); ++it )
+        WorkerRefFree( it->second );
+    g_mapWorkerRef.clear( );
+}
+
+static void EnPathWorkerSubmit( CVehicle* pVehicle, CHexCoord const& hexFrom, CHexCoord const& hexTo,
+                                BOOL bVehBlock, BOOL bDirectPath,
+                                std::shared_ptr<const PathWorld> const& ptrSnap, CHexCoord const* phexRef,
+                                CPathMgr::VERDICT const& vRef )
+{
+    if ( !thePathService.IsRunning( ) )
+        return;
+
+    // The mover, on a snapshot, with occupancy out of scope - the v1 eligibility of
+    // plan section 1.2 D1/D3. Everything else keeps its synchronous answer and is
+    // counted so the submit rate is never inferred from a silence.
+    if ( pVehicle == NULL || bVehBlock || !ptrSnap )
+    {
+        Perf::CounterInc( "pq.nosubmit" );
+        return;
+    }
+
+    PathRequest req;
+    req.gameGeneration = EnNavGameGeneration( );
+    req.vehicleId      = (uint32_t)pVehicle->GetID( );
+    req.orderGeneration = (uint32_t)pVehicle->GetOrderGen( );
+    req.from           = hexFrom;
+    req.to             = hexTo;
+    // NOT GetData()->GetType(): TRANS_TYPE is the unit's kind, the index is its slot in
+    // theTransports, and GetTransportData() takes the slot. tests/path/run-pathservice.py
+    // pins GetData( GetIndex( p ) ) == p for every transport.
+    req.iVehType    = theTransports.GetIndex( pVehicle->GetData( ) );
+    req.bVehBlock   = bVehBlock;
+    req.bDirectPath = bDirectPath;
+    req.tSubmit     = Perf::NowIfEnabled( );
+    req.world       = ptrSnap;
+
+    const uint64_t uId = thePathService.Submit( req );
+    if ( uId == 0 )
+    {
+        Perf::CounterInc( "pq.nosubmit" );
+        return;
+    }
+
+    WORKERREF ref;
+    ref.uGameGen  = req.gameGeneration;
+    ref.hexFrom   = hexFrom;
+    ref.hexTo     = hexTo;
+    ref.iVehType  = req.iVehType;
+    ref.bVehBlock = bVehBlock;
+    ref.bDirect   = bDirectPath;
+    ref.uEpoch    = ptrSnap->Epoch( );
+    ref.iPathLen  = vRef.iPathLen;
+    ref.iClass    = vRef.iClass;
+    ref.bCapArena = vRef.bCapArena;
+    ref.bCapIter  = vRef.bCapIter;
+    if ( phexRef != NULL && vRef.iPathLen > 0 )
+    {
+        ref.phexPath = new CHexCoord[vRef.iPathLen];
+        for ( int i = 0; i < vRef.iPathLen; ++i )
+            ref.phexPath[i] = phexRef[i];
+    }
+    else if ( phexRef != NULL )
+    {
+        // A non-NULL route of reported length 0 is itself a difference worth keeping,
+        // so record that it was non-NULL without copying anything.
+        ref.phexPath = new CHexCoord[1];
+    }
+
+    // Never block the main thread and never grow without bound: the oldest outstanding
+    // reference goes, and the result that eventually arrives for it counts as dropped.
+    while ( g_mapWorkerRef.size( ) >= (size_t)kWorkerRefCap )
+    {
+        WorkerRefFree( g_mapWorkerRef.begin( )->second );
+        g_mapWorkerRef.erase( g_mapWorkerRef.begin( ) );
+        Perf::CounterInc( "pq.overflow" );
+    }
+
+    g_mapWorkerRef[uId] = ref;
+}
+
+void EnPathWorkerDrain( void )
+{
+    PathResult res;
+    while ( thePathService.PopResult( res ) )
+    {
+        std::map<uint64_t, WORKERREF>::iterator it = g_mapWorkerRef.find( res.requestId );
+        if ( it == g_mapWorkerRef.end( ) || res.gameGeneration != EnNavGameGeneration( ) )
+        {
+            // Evicted by the cap, or answered for a world that no longer exists.
+            Perf::CounterInc( "pq.dropped" );
+            if ( it != g_mapWorkerRef.end( ) )
+            {
+                WorkerRefFree( it->second );
+                g_mapWorkerRef.erase( it );
+            }
+            PathService::FreeResult( res );
+            continue;
+        }
+
+        WORKERREF& ref = it->second;
+        Perf::CounterInc( "pq.cmp" );
+
+        // Same equality as the shadow's, MINUS the clamp hex: the clamp is written
+        // through pVehicle, the worker has no vehicle, and the clamped destination is
+        // the last hex of a clamped route anyway - so the route comparison already
+        // carries it.
+        BOOL bEqual     = TRUE;
+        int  iFirstDiff = -1;
+        if ( ( ref.phexPath == NULL ) != ( res.path == NULL ) )
+            bEqual = FALSE;
+        if ( ref.iPathLen != res.pathLen )
+            bEqual = FALSE;
+        if ( ref.phexPath != NULL && res.path != NULL )
+        {
+            const int iCommon = __min( ref.iPathLen, res.pathLen );
+            for ( int i = 0; i < iCommon; ++i )
+                if ( ref.phexPath[i] != res.path[i] )
+                {
+                    bEqual     = FALSE;
+                    iFirstDiff = i;
+                    break;
+                }
+        }
+        if ( ref.iClass != res.exitClass )
+            bEqual = FALSE;
+        if ( ref.bCapArena != res.bCapArena || ref.bCapIter != res.bCapIter )
+            bEqual = FALSE;
+
+        if ( !bEqual )
+        {
+            Perf::CounterInc( "pq.diff" );
+
+            static int s_iWorkerDiffLogged = 0;
+            if ( s_iWorkerDiffLogged < 64 )
+            {
+                ++s_iWorkerDiffLogged;
+                static char s_szRef[1400];
+                static char s_szWrk[1400];
+                ShadowRouteStr( s_szRef, sizeof( s_szRef ), ref.phexPath, ref.iPathLen );
+                ShadowRouteStr( s_szWrk, sizeof( s_szWrk ), res.path, res.pathLen );
+
+                ShadowLog( "[worker] DIFF #%d  req=%llu veh=%lu ordGen=%lu  from=%d,%d to=%d,%d  vehType=%d  "
+                           "refLen=%d wrkLen=%d  refNull=%d wrkNull=%d  refClass=%s wrkClass=%s  "
+                           "refCap=%s wrkCap=%s  firstDiff=%d  direct=%d vehBlock=%d  "
+                           "refEpoch=%llu wrkEpoch=%llu%s%s%s%s",
+                           s_iWorkerDiffLogged, (unsigned long long)res.requestId,
+                           (unsigned long)res.vehicleId, (unsigned long)res.orderGeneration, ref.hexFrom.X( ),
+                           ref.hexFrom.Y( ), ref.hexTo.X( ), ref.hexTo.Y( ), ref.iVehType, ref.iPathLen,
+                           res.pathLen, ref.phexPath == NULL ? 1 : 0, res.path == NULL ? 1 : 0,
+                           ShadowClassName( ref.iClass ), ShadowClassName( res.exitClass ),
+                           ShadowCapName( ref.bCapArena, ref.bCapIter ),
+                           ShadowCapName( res.bCapArena, res.bCapIter ), iFirstDiff, ref.bDirect ? 1 : 0,
+                           ref.bVehBlock ? 1 : 0, (unsigned long long)ref.uEpoch,
+                           (unsigned long long)res.worldEpoch, "\n  ref:    ", s_szRef, "\n  worker: ", s_szWrk );
+            }
+        }
+
+        WorkerRefFree( ref );
+        g_mapWorkerRef.erase( it );
+        PathService::FreeResult( res );
+    }
+
+    Perf::GaugeSet( "pq.depth", thePathService.QueueDepth( ) );
 }
 
 //
@@ -2608,6 +2892,12 @@ CHexCoord* CPathMgr::ShadowGetPath( CVehicle* pVehicle, CHexCoord& hexFrom, CHex
                                bOneStep ? "" : "\n  shadow: ", bOneStep ? "" : s_szSh );
                 }
             }
+
+            // Step C. The shadow has just answered THIS request on THIS snapshot, on
+            // the main thread; that answer is the reference. Hand the worker the same
+            // shared_ptr, so the two searches read one identical world and a diff can
+            // only be the thread, never the age of the world.
+            EnPathWorkerSubmit( pVehicle, hexShFrom, hexShTo, bVehBlock, bDirectPath, ptrSnap, phcShadow, vSh );
         }
 
         // The shadow route is ours and nobody else's; free it here, exactly once.

@@ -36,6 +36,8 @@ const int MAX_BOTH_INDEX = 4096;
 // pays an indirect call in the innermost A* loop. Both instantiations are used
 // inside cpathmgr.cpp, so no explicit instantiation is needed here.
 
+class PathWorld;   // SearchSnapshot's world, taken by reference only (pathworld.h)
+
 class CCell
 {
 public:
@@ -196,6 +198,26 @@ public:
 	BOOL Init( int iMapEX, int iMapEY );
         void Close ();
 
+	// Everything one snapshot search hands back. The class and the two cap flags are
+	// probe-only state, so they stay 0/FALSE with EN_PATH_PROBES compiled out.
+	struct SNAPSEARCH
+	{
+		CHexCoord * phexPath;   // new[]ed by the search; the caller owns it
+		int         iPathLen;
+		int         iClass;     // PROBE_OUTCOME
+		BOOL        bCapArena;
+		BOOL        bCapIter;
+		SNAPSEARCH ( ) : phexPath ( NULL ), iPathLen ( 0 ), iClass ( 0 ), bCapArena ( FALSE ),
+		                 bCapIter ( FALSE ) { }
+	};
+
+	// The ONLY entry a worker thread uses. It reads the PathWorld it is handed and
+	// nothing else: pVehicle is NULL, so no live CVehicle/CHex/CBuilding/CBridgeUnit is
+	// touched, and the global `cs` is never taken. Runs under THIS instance's own m_cs,
+	// which a worker's private instance never shares with anyone.
+	void SearchSnapshot ( PathWorld const & pw, CHexCoord hexFrom, CHexCoord hexTo, int iVehType,
+	                      BOOL bVehBlock, BOOL bDirectPath, SNAPSEARCH & out );
+
 	void		NewBoth ( CCell * pTest );
 
 	//
@@ -284,6 +306,14 @@ extern CPathMgr thePathMgr;
 BOOL EnPathShadowOn  ( void );
 void EnPathShadowInit( int iMapEX, int iMapEY );
 void EnPathShadowClose( void );
+
+// Ladder step C, the measurement half. The worker's answer is compared against the
+// SAME-SNAPSHOT reference the shadow already computed for that call - never against
+// the live-world answer, which would measure snapshot staleness instead of the
+// worker. The reference route is kept here, keyed by requestId, until its result
+// comes back. Main thread only.
+void EnPathWorkerDrain    ( void );   // at the publication point, before PublishTick
+void EnPathWorkerRefsClear( void );   // world teardown: free every stored reference
 #endif
 
 #endif // __CPATHMGR_H__
