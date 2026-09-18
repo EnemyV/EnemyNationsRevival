@@ -241,6 +241,7 @@ inline int CHex::GetSeaAlt() const {
 inline void CHex::SetAlt( int iAlt ) {
     ASSERT( ( 0 <= iAlt ) && ( iAlt <= MaxAlt ) );
     iAlt   = __minmax( 0, MaxAlt, iAlt );
+    ++g_enNavEpoch;
     m_bAlt = (BYTE)( iAlt | ( m_bAlt & 0x80 ) );
     // Altitude changes the GPU terrain mesh geometry (corner Z) → invalidate the
     // cached terrain texture so the edit shows without a view change (bridges,

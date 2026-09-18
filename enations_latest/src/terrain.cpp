@@ -42,6 +42,7 @@ CGameMap         theMap;                   // the world (only one instance)
 CTerrain         theTerrain( "terrain" );  // data about the terrain types
 
 unsigned         g_enFogVisGen = 0;        // fog-of-war change counter (see terrain.h)
+uint64_t         g_enNavEpoch  = 0;        // navigation-state write counter (see terrain.h)
 CTerrainShowStat tShowStat;
 
 
@@ -183,6 +184,7 @@ void TerrainShowStatus( void* pData, CDC* pDc, CRect const& rDraw, CDIB* pDibBac
 const CHex& CHex::operator=( CHex const& src )
 {
 
+    ++g_enNavEpoch;
     m_bType    = src.m_bType;
     m_bAlt     = src.m_bAlt;
     m_bUnit    = src.m_bUnit;
@@ -2687,6 +2689,10 @@ void CHex::ChangeToRoad( CHexCoord& hex, BOOL bCallNext, BOOL bForce )
     // drop the now-removed static tree (see g_enStaticDirty at the end).
     BOOL bWasForest = ( GetType( ) == CHex::forest );
 
+    // Before the raw m_bType write below, which bypasses SetType and can return
+    // early while the stored type has already changed (terrain.h g_enNavEpoch).
+    ++g_enNavEpoch;
+
     // if we don't see it yet, just mark it
     m_bType = CHex::road;
     if ( ( !GetVisibility( ) ) && ( !bForce ) && ( GetVisibleType( ) != road ) )
@@ -5061,6 +5067,7 @@ void CHex::Serialize( CArchive& ar )
     }
     else
     {
+        ++g_enNavEpoch;
         ar >> m_bType >> m_bAlt >> m_bUnit;
         WORD iID;
         ar >> iID;

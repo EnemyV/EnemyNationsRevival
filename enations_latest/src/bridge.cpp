@@ -111,6 +111,10 @@ CBridge* CBridge::Create( CHexCoord const& hexStart, CHexCoord const& hexEnd, DW
 
     theBridgeMap.Add( pBrdg );
 
+    // The per-unit m_iExit writes above are direct member stores, after the hexes
+    // were already grabbed (terrain.h g_enNavEpoch).
+    ++g_enNavEpoch;
+
     // invalidate ALL windows
     // GG: Shouldn't need this now: CWndAnim::InvalidateAllWindows ();
 
@@ -143,6 +147,8 @@ CBridge::~CBridge( )
 void CBridge::__SetPer( int iPer )
 {
 
+    // IsBuilt() flips here, and the A* reads it for the deck (terrain.h g_enNavEpoch).
+    ++g_enNavEpoch;
     m_iPerBuilt = iPer;
 
     POSITION pos = m_lstUnits.GetHeadPosition( );

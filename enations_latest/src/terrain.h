@@ -49,6 +49,15 @@ const int LOS_ALT = 4;		// alt difference needed to obscure
 // torn cross-thread write only delays a fog update, and the 1 s force-refresh heals it.
 extern unsigned g_enFogVisGen;
 
+// Monotonic count of runtime writes to the world state the vehicle-movement A*
+// reads: hex terrain type, hex altitude, the building/bridge occupancy bits, and
+// bridge identity/built state. Vehicle and projectile occupancy are deliberately
+// NOT counted - no A* decision turns on the projectile bit, and vehicle staleness
+// is handled by the caller, not by this counter. A PathWorld snapshot records the
+// value it was built at; a search comparing against it can then say whether the
+// world moved under it. Reset to 0 by EnNavNewGame (pathworld.h).
+extern uint64_t g_enNavEpoch;
+
 const int CITY_DESTROYED_OFF = 0;
 const int CITY_DESTROYED_NUM = 8;
 const int CITY_BUILD_OFF = 8;
@@ -199,8 +208,11 @@ public:
 															bVeh <<= 2;
 														return bVeh; }
 	BYTE		GetUnits () const { return (m_bUnit); }
-	void		OrUnits (int iVal) { m_bUnit |= (BYTE) iVal; }
-	void		NandUnits (int iVal) { m_bUnit &= (BYTE) ~ iVal; }
+	// The bldg/bridge arm is the ONE choke point for every building grab/release
+	// (building.inl) and bridge mark (bridge.cpp, netapi.cpp); the veh and proj bits
+	// go through here too and are deliberately not counted (terrain.h g_enNavEpoch).
+	void		OrUnits (int iVal) { if (iVal & (bldg | bridge)) ++g_enNavEpoch; m_bUnit |= (BYTE) iVal; }
+	void		NandUnits (int iVal) { if (iVal & (bldg | bridge)) ++g_enNavEpoch; m_bUnit &= (BYTE) ~ iVal; }
 
 	void		IncVisible ();
 	void		IncVisible (int iNum);
@@ -377,6 +389,11 @@ public:
 	long		GetHexOffPub (CHex const *pHex) const { return (pHex - m_pHex); }	// public GetHexOff (GPU field rotation)
 	int			GetSideSize () const { return (m_iSideSize); }
 	int			GetSideShift () const { return (m_iSideShift); }
+	// Geometry the snapshot copies in (pathworld.cpp); CHexCoord reads the same two
+	// members through its friendship.
+	int			GetHexMask () const { return (m_iHexMask); }
+	int			GetWidthHalf () const { return (m_iWidthHalf); }
+	BOOL		HaveHexes () const { return (m_pHex != NULL); }
 
 	CHex *	GetHex (CHexCoord const & hex);
 	CHex *	GetHex (CSubHex const & sub);
