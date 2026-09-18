@@ -2833,6 +2833,23 @@ void CVehicle::MakeBlocked() {
     }
 }
 
+// Environment read for the two probe switches below. _dupenv_s is MSVC secure-CRT only -
+// gcc and clang cannot see it at all - so POSIX reads the same value through getenv. Either
+// way the caller owns the returned buffer and frees it, and NULL means "not set".
+static char *EnReadEnv(const char *pszName) {
+
+#ifdef _WIN32
+    char  *p = NULL;
+    size_t n = 0;
+    if (_dupenv_s(&p, &n, pszName) != 0)
+        return (NULL);
+    return (p);
+#else
+    const char *p = getenv(pszName);
+    return ((p != NULL) ? _strdup(p) : NULL);
+#endif
+}
+
 // Which traffic rules are live, from EN_TRAFFIC (default all on).
 //   bit 0 (1)  wait behind a moving blocker + resume the same step
 //   bit 1 (2)  two-party yield
@@ -2846,9 +2863,8 @@ int TrafficOpts() {
     static int s_iOpts = -1;
     if (s_iOpts < 0) {
         s_iOpts = 63;
-        char *p = NULL;
-        size_t n = 0;
-        if ((_dupenv_s(&p, &n, "EN_TRAFFIC") == 0) && (p != NULL)) {
+        char *p = EnReadEnv("EN_TRAFFIC");
+        if (p != NULL) {
             s_iOpts = atoi(p);
             free(p);
         }
@@ -2869,9 +2885,8 @@ static void EnsureWaitLogOpen() {
     if (s_waitLogTried)
         return;
     s_waitLogTried = 1;
-    char *p = NULL;
-    size_t n = 0;
-    if ((_dupenv_s(&p, &n, "EN_WAIT_LOG") == 0) && (p != NULL)) {
+    char *p = EnReadEnv("EN_WAIT_LOG");
+    if (p != NULL) {
 #ifdef _WIN32
         // fopen_s opens EXCLUSIVELY by design, so no other process can read this log
         // while the game runs - which is what made a live junction histogram impossible.
