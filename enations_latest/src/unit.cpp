@@ -15,6 +15,7 @@
 #include "base.h"
 #include "lastplnt.h"
 #include "cpathmgr.h"
+#include "ennavview.h"
 #include "netapi.h"
 #include "player.h"
 #include "sprite.h"
@@ -216,6 +217,74 @@ CTransportData::TRANS_BASE_TYPE CTransportData::GetBaseType( ) const
     return ( non_combat );
 }
 
+// The travel rule, once, over hex facts the caller has already read. Both
+// CanTravelHex signatures below are this function plus a way of getting the facts.
+static BOOL EnCanTravelHexFacts( CTransportData const& td, CEnNavView const& view, CHexCoord const& hex, BYTE bUnits,
+                                 int iType, int iAlt )
+{
+    ASSERT_STRICT_VALID( &td );
+
+    // if a building we can travel on it
+    if ( ( bUnits & CHex::bldg ) != 0 )
+        return ( TRUE );
+
+    // handle land units first (most likely)
+    if ( td.GetWheelType( ) != CWheelTypes::water )
+    {
+        // if a completed bridge we can travel on it
+        if ( ( bUnits & CHex::bridge ) != 0 )
+        {
+            // orphaned mark (no bridge unit) = not travelable
+            CEnBridgeFacts const fBridge = view.GetBridge( hex );
+            if ( fBridge.bExists && fBridge.bParentBuilt )
+                return ( TRUE );
+            return ( FALSE );
+        }
+
+        switch ( iType )
+        {
+        case CHex::lake:
+        case CHex::ocean:
+            // Raised water (for example beside a flattened bridge approach)
+            // can have negative calculated depth. It still requires wading:
+            // otherwise zero-depth trucks can drive into water that A* rejects.
+            return ( td.GetWaterDepth( ) > 0 && td.GetWaterDepth( ) > CHex::sea_level - iAlt );
+        case CHex::river:
+            return ( td.GetWaterDepth( ) > 0 );
+        default:
+            if ( view.GetWheelMult( iType, td.GetWheelType( ) ) != 0 )
+                return ( TRUE );
+            return ( FALSE );
+        }
+    }
+
+    // small boats — the motorboat (gun_boat) and the landing craft — are shallow-draft
+    // enough to navigate ALL water: rivers, lakes, ocean, and across the coastline
+    // shores at river mouths / junctions between water bodies (even sloped). Deeper-draft
+    // ships (cargo ship, destroyer, cruiser) fall through to the depth/carrier rules
+    // below, so they still can't use rivers or cross shallow water.
+    if ( ( td.GetType( ) == CTransportData::gun_boat ) || ( td.GetType( ) == CTransportData::landing_craft ) )
+        switch ( iType )
+        {
+        case CHex::river:
+        case CHex::lake:
+        case CHex::ocean:
+        case CHex::coastline:
+            return ( TRUE );
+        }
+
+    //   not water - we can travel on coastline tiles
+    if ( ( iType != CHex::lake ) && ( iType != CHex::ocean ) )
+    {
+        if ( ( td.IsCarrier( ) ) && ( td.GetWaterDepth( ) == 0 ) &&
+             ( view.GetWheelMult( iType, td.GetWheelType( ) ) != 0 ) )
+            return ( TRUE );
+        return ( FALSE );
+    }
+
+    return ( td.GetWaterDepth( ) <= CHex::sea_level - iAlt );
+}
+
 // return TRUE if can enter pHexDest from pHexSrc
 //  this code assumes the hexes are adjoining (diaganol ok)
 //  bStrict == FALSE - can enter sides of buildings/bridge ends
@@ -223,15 +292,21 @@ CTransportData::TRANS_BASE_TYPE CTransportData::GetBaseType( ) const
 BOOL CTransportData::CanEnterHex( CHexCoord const& hexSrc, CHexCoord const& hexDest, BOOL bVehOnWater,
                                   BOOL bStrict ) const
 {
+    return ( CanEnterHex( CEnNavView( ), hexSrc, hexDest, bVehOnWater, bStrict ) );
+}
+
+BOOL CTransportData::CanEnterHex( CEnNavView const& view, CHexCoord const& hexSrc, CHexCoord const& hexDest,
+                                  BOOL bVehOnWater, BOOL bStrict ) const
+{
 #ifdef STRICTER_ASSERTS
-    ASSERT( ( abs( CHexCoord::Diff( hexSrc.X( ) - hexDest.X( ) ) ) <= 1 ) &&
-            ( abs( CHexCoord::Diff( hexSrc.Y( ) - hexDest.Y( ) ) ) <= 1 ) );
+    ASSERT( ( abs( view.Diff( hexSrc.X( ) - hexDest.X( ) ) ) <= 1 ) &&
+            ( abs( view.Diff( hexSrc.Y( ) - hexDest.Y( ) ) ) <= 1 ) );
 #endif
-    CHex* pHexSrc  = theMap.GetHex( hexSrc );
-    CHex* pHexDest = theMap.GetHex( hexDest );
+    CEnHexFacts const fSrc  = view.GetHex( hexSrc );
+    CEnHexFacts const fDest = view.GetHex( hexDest );
 
     // see if we can move to the dest
-    if ( !CanTravelHex( pHexDest ) )
+    if ( !EnCanTravelHexFacts( *this, view, hexDest, fDest.GetUnits( ), fDest.GetType( ), fDest.GetAlt( ) ) )
         return ( FALSE );
 
     // if the same hex we are done
@@ -239,18 +314,18 @@ BOOL CTransportData::CanEnterHex( CHexCoord const& hexSrc, CHexCoord const& hexD
         return ( TRUE );
 
     // if not a bridge or building - leave
-    if ( ( 0 == ( pHexSrc->GetUnits( ) & ( CHex::bldg | CHex::bridge ) ) ) &&
-         ( 0 == ( pHexDest->GetUnits( ) & ( CHex::bldg | CHex::bridge ) ) ) )
+    if ( ( 0 == ( fSrc.GetUnits( ) & ( CHex::bldg | CHex::bridge ) ) ) &&
+         ( 0 == ( fDest.GetUnits( ) & ( CHex::bldg | CHex::bridge ) ) ) )
         return ( TRUE );
 
     // very special case - if dest is a bridge and is not water then it's a single hex island
     // which is a support or end from the water and nothing can enter it.
-    if ( bVehOnWater && ( !pHexDest->IsWater( ) ) && ( pHexDest->GetUnits( ) & CHex::bridge ) )
+    if ( bVehOnWater && ( !fDest.IsWater( ) ) && ( fDest.GetUnits( ) & CHex::bridge ) )
         return ( FALSE );
 
     // movement
-    int xDif = CHexCoord::Diff( hexDest.X( ) - hexSrc.X( ) );
-    int yDif = CHexCoord::Diff( hexDest.Y( ) - hexSrc.Y( ) );
+    int xDif = view.Diff( hexDest.X( ) - hexSrc.X( ) );
+    int yDif = view.Diff( hexDest.Y( ) - hexSrc.Y( ) );
 
     // only if we are not on water do we care about a bridge
     if ( !bVehOnWater )
@@ -259,7 +334,7 @@ BOOL CTransportData::CanEnterHex( CHexCoord const& hexSrc, CHexCoord const& hexD
         // TRAP: ships probing paths near river spans is routine now (soak34
         // 09:29 dump); the refusal is the handling. Warn once per session
         // (hot path - per-hit logging would flood)
-        if ( ( pHexDest->GetUnits( ) & CHex::bridge ) && ( GetWheelType( ) == CWheelTypes::water ) )
+        if ( ( fDest.GetUnits( ) & CHex::bridge ) && ( GetWheelType( ) == CWheelTypes::water ) )
         {
 #ifdef _WIN32
             static BOOL s_bWarnedShipBridge = FALSE;
@@ -272,21 +347,21 @@ BOOL CTransportData::CanEnterHex( CHexCoord const& hexSrc, CHexCoord const& hexD
             return ( FALSE );
         }
 
-        CBridgeUnit* pBuDest = theBridgeHex.GetBridge( hexDest );
+        CEnBridgeFacts const fBuDest = view.GetBridge( hexDest );
 
         // orphaned mark (bit set, no bridge unit) = can't enter
-        if ( ( pHexDest->GetUnits( ) & CHex::bridge ) && pBuDest == NULL )
+        if ( ( fDest.GetUnits( ) & CHex::bridge ) && !fBuDest.bExists )
             return ( FALSE );
 
         // if on a bridge either same bridge or exit
-        if ( pHexSrc->GetUnits( ) & CHex::bridge )
+        if ( fSrc.GetUnits( ) & CHex::bridge )
         {
-            CBridgeUnit* pBuSrc = theBridgeHex.GetBridge( hexSrc );
-            if ( pBuSrc == NULL )
+            CEnBridgeFacts const fBuSrc = view.GetBridge( hexSrc );
+            if ( !fBuSrc.bExists )
                 return ( FALSE );
             // both bridge - same bridge check (or exit one enter other below)
-            if ( pHexDest->GetUnits( ) & CHex::bridge )
-                if ( pBuSrc->GetParent( ) == pBuDest->GetParent( ) )
+            if ( fDest.GetUnits( ) & CHex::bridge )
+                if ( fBuSrc.uParent == fBuDest.uParent )
                     return ( TRUE );
 
             // is our exit direction ok? (if it is we continue in case going to a bridge or bldg)
@@ -303,12 +378,12 @@ BOOL CTransportData::CanEnterHex( CHexCoord const& hexSrc, CHexCoord const& hexD
                     OutputDebugStringA( "[TRAP-REMOVED-1st] CanEnterHex: non-strict bridge-exit probe (once-per-session note)\n" );
                 }
 #endif
-                if ( pBuSrc->GetExit( ) == -1 )
+                if ( fBuSrc.iExit == -1 )
                     return ( FALSE );  // mid-span has no exit
             }
             else
 
-                switch ( pBuSrc->GetExit( ) )
+                switch ( fBuSrc.iExit )
                 {
                 case 0:  // exit up
                     if ( yDif >= 0 )
@@ -332,7 +407,7 @@ BOOL CTransportData::CanEnterHex( CHexCoord const& hexSrc, CHexCoord const& hexD
         }
 
         // if entering a bridge - are we coming from the right direction
-        if ( pHexDest->GetUnits( ) & CHex::bridge )
+        if ( fDest.GetUnits( ) & CHex::bridge )
         {
             // note - we are the reverse of the dir because we are entering
             // only care if strict. 1996 curiosity TRAPs: non-strict passability
@@ -349,12 +424,12 @@ BOOL CTransportData::CanEnterHex( CHexCoord const& hexSrc, CHexCoord const& hexD
                     OutputDebugStringA( "[TRAP-REMOVED-1st] CanEnterHex: non-strict bridge-entry probe (once-per-session note)\n" );
                 }
 #endif
-                if ( pBuDest->GetExit( ) == -1 )
+                if ( fBuDest.iExit == -1 )
                     return ( FALSE );  // mid-span is never enterable
             }
             else
 
-                switch ( pBuDest->GetExit( ) )
+                switch ( fBuDest.iExit )
                 {
                 case 0:  // enter from the down
                     if ( yDif <= 0 )
@@ -379,15 +454,15 @@ BOOL CTransportData::CanEnterHex( CHexCoord const& hexSrc, CHexCoord const& hexD
     }  // bVehOnWater
 
     // if we had bridges above we can leave now if no buildings
-    if ( ( 0 == ( pHexSrc->GetUnits( ) & CHex::bldg ) ) && ( 0 == ( pHexDest->GetUnits( ) & CHex::bldg ) ) )
+    if ( ( 0 == ( fSrc.GetUnits( ) & CHex::bldg ) ) && ( 0 == ( fDest.GetUnits( ) & CHex::bldg ) ) )
         return ( TRUE );
 
     // bridge stuff done - now the building stuff
-    CBuilding* pBldgSrc  = theBuildingHex._GetBuilding( hexSrc );
-    CBuilding* pBldgDest = theBuildingHex._GetBuilding( hexDest );
+    CEnBuildingFacts const fBldgSrc  = view.GetBuilding( hexSrc );
+    CEnBuildingFacts const fBldgDest = view.GetBuilding( hexDest );
 
     // building to building - must be the same
-    if ( ( pHexSrc->GetUnits( ) & CHex::bldg ) && ( pHexDest->GetUnits( ) & CHex::bldg ) && ( pBldgSrc != pBldgDest ) )
+    if ( ( fSrc.GetUnits( ) & CHex::bldg ) && ( fDest.GetUnits( ) & CHex::bldg ) && ( fBldgSrc.uKey != fBldgDest.uKey ) )
         return ( FALSE );
 
     // if not strict we're done
@@ -396,14 +471,14 @@ BOOL CTransportData::CanEnterHex( CHexCoord const& hexSrc, CHexCoord const& hexD
 
     // dest building must be going to the exit/entrance? 
     // (this is where vehicles enter /leave?) 
-    if ( pBldgDest != NULL )
-        if ( hexDest != ( IsBoat( ) ? pBldgDest->GetShipHex( ) : pBldgDest->GetExitHex( ) ) )
+    if ( fBldgDest.bExists )
+        if ( hexDest != ( IsBoat( ) ? fBldgDest.hexShip : fBldgDest.hexExit ) )
             return ( FALSE );
 
     // leaving a building
-    if ( pHexSrc->GetUnits( ) & CHex::bldg )
+    if ( fSrc.GetUnits( ) & CHex::bldg )
     {
-        switch ( IsBoat( ) ? pBldgSrc->GetShipDir( ) : pBldgSrc->GetExitDir( ) )
+        switch ( IsBoat( ) ? fBldgSrc.iShipDir : fBldgSrc.iExitDir )
         {
         case 0:   // exit up
             return ( yDif < 0 );
@@ -419,10 +494,8 @@ BOOL CTransportData::CanEnterHex( CHexCoord const& hexSrc, CHexCoord const& hexD
 #if EN_AI_PROBES_ECON && defined(_WIN32)
             {
                 char szD[128];
-                sprintf( szD, "[BADEXITDIR] leave bldg %lu type %d dir %d at %d,%d\n",
-                         (unsigned long)pBldgSrc->GetID( ), (int)pBldgSrc->GetData( )->GetType( ),
-                         IsBoat( ) ? pBldgSrc->GetShipDir( ) : pBldgSrc->GetExitDir( ),
-                         pBldgSrc->GetHex( ).X( ), pBldgSrc->GetHex( ).Y( ) );
+                sprintf( szD, "[BADEXITDIR] leave bldg dir %d at %d,%d\n",
+                         IsBoat( ) ? fBldgSrc.iShipDir : fBldgSrc.iExitDir, hexSrc.X( ), hexSrc.Y( ) );
                 OutputDebugStringA( szD );
             }
 #endif
@@ -432,7 +505,7 @@ BOOL CTransportData::CanEnterHex( CHexCoord const& hexSrc, CHexCoord const& hexD
     }
 
     // entering a building
-    switch ( IsBoat( ) ? pBldgDest->GetShipDir( ) : pBldgDest->GetExitDir( ) )
+    switch ( IsBoat( ) ? fBldgDest.iShipDir : fBldgDest.iExitDir )
     {
     case 0:  // enter from the top
         return ( yDif > 0 );
@@ -449,10 +522,8 @@ BOOL CTransportData::CanEnterHex( CHexCoord const& hexSrc, CHexCoord const& hexD
 #if EN_AI_PROBES_ECON && defined(_WIN32)
     {
         char szD[128];
-        sprintf( szD, "[BADEXITDIR] bldg %lu type %d dir %d at %d,%d\n",
-                 (unsigned long)pBldgDest->GetID( ), (int)pBldgDest->GetData( )->GetType( ),
-                 IsBoat( ) ? pBldgDest->GetShipDir( ) : pBldgDest->GetExitDir( ),
-                 pBldgDest->GetHex( ).X( ), pBldgDest->GetHex( ).Y( ) );
+        sprintf( szD, "[BADEXITDIR] bldg dir %d at %d,%d\n",
+                 IsBoat( ) ? fBldgDest.iShipDir : fBldgDest.iExitDir, hexDest.X( ), hexDest.Y( ) );
         OutputDebugStringA( szD );
     }
 #endif
@@ -467,66 +538,18 @@ BOOL CTransportData::CanTravelHex( CHex const* pHex ) const
     ASSERT_STRICT_VALID( this );
     ASSERT_STRICT_VALID( pHex );
 
-    // if a building we can travel on it
-    if ( ( pHex->GetUnits( ) & CHex::bldg ) != 0 )
-        return ( TRUE );
+    // pHex->GetHex() is only consulted for the bridge lookup, exactly as it was
+    // when that lookup lived in this body.
+    return ( EnCanTravelHexFacts( *this, CEnNavView( ), pHex->GetHex( ), pHex->GetUnits( ), pHex->GetType( ),
+                                  pHex->GetAlt( ) ) );
+}
 
-    // handle land units first (most likely)
-    if ( m_cWheelType != CWheelTypes::water )
-    {
-        // if a completed bridge we can travel on it
-        if ( ( pHex->GetUnits( ) & CHex::bridge ) != 0 )
-        {
-            // orphaned mark (no bridge unit) = not travelable
-            CBridgeUnit* pBuTrav = theBridgeHex.GetBridge( pHex->GetHex( ) );
-            if ( pBuTrav != NULL && pBuTrav->GetParent( ) != NULL && pBuTrav->GetParent( )->IsBuilt( ) )
-                return ( TRUE );
-            return ( FALSE );
-        }
+BOOL CTransportData::CanTravelHex( CEnNavView const& view, CHexCoord const& hex ) const
+{
+    ASSERT_STRICT_VALID( this );
 
-        switch ( pHex->GetType( ) )
-        {
-        case CHex::lake:
-        case CHex::ocean:
-            // Raised water (for example beside a flattened bridge approach)
-            // can have negative calculated depth. It still requires wading:
-            // otherwise zero-depth trucks can drive into water that A* rejects.
-            return ( GetWaterDepth( ) > 0 &&
-                     GetWaterDepth( ) > CHex::sea_level - pHex->GetAlt( ) );
-        case CHex::river:
-            return ( GetWaterDepth( ) > 0 );
-        default:
-            if ( theTerrain.GetData( pHex->GetType( ) ).GetWheelMult( m_cWheelType ) != 0 )
-                return ( TRUE );
-            return ( FALSE );
-        }
-    }
-
-    // small boats — the motorboat (gun_boat) and the landing craft — are shallow-draft
-    // enough to navigate ALL water: rivers, lakes, ocean, and across the coastline
-    // shores at river mouths / junctions between water bodies (even sloped). Deeper-draft
-    // ships (cargo ship, destroyer, cruiser) fall through to the depth/carrier rules
-    // below, so they still can't use rivers or cross shallow water.
-    if ( ( GetType( ) == gun_boat ) || ( GetType( ) == landing_craft ) )
-        switch ( pHex->GetType( ) )
-        {
-        case CHex::river:
-        case CHex::lake:
-        case CHex::ocean:
-        case CHex::coastline:
-            return ( TRUE );
-        }
-
-    //   not water - we can travel on coastline tiles
-    if ( ( pHex->GetType( ) != CHex::lake ) && ( pHex->GetType( ) != CHex::ocean ) )
-    {
-        if ( ( IsCarrier( ) ) && ( GetWaterDepth( ) == 0 ) &&
-             ( theTerrain.GetData( pHex->GetType( ) ).GetWheelMult( m_cWheelType ) != 0 ) )
-            return ( TRUE );
-        return ( FALSE );
-    }
-
-    return ( GetWaterDepth( ) <= CHex::sea_level - pHex->GetAlt( ) );
+    CEnHexFacts const f = view.GetHex( hex );
+    return ( EnCanTravelHexFacts( *this, view, hex, f.GetUnits( ), f.GetType( ), f.GetAlt( ) ) );
 }
 
 //-----------------------------C F l a m e S p o t --------------------------

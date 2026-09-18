@@ -25,6 +25,7 @@ class SDL2LoadTruckDialog;
 class CTransportData;
 class CVehicle;
 class CBridgeUnit;
+class CEnNavView;
 
 
 int  TrafficOpts ();   // EN_TRAFFIC bitmask: which traffic rules are live
@@ -198,6 +199,12 @@ public:
 
 			BOOL		CanTravelHex (CHex const * pHex) const;
 			BOOL		CanEnterHex (CHexCoord const & hexSrc, CHexCoord const & hexDest, BOOL bOnWater, BOOL bStrict = TRUE) const;
+
+			// Same two rules, read through the navigation seam instead of the live
+			// globals. The two signatures above are the live-view calls of these.
+			BOOL		CanTravelHex (CEnNavView const & view, CHexCoord const & hex) const;
+			BOOL		CanEnterHex (CEnNavView const & view, CHexCoord const & hexSrc, CHexCoord const & hexDest,
+			                         BOOL bOnWater, BOOL bStrict = TRUE) const;
 
 
 			int			GetSetupFire () const;
