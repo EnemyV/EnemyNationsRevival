@@ -158,17 +158,29 @@ std::shared_ptr<const PathWorld> PathWorld::Build( void )
     for ( int t = 0; t < CHex::num_types; ++t )
         for ( int w = 0; w < NUM_WHEEL_TYPES; ++w ) pw.m_aiWheelMult[t][w] = theTerrain.GetData( t ).GetWheelMult( w );
 
+    const uint64_t _qHex = Perf::NowIfEnabled( );
+
+    // The row pitch is ( y << m_iSideShift ) + x on both sides, so a row is contiguous
+    // in the live array too: take the row base once and walk it, instead of paying
+    // _GetHex's per-hex index arithmetic (and, in a Debug build, its two range asserts
+    // and the strict-valid check) a million times. Same reads, same values.
     pw.m_aHex.resize( (size_t)pw.m_iHeight << pw.m_iSideShift );
     for ( int y = 0; y < pw.m_iHeight; ++y )
+    {
+        CHex const* pRow = theMap._GetHex( 0, y );
+        Hex*        pOut = &pw.m_aHex[(size_t)y << pw.m_iSideShift];
         for ( int x = 0; x < pw.m_iWidth; ++x )
         {
-            CHex const* pHex = theMap._GetHex( x, y );
-            Hex&        h    = pw.m_aHex[( (size_t)y << pw.m_iSideShift ) + (size_t)x];
-            h.bUnits         = pHex->GetUnits( );
-            h.bType          = (BYTE)pHex->GetType( );
-            h.bAlt           = (BYTE)pHex->GetAlt( );
-            h.bOcc           = occ_none;
+            CHex const& hx = pRow[x];
+            pOut[x].bUnits = hx.GetUnits( );
+            pOut[x].bType  = (BYTE)hx.GetType( );
+            pOut[x].bAlt   = (BYTE)hx.GetAlt( );
+            pOut[x].bOcc   = occ_none;
         }
+    }
+
+    Perf::CounterAddElapsedUs( "pw.build.hex.us", _qHex );
+    const uint64_t _qTbl = Perf::NowIfEnabled( );
 
     // Buildings: one record per building, a per-hex index into it - a building
     // covers many hexes, so the shared record is the smaller shape here.
@@ -238,6 +250,9 @@ std::shared_ptr<const PathWorld> PathWorld::Build( void )
         for ( size_t i = 0; i < aKey.size( ); ++i ) pw.m_idxBridge.Insert( aKey[i], (DWORD)i );
     }
 
+    Perf::CounterAddElapsedUs( "pw.build.tbl.us", _qTbl );
+    const uint64_t _qOcc = Perf::NowIfEnabled( );
+
     // Occupancy, derived hex by hex through exactly the loop
     // CEnNavView::IsHexMovingVehicle runs - the same four _GetVehicle lookups, the
     // same stopped / !IsOnTheMove test. Only hexes theVehicleHex actually has an
@@ -275,6 +290,8 @@ std::shared_ptr<const PathWorld> PathWorld::Build( void )
         }
     }
 
+    Perf::CounterAddElapsedUs( "pw.build.occ.us", _qOcc );
+
     return ( ptr );
 }
 
@@ -282,6 +299,21 @@ void PathWorld::PublishTick( void )
 {
     if ( !Enabled( ) )
         return;
+
+    // Rebuild only when the world the search reads actually moved. g_enNavEpoch counts
+    // every runtime write of hex terrain / altitude / the bldg+bridge occupancy bits and
+    // bridge built-state (terrain.h). Vehicle occupancy is deliberately OUTSIDE it: a
+    // bVehBlock == FALSE search never reads it except in the one-step destination check
+    // at the foot of _GetPath, and the plan re-checks that hex live when the route is
+    // installed. Two loads and a compare - O(1) per tick, whatever the map size.
+    {
+        std::shared_ptr<const PathWorld> ptrCur = Current( );
+        if ( ptrCur && ( ptrCur->Generation( ) == s_uGameGeneration ) && ( ptrCur->Epoch( ) == g_enNavEpoch ) )
+        {
+            Perf::CounterInc( "pw.builds.skipped" );
+            return;
+        }
+    }
 
     const uint64_t _q = Perf::NowIfEnabled( );
 
