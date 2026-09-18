@@ -3,8 +3,10 @@
 // the live world. Every body under test is extracted verbatim by
 // run-pathworld-snapshot.py, so the test fails if either copy drifts.
 
+#include <cstddef>
 #include <cstdio>
 #include <cstdlib>
+#include <vector>
 
 typedef int           BOOL;
 typedef unsigned char BYTE;
@@ -37,6 +39,7 @@ class CHexCoord
     int  X( ) const { return m_iX; }
     int  Y( ) const { return m_iY; }
     static int Diff( int iVal );   // terrain.inl:96-98, defined once theMap exists
+    static int Wrap( int iVal );   // terrain.inl:91-93, ditto (extracted verbatim)
     bool operator==( CHexCoord const& o ) const { return ( m_iX == o.m_iX ) && ( m_iY == o.m_iY ); }
     bool operator!=( CHexCoord const& o ) const { return !( *this == o ); }
 };
@@ -114,22 +117,29 @@ static CBuildingHexStub theBuildingHex;
 
 // ---- the snapshot ---------------------------------------------------------
 
+#include "pw_pwindex.inc"   // class CPwIndex + its three bodies, verbatim
+
 class PathWorld
 {
   public:
     enum { occ_none = 0, occ_moving = 1, occ_blocked = 2 };
 #include "pw_structs.inc"   // struct Hex / struct Bldg, verbatim from pathworld.h
 
-    enum { kSide = 8 };
+    enum { kSide = 8, kSideShift = 3 };
     Hex  m_aHex[kSide * kSide];
     Bldg m_bldg;
     bool m_bHaveBldg;
     int  m_iHexMask;
     int  m_iWidthHalf;
+    int  m_iSideShift;
 
-    PathWorld( ): m_bHaveBldg( false ), m_iHexMask( kSide - 1 ), m_iWidthHalf( kSide / 2 ) {}
+    PathWorld( )
+        : m_bHaveBldg( false ), m_iHexMask( kSide - 1 ), m_iWidthHalf( kSide / 2 ), m_iSideShift( kSideShift )
+    {
+    }
 
-    Hex const&  At( int x, int y ) const { return m_aHex[y * kSide + x]; }
+#include "pw_snapindex.inc"   // PathWorld::At, verbatim from pathworld.h
+
     Bldg const* FindBldg( int x, int y ) const
     {
         if ( m_bHaveBldg && x == m_bldg.hexExit.X( ) && y == m_bldg.hexExit.Y( ) )
@@ -158,15 +168,23 @@ class CEnSnapNavView
 class CGameMap
 {
   public:
-    int _GetTerrainCost( CHex const* pHex, CHex const* pHexDest, int iDir, int iWheel );
-    int GetRangeDistance( CHexCoord& hex1, CHexCoord& hex2 );
-    int m_iHexMask, m_iWidthHalf;
+    int          _GetTerrainCost( CHex const* pHex, CHex const* pHexDest, int iDir, int iWheel );
+    int          GetRangeDistance( CHexCoord& hex1, CHexCoord& hex2 );
+    CHex const*  GetHex( int x, int y ) const;
+    CHex const* _GetHex( int x, int y ) const;
+    int          m_iHexMask, m_iWidthHalf;
+    // the three members the live indexer reads
+    CHex* m_pHex;
+    int   m_eX, m_eY, m_iSideShift;
 };
 static CGameMap theMap;
 
 #define ASSERT( x ) ( (void)0 )
+#define ASSERT_STRICT( x ) ( (void)0 )
+#define ASSERT_STRICT_VALID( x ) ( (void)0 )
 
 #include "pw_livecost.inc"   // CGameMap::_GetTerrainCost + GetRangeDistance, verbatim from terrain.cpp
+#include "pw_livehex.inc"    // CGameMap::GetHex/_GetHex + CHexCoord::Wrap, verbatim from terrain.inl
 
 // The live Diff the production GetRangeDistance calls (terrain.inl:96-98), over the
 // same two map members the snapshot copies.
@@ -211,10 +229,135 @@ static void BuildSnapshot( )
     }
 }
 
+// ---- the two index tests --------------------------------------------------
+//
+// 1. THE WRAP SEAM. The live view reads every hex through CGameMap::GetHex(int,int),
+//    which masks BOTH axes and then indexes. PathWorld::At must land on that same hex
+//    for every coordinate a search can form - a search running along the top or bottom
+//    edge of the map forms y == -1 and y == side, and an unmasked At walks into
+//    another row there while the live read wraps.
+static void TestSeamIndexing( )
+{
+    for ( int y = 0; y < PathWorld::kSide; ++y )
+        for ( int x = 0; x < PathWorld::kSide; ++x )
+        {
+            CHex* p       = LiveAt( x, y );
+            p->m_bTypeVal = (BYTE)( ( x * 3 + y * 5 ) % CHex::num_types );
+            p->m_bAltVal  = (BYTE)( ( x * 7 + y * 11 ) & 0x7F );
+            p->m_bUnit    = (BYTE)( ( x + y ) & 3 );
+            p->m_hex      = CHexCoord( x, y );
+        }
+    g_bBldgPresent = false;
+    BuildSnapshot( );
+
+    int iOffMap = 0, iSeam = 0;
+    for ( int y = -PathWorld::kSide; y < 2 * PathWorld::kSide; ++y )
+        for ( int x = -PathWorld::kSide; x < 2 * PathWorld::kSide; ++x )
+        {
+            CHex const*           pLive = theMap.GetHex( x, y );
+            PathWorld::Hex const& hSnap = g_pw.At( x, y );
+            const bool            bOff  = ( x < 0 || x >= PathWorld::kSide || y < 0 || y >= PathWorld::kSide );
+            if ( bOff )
+                ++iOffMap;
+            if ( y == -1 || y == PathWorld::kSide )
+                ++iSeam;
+
+            if ( (int)hSnap.bType != pLive->GetType( ) || (int)hSnap.bAlt != pLive->GetAlt( ) ||
+                 hSnap.bUnits != pLive->GetUnits( ) )
+            {
+                check( false, "PathWorld::At lands on the hex CGameMap::GetHex lands on" );
+                if ( g_iFailures < 6 )
+                    printf( "   at %d,%d  live type=%d alt=%d units=%d  snap type=%d alt=%d units=%d\n", x, y,
+                            pLive->GetType( ), pLive->GetAlt( ), (int)pLive->GetUnits( ), (int)hSnap.bType,
+                            (int)hSnap.bAlt, (int)hSnap.bUnits );
+            }
+        }
+    check( iOffMap > 100, "the seam comparison actually probed off-map coordinates" );
+    check( iSeam > 0, "the seam comparison actually probed the row above and below the map" );
+
+    // and the cost of a step ACROSS the seam: y = kSide-1 -> y = kSide, which is row 0.
+    int iSeamCosts = 0;
+    for ( int x = 0; x < PathWorld::kSide; ++x )
+        for ( int iWheel = 0; iWheel < NUM_WHEEL_TYPES; ++iWheel )
+        {
+            const CEnSnapNavView view( g_pw );
+            const int iSnap = view.GetTerrainCost( CHexCoord( x, PathWorld::kSide - 1 ),
+                                                   CHexCoord( x, PathWorld::kSide ), 4, iWheel );
+            const int iLive = theMap._GetTerrainCost( LiveAt( x, PathWorld::kSide - 1 ), LiveAt( x, 0 ), 4, iWheel );
+            if ( iSnap != iLive )
+                check( false, "seam-crossing terrain cost agrees" );
+            ++iSeamCosts;
+        }
+    check( iSeamCosts > 0, "seam-crossing costs were compared" );
+}
+
+// 2. INDEX COVERAGE. theBuildingHex / theBridgeHex hold one entry per FOOTPRINT hex,
+//    and the live lookup answers for each of them. PathWorld::Build feeds the index
+//    from those same entries, so FindBldg must answer for every hex the live map does
+//    - not only for a building's anchor.
+static DWORD PwKey( int x, int y ) { return ( ( (DWORD)x << 16 ) | (DWORD)y ); }
+
+static void TestIndexCoverage( )
+{
+    enum { kMap = 64, kFootX = 2, kFootY = 3 };
+
+    // the reference: which building (1-based id, 0 = none) owns each hex
+    static DWORD aRef[kMap * kMap];
+    for ( int i = 0; i < kMap * kMap; ++i ) aRef[i] = 0;
+
+    std::vector<DWORD> aKey, aVal;
+    DWORD              dwId = 0;
+    for ( int by = 0; by + kFootY <= kMap; by += 7 )
+        for ( int bx = 0; bx + kFootX <= kMap; bx += 5 )
+        {
+            ++dwId;
+            for ( int fy = 0; fy < kFootY; ++fy )
+                for ( int fx = 0; fx < kFootX; ++fx )
+                {
+                    aRef[( by + fy ) * kMap + ( bx + fx )] = dwId;
+#ifdef PW_PERTURB_ANCHORONLY
+                    if ( fx || fy )
+                        continue;   // register the anchor hex only
+#endif
+                    aKey.push_back( PwKey( bx + fx, by + fy ) );
+                    aVal.push_back( dwId );
+                }
+        }
+
+    CPwIndex idx;
+    idx.Reserve( aKey.size( ) );
+    for ( size_t i = 0; i < aKey.size( ); ++i ) idx.Insert( aKey[i], aVal[i] );
+
+    int iHits = 0, iMisses = 0;
+    for ( int y = 0; y < kMap; ++y )
+        for ( int x = 0; x < kMap; ++x )
+        {
+            const DWORD dwWant = aRef[y * kMap + x];
+            const DWORD dwGot  = idx.Find( PwKey( x, y ) );
+            const DWORD dwNorm = ( dwGot == (DWORD)CPwIndex::none ) ? 0u : dwGot;
+            if ( dwWant )
+                ++iHits;
+            else
+                ++iMisses;
+            if ( dwWant != dwNorm )
+            {
+                check( false, "the snapshot index answers for every registered footprint hex" );
+                if ( g_iFailures < 6 )
+                    printf( "   hex %d,%d  want=%u got=%u\n", x, y, dwWant, dwNorm );
+            }
+        }
+    check( iHits > 500, "the coverage test registered a real number of footprint hexes" );
+    check( iMisses > 500, "the coverage test also checked hexes with no building" );
+    check( dwId > 50, "the coverage test placed a real number of buildings" );
+}
+
 int main( )
 {
     theMap.m_iHexMask   = PathWorld::kSide - 1;
     theMap.m_iWidthHalf = PathWorld::kSide / 2;
+    theMap.m_pHex       = g_aLive;
+    theMap.m_eX = theMap.m_eY = PathWorld::kSide;
+    theMap.m_iSideShift       = PathWorld::kSideShift;
 
     // A wheel table with a 0 for water on land and on rivers/coastline, so every
     // fallback arm in _GetTerrainCost is reachable.
@@ -363,6 +506,9 @@ int main( )
         check( view2.GetTerrainCost( CHexCoord( 4, 5 ), CHexCoord( 5, 5 ), 2, CWheelTypes::wheel ) == iLiveCost,
                "a republished snapshot picks the mutation up" );
     }
+
+    TestSeamIndexing( );
+    TestIndexCoverage( );
 
     printf( "%d checks, %d failures\n", g_iChecks, g_iFailures );
     return ( g_iFailures ? 1 : 0 );

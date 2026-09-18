@@ -19,7 +19,7 @@ HERE = Path(__file__).resolve().parent
 ROOT = HERE.parents[1]
 parser = argparse.ArgumentParser(description=__doc__)
 parser.add_argument('--baseline-ref', help='Read production bodies from this Git revision')
-parser.add_argument('--perturb', choices=['coastline', 'samehex', 'altitude'],
+parser.add_argument('--perturb', choices=['coastline', 'samehex', 'altitude', 'unwrapped', 'anchoronly'],
                     help='Corrupt one special case of the SNAPSHOT copy, to run the test in its failing direction')
 args = parser.parse_args()
 
@@ -61,9 +61,11 @@ def block(text, anchor, start_at=0):
 
 terrain_cpp = read('enations_latest/src/terrain.cpp')
 terrain_h = read('enations_latest/src/terrain.h')
+terrain_inl = read('enations_latest/src/terrain.inl')
 base_h = read('enations_latest/src/base.h')
 navview_h = read('enations_latest/src/ennavview.h')
 pathworld_h = read('enations_latest/src/pathworld.h')
+pathworld_cpp = read('enations_latest/src/pathworld.cpp')
 
 # --- the live bodies, verbatim ------------------------------------------------
 live = body(terrain_cpp, 'int CGameMap::_GetTerrainCost( CHex const* pHex, CHex const* pHexDest, int iDir, int iWheel )')
@@ -97,7 +99,31 @@ hexenums += block(terrain_h, 'enum { ul=0x01') + ';\n'
 structs = block(pathworld_h, 'struct Hex') + ';\n' + block(pathworld_h, 'struct Bldg') + ';\n'
 (out / 'pw_structs.inc').write_text(structs, encoding='utf-8')
 
-digest = hashlib.sha256((live + snap + wheels + hexenums + structs).encode()).hexdigest()
+# --- the two hex INDEXERS, verbatim: the snapshot's and the live one it mirrors ----
+# PathWorld::At must land on the same hex CGameMap::GetHex(int,int) lands on, for any
+# coordinate the search can form - including one outside [0, side), which is what a
+# search crossing the map's wrap seam produces.
+snap_index = body(pathworld_h, 'Hex const& At( int x, int y ) const')
+if args.perturb == 'unwrapped':
+    # The pre-fix form: index straight off the caller's coordinates.
+    snap_index = 'Hex const& At( int x, int y ) const\n' \
+                 '{ return ( m_aHex[( (size_t)y << m_iSideShift ) + (size_t)x] ); }'
+(out / 'pw_snapindex.inc').write_text(snap_index, encoding='utf-8')
+
+live_index = body(terrain_inl, 'inline CHex const* CGameMap::GetHex( int x, int y ) const')
+live_index += '\n\n' + body(terrain_inl, 'inline CHex const* CGameMap::_GetHex( int x, int y ) const')
+live_index += '\n\n' + body(terrain_inl, 'inline int CHexCoord::Wrap( int iVal )')
+(out / 'pw_livehex.inc').write_text(live_index, encoding='utf-8')
+
+# --- the open-addressed hex index, verbatim ---------------------------------------
+pwindex = block(pathworld_h, 'class CPwIndex') + ';\n\n'
+pwindex += body(pathworld_cpp, 'void CPwIndex::Reserve( size_t nEntries )') + '\n\n'
+pwindex += body(pathworld_cpp, 'void CPwIndex::Insert( DWORD dwKey, DWORD dwVal )') + '\n\n'
+pwindex += body(pathworld_cpp, 'DWORD CPwIndex::Find( DWORD dwKey ) const')
+(out / 'pw_pwindex.inc').write_text(pwindex, encoding='utf-8')
+
+digest = hashlib.sha256((live + snap + wheels + hexenums + structs + snap_index + live_index
+                         + pwindex).encode()).hexdigest()
 print('Production bodies SHA256:', digest, flush=True)
 if args.perturb:
     print('PERTURBED:', args.perturb, '- this run is EXPECTED to fail', flush=True)
@@ -105,8 +131,9 @@ if args.perturb:
 vs = Path('C:/Program Files/Microsoft Visual Studio/2022/Community/VC/Auxiliary/Build/vcvars64.bat')
 batch = out / 'compile.cmd'
 exe = out / 'pathworld_snapshot_test.exe'
+extra = ' /DPW_PERTURB_ANCHORONLY' if args.perturb == 'anchoronly' else ''
 batch.write_text(f'@echo off\ncall "{vs}" >nul 2>&1\nif errorlevel 1 exit /b 2\n'
-                 f'cl /nologo /EHsc /std:c++17 /W4 /wd4100 /wd4127 /Od /I"{out}" '
+                 f'cl /nologo /EHsc /std:c++17 /W4 /wd4100 /wd4127 /Od{extra} /I"{out}" '
                  f'"{HERE / "test_pathworld_snapshot.cpp"}" '
                  f'/Fo"{out / "pathworld_snapshot.obj"}" /Fe"{exe}"\nexit /b %errorlevel%\n', encoding='utf-8')
 compiled = subprocess.run(['cmd', '/c', str(batch)], cwd=out)
