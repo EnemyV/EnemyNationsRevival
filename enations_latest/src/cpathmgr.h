@@ -30,6 +30,10 @@ const int MAX_BOTH_INDEX = 4096;
 #include "terrain.inl"
 #include "enprobes.h"  // EN_PATH_PROBES compile gate (shadow-instance members below)
 
+// The navigation read seam (ennavview.h). Every live-world read a search makes goes
+// through one of these, so a snapshot-backed view can be substituted later.
+class CEnNavView;
+
 class CCell
 {
 public:
@@ -112,7 +116,6 @@ class CPathMgr
 	CHexCoord m_lastFrom;	// to stop repeating path requests
 	CHexCoord m_lastTo;
 
-	BOOL IsHexMovingVehicle ( CHexCoord const & hex );
 	BOOL m_bVehBlock;	// indicates if vehicles on path block path
 
 	CTransportData const *m_pTD; // pointer for this vehicle type
@@ -211,10 +214,10 @@ public:
     CHexCoord* GetPath( CVehicle* pVehicle, CHexCoord& hexFrom, CHexCoord& hexTo, int& iPathLen, int iVehType = 0,
                         BOOL bVehBlock = FALSE, BOOL bDirectPath = FALSE );
 
-	CHexCoord *CreateHexPath( int& iPathLen, CCell *pDestCell );
+	CHexCoord *CreateHexPath( CEnNavView const & view, int& iPathLen, CCell *pDestCell );
 	int GetCellDirection( CHexCoord& fromHex, CHexCoord& toHex );
-	void AdjustDestination( void );
-	void ChangeDestination( void );
+	void AdjustDestination( CEnNavView const & view );
+	void ChangeDestination( CEnNavView const & view );
 
 	void GetHeadingCell( int iPos, CCell *pFromCell, int& iX, int& iY );
 	void GetFromCell( CVehicle *pVeh, CCell *pFromCell );
@@ -228,9 +231,9 @@ public:
 
 	int GetPathCount( CCell *pDestCell );
 	BOOL AtDestination( CCell *pCell );
-	BOOL CanEnterBridge( CCell *pFromCell, CCell *pToCell );
-	void GetCellCosts( int iPos, CCell *pFromCell, CCell *pToCell );
-	void GetCellAt( int iPos, CCell *pFromCell, int& iX, int& iY );
+	BOOL CanEnterBridge( CEnNavView const & view, CCell *pFromCell, CCell *pToCell );
+	void GetCellCosts( CEnNavView const & view, int iPos, CCell *pFromCell, CCell *pToCell );
+	void GetCellAt( CEnNavView const & view, int iPos, CCell *pFromCell, int& iX, int& iY );
 
 	// BUGBUG
 	// these are used only if the array of cells is used

@@ -14,6 +14,7 @@
 #include "stdafx.h"
 #include "logging.h"  // dave's logging system
 #include "Perf.h"     // EN_PERF counters (mpath.* exit mix)
+#include "ennavview.h" // the navigation read seam: every live-world read below goes through it
 #include "enprobes.h" // EN_PATH_PROBES compile gate
 
 #if EN_PATH_PROBES
@@ -201,31 +202,6 @@ CHexCoord* CPathMgr::EN_PM_PROD_ENTRY( CVehicle* pVehicle, CHexCoord& hexFrom, C
 // return the path via a CHexCoord array, passing the size
 // back as the m_iX element of the first CHexCoord
 //
-// Is every vehicle occupying this hex on the move? Such a hex is passable for
-// planning purposes; ordinary movement must still wait for actual clearance.
-// Traffic-wait mode is transient. Explicit Stop, parked and blocked modes are obstacles.
-BOOL CPathMgr::IsHexMovingVehicle( CHexCoord const & hex )
-{
-    // ALL FOUR sub-hexes: a hex is passable only if everything sitting in it is
-    // actually driving. Checking just the first occupant accepted a hex whose
-    // other half was parked, which is exactly the obstacle we must not plan through.
-    BOOL bAny = FALSE;
-
-    for ( int iX = 0; iX < 2; iX++ )
-        for ( int iY = 0; iY < 2; iY++ )
-        {
-            CVehicle* pVeh = theVehicleHex._GetVehicle( CSubHex( hex.X( ) * 2 + iX, hex.Y( ) * 2 + iY ) );
-            if ( pVeh == NULL )
-                continue;
-
-            if ( pVeh->IsFlag( CUnit::stopped ) || !pVeh->IsOnTheMove( ) )
-                return ( FALSE );  // something is parked here - a real obstacle
-            bAny = TRUE;
-        }
-
-    return ( bAny );
-}
-
 CHexCoord* CPathMgr::_GetPath( CVehicle* pVehicle, CHexCoord& hexFrom, CHexCoord& hexTo, int& iPathLen, int iVehType,
                               BOOL bVehBlock, BOOL bDirectPath )
 {
@@ -241,6 +217,10 @@ CHexCoord* CPathMgr::_GetPath( CVehicle* pVehicle, CHexCoord& hexFrom, CHexCoord
     m_bProbeCapArena = FALSE;
     m_bProbeCapIter  = FALSE;
 #endif
+
+    // ONE live view for this whole search. Every read of world state below - and in
+    // every helper called from here - goes through it.
+    const CEnNavView view;
 
     // BUGBUG count types of calls
     m_iPaths++;
@@ -303,7 +283,7 @@ CHexCoord* CPathMgr::_GetPath( CVehicle* pVehicle, CHexCoord& hexFrom, CHexCoord
     if ( pVehicle != NULL )
         m_pTD = pVehicle->GetData( );
     else
-        m_pTD = theTransports.GetData( iVehType );
+        m_pTD = view.GetTransportData( iVehType );
 
     // determine maximum cost of a single move based on
     // this wheel type and use that as a factor with distance
@@ -313,7 +293,7 @@ CHexCoord* CPathMgr::_GetPath( CVehicle* pVehicle, CHexCoord& hexFrom, CHexCoord
 
     for ( int t = CHex::city; t < CHex::num_types; ++t )
     {
-        int iRtn = theTerrain.GetData( t ).GetWheelMult( m_pTD->GetWheelType( ) );
+        int iRtn = view.GetWheelMult( t, m_pTD->GetWheelType( ) );
         // x2 (1996 original). Do NOT soften to x1.5 (reverted #27): at the shipping
         // search budget both weights skip detour-roads identically, and x1.5 only
         // explores more cells. Road-following is a budget/cost fix, not a heuristic one.
@@ -345,7 +325,7 @@ CHexCoord* CPathMgr::_GetPath( CVehicle* pVehicle, CHexCoord& hexFrom, CHexCoord
     // consider the range to the destination and make adjustment
     // if range is > m_iMaxPath
     if ( !bDirectPath )
-        AdjustDestination( );
+        AdjustDestination( view );
 
 
     // set up hexFrom as first test cell
@@ -387,7 +367,7 @@ CHexCoord* CPathMgr::_GetPath( CVehicle* pVehicle, CHexCoord& hexFrom, CHexCoord
     if ( bDirectPath )
         iHang *= 2;  // 256
     else
-        iHang += ( theMap.GetRangeDistance( m_hexFrom, m_hexTo ) * CELLSAROUND );
+        iHang += ( view.GetRangeDistance( m_hexFrom, m_hexTo ) * CELLSAROUND );
     iHang = ( iHang * 3 ) / 2;  // +50% search headroom (pairs with the *5 arena above)
 
 #if EN_PATH_PROBES
@@ -419,7 +399,7 @@ CHexCoord* CPathMgr::_GetPath( CVehicle* pVehicle, CHexCoord& hexFrom, CHexCoord
                 GetHeadingCell( i, pTest, iX, iY );
             else
 #endif
-                GetCellAt( i, pTest, iX, iY );
+                GetCellAt( view, i, pTest, iX, iY );
 
             // consider if that cell is already in list
             pAdjCell = GetCellAt( iX, iY );
@@ -449,7 +429,7 @@ CHexCoord* CPathMgr::_GetPath( CVehicle* pVehicle, CHexCoord& hexFrom, CHexCoord
             // now get cost to enter pAdjCell from pTest,
             // and distance from pAdjCell to destination,
             // and make pAdjCell point to pTest
-            GetCellCosts( i, pTest, pAdjCell );
+            GetCellCosts( view, i, pTest, pAdjCell );
 
             if ( AtDestination( pAdjCell ) )
             {
@@ -476,7 +456,7 @@ CHexCoord* CPathMgr::_GetPath( CVehicle* pVehicle, CHexCoord& hexFrom, CHexCoord
                     // BUGBUG force direct paths for a while
                     if ( bDirectPath )
                     {
-                        CHexCoord* phexPath = CreateHexPath( iPathLen, pAdjCell );
+                        CHexCoord* phexPath = CreateHexPath( view, iPathLen, pAdjCell );
 
                         ClearArray( );
 #if PATH_TIMING
@@ -505,7 +485,7 @@ CHexCoord* CPathMgr::_GetPath( CVehicle* pVehicle, CHexCoord& hexFrom, CHexCoord
                         // less than 1/2 the time remaining to search
                         if ( iHang < m_iWidth )
                         {
-                            CHexCoord* phexPath = CreateHexPath( iPathLen, pAdjCell );
+                            CHexCoord* phexPath = CreateHexPath( view, iPathLen, pAdjCell );
 
                             // ReportPath(phexPath,iPathLen);
 
@@ -536,14 +516,14 @@ CHexCoord* CPathMgr::_GetPath( CVehicle* pVehicle, CHexCoord& hexFrom, CHexCoord
                 else  // cost is not the best
                 {
                     // pAdjCell could be being entered from a bridge
-                    if ( !CanEnterBridge( pTest, pAdjCell ) )
+                    if ( !CanEnterBridge( view, pTest, pAdjCell ) )
                         continue;
 
                     // no entry possible into destination cell
                     if ( pAdjCell->m_iDist == 0xFFFE )
                     {
                         // return path based on last reachable cell
-                        CHexCoord* phexPath = CreateHexPath( iPathLen, pTest );
+                        CHexCoord* phexPath = CreateHexPath( view, iPathLen, pTest );
 
 #if PATH_TIMING
                         m_hexTo.X( pTest->m_iX );
@@ -711,7 +691,7 @@ CHexCoord* CPathMgr::_GetPath( CVehicle* pVehicle, CHexCoord& hexFrom, CHexCoord
 
     // now walk the m_plCells and
     // create a CHexCoord[] to return to caller
-    CHexCoord* phexPath = CreateHexPath( iPathLen, pTest );
+    CHexCoord* phexPath = CreateHexPath( view, iPathLen, pTest );
 
 #if PATH_TIMING
 #ifdef _LOGOUT
@@ -750,15 +730,15 @@ CHexCoord* CPathMgr::_GetPath( CVehicle* pVehicle, CHexCoord& hexFrom, CHexCoord
     // on the single step and return NULL if blocked
     if ( /*!iHang || */ iPathLen == 1 )
     {
-        CHexCoord* pHex = &phexPath[0];
-        CHexCoord  hexDest( pHex->X( ), pHex->Y( ) );
-        CHex*      pGameHex = theMap.GetHex( hexDest );
-        if ( pGameHex != NULL )
+        CHexCoord*        pHex  = &phexPath[0];
+        CHexCoord         hexDest( pHex->X( ), pHex->Y( ) );
+        CEnHexFacts const fDest = view.GetHex( hexDest );
+        if ( fDest.IsValid( ) )
         {
             // consider that a vehicle occupies the dest hex or
             // it cannot be entered
-            BYTE bUnits = pGameHex->GetUnits( );
-            if ( ( bUnits & ( CHex::ul | CHex::ur | CHex::ll | CHex::lr ) ) || !m_pTD->CanTravelHex( pGameHex ) )
+            BYTE bUnits = fDest.GetUnits( );
+            if ( ( bUnits & ( CHex::ul | CHex::ur | CHex::ll | CHex::lr ) ) || !m_pTD->CanTravelHex( view, hexDest ) )
             {
                 delete[] phexPath;
                 phexPath = NULL;
@@ -809,9 +789,9 @@ CHexCoord* CPathMgr::_GetPath( CVehicle* pVehicle, CHexCoord& hexFrom, CHexCoord
 // m_hexFrom and the current m_hexTo and put the just found mid
 // point into m_hexTo in lieu of the original destination
 //
-void CPathMgr::AdjustDestination( void )
+void CPathMgr::AdjustDestination( CEnNavView const& view )
 {
-    int iRange = theMap.GetRangeDistance( m_hexFrom, m_hexTo );
+    int iRange = view.GetRangeDistance( m_hexFrom, m_hexTo );
 
     // #25 long-haul fix: the flat MAX_PATH_RANGE (80) clamp below halved any order
     // beyond ~80 hexes down to a near midpoint, so long hauls only pathed partway
@@ -834,10 +814,10 @@ void CPathMgr::AdjustDestination( void )
 
     while ( iRange > iLimit )
     {
-        ChangeDestination( );
+        ChangeDestination( view );
 
         // get new range from the game
-        iRange = theMap.GetRangeDistance( m_hexFrom, m_hexTo );
+        iRange = view.GetRangeDistance( m_hexFrom, m_hexTo );
         if ( iRange < 0 )
         {
 #if PATH_TIMING
@@ -855,11 +835,10 @@ void CPathMgr::AdjustDestination( void )
             continue;
 
         // make sure new destination is passible
-        CHex* pGameHex = theMap.GetHex( m_hexTo );
-        if ( pGameHex == NULL )
+        if ( !view.GetHex( m_hexTo ).IsValid( ) )
             continue;
         // new destination is not passible so stay in the loop
-        if ( !m_pTD->CanTravelHex( pGameHex ) )
+        if ( !m_pTD->CanTravelHex( view, m_hexTo ) )
             iRange = iLimit;
     }
 
@@ -876,30 +855,31 @@ void CPathMgr::AdjustDestination( void )
 // m_hexFrom and the current m_hexTo and put the just found mid
 // point into m_hexTo in lieu of the original destination
 //
-void CPathMgr::ChangeDestination( void )
+void CPathMgr::ChangeDestination( CEnNavView const& view )
 {
     int iNewX, iNewY;
 
     // get 1/2 the distance on each axis
-    int iDeltaX = abs( m_hexFrom.Diff( m_hexFrom.X( ) - m_hexTo.X( ) ) ) / 2;
-    int iDeltaY = abs( m_hexFrom.Diff( m_hexFrom.Y( ) - m_hexTo.Y( ) ) ) / 2;
+    int iDeltaX = abs( view.Diff( m_hexFrom.X( ) - m_hexTo.X( ) ) ) / 2;
+    int iDeltaY = abs( view.Diff( m_hexFrom.Y( ) - m_hexTo.Y( ) ) ) / 2;
 
-    if ( m_hexFrom.Diff( m_hexFrom.X( ) - m_hexTo.X( ) ) < 0 )
-        iNewX = m_hexFrom.Wrap( ( m_hexFrom.X( ) + iDeltaX ) );
+    if ( view.Diff( m_hexFrom.X( ) - m_hexTo.X( ) ) < 0 )
+        iNewX = view.Wrap( ( m_hexFrom.X( ) + iDeltaX ) );
     else
-        iNewX = m_hexFrom.Wrap( ( m_hexFrom.X( ) - iDeltaX ) );
+        iNewX = view.Wrap( ( m_hexFrom.X( ) - iDeltaX ) );
 
-    if ( m_hexFrom.Diff( m_hexFrom.Y( ) - m_hexTo.Y( ) ) < 0 )
-        iNewY = m_hexFrom.Wrap( ( m_hexFrom.Y( ) + iDeltaY ) );
+    if ( view.Diff( m_hexFrom.Y( ) - m_hexTo.Y( ) ) < 0 )
+        iNewY = view.Wrap( ( m_hexFrom.Y( ) + iDeltaY ) );
     else
-        iNewY = m_hexFrom.Wrap( ( m_hexFrom.Y( ) - iDeltaY ) );
+        iNewY = view.Wrap( ( m_hexFrom.Y( ) - iDeltaY ) );
 
     if ( !iNewX && !iNewY )
     {
         iNewX = 1;
     }
-    m_hexTo.X( iNewX );
-    m_hexTo.Y( iNewY );
+    // the masking CHexCoord::X(int)/Y(int) setters read the map width mask; both
+    // values are already wrapped through the view here.
+    m_hexTo = CHexCoord( view.Wrap( iNewX ), view.Wrap( iNewY ) );
 
 #if PATH_TIMING
 #ifdef _LOGOUT
@@ -959,7 +939,7 @@ void CPathMgr::ReportPath( CHexCoord *phexPath, int iPathLen )
 // by the game or using fake map for testing, and return the pointer
 // to the array, with the size of the array in iPathLen
 //
-CHexCoord* CPathMgr::CreateHexPath( int& iPathLen, CCell* pDestCell )
+CHexCoord* CPathMgr::CreateHexPath( CEnNavView const& view, int& iPathLen, CCell* pDestCell )
 {
     if ( pDestCell == NULL )
         return ( NULL );
@@ -992,8 +972,7 @@ CHexCoord* CPathMgr::CreateHexPath( int& iPathLen, CCell* pDestCell )
             break;
 
         CHexCoord* pHex = &pHexPath[--i];
-        pHex->X( pThis->m_iX );
-        pHex->Y( pThis->m_iY );
+        *pHex           = CHexCoord( view.Wrap( pThis->m_iX ), view.Wrap( pThis->m_iY ) );
 
         // at the end
         if ( !i )
@@ -1060,26 +1039,26 @@ BOOL CPathMgr::AtDestination( CCell* pCell )
 //
 // test for the destination being entered from a bridge
 //
-BOOL CPathMgr::CanEnterBridge( CCell* pFromCell, CCell* pToCell )
+BOOL CPathMgr::CanEnterBridge( CEnNavView const& view, CCell* pFromCell, CCell* pToCell )
 {
     // need this because multiple threads call thePathMgr and it is global
     if ( m_pTD == NULL )
         return FALSE;
 
     // get game data for this cell
-    CHexCoord hexDest( pToCell->m_iX, pToCell->m_iY );
-    CHex*     pDestHex = theMap.GetHex( hexDest );
-    if ( pDestHex == NULL )
+    CHexCoord         hexDest( pToCell->m_iX, pToCell->m_iY );
+    CEnHexFacts const fDest = view.GetHex( hexDest );
+    if ( !fDest.IsValid( ) )
         return FALSE;
 
     // create hex for from cell
-    CHexCoord hexFrom( pFromCell->m_iX, pFromCell->m_iY );
-    CHex*     pFromHex = theMap.GetHex( hexFrom );
-    if ( pFromHex == NULL )
+    CHexCoord         hexFrom( pFromCell->m_iX, pFromCell->m_iY );
+    CEnHexFacts const fFrom = view.GetHex( hexFrom );
+    if ( !fFrom.IsValid( ) )
         return FALSE;
 
     // if there is bridge hex involved, we must do another test
-    if ( pDestHex->GetUnits( ) & CHex::bridge || pFromHex->GetUnits( ) & CHex::bridge )
+    if ( fDest.GetUnits( ) & CHex::bridge || fFrom.GetUnits( ) & CHex::bridge )
     {
         // A WATER vehicle is ALWAYS on the water — it passes UNDER bridges, never on
         // the deck — so force on-water for it; otherwise exiting a bridge-over-water
@@ -1087,8 +1066,8 @@ BOOL CPathMgr::CanEnterBridge( CCell* pFromCell, CCell* pToCell )
         // ship) can't traverse under the span. Keep this in sync with GetCellCosts,
         // the other A* gate, which already has this fix.
         BOOL bOnWater = ( m_pTD->GetWheelType( ) == CWheelTypes::water ) ||
-                        ( pFromHex->IsWater( ) & ( ( pFromHex->GetUnits( ) & CHex::bridge ) == 0 ) );
-        if ( !m_pTD->CanEnterHex( hexFrom, hexDest, bOnWater ) )
+                        ( fFrom.IsWater( ) & ( ( fFrom.GetUnits( ) & CHex::bridge ) == 0 ) );
+        if ( !m_pTD->CanEnterHex( view, hexFrom, hexDest, bOnWater ) )
             return FALSE;
     }
     return TRUE;
@@ -1100,7 +1079,7 @@ BOOL CPathMgr::CanEnterBridge( CCell* pFromCell, CCell* pToCell )
 // point to 'from' cell also get range to destination for 'to' cell
 // and record distance and combine the two into 'to' both
 //
-void CPathMgr::GetCellCosts( int iPos, CCell* pFromCell, CCell* pToCell )
+void CPathMgr::GetCellCosts( CEnNavView const& view, int iPos, CCell* pFromCell, CCell* pToCell )
 {
     // this cell is the start cell and should not be costed
     if ( !pToCell->m_iCost )
@@ -1114,13 +1093,13 @@ void CPathMgr::GetCellCosts( int iPos, CCell* pFromCell, CCell* pToCell )
         return;
 
     // get game data for this cell
-    CHexCoord hexDest( pToCell->m_iX, pToCell->m_iY );
-    CHex*     pDestHex = theMap.GetHex( hexDest );
-    if ( pDestHex == NULL )
+    CHexCoord         hexDest( pToCell->m_iX, pToCell->m_iY );
+    CEnHexFacts const fDest = view.GetHex( hexDest );
+    if ( !fDest.IsValid( ) )
         return;
 
     // test to enter hex
-    if ( !m_pTD->CanTravelHex( pDestHex ) )
+    if ( !m_pTD->CanTravelHex( view, hexDest ) )
         return;
 
     // since DT will not change the terrain cost data for coastlines
@@ -1130,7 +1109,7 @@ void CPathMgr::GetCellCosts( int iPos, CCell* pFromCell, CCell* pToCell )
     // if terrain coastline
     // then let's skip it
     // unless its the dest
-    if ( pDestHex->GetType( ) == CHex::coastline )
+    if ( fDest.GetType( ) == CHex::coastline )
     {
         // except of course, inf/outriders can travel coastline anytime — and small
         // boats (motorboat/gun_boat, landing craft) must cross coastline shores to
@@ -1140,7 +1119,7 @@ void CPathMgr::GetCellCosts( int iPos, CCell* pFromCell, CCell* pToCell )
              hexDest != m_hexTo )
         {
             // but any vehicle on a bridge
-            if ( !( pDestHex->GetUnits( ) & CHex::bridge ) )
+            if ( !( fDest.GetUnits( ) & CHex::bridge ) )
                 return;
         }
     }
@@ -1151,13 +1130,13 @@ void CPathMgr::GetCellCosts( int iPos, CCell* pFromCell, CCell* pToCell )
     // the m_pTD->CanTravelHex( pDestHex )
 
     // create hex for from cell
-    CHexCoord hexFrom( pFromCell->m_iX, pFromCell->m_iY );
-    CHex*     pFromHex = theMap.GetHex( hexFrom );
-    if ( pFromHex == NULL )
+    CHexCoord         hexFrom( pFromCell->m_iX, pFromCell->m_iY );
+    CEnHexFacts const fFrom = view.GetHex( hexFrom );
+    if ( !fFrom.IsValid( ) )
         return;
 
     // if there is bridge hex involved, we must do another test
-    if ( pDestHex->GetUnits( ) & CHex::bridge || pFromHex->GetUnits( ) & CHex::bridge )
+    if ( fDest.GetUnits( ) & CHex::bridge || fFrom.GetUnits( ) & CHex::bridge )
     {
         // figure if we're on the water (vs land/bridge-deck): a from-hex that is water
         // & not a bridge means on water. A WATER vehicle is ALWAYS on the water — it
@@ -1165,8 +1144,8 @@ void CPathMgr::GetCellCosts( int iPos, CCell* pFromCell, CCell* pToCell )
         // exiting a bridge-over-water hex hits CanEnterHex's bridge-deck direction
         // checks and a boat can't traverse the span.
         BOOL bOnWater = ( m_pTD->GetWheelType( ) == CWheelTypes::water ) ||
-                        ( pFromHex->IsWater( ) & ( ( pFromHex->GetUnits( ) & CHex::bridge ) == 0 ) );
-        if ( !m_pTD->CanEnterHex( hexFrom, hexDest, bOnWater ) )
+                        ( fFrom.IsWater( ) & ( ( fFrom.GetUnits( ) & CHex::bridge ) == 0 ) );
+        if ( !m_pTD->CanEnterHex( view, hexFrom, hexDest, bOnWater ) )
             return;
         // if( !m_pTD->CanEnterHex(hexFrom, hexDest, pFromHex->IsWater()) )
         //	return;
@@ -1175,7 +1154,7 @@ void CPathMgr::GetCellCosts( int iPos, CCell* pFromCell, CCell* pToCell )
     // get cost from the game
     // int CGameMap::GetTerrainCost (CHexCoord const & hex,
     // CHexCoord const & hexNext, int iDir, int iWheel)
-    int iCost = theMap.GetTerrainCost( hexFrom, hexDest, iPos, m_pTD->GetWheelType( ) );
+    int iCost = view.GetTerrainCost( hexFrom, hexDest, iPos, m_pTD->GetWheelType( ) );
 
     // do not allow ZERO cost terrain to proceed
     if ( !iCost )
@@ -1187,7 +1166,7 @@ void CPathMgr::GetCellCosts( int iPos, CCell* pFromCell, CCell* pToCell )
     // to increase the diff, which of course, slows down the process
     // of finding a path.  Oh, well I did try to tell him, but as
     // usual he would not listen.
-    if ( pDestHex->GetType( ) != CHex::road )
+    if ( fDest.GetType( ) != CHex::road )
         iCost <<= 1;
 
     // if this cost + cost to this point < what we already have
@@ -1210,7 +1189,7 @@ void CPathMgr::GetCellCosts( int iPos, CCell* pFromCell, CCell* pToCell )
     // by this multi-hex unit
     //
     // CUnit *pUnit = pGameHex->GetUnit();
-    BYTE bUnits = pDestHex->GetUnits( );
+    BYTE bUnits = fDest.GetUnits( );
 
     // force arrival at destinations, regardless of if occupied
     // if( pUnit != NULL && hexDest != m_hexTo )
@@ -1239,7 +1218,7 @@ void CPathMgr::GetCellCosts( int iPos, CCell* pFromCell, CCell* pToCell )
             // driven on long before we reach its hex, so planning around it is what
             // turns a queue into a detour into the oncoming lane. Only a vehicle
             // that is actually sitting there blocks the route.
-            if ( m_bVehBlock && ( ( !( TrafficOpts( ) & 32 ) ) || ( !IsHexMovingVehicle( hexDest ) ) ) )
+            if ( m_bVehBlock && ( ( !( view.TrafficRules( ) & 32 ) ) || ( !view.IsHexMovingVehicle( hexDest ) ) ) )
                 pToCell->m_iDist = 0xFFFE;  // no entry
         }
     }
@@ -1248,7 +1227,7 @@ void CPathMgr::GetCellCosts( int iPos, CCell* pFromCell, CCell* pToCell )
     // get distance to destination for enterable cells
     // and cost to enter is already in pCell->m_iCost
     if ( !pToCell->m_iDist )
-        pToCell->m_iDist = ( theMap.GetRangeDistance( hexDest, m_hexTo ) * m_iDistFactor );
+        pToCell->m_iDist = ( view.GetRangeDistance( hexDest, m_hexTo ) * m_iDistFactor );
 
     // else if distance is left alone then recalculate m_iBoth
     if ( pToCell->m_iDist != 0xFFFE )
@@ -1434,42 +1413,43 @@ void CPathMgr::GetHeadingCell( int iPos, CCell* pFromCell, int& iX, int& iY )
 // get the adjacent cell x,y values
 // in the iPos direction from pFromCell
 //
-void CPathMgr::GetCellAt( int iPos, CCell* pFromCell, int& iX, int& iY )
+void CPathMgr::GetCellAt( CEnNavView const& view, int iPos, CCell* pFromCell, int& iX, int& iY )
 {
-    CHexCoord hex( pFromCell->m_iX, pFromCell->m_iY );
+    int x = pFromCell->m_iX;
+    int y = pFromCell->m_iY;
     switch ( iPos )
     {
     case 0:
-        hex.Ydec( );
+        y--;
         break;
     case 1:
-        hex.Ydec( );
-        hex.Xinc( );
+        y--;
+        x++;
         break;
     case 2:
-        hex.Xinc( );
+        x++;
         break;
     case 3:
-        hex.Yinc( );
-        hex.Xinc( );
+        y++;
+        x++;
         break;
     case 4:
-        hex.Yinc( );
+        y++;
         break;
     case 5:
-        hex.Xdec( );
-        hex.Yinc( );
+        x--;
+        y++;
         break;
     case 6:
-        hex.Xdec( );
+        x--;
         break;
     case 7:
-        hex.Xdec( );
-        hex.Ydec( );
+        x--;
+        y--;
         break;
     }
-    iX = hex.X( );
-    iY = hex.Y( );
+    iX = view.Wrap( x );
+    iY = view.Wrap( y );
 }
 
 //
