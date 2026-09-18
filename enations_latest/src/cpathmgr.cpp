@@ -3004,10 +3004,28 @@ void CPathMgr::AsyncVerify( CVehicle* pVehicle, CHexCoord const& hexFrom, CHexCo
     delete[] phexRef;
 }
 
+void EnPathAsyncLogNoNext( unsigned long ulVehId, int iMode, unsigned long long uReqId, int iRetries, int iPathLen,
+                           int iPathOff, int iStepsLeft, long long llTicksSinceReq, char const* pszWhere )
+{
+    static int s_iNoNextLogged = 0;
+    if ( s_iNoNextLogged >= 64 )
+        return;
+    ++s_iNoNextLogged;
+
+    ShadowLog( "[async] NONEXT #%d  veh=%lu mode=%d  where=%s  reqId=%llu retries=%d  "
+               "pathLen=%d pathOff=%d stepsLeft=%d  ticksSinceReq=%lld",
+               s_iNoNextLogged, ulVehId, iMode, ( pszWhere != NULL ) ? pszWhere : "?", uReqId, iRetries, iPathLen,
+               iPathOff, iStepsLeft, llTicksSinceReq );
+}
+
 #endif  // EN_PATH_PROBES
 
 #if !EN_PATH_PROBES
 void CPathMgr::AsyncVerify( CVehicle*, CHexCoord const&, CHexCoord const&, BOOL, CHexCoord const*, int, BOOL )
+{
+}
+
+void EnPathAsyncLogNoNext( unsigned long, int, unsigned long long, int, int, int, int, long long, char const* )
 {
 }
 #endif

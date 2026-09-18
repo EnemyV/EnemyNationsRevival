@@ -169,6 +169,29 @@ void     EnPathAsyncDrain    ( void );
 uint64_t EnPathAsyncTick     ( void );
 void     EnPathAsyncCancelAll( char const* pszReason );
 
+// The vehicle currently inside CVehicle::Move, main thread only. A search started
+// from in there is answered synchronously (unit.cpp PathAsyncEligible): Move checks,
+// before it returns, that a moving vehicle holds a real next step, and a vehicle left
+// pending holds none.
+class CVehicle;
+void            EnPathAsyncSetInMove( CVehicle const* pVeh );
+CVehicle const* EnPathAsyncInMove   ( void );
+
+class EnPathAsyncMoveScope
+{
+  public:
+    explicit EnPathAsyncMoveScope( CVehicle const* pVeh ) : m_pPrev( EnPathAsyncInMove( ) )
+    {
+        EnPathAsyncSetInMove( pVeh );
+    }
+    ~EnPathAsyncMoveScope( ) { EnPathAsyncSetInMove( m_pPrev ); }
+    EnPathAsyncMoveScope( EnPathAsyncMoveScope const& )            = delete;
+    EnPathAsyncMoveScope& operator=( EnPathAsyncMoveScope const& ) = delete;
+
+  private:
+    CVehicle const* m_pPrev;
+};
+
 void EnPathWorkerStart  ( int iMapEX, int iMapEY );
 void EnPathWorkerStop   ( void );
 void EnPathWorkerQuiesce( void );

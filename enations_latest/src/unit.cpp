@@ -3469,6 +3469,20 @@ uint64_t EnPathAsyncTick( void )
     return ( g_uPathAsyncTick );
 }
 
+// The vehicle inside CVehicle::Move right now, or NULL. Main thread only, and set
+// through EnPathAsyncMoveScope so every one of Move's exits restores it.
+static CVehicle const* g_pVehInMove = NULL;
+
+void EnPathAsyncSetInMove( CVehicle const* pVeh )
+{
+    g_pVehInMove = pVeh;
+}
+
+CVehicle const* EnPathAsyncInMove( void )
+{
+    return ( g_pVehInMove );
+}
+
 enum { kPathAsyncMaxRetries = 3 };
 
 //
@@ -3487,6 +3501,19 @@ static BOOL PathAsyncEligible( CVehicle const* pVeh, BOOL bVehBlock )
     if ( bVehBlock )
     {
         Perf::CounterInc( "pa.ineligible" );
+        return ( FALSE );
+    }
+
+    // Inside its own Move this vehicle cannot afford to wait: Move's completion
+    // invariant (vehmove.cpp, the ASSERT at the Done label - moving implies a real
+    // m_ptNext) has to hold by the time THIS call returns, and a pending vehicle has
+    // no next step. Arrival starting the next leg - ArrivedDest, DetourTo, ResumeJob,
+    // the route's next stop - is the case that reaches it, and StartTravel's pending
+    // return would leave `moving` with m_ptNext == m_ptHead. Search on this thread,
+    // exactly as the game did before the answer could be deferred.
+    if ( pVeh == EnPathAsyncInMove( ) )
+    {
+        Perf::CounterInc( "pa.ineligible.move" );
         return ( FALSE );
     }
 

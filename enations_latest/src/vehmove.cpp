@@ -16,6 +16,7 @@
 #include "chproute.hpp"
 #include "event.h"
 #include "cpathmgr.h"
+#include "pathservice.h"   // the in-Move scope: a search asked for from Move is synchronous
 #include "player.h"
 #include "area.h"
 #include "bridge.h"
@@ -52,6 +53,14 @@ void CVehicle::Move() {
         Perf::CounterInc("pa.wait.move");
         return;
     }
+
+    // A search asked for from in here is answered on this thread: the Done label
+    // below requires a moving vehicle to hold a real next step by the time this call
+    // returns, and a vehicle left pending holds none (unit.cpp PathAsyncEligible).
+    EnPathAsyncMoveScope pathMoveScope(this);
+
+    // which exit reached Done, for the diagnostic there
+    char const *pszDoneWhere = "moved";
 
 #ifndef _GG
 #ifdef STRICTER_ASSERTS2
@@ -140,6 +149,7 @@ void CVehicle::Move() {
             ASSERT ((m_cMode == blocked) || (m_cMode == stop));
 #endif
 #endif
+            pszDoneWhere = "findnext";
             goto Done;
         }
         ASSERT ((m_cMode != moving) || (m_ptDest == m_ptHead) || (m_ptNext != m_ptHead));
@@ -151,6 +161,7 @@ void CVehicle::Move() {
         ASSERT (m_ptHead.SameHex(m_hexDest));
         ArrivedDest();
         ASSERT_VALID (this);
+        pszDoneWhere = "arriveddest";
         goto Done;
     }
 
@@ -162,6 +173,10 @@ void CVehicle::Move() {
 
     // we're all done moving - fix spotting & tell everyone
     Done:
+    if ((m_cMode == moving) && (m_ptNext == m_ptHead))
+        EnPathAsyncLogNoNext((unsigned long) GetID(), (int) m_cMode, (unsigned long long) m_dwPathReqId,
+                             m_iPathRetries, m_iPathLen, m_iPathOff, m_iStepsLeft,
+                             (long long) (EnPathAsyncTick() - m_uPathReqTick), pszDoneWhere);
     ASSERT ((m_cMode != moving) || (m_ptNext != m_ptHead));
     ASSERT ((m_cMode != moving) || (theVehicleHex.GetVehicle(m_ptNext) == this));
 

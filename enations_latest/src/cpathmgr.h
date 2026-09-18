@@ -300,6 +300,14 @@ public:
 
 extern CPathMgr thePathMgr;
 
+// Step D diagnostic, probes-gated and an empty stub without them: CVehicle::Move
+// reached its Done label `moving` with no next step. One line to pathshadow.log naming
+// the path state and the exit that got there, so a soak hands back the shape instead
+// of a bare assert. Takes values, not the vehicle, so nothing here reaches into CVehicle.
+void EnPathAsyncLogNoNext( unsigned long ulVehId, int iMode, unsigned long long uReqId, int iRetries,
+                           int iPathLen, int iPathOff, int iStepsLeft, long long llTicksSinceReq,
+                           char const* pszWhere );
+
 #if EN_PATH_PROBES
 // Ladder step A: ONE private CPathMgr that re-runs each main-thread movement search
 // behind the production one and compares the two answers. Measurement only - it is
