@@ -91,8 +91,22 @@ class PathWorld
     // Called once per main-loop tick from the publication point.
     static void PublishTick( void );
 
-    Hex const& At( int x, int y ) const { return ( m_aHex[( (size_t)y << m_iSideShift ) + (size_t)x] ); }
+    // MIRRORS CGameMap::GetHex( int, int ) (terrain.inl), which is _GetHex( Wrap(x),
+    // Wrap(y) ) - the accessor CEnLiveNavView::GetHex reads every hex through. The
+    // row pitch is the map's own ( y << m_iSideShift ) + x, and the mask is applied
+    // to BOTH axes exactly as CHexCoord::Wrap applies it (the map is square and a
+    // power of two - see the BUGS #65 note in terrain.inl). Without the mask an
+    // unwrapped y walks into another row and an unwrapped x walks into the next one,
+    // which is a live-vs-snapshot divergence at the wrap seam and nowhere else.
+    Hex const& At( int x, int y ) const
+    {
+        return ( m_aHex[( (size_t)( y & m_iHexMask ) << m_iSideShift ) + (size_t)( x & m_iHexMask )] );
+    }
 
+    // theBuildingHex::_GetBuilding does NOT wrap its key (building.inl _ToArg) and
+    // theBridgeHex::GetBridge DOES (bridge.h ToArg). The live view calls exactly those
+    // two, so these two mirror exactly those two - a miss on an unwrapped building key
+    // is the live behaviour, not a defect.
     Bldg const* FindBldg( int x, int y ) const
     {
         DWORD dw = m_idxBldg.Find( Key( x, y ) );
@@ -100,7 +114,7 @@ class PathWorld
     }
     Bridge const* FindBridge( int x, int y ) const
     {
-        DWORD dw = m_idxBridge.Find( Key( x, y ) );
+        DWORD dw = m_idxBridge.Find( Key( x & m_iHexMask, y & m_iHexMask ) );
         return ( dw == CPwIndex::none ? NULL : &m_aBridge[dw] );
     }
 
