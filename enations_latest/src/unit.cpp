@@ -3251,6 +3251,9 @@ void CVehicle::SetDestAndMode( CSubHex sub, VEH_POS iMode, BOOL bTrafficDetour )
                m_ptHead.y, sub.x, sub.y );
 #endif
     ASSERT_VALID( this );
+    // New order, new generation - including a traffic detour, which is a new
+    // destination for this vehicle whatever its reason.
+    ++m_dwOrderGen;
     if ( !bTrafficDetour )
         EndReverse( );
     DeletePath( );

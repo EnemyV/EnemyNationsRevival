@@ -5537,6 +5537,7 @@ void CVehicle::ctor( )
 #if EN_PATH_PROBES
     m_hexLastClamp    = CHexCoord( -1, -1 );  // no prior clamp
 #endif
+    m_dwOrderGen      = 0;
 
     m_iStepsLeft = 0;
     m_iSpeed     = 0;

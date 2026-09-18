@@ -571,6 +571,7 @@ public:
 													{ CSubHex _sub (hex.X () * 2, hex.Y () * 2);
 														SetDestAndMode (_sub, iMode); }
 		void					SetDestAndMode (CSubHex sub, VEH_POS iMode, BOOL bTrafficDetour = FALSE);
+		DWORD					GetOrderGen () const { return (m_dwOrderGen); }
 		void					KickStart ();
 
 		void					SetEventAndRoute (VEH_EVENT iEvent, VEH_MODE iMode) { SetEvent (iEvent); SetRouteMode (iMode); }
@@ -768,6 +769,11 @@ protected:
 #if EN_PATH_PROBES
 		CHexCoord			m_hexLastClamp;					// mpath.reclamp probe: hex of last clamped path, (-1,-1) = none (transient, not saved)
 #endif
+		// Bumped by every SetDestAndMode. An async path answer that comes back against
+		// an older value is answering a question this vehicle no longer asks.
+		// Transient, NOT serialized - it is only ever compared with itself within one
+		// process, so a save that restored it would say nothing a fresh 0 does not.
+		DWORD					m_dwOrderGen;
 
 		DWORD					m_dwTimeJump;						// for AI trucks & cranes we transport if can't get there by this time
 
