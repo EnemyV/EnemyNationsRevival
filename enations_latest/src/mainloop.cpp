@@ -1753,6 +1753,12 @@ NoOper:
     // mutation batch (head message drain, building/vehicle/projectile Operate, tail
     // message drain) is behind us and the next tick's searches are ahead. Both the
     // operate and the skip path reach here. No-op unless EN_PATH_SNAP is set.
+#if EN_PATH_PROBES
+    // Before the snapshot is replaced: every worker answer that came back this tick is
+    // compared against its stored same-snapshot reference, and both are freed. Nothing
+    // a worker produces reaches the game in this slice.
+    EnPathWorkerDrain( );
+#endif
     PathWorld::PublishTick( );
 
     // Tier-B AI snapshot: publish the world copy the AI threads read lock-free

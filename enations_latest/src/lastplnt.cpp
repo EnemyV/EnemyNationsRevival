@@ -34,6 +34,7 @@
 #include "error.h"
 #include "join.h"
 #include "license.h"
+#include "pathservice.h"
 #include "racedata.h"
 #include "scenario.h"
 #include "sfx.h"
@@ -2046,6 +2047,11 @@ int CConquerApp::ExitInstance( )
     s_bExited = true;
 
     CGlobalSubClass::UnSubClass( );
+
+    // The path workers go the same way the AI threads do below, and before them: a
+    // worker owns a CPathMgr and must be joined before any static teardown. DestroyWorld
+    // is conditional on m_wndBar here, so it cannot be relied on to have stopped them.
+    EnPathWorkerStop( );
 
     // Stop and join the AI worker threads FIRST — before ANY game data is
     // torn down. They scan the live world (GetCHexData/AiFillHexLiveNoLock,

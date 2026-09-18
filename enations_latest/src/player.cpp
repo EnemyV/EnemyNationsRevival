@@ -28,6 +28,7 @@
 #include "codec.h"
 #include "cpathmgr.h"
 #include "pathworld.h"
+#include "pathservice.h"
 #include "error.h"
 #include "event.h"
 #include "help.h"
@@ -3046,6 +3047,9 @@ int CGame::StartGame( BOOL bReplace )
     EnPathShadowInit( theMap.Get_eX( ), theMap.Get_eY( ) );
 #endif
 
+    // Load path twin of the CreateNewWorld start: after Init, after EnNavNewGame.
+    EnPathWorkerStart( theMap.Get_eX( ), theMap.Get_eY( ) );
+
     // center on our rocket
     m_maploc = CMapLoc( 0, 0 );
     pos      = theBuildingMap.GetStartPosition( );
@@ -3324,6 +3328,13 @@ int CGame::SaveGame( CWnd* pPar )
         m_iDir   = 0;
         m_iZoom  = 0;
     }
+
+    // No path search may be in flight across serialization (plan section 2.6). The guard
+    // closes submissions and waits for the queue and every worker to go idle, then
+    // re-opens on EVERY way out of this function - and there are a dozen, plus the
+    // throw the serialization itself can raise. Nothing pending is serialized; nothing
+    // in this slice is serialized at all, but the seam is the point.
+    EnPathWorkerQuiesceScope _pqSave;
 
     // we save it
     try
