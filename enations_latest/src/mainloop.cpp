@@ -12,6 +12,7 @@
 #include "altoutput.h"
 #include "edicts.h"     // EDICT_DESPERATE_MEASURES (rocket scrounge edict)
 #include "aisnap.h"  // Tier-B AI world snapshot (published here, read by AI threads)
+#include "pathworld.h"  // movement-A* world snapshot (published here)
 #include "area.h"
 #include "building.inl"
 #include "chproute.hpp"
@@ -1747,6 +1748,12 @@ void CConquerApp::GraphicsEnginePump( )
     }  // if operate
 
 NoOper:
+
+    // PUBLICATION POINT for the movement-A* world snapshot: the tick's whole world
+    // mutation batch (head message drain, building/vehicle/projectile Operate, tail
+    // message drain) is behind us and the next tick's searches are ahead. Both the
+    // operate and the skip path reach here. No-op unless EN_PATH_SNAP is set.
+    PathWorld::PublishTick( );
 
     // Tier-B AI snapshot: publish the world copy the AI threads read lock-free
     // (self-throttled to ~tick cadence; takes `cs` briefly inside). Sits after

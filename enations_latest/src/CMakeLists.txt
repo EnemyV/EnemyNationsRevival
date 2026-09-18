@@ -49,6 +49,7 @@ set(enations_sources
 #        citizen.cpp # looks unused, i think an old ai or something?
         cpathmap.cpp
         cpathmgr.cpp
+        pathworld.cpp
         creatmul.cpp
         creatsin.cpp
         credits.cpp

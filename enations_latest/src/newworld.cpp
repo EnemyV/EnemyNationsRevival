@@ -25,6 +25,7 @@
 #include "ai.h"
 #include "ipccomm.h"
 #include "cpathmgr.h"
+#include "pathworld.h"
 #include "help.h"
 #include "research.h"
 #include "chproute.hpp"
@@ -738,6 +739,9 @@ void CConquerApp::CreateNewWorld(unsigned uRand, AIinit *pAiData, int iSide, int
         CloseWorld();
         return;
     }
+
+    // New world: the nav epoch restarts and any snapshot of the old one is dropped.
+    EnNavNewGame();
 
 #if EN_PATH_PROBES
     // Same dimensions, same moment: the step-A shadow instance. No-op unless
@@ -1565,6 +1569,7 @@ void CConquerApp::DestroyWorld() {
     theMap.Close();
 
     thePathMgr.Close();
+    EnNavNewGame();
 #if EN_PATH_PROBES
     EnPathShadowClose();
 #endif
@@ -1692,6 +1697,7 @@ void CConquerApp::ClearWorld() {
     theMinerals.Close();
     theMap.Close();
     thePathMgr.Close();
+    EnNavNewGame();
 #if EN_PATH_PROBES
     EnPathShadowClose();
 #endif

@@ -27,6 +27,7 @@
 #include "chproute.hpp"
 #include "codec.h"
 #include "cpathmgr.h"
+#include "pathworld.h"
 #include "error.h"
 #include "event.h"
 #include "help.h"
@@ -3036,6 +3037,9 @@ int CGame::StartGame( BOOL bReplace )
         theApp.CloseWorld( );
         return ( IDCANCEL );
     }
+
+    // Loaded world: same reset as a new one.
+    EnNavNewGame( );
 
 #if EN_PATH_PROBES
     // Same dimensions, same moment: the step-A shadow instance (load path).
