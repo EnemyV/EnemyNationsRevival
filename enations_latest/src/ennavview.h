@@ -22,6 +22,7 @@
 #include "building.inl"
 #include "vehicle.inl"
 #include "bridge.h"
+#include "pathworld.h"
 
 // What the search knows about one hex. Values, never a CHex*: a worker reading a
 // snapshot has no live hex to point at.
@@ -77,6 +78,11 @@ struct CEnBuildingFacts
 class CEnNavView
 {
   public:
+    // Marks a navigation view for the template overloads in vehicle.h: without it
+    // CanEnterHex( view, src, dest, ... ) also deduces for CSubHex arguments and
+    // becomes ambiguous against the four-argument live signature.
+    typedef void EnNavViewTag;
+
     CEnHexFacts GetHex( CHexCoord const& hex ) const
     {
         CEnHexFacts f;
@@ -169,6 +175,153 @@ class CEnNavView
 
     int Wrap( int iVal ) const { return ( CHexCoord::Wrap( iVal ) ); }
     int Diff( int iVal ) const { return ( CHexCoord::Diff( iVal ) ); }
+};
+
+// The live view under the name the search templates use for it.
+typedef CEnNavView CEnLiveNavView;
+
+// The same accessor set over an immutable PathWorld. Same shape, same names, same
+// return types as CEnLiveNavView and no virtuals, so a search instantiated on this
+// costs exactly what the live one costs.
+//
+// GetTerrainCost and GetRangeDistance below MIRROR CGameMap::_GetTerrainCost
+// (terrain.cpp) and CGameMap::GetRangeDistance (CHexCoord overload) line for line,
+// including every special case. They are copies, not improvements: a difference of
+// one case is a route difference the shadow gate exists to catch.
+class CEnSnapNavView
+{
+  public:
+    typedef void EnNavViewTag;
+
+    explicit CEnSnapNavView( PathWorld const& pw ): m_pw( pw ) {}
+
+    PathWorld const& World( ) const { return ( m_pw ); }
+
+    CEnHexFacts GetHex( CHexCoord const& hex ) const
+    {
+        CEnHexFacts             f;
+        PathWorld::Hex const&   h = m_pw.At( hex.X( ), hex.Y( ) );
+        // CGameMap::GetHex masks both axes and indexes: it never returns NULL, so the
+        // live view's bValid is TRUE for every coordinate the search can form.
+        f.bValid = TRUE;
+        f.bUnits = h.bUnits;
+        f.iType  = h.bType;
+        f.iAlt   = h.bAlt;
+        return ( f );
+    }
+
+    CEnBridgeFacts GetBridge( CHexCoord const& hex ) const
+    {
+        CEnBridgeFacts            f;
+        PathWorld::Bridge const*  p = m_pw.FindBridge( hex.X( ), hex.Y( ) );
+        if ( p == NULL )
+            return ( f );
+        f.bExists      = TRUE;
+        f.iExit        = p->iExit;
+        f.uParent      = p->uParent;
+        f.bParentBuilt = p->bParentBuilt;
+        return ( f );
+    }
+
+    CEnBuildingFacts GetBuilding( CHexCoord const& hex ) const
+    {
+        CEnBuildingFacts        f;
+        PathWorld::Bldg const*  p = m_pw.FindBldg( hex.X( ), hex.Y( ) );
+        if ( p == NULL )
+            return ( f );
+        f.bExists  = TRUE;
+        f.uKey     = p->uKey;
+        f.hexExit  = p->hexExit;
+        f.iExitDir = p->iExitDir;
+        f.hexShip  = p->hexShip;
+        f.iShipDir = p->iShipDir;
+        return ( f );
+    }
+
+    int GetWheelMult( int iTerrainType, int iWheel ) const { return ( m_pw.WheelMult( iTerrainType, iWheel ) ); }
+
+    int GetTerrainCost( CHexCoord const& hexFrom, CHexCoord const& hexTo, int iDir, int iWheel ) const
+    {
+        PathWorld::Hex const& hxFrom = m_pw.At( hexFrom.X( ), hexFrom.Y( ) );
+        PathWorld::Hex const* pDest  = &m_pw.At( hexTo.X( ), hexTo.Y( ) );
+        CHexCoord             hexDest( hexTo );
+        if ( hexFrom == hexTo )
+        {
+            pDest = &hxFrom;
+            iDir  = 0;
+        }
+
+        int iTyp;
+        if ( pDest->bUnits & CHex::bldg )
+            iTyp = CHex::city;
+        else if ( pDest->bUnits & CHex::bridge )
+            iTyp = ( iWheel == CWheelTypes::water ) ? (int)pDest->bType : (int)CHex::road;
+        else
+            iTyp = pDest->bType;
+
+        int iRtn = m_pw.WheelMult( iTyp, iWheel );
+        if ( iRtn == 0 )
+        {
+            if ( ( iWheel == CWheelTypes::water ) && ( pDest->bUnits & CHex::bldg ) )
+            {
+                PathWorld::Bldg const* pBldg = m_pw.FindBldg( hexDest.X( ), hexDest.Y( ) );
+                if ( ( pBldg != NULL ) && pBldg->bShipExit )
+                    return ( 1 );
+            }
+            if ( ( iWheel == CWheelTypes::water ) && ( iTyp == CHex::river ) )
+                iRtn = m_pw.WheelMult( CHex::ocean, iWheel );
+            else if ( ( iWheel == CWheelTypes::water ) && ( iTyp == CHex::coastline ) )
+                iRtn = m_pw.WheelMult( CHex::ocean, iWheel ) * 8;
+            if ( iRtn == 0 )
+                return ( 0 );
+        }
+
+        if ( iDir & 1 )
+            iRtn *= 3;
+        else
+            iRtn *= 2;
+
+        int iAlt = (int)pDest->bAlt - (int)hxFrom.bAlt;
+        if ( iAlt >= 0 )
+            iRtn += ( iRtn * iAlt ) / 8;
+        else
+        {
+            iRtn -= ( iRtn * iAlt ) / 16;
+            iRtn = __max( 1, iRtn );
+        }
+
+        return ( iRtn );
+    }
+
+    int GetRangeDistance( CHexCoord const& hex1, CHexCoord const& hex2 ) const
+    {
+        int x = abs( m_pw.Diff( hex1.X( ) - hex2.X( ) ) );
+        int y = abs( m_pw.Diff( hex1.Y( ) - hex2.Y( ) ) );
+
+        int iStraight = abs( x - y );
+        int iDiag     = __min( x, y );
+        return ( ( 3 * iDiag + 2 * iStraight + 1 ) / 2 );
+    }
+
+    // PINNED, not copied: theTransports is loaded with the gameplay data and is not
+    // written for the lifetime of a world (a reload goes through CloseWorld, which
+    // drops every snapshot). The search holds the returned pointer in m_pTD exactly
+    // as it does for a live search, and a vehicle-driven search takes the same
+    // pointer from pVehicle->GetData() either way.
+    CTransportData const* GetTransportData( int iVehType ) const { return ( theTransports.GetData( iVehType ) ); }
+
+    BOOL IsHexMovingVehicle( CHexCoord const& hex ) const
+    {
+        return ( m_pw.At( hex.X( ), hex.Y( ) ).bOcc == PathWorld::occ_moving ? TRUE : FALSE );
+    }
+
+    int TrafficRules( ) const { return ( m_pw.TrafficRules( ) ); }
+
+    int Wrap( int iVal ) const { return ( m_pw.Wrap( iVal ) ); }
+    int Diff( int iVal ) const { return ( m_pw.Diff( iVal ) ); }
+
+  private:
+    PathWorld const& m_pw;
 };
 
 #endif  // __ENNAVVIEW_H__

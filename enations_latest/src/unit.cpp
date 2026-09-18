@@ -219,7 +219,8 @@ CTransportData::TRANS_BASE_TYPE CTransportData::GetBaseType( ) const
 
 // The travel rule, once, over hex facts the caller has already read. Both
 // CanTravelHex signatures below are this function plus a way of getting the facts.
-static BOOL EnCanTravelHexFacts( CTransportData const& td, CEnNavView const& view, CHexCoord const& hex, BYTE bUnits,
+template <class TView>
+static BOOL EnCanTravelHexFacts( CTransportData const& td, TView const& view, CHexCoord const& hex, BYTE bUnits,
                                  int iType, int iAlt )
 {
     ASSERT_STRICT_VALID( &td );
@@ -292,10 +293,11 @@ static BOOL EnCanTravelHexFacts( CTransportData const& td, CEnNavView const& vie
 BOOL CTransportData::CanEnterHex( CHexCoord const& hexSrc, CHexCoord const& hexDest, BOOL bVehOnWater,
                                   BOOL bStrict ) const
 {
-    return ( CanEnterHex( CEnNavView( ), hexSrc, hexDest, bVehOnWater, bStrict ) );
+    return ( CanEnterHex( CEnLiveNavView( ), hexSrc, hexDest, bVehOnWater, bStrict ) );
 }
 
-BOOL CTransportData::CanEnterHex( CEnNavView const& view, CHexCoord const& hexSrc, CHexCoord const& hexDest,
+template <class TView, class>
+BOOL CTransportData::CanEnterHex( TView const& view, CHexCoord const& hexSrc, CHexCoord const& hexDest,
                                   BOOL bVehOnWater, BOOL bStrict ) const
 {
 #ifdef STRICTER_ASSERTS
@@ -540,17 +542,27 @@ BOOL CTransportData::CanTravelHex( CHex const* pHex ) const
 
     // pHex->GetHex() is only consulted for the bridge lookup, exactly as it was
     // when that lookup lived in this body.
-    return ( EnCanTravelHexFacts( *this, CEnNavView( ), pHex->GetHex( ), pHex->GetUnits( ), pHex->GetType( ),
+    return ( EnCanTravelHexFacts( *this, CEnLiveNavView( ), pHex->GetHex( ), pHex->GetUnits( ), pHex->GetType( ),
                                   pHex->GetAlt( ) ) );
 }
 
-BOOL CTransportData::CanTravelHex( CEnNavView const& view, CHexCoord const& hex ) const
+template <class TView, class>
+BOOL CTransportData::CanTravelHex( TView const& view, CHexCoord const& hex ) const
 {
     ASSERT_STRICT_VALID( this );
 
     CEnHexFacts const f = view.GetHex( hex );
     return ( EnCanTravelHexFacts( *this, view, hex, f.GetUnits( ), f.GetType( ), f.GetAlt( ) ) );
 }
+
+// One body per view type, both emitted here: cpathmgr.cpp instantiates the search
+// for the live view and for the snapshot view and calls these through it.
+template BOOL CTransportData::CanTravelHex<CEnLiveNavView, void>( CEnLiveNavView const&, CHexCoord const& ) const;
+template BOOL CTransportData::CanTravelHex<CEnSnapNavView, void>( CEnSnapNavView const&, CHexCoord const& ) const;
+template BOOL CTransportData::CanEnterHex<CEnLiveNavView, void>( CEnLiveNavView const&, CHexCoord const&,
+                                                                 CHexCoord const&, BOOL, BOOL ) const;
+template BOOL CTransportData::CanEnterHex<CEnSnapNavView, void>( CEnSnapNavView const&, CHexCoord const&,
+                                                                 CHexCoord const&, BOOL, BOOL ) const;
 
 //-----------------------------C F l a m e S p o t --------------------------
 

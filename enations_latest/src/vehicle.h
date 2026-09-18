@@ -202,8 +202,13 @@ public:
 
 			// Same two rules, read through the navigation seam instead of the live
 			// globals. The two signatures above are the live-view calls of these.
-			BOOL		CanTravelHex (CEnNavView const & view, CHexCoord const & hex) const;
-			BOOL		CanEnterHex (CEnNavView const & view, CHexCoord const & hexSrc, CHexCoord const & hexDest,
+			// Templated on the view so the A* body compiles once per view type with
+			// no indirect call; instantiated for CEnLiveNavView and CEnSnapNavView at
+			// the foot of unit.cpp.
+			template <class TView, class = typename TView::EnNavViewTag>
+			BOOL		CanTravelHex (TView const & view, CHexCoord const & hex) const;
+			template <class TView, class = typename TView::EnNavViewTag>
+			BOOL		CanEnterHex (TView const & view, CHexCoord const & hexSrc, CHexCoord const & hexDest,
 			                         BOOL bOnWater, BOOL bStrict = TRUE) const;
 
 
