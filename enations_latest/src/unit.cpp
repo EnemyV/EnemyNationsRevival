@@ -3815,30 +3815,25 @@ void CVehicle::InstallPathResult( PathResult& res )
     BOOL bHaveRoute = ( res.success && ( res.path != NULL ) && ( res.pathLen > 0 ) ) ? TRUE : FALSE;
     BOOL bRetry     = FALSE;
 
-    if ( bStale )
+    // A stale route is checked step by step against the live world; a stale FAILURE
+    // needs no special rule any more, because no failure is installed at all - see
+    // the live re-search below.
+    if ( bStale && bHaveRoute )
     {
-        if ( !bHaveRoute )
-            // A failure computed on a world that has since moved is not evidence that
-            // the vehicle is stuck. Ask again on the current snapshot rather than
-            // marking it blocked on a stale answer (plan section 2.5, Sol section 34).
-            bRetry = TRUE;
-        else
+        const CEnLiveNavView viewLive;
+        CHexCoord const      hexEnd = res.path[res.pathLen - 1];
+        CHexCoord            hexPrev( hexSrc );
+        for ( int i = 0; i < res.pathLen; ++i )
         {
-            const CEnLiveNavView viewLive;
-            CHexCoord const      hexEnd = res.path[res.pathLen - 1];
-            CHexCoord            hexPrev( hexSrc );
-            for ( int i = 0; i < res.pathLen; ++i )
+            if ( !PathStepLegalLive( GetData( ), viewLive, hexPrev, res.path[i], hexEnd ) )
             {
-                if ( !PathStepLegalLive( GetData( ), viewLive, hexPrev, res.path[i], hexEnd ) )
-                {
-                    bRetry = TRUE;
-                    break;
-                }
-                hexPrev = res.path[i];
+                bRetry = TRUE;
+                break;
             }
-            if ( bRetry )
-                Perf::CounterInc( "pa.stale.illegal" );
+            hexPrev = res.path[i];
         }
+        if ( bRetry )
+            Perf::CounterInc( "pa.stale.illegal" );
     }
 
     if ( bRetry )
@@ -3864,8 +3859,8 @@ void CVehicle::InstallPathResult( PathResult& res )
 
     // Sol F-015: _GetPath's foot rejects a one-step route whose single hex is occupied
     // or can no longer be travelled, and the worker applied that to the SNAPSHOT. Run
-    // the same test against the live world; failing it means the answer IS "no path",
-    // which is what the synchronous search would have handed back here.
+    // the same test against the live world; failing it drops the route and takes the
+    // live re-search below.
     if ( bHaveRoute && ( res.pathLen == 1 ) )
     {
         const CEnLiveNavView viewLive;
@@ -3884,6 +3879,22 @@ void CVehicle::InstallPathResult( PathResult& res )
                 bHaveRoute  = FALSE;
             }
         }
+    }
+
+    // A NEGATIVE IS NEVER INSTALLED AS A VERDICT. Failures - nopath, blocked, trivial,
+    // the one-step reject above - are under 0.5% of searches, so confirming every one
+    // against the live world costs nothing and retires the whole "the snapshot said no,
+    // the live world says yes" class at once: occupancy, staleness and anything else.
+    // The synchronous search answers through ApplyPathResult exactly as it would have
+    // had this vehicle never gone to a worker.
+    if ( !bHaveRoute )
+    {
+        PathService::FreeResult( res );
+        ClearPathPending( NULL );
+        Perf::CounterInc( "pa.null.resync" );
+        GetPath( FALSE, FALSE );
+        KickStart( );
+        return;
     }
 
     CPathMgr::AsyncVerify( this, hexSrc, hexDest, FALSE, res.path, res.pathLen, bStale );
