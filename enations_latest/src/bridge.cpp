@@ -112,8 +112,9 @@ CBridge* CBridge::Create( CHexCoord const& hexStart, CHexCoord const& hexEnd, DW
     theBridgeMap.Add( pBrdg );
 
     // The per-unit m_iExit writes above are direct member stores, after the hexes
-    // were already grabbed (terrain.h g_enNavEpoch).
-    ++g_enNavEpoch;
+    // were already grabbed (terrain.h g_enNavEpoch). The hexes themselves were
+    // recorded by GrabHex's OrUnits; what moved here is the per-unit exit fact.
+    EnNavTouchTables( );
 
     // invalidate ALL windows
     // GG: Shouldn't need this now: CWndAnim::InvalidateAllWindows ();
@@ -148,7 +149,8 @@ void CBridge::__SetPer( int iPer )
 {
 
     // IsBuilt() flips here, and the A* reads it for the deck (terrain.h g_enNavEpoch).
-    ++g_enNavEpoch;
+    // It is a bridge FACT, not a hex byte, so only the fact tables are rebuilt.
+    EnNavTouchTables( );
     m_iPerBuilt = iPer;
 
     POSITION pos = m_lstUnits.GetHeadPosition( );

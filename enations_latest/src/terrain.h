@@ -49,6 +49,18 @@ const int LOS_ALT = 4;		// alt difference needed to obscure
 // torn cross-thread write only delays a fog update, and the 1 s force-refresh heals it.
 extern unsigned g_enFogVisGen;
 
+class CHex;
+
+// EVERY runtime write counted by g_enNavEpoch goes through exactly one of these four.
+// They bump the epoch AND record what moved, so PathWorld::Build can re-encode just the
+// rows that changed instead of re-encoding all 1024x1024 hexes. Never write
+// g_enNavEpoch directly from a mutation site: an unrecorded bump publishes a snapshot
+// that is missing the change it was published for. (pathworld.cpp)
+void EnNavTouchHexAt( CHex const* pHex );   // this hex moved -> re-encode its row
+void EnNavTouchUnits( CHex const* pHex );   // ditto, and the bldg/bridge tables moved
+void EnNavTouchTables( void );              // only the bldg/bridge fact tables moved
+void EnNavTouchAll( void );                 // extent unknown -> the next build is a full one
+
 // Monotonic count of runtime writes to the world state the vehicle-movement A*
 // reads: hex terrain type, hex altitude, the building/bridge occupancy bits, and
 // bridge identity/built state. Vehicle and projectile occupancy are deliberately
@@ -211,8 +223,8 @@ public:
 	// The bldg/bridge arm is the ONE choke point for every building grab/release
 	// (building.inl) and bridge mark (bridge.cpp, netapi.cpp); the veh and proj bits
 	// go through here too and are deliberately not counted (terrain.h g_enNavEpoch).
-	void		OrUnits (int iVal) { if (iVal & (bldg | bridge)) ++g_enNavEpoch; m_bUnit |= (BYTE) iVal; }
-	void		NandUnits (int iVal) { if (iVal & (bldg | bridge)) ++g_enNavEpoch; m_bUnit &= (BYTE) ~ iVal; }
+	void		OrUnits (int iVal) { if (iVal & (bldg | bridge)) EnNavTouchUnits (this); m_bUnit |= (BYTE) iVal; }
+	void		NandUnits (int iVal) { if (iVal & (bldg | bridge)) EnNavTouchUnits (this); m_bUnit &= (BYTE) ~ iVal; }
 
 	void		IncVisible ();
 	void		IncVisible (int iNum);

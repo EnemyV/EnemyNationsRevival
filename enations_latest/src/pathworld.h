@@ -21,6 +21,7 @@
 #include "stdafx.h"
 #include "terrain.h"
 #include <memory>
+#include <stdint.h>
 #include <vector>
 
 // Hex key -> record index. Built once, read-only afterwards: open addressing,
@@ -39,6 +40,65 @@ class CPwIndex
     std::vector<DWORD> m_aKey;   // none == empty slot
     std::vector<DWORD> m_aVal;
     DWORD              m_dwMask = 0;
+};
+
+// Which part of the world has been written since the last snapshot was built.
+//
+// ROW granularity, not per hex: a row is 1024 hexes out of 1,048,576, and every edit
+// the epoch counts (a road tile, a building footprint, a bridge span, a terraform)
+// touches a handful of rows. A row bitmap costs 128 bytes and a whole-map scan of it
+// is 32 words, so the bookkeeping is free next to what it saves. All() is the safety
+// valve: a mutation site that cannot name its row sets it and the next build is a
+// full one - "unsure" is always spelled as a full rebuild, never as a guess.
+class PwDirty
+{
+  public:
+    void Reset( int iHeight )
+    {
+        m_aBits.assign( ( (size_t)iHeight + 31 ) / 32, 0u );
+        m_iHeight = iHeight;
+        m_iRows   = 0;
+        m_bAll    = false;
+        m_bTbl    = false;
+    }
+
+    void All( )
+    {
+        m_bAll = true;
+        m_bTbl = true;
+    }
+    void Tables( ) { m_bTbl = true; }
+
+    void Row( int y )
+    {
+        if ( m_bAll )
+            return;
+        if ( ( y < 0 ) || ( y >= m_iHeight ) )
+        {
+            All( );
+            return;
+        }
+        uint32_t&      rWord = m_aBits[(size_t)y >> 5];
+        const uint32_t uBit  = 1u << ( y & 31 );
+        if ( rWord & uBit )
+            return;
+        rWord |= uBit;
+        // Every row dirty IS a full build, and a cheaper one - it skips the copy.
+        if ( ++m_iRows >= m_iHeight )
+            All( );
+    }
+
+    bool IsRow( int y ) const { return ( ( ( m_aBits[(size_t)y >> 5] >> ( y & 31 ) ) & 1u ) != 0u ); }
+    bool IsAll( ) const { return ( m_bAll ); }
+    bool IsTables( ) const { return ( m_bTbl ); }
+    int  Rows( ) const { return ( m_bAll ? m_iHeight : m_iRows ); }
+
+  private:
+    std::vector<uint32_t> m_aBits;
+    int                   m_iHeight = 0;
+    int                   m_iRows   = 0;
+    bool                  m_bAll    = true;
+    bool                  m_bTbl    = true;
 };
 
 class PathWorld
@@ -78,7 +138,9 @@ class PathWorld
     };
 
     // Main thread. Reads the live globals through the same calls the live view
-    // makes. Returns NULL if there is no world.
+    // makes. Returns NULL if there is no world. This is the FULL build - every hex
+    // re-encoded, both fact tables rebuilt - and it is what the incremental build
+    // must come out byte-identical to.
     static std::shared_ptr<const PathWorld> Build( void );
 
     // The currently published snapshot, or NULL.
@@ -134,6 +196,12 @@ class PathWorld
 
   private:
     static DWORD Key( int x, int y ) { return ( ( (DWORD)x << 16 ) | (DWORD)y ); }
+
+    // The one builder. pPrev == NULL, or dirty.IsAll(), is the full build; otherwise the
+    // hex array is copied from pPrev and only the dirty rows are re-encoded, and the two
+    // fact tables are copied from pPrev unless dirty.IsTables(). *piRows gets the number
+    // of rows re-encoded.
+    static std::shared_ptr<const PathWorld> _Build( PathWorld const* pPrev, PwDirty const& dirty, int* piRows );
 
     std::vector<Hex>    m_aHex;
     std::vector<Bldg>   m_aBldg;

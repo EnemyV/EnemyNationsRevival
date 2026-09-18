@@ -4,8 +4,10 @@
 // run-pathworld-snapshot.py, so the test fails if either copy drifts.
 
 #include <cstddef>
+#include <cstdint>
 #include <cstdio>
 #include <cstdlib>
+#include <cstring>
 #include <vector>
 
 typedef int           BOOL;
@@ -118,6 +120,7 @@ static CBuildingHexStub theBuildingHex;
 // ---- the snapshot ---------------------------------------------------------
 
 #include "pw_pwindex.inc"   // class CPwIndex + its three bodies, verbatim
+#include "pw_dirty.inc"     // class PwDirty, verbatim from pathworld.h
 
 class PathWorld
 {
@@ -351,6 +354,174 @@ static void TestIndexCoverage( )
     check( dwId > 50, "the coverage test placed a real number of buildings" );
 }
 
+#include "pw_fill.inc"   // PwEncodeRow + PwFillHexes, verbatim from pathworld.cpp
+
+// 3. THE INCREMENTAL REBUILD.
+//
+// PublishTick builds the new snapshot by copying the previous one's hex array and
+// re-encoding only the rows the dirty set names. That is only sound if it is
+// BYTE-IDENTICAL to a full rebuild of the same live map, so the two are run side by
+// side here over several publishes: one arm is chained (each build copies the previous
+// build's array), the other is built from scratch every time, and the two arrays are
+// compared after each publish.
+//
+// Occupancy is the trap. It is written after the hex array is filled and is NOT part
+// of the epoch, so a copied array still carries the PREVIOUS publish's occupancy while
+// a from-scratch one starts blank. The occupancy the last build wrote has to be put
+// back to occ_none by the copy, which is what pPrevOcc is for.
+
+enum { kHexes = PathWorld::kSide * PathWorld::kSide };
+
+static std::vector<PathWorld::Hex> g_aFull;
+static std::vector<PathWorld::Hex> g_aIncA;
+static std::vector<PathWorld::Hex> g_aIncB;
+
+// The stand-in for PathWorld::Build's occupancy pass: a few hexes hold a vehicle, and
+// which ones changes from publish to publish. Records exactly the hexes it set
+// non-occ_none, the way the production pass records into s_aPrevOcc.
+static void ApplyOcc( std::vector<PathWorld::Hex>& p, int iPhase, std::vector<uint32_t>& aOcc )
+{
+    std::vector<uint32_t> a;
+    for ( int i = 0; i < 3; ++i )
+    {
+        const uint32_t uAt = (uint32_t)( ( iPhase * 7 + i * 19 ) % kHexes );
+        p[uAt].bOcc        = (BYTE)( ( i & 1 ) ? PathWorld::occ_blocked : PathWorld::occ_moving );
+        a.push_back( uAt );
+    }
+    aOcc.swap( a );
+}
+
+static void TestIncrementalRebuild( )
+{
+    for ( int y = 0; y < PathWorld::kSide; ++y )
+        for ( int x = 0; x < PathWorld::kSide; ++x )
+        {
+            CHex* p       = LiveAt( x, y );
+            p->m_bTypeVal = (BYTE)( ( x * 5 + y * 3 ) % CHex::num_types );
+            p->m_bAltVal  = (BYTE)( ( x * 13 + y * 7 ) & 0x7F );
+            p->m_bUnit    = (BYTE)( ( x * y ) & 3 );
+            p->m_hex      = CHexCoord( x, y );
+        }
+
+    PwDirty dirtyAll;   // default-constructed is IsAll( ) - the full build
+    PwDirty dirty;
+    dirty.Reset( PathWorld::kSide );
+
+    std::vector<uint32_t> aIncOcc, aFullOcc;
+
+    std::vector<PathWorld::Hex>* pCur  = &g_aIncA;
+    std::vector<PathWorld::Hex>* pNext = &g_aIncB;
+
+    // first publish: no previous snapshot, so both arms are full builds
+    PwFillHexes( *pCur, NULL, NULL, 0, PathWorld::kSide, PathWorld::kSide, PathWorld::kSideShift, dirtyAll );
+    ApplyOcc( *pCur, 0, aIncOcc );
+    dirty.Reset( PathWorld::kSide );
+
+    // Several publishes, a few hexes each, of every kind the epoch counts - and at the
+    // rows and columns the map wraps at (row 0 and row kSide-1 are the y-wrap seam,
+    // column 0 and kSide-1 the x-wrap).
+    static const struct
+    {
+        int x, y, iKind;
+    } aMut[] = {
+        { 4, 4, 0 },                     // road  (SetType / ChangeToRoad)
+        { 0, 0, 1 }, { 1, 0, 1 },        // building bits at the top seam row
+        { 7, 7, 2 }, { 7, 0, 2 },        // bridge bits at both x and y wrap corners
+        { 0, 7, 3 },                     // altitude at the bottom seam row
+        { 3, 0, 4 }, { 3, 7, 4 },        // terrain type on both seam rows
+        { 7, 3, 0 },                     // road at the far x edge
+        { 0, 3, 1 },                     // building bit at the near x edge
+    };
+
+    int iRounds = 0, iSmallRounds = 0, iSingleRow = 0, iOccCleared = 0;
+
+    for ( int iRound = 0; iRound < (int)( sizeof( aMut ) / sizeof( aMut[0] ) ); ++iRound )
+    {
+        const int x = aMut[iRound].x, y = aMut[iRound].y;
+        CHex*     p = LiveAt( x, y );
+        switch ( aMut[iRound].iKind )
+        {
+            case 0: p->m_bTypeVal = CHex::road; break;
+            case 1: p->m_bUnit    = (BYTE)( p->m_bUnit | CHex::bldg ); break;
+            case 2: p->m_bUnit    = (BYTE)( p->m_bUnit | CHex::bridge ); break;
+            case 3: p->m_bAltVal  = (BYTE)( ( p->m_bAltVal + 17 ) & 0x7F ); break;
+            default: p->m_bTypeVal = (BYTE)( ( p->m_bTypeVal + 1 ) % CHex::num_types ); break;
+        }
+        // what EnNavTouchHexAt / EnNavTouchUnits record for that write
+        dirty.Row( y );
+
+        // the reference: a full rebuild of the live map as it stands now
+        PwFillHexes( g_aFull, NULL, NULL, 0, PathWorld::kSide, PathWorld::kSide, PathWorld::kSideShift, dirtyAll );
+        ApplyOcc( g_aFull, iRound + 1, aFullOcc );
+
+        // the incremental arm, chained on the previous publish's array
+        const int iRows = PwFillHexes( *pNext, pCur, aIncOcc.empty( ) ? NULL : &aIncOcc[0], aIncOcc.size( ),
+                                       PathWorld::kSide, PathWorld::kSide, PathWorld::kSideShift, dirty );
+        ApplyOcc( *pNext, iRound + 1, aIncOcc );
+
+        // a hex the PREVIOUS publish had occupied and this one does not - the case a
+        // copied array gets wrong unless the old occupancy is cleared
+        for ( int i = 0; i < kHexes; ++i )
+            if ( ( *pCur )[i].bOcc != PathWorld::occ_none && g_aFull[i].bOcc == PathWorld::occ_none )
+                ++iOccCleared;
+
+        check( (int)pNext->size( ) == kHexes && (int)g_aFull.size( ) == kHexes, "both arms sized the array alike" );
+        if ( memcmp( &( *pNext )[0], &g_aFull[0], kHexes * sizeof( PathWorld::Hex ) ) != 0 )
+        {
+            check( false, "the incremental rebuild is byte-identical to a full rebuild" );
+            if ( g_iFailures < 6 )
+                for ( int i = 0; i < kHexes; ++i )
+                    if ( memcmp( &( *pNext )[i], &g_aFull[i], sizeof( PathWorld::Hex ) ) != 0 )
+                    {
+                        printf( "   round %d (mutated %d,%d kind %d) first diff at hex %d,%d: "
+                                "inc units=%02x type=%d alt=%d occ=%d  full units=%02x type=%d alt=%d occ=%d\n",
+                                iRound, x, y, aMut[iRound].iKind, i & ( PathWorld::kSide - 1 ),
+                                i >> PathWorld::kSideShift, (int)( *pNext )[i].bUnits, (int)( *pNext )[i].bType,
+                                (int)( *pNext )[i].bAlt, (int)( *pNext )[i].bOcc, (int)g_aFull[i].bUnits,
+                                (int)g_aFull[i].bType, (int)g_aFull[i].bAlt, (int)g_aFull[i].bOcc );
+                        break;
+                    }
+        }
+
+        ++iRounds;
+        if ( iRows < PathWorld::kSide )
+            ++iSmallRounds;
+        if ( iRows == 1 )
+            ++iSingleRow;
+
+        std::vector<PathWorld::Hex>* pSwap = pCur;
+        pCur                               = pNext;
+        pNext                              = pSwap;
+        dirty.Reset( PathWorld::kSide );
+    }
+
+    printf( "incremental publishes compared: %d  (rows re-encoded < map height in %d, exactly one row in %d, "
+            "stale-occupancy hexes cleared %d)\n",
+            iRounds, iSmallRounds, iSingleRow, iOccCleared );
+
+    check( iRounds > 5, "several publishes were compared" );
+    // A run that fell back to a full rebuild every time would pass the memcmp and prove
+    // nothing about the incremental path.
+    check( iSmallRounds == iRounds, "every publish really was incremental" );
+    check( iSingleRow > 0, "a one-hex mutation re-encoded exactly one row" );
+    // Likewise a run where occupancy never moved would never exercise the reset.
+    check( iOccCleared > 0, "occupancy carried by the copy actually had to be cleared" );
+
+    // And the overflow valve: once every row is dirty the tracker says so, and the build
+    // is a full one again.
+    {
+        PwDirty over;
+        over.Reset( PathWorld::kSide );
+        check( !over.IsAll( ), "a freshly reset dirty set is not a full rebuild" );
+        for ( int y = 0; y < PathWorld::kSide; ++y ) over.Row( y );
+        check( over.IsAll( ), "dirtying every row falls back to a full rebuild" );
+        PwDirty oob;
+        oob.Reset( PathWorld::kSide );
+        oob.Row( PathWorld::kSide );   // a row this map does not have
+        check( oob.IsAll( ), "an out-of-range row falls back to a full rebuild" );
+    }
+}
+
 int main( )
 {
     theMap.m_iHexMask   = PathWorld::kSide - 1;
@@ -509,6 +680,7 @@ int main( )
 
     TestSeamIndexing( );
     TestIndexCoverage( );
+    TestIncrementalRebuild( );
 
     printf( "%d checks, %d failures\n", g_iChecks, g_iFailures );
     return ( g_iFailures ? 1 : 0 );

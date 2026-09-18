@@ -19,7 +19,8 @@ HERE = Path(__file__).resolve().parent
 ROOT = HERE.parents[1]
 parser = argparse.ArgumentParser(description=__doc__)
 parser.add_argument('--baseline-ref', help='Read production bodies from this Git revision')
-parser.add_argument('--perturb', choices=['coastline', 'samehex', 'altitude', 'unwrapped', 'anchoronly'],
+parser.add_argument('--perturb', choices=['coastline', 'samehex', 'altitude', 'unwrapped', 'anchoronly',
+                                          'dirtyrow', 'dirtyocc', 'dirtyseam'],
                     help='Corrupt one special case of the SNAPSHOT copy, to run the test in its failing direction')
 args = parser.parse_args()
 
@@ -122,8 +123,33 @@ pwindex += body(pathworld_cpp, 'void CPwIndex::Insert( DWORD dwKey, DWORD dwVal 
 pwindex += body(pathworld_cpp, 'DWORD CPwIndex::Find( DWORD dwKey ) const')
 (out / 'pw_pwindex.inc').write_text(pwindex, encoding='utf-8')
 
+# --- the INCREMENTAL rebuild, verbatim --------------------------------------------
+# An incremental build copies the previous snapshot's hex array and re-encodes only the
+# rows the dirty set names. It has to come out byte-identical to a full rebuild of the
+# same live map, so the dirty tracker and the fill are extracted and driven side by side
+# against a from-scratch fill in the fixture.
+dirty = block(pathworld_h, 'class PwDirty') + ';\n'
+if args.perturb == 'dirtyseam':
+    # A tracker that silently drops row 0 - the y-wrap seam row - instead of recording it.
+    dirty = dirty.replace('    void Row( int y )\n    {\n        if ( m_bAll )',
+                          '    void Row( int y )\n    {\n        if ( y == 0 )\n            return;\n'
+                          '        if ( m_bAll )')
+    assert 'if ( y == 0 )' in dirty, 'dirtyseam perturbation did not apply'
+(out / 'pw_dirty.inc').write_text(dirty, encoding='utf-8')
+
+fill = body(pathworld_cpp, 'static void PwEncodeRow( PathWorld::Hex* pOut, CHex const* pRow, int iWidth )')
+fill += '\n\n' + body(pathworld_cpp, 'static int PwFillHexes(')
+if args.perturb == 'dirtyrow':
+    fill = fill.replace('if ( dirty.IsRow( y ) )', 'if ( false )')
+    assert 'if ( false )' in fill, 'dirtyrow perturbation did not apply'
+elif args.perturb == 'dirtyocc':
+    before = fill
+    fill = re.sub(r'\n *for \( size_t i = 0; i < nPrevOcc; \+\+i \)[^\n]*\n', '\n', fill)
+    assert fill != before, 'dirtyocc perturbation did not apply'
+(out / 'pw_fill.inc').write_text(fill, encoding='utf-8')
+
 digest = hashlib.sha256((live + snap + wheels + hexenums + structs + snap_index + live_index
-                         + pwindex).encode()).hexdigest()
+                         + pwindex + dirty + fill).encode()).hexdigest()
 print('Production bodies SHA256:', digest, flush=True)
 if args.perturb:
     print('PERTURBED:', args.perturb, '- this run is EXPECTED to fail', flush=True)

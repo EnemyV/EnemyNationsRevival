@@ -62,7 +62,7 @@ void CHex::SetType( int iType )
     ASSERT_STRICT( ( 0 <= iType ) && ( iType < CHex::num_types ) );
 
     // Both m_bType exits below are covered from here (terrain.h g_enNavEpoch).
-    ++g_enNavEpoch;
+    EnNavTouchHexAt( this );
 
     // NOTE: do NOT bump g_enTerrainEditGen here. Every path out of SetType calls
     // SetVisibleType (line ~72 for water/city/road, line ~119 for land), and

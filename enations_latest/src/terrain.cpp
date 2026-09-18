@@ -184,7 +184,10 @@ void TerrainShowStatus( void* pData, CDC* pDc, CRect const& rDraw, CDIB* pDibBac
 const CHex& CHex::operator=( CHex const& src )
 {
 
-    ++g_enNavEpoch;
+    // The destination need not be a hex of the live map (temporaries and the world
+    // generator both assign through here), so there is no row to name: the extent is
+    // unknown and the next snapshot is a full one (terrain.h g_enNavEpoch).
+    EnNavTouchAll( );
     m_bType    = src.m_bType;
     m_bAlt     = src.m_bAlt;
     m_bUnit    = src.m_bUnit;
@@ -2690,8 +2693,10 @@ void CHex::ChangeToRoad( CHexCoord& hex, BOOL bCallNext, BOOL bForce )
     BOOL bWasForest = ( GetType( ) == CHex::forest );
 
     // Before the raw m_bType write below, which bypasses SetType and can return
-    // early while the stored type has already changed (terrain.h g_enNavEpoch).
-    ++g_enNavEpoch;
+    // early while the stored type has already changed (terrain.h g_enNavEpoch). The
+    // neighbours this call goes on to re-face come back through here and record
+    // themselves; the only hex written below is this one.
+    EnNavTouchHexAt( this );
 
     // if we don't see it yet, just mark it
     m_bType = CHex::road;
@@ -5067,7 +5072,9 @@ void CHex::Serialize( CArchive& ar )
     }
     else
     {
-        ++g_enNavEpoch;
+        // A load rewrites the whole map hex by hex; naming a row per hex would just
+        // dirty every row (terrain.h g_enNavEpoch).
+        EnNavTouchAll( );
         ar >> m_bType >> m_bAlt >> m_bUnit;
         WORD iID;
         ar >> iID;
