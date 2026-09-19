@@ -98,7 +98,20 @@ void CPlayer::ctor( )
     m_iPplNeedLast    = -1;   // no finished tick yet -- Desperate Measures drafts the flat base
     m_iSurplusPplLast = 0;
     m_iSurplusPplTick = 0;
+    m_iPwrHaveLast    = 0;
+    m_iPwrNeedLast    = -1;   // ditto for the power half of the surplus machinery
+    m_iSurplusPwrLast = 0;
+    m_iSurplusPwrTick = 0;
     m_iDespDraft      = 0;
+    m_iPubWorksDraft  = 0;
+    m_iCivDefDraft    = 0;
+    m_iCivDefPower    = 0;
+    m_iWarFootDraft   = 0;
+    m_iWarFootPower   = 0;
+    m_iFellowsDraft   = 0;
+    m_iFellowsPower   = 0;
+    m_iSurplusSparePpl = 0;
+    m_iSurplusSparePwr = 0;
     m_iPplBldg        = 0;
     m_iPplVeh         = 0;
     m_fPplMult        = 1.0;
@@ -135,6 +148,10 @@ void CPlayer::ctor( )
     m_fEdictEnergyUpkeepPct    = 0.0f;
     m_fEdictWorkforceUpkeepPct = 0.0f;
     m_fEdictFoodUpkeepPct      = 0.0f;
+    m_fSurplusConstMult    = 1.0f;   // dynamic, rebuilt every pump by ApplySurplusEdicts
+    m_fSurplusFortMult     = 1.0f;
+    m_fSurplusBldgDmgMult  = 1.0f;
+    m_fSurplusInfBuildMult = 1.0f;
     m_fAttack         = 1.0;
     m_fDefense        = 1.0;
     m_fPopMod         = 0.0;
@@ -267,6 +284,14 @@ void CPlayer::RecomputeEdictMults( )
     m_fEdictEnergyUpkeepPct    = 0.0f;
     m_fEdictWorkforceUpkeepPct = 0.0f;
     m_fEdictFoodUpkeepPct      = 0.0f;
+    // The surplus edicts' mults come from ApplySurplusEdicts, not from g_aEdicts (they scale
+    // with the live draft), so there is nothing to fold in below. Neutralise them anyway: this
+    // runs on every toggle and on load, and it makes a just-revoked edict's bonus vanish on the
+    // spot instead of lingering for the remainder of the pump.
+    m_fSurplusConstMult    = 1.0f;
+    m_fSurplusFortMult     = 1.0f;
+    m_fSurplusBldgDmgMult  = 1.0f;
+    m_fSurplusInfBuildMult = 1.0f;
 
     for ( int id = 0; id < EDICT_COUNT; ++id )
     {
@@ -612,8 +637,8 @@ void CPlayer::AddGas( int iNum )
     m_aiMade[CMaterialTypes::gas] += iNum;
 }
 
-// ApplySurplusEdicts -- the ONE per-pump pass that prices every surplus-scaled edict (today:
-// Desperate Measures; the rest of the family lands on top of this same walk). Called at the end
+// ApplySurplusEdicts -- the ONE per-pump pass that prices every surplus-scaled edict (Desperate
+// Measures, Public Works, Civil Defence, War Footing, Research Fellowships). Called at the end
 // of StartLoop, for every player including the AI: it is cheap, deterministic, and in a net game
 // every client must compute the identical draft or the economies desync.
 //
@@ -645,24 +670,45 @@ void CPlayer::ApplySurplusEdicts( )
 
     ASSERT_STRICT_VALID( this );
 
-    // Clear this pump's cached results -- an inactive edict drafts nothing.
-    m_iDespDraft = 0;
+    // Clear this pump's cached results -- an inactive edict drafts nothing and bonuses it is no
+    // longer paying for must not survive into this pump.
+    m_iDespDraft     = 0;
+    m_iPubWorksDraft = 0;
+    m_iCivDefDraft   = 0;
+    m_iCivDefPower   = 0;
+    m_iWarFootDraft  = 0;
+    m_iWarFootPower  = 0;
+    m_iFellowsDraft  = 0;
+    m_iFellowsPower  = 0;
+    m_fSurplusConstMult    = 1.0f;
+    m_fSurplusFortMult     = 1.0f;
+    m_fSurplusBldgDmgMult  = 1.0f;
+    m_fSurplusInfBuildMult = 1.0f;
 
-    // Spare workforce "as if the surplus edicts were not running" (points 1 + 2 above).
-    // m_iPplNeedLast < 0 means there is no finished pump to read yet (new game, or the first
-    // pump after a load -- these fields are runtime-only, deliberately not serialized). Scoring
-    // a zeroed need would make the ENTIRE workforce look spare and spike the draft for one pump,
+    // Spare workforce / power "as if the surplus edicts were not running" (points 1 + 2 above).
+    // A Last field < 0 means there is no finished pump to read yet (new game, or the first pump
+    // after a load -- these fields are runtime-only, deliberately not serialized). Scoring a
+    // zeroed need would make the ENTIRE workforce look spare and spike the drafts for one pump,
     // so treat the spare as 0: only Desperate's flat base applies, exactly as it always has.
     LONG lSparePpl = 0;
+    LONG lSparePwr = 0;
     if ( m_iPplNeedLast >= 0 )
         lSparePpl = m_iPplBldg - ( m_iPplNeedLast - m_iSurplusPplLast );
+    if ( m_iPwrNeedLast >= 0 )
+        lSparePwr = m_iPwrHaveLast - ( m_iPwrNeedLast - m_iSurplusPwrLast );
     if ( lSparePpl < 0 )
         lSparePpl = 0;
+    if ( lSparePwr < 0 )
+        lSparePwr = 0;
+    m_iSurplusSparePpl = lSparePpl;   // what the UI/harness report as "spare" this pump
+    m_iSurplusSparePwr = lSparePwr;
 
-    // --- EDICT_DESPERATE_MEASURES (rocket): flat base + a cut of what is left ------------------
     // Each surplus edict takes its cut of the REMAINING pool and shrinks it for the next one, so
     // the walk is bounded (they can never between them draft more than the spare) and its result
-    // depends only on EdictId order -- never on building or player iteration order.
+    // depends only on EdictId order -- never on building or player iteration order. They are
+    // visited below in that order; keep this walk and EdictIsSurplus (edicts.h) in step.
+
+    // --- EDICT_DESPERATE_MEASURES (rocket): flat base + a cut of what is left -----------------
     if ( IsEdictActive( EDICT_DESPERATE_MEASURES ) )
     {
         // the flat base is taken out of the spare before the percentage
@@ -679,6 +725,200 @@ void CPlayer::ApplySurplusEdicts( )
         AddPplNeedBldg( m_iDespDraft );
         m_iSurplusPplTick += m_iDespDraft;
     }
+
+    // --- EDICT_PUBLIC_WORKS (rocket): idle workers -> construction speed ----------------------
+    if ( IsEdictActive( EDICT_PUBLIC_WORKS ) )
+    {
+        int iDraft = SurplusShare( (int)lSparePpl, SURPLUS_DRAFT_PCT );
+        lSparePpl -= iDraft;
+        m_iPubWorksDraft = iDraft;
+        AddPplNeedBldg( iDraft );
+        m_iSurplusPplTick += iDraft;
+        m_fSurplusConstMult = 1.0f + ( PUBLIC_WORKS_MAX_PCT / 100.0f ) *
+                                         SurplusScale( iDraft, PUBLIC_WORKS_FULL_DRAFT );
+    }
+
+    // --- EDICT_CIVIL_DEFENCE (rocket): workers AND power -> shelters + fortifications ---------
+    // Two inputs, one scale: the SMALLER of the two ratios, so half-fed is half-effective in
+    // whichever input is short. The power is a real draw booked into m_iPwrNeed, which is why it
+    // also goes into m_iSurplusPwrTick -- next pump adds it back to see the true surplus.
+    if ( IsEdictActive( EDICT_CIVIL_DEFENCE ) )
+    {
+        int iDraft = SurplusShare( (int)lSparePpl, SURPLUS_DRAFT_PCT );
+        int iPwr   = SurplusShare( (int)lSparePwr, SURPLUS_POWER_PCT );
+        lSparePpl -= iDraft;
+        lSparePwr -= iPwr;
+        m_iCivDefDraft = iDraft;
+        m_iCivDefPower = iPwr;
+        AddPplNeedBldg( iDraft );
+        AddPwrNeed( iPwr );
+        m_iSurplusPplTick += iDraft;
+        m_iSurplusPwrTick += iPwr;
+
+        float fScale = __min( SurplusScale( iDraft, CIVDEF_FULL_DRAFT ),
+                              SurplusScale( iPwr, CIVDEF_FULL_POWER ) );
+        m_fSurplusBldgDmgMult = 1.0f - ( CIVDEF_MAX_DMG_PCT / 100.0f ) * fScale;
+        m_fSurplusFortMult    = 1.0f + ( CIVDEF_MAX_FORT_PCT / 100.0f ) * fScale;
+    }
+
+    // --- EDICT_WAR_FOOTING (command center): workers AND power -> infantry build speed --------
+    if ( IsEdictActive( EDICT_WAR_FOOTING ) )
+    {
+        int iDraft = SurplusShare( (int)lSparePpl, SURPLUS_DRAFT_PCT );
+        int iPwr   = SurplusShare( (int)lSparePwr, SURPLUS_POWER_PCT );
+        lSparePpl -= iDraft;
+        lSparePwr -= iPwr;
+        m_iWarFootDraft = iDraft;
+        m_iWarFootPower = iPwr;
+        AddPplNeedBldg( iDraft );
+        AddPwrNeed( iPwr );
+        m_iSurplusPplTick += iDraft;
+        m_iSurplusPwrTick += iPwr;
+
+        float fScale = __min( SurplusScale( iDraft, WARFOOT_FULL_DRAFT ),
+                              SurplusScale( iPwr, WARFOOT_FULL_POWER ) );
+        m_fSurplusInfBuildMult = 1.0f + ( WARFOOT_MAX_INF_PCT / 100.0f ) * fScale;
+    }
+
+    // --- EDICT_RESEARCH_FELLOWSHIPS (office): workers from the surplus, power at a flat rate ---
+    if ( IsEdictActive( EDICT_RESEARCH_FELLOWSHIPS ) )
+    {
+        int iFellows = SurplusShare( (int)lSparePpl, SURPLUS_DRAFT_PCT );
+        lSparePpl -= iFellows;
+        m_iFellowsDraft = iFellows;
+        m_iFellowsPower = iFellows / FELLOWS_PER_POWER;
+        AddPplNeedBldg( iFellows );
+        AddPwrNeed( m_iFellowsPower );
+        m_iSurplusPplTick += iFellows;
+        // NOTE: m_iFellowsPower is deliberately NOT added to m_iSurplusPwrTick. It is a FLAT
+        // cost, not a cut of the surplus, so it must stay inside the "need" that next pump's
+        // spare is measured against -- otherwise the colony would treat its own bill as free
+        // power and hand it straight back to the other surplus edicts.
+
+        // Fellows research at FELLOW_RATE_PCT% of ONE laboratory worker, so derive the
+        // per-worker rate from the lab's own definition rather than hard-coding a number the
+        // data could move under us: the lab credits GetRate() for GetPeople() workers (see the
+        // UTresearch case in CBuilding::Operate), so one worker is GetRate()/GetPeople(). The
+        // same m_fDamPerfMult-less throttles the lab applies are applied here (a fellow has no
+        // building to be damaged), and m_iRsrchHave was reset just above in StartLoop, so this
+        // lands in the same per-pump accumulator Research() drains in the 1-second block.
+        if ( iFellows > 0 )
+        {
+            CStructureData const* pSd = theStructures.GetData( CStructureData::research );
+            CBuildResearch*       pBr = ( pSd != NULL ) ? pSd->GetBldResearch( ) : NULL;
+            int                   iLabPpl = ( pSd != NULL ) ? pSd->GetPeople( ) : 0;
+            if ( ( pBr != NULL ) && ( iLabPpl > 0 ) )
+            {
+                float fPerWorker = (float)pBr->GetRate( ) / (float)iLabPpl;
+                AddRsrch( (int)( iFellows * ( FELLOW_RATE_PCT / 100.0f ) * fPerWorker *
+                                 GetPplMult( ) * GetRsrchMult( ) ) );
+            }
+        }
+    }
+}
+
+// --- What ApplySurplusEdicts charged this pump -----------------------------------------------
+// The info-window readout (GetEdictStatus) and the harness `pstats` dump both read THESE, never
+// their own copy of the arithmetic, so a number on screen is by construction the number the sim
+// used. A non-surplus edict answers 0 / neutral.
+int CPlayer::GetEdictDraftPpl( int edictId ) const
+{
+    ASSERT_STRICT_VALID( this );
+    switch ( edictId )
+    {
+    case EDICT_DESPERATE_MEASURES:   return ( (int)m_iDespDraft );
+    case EDICT_PUBLIC_WORKS:         return ( (int)m_iPubWorksDraft );
+    case EDICT_CIVIL_DEFENCE:        return ( (int)m_iCivDefDraft );
+    case EDICT_WAR_FOOTING:          return ( (int)m_iWarFootDraft );
+    case EDICT_RESEARCH_FELLOWSHIPS: return ( (int)m_iFellowsDraft );
+    }
+    return ( 0 );
+}
+
+int CPlayer::GetEdictDraftPwr( int edictId ) const
+{
+    ASSERT_STRICT_VALID( this );
+    switch ( edictId )
+    {
+    case EDICT_CIVIL_DEFENCE:        return ( (int)m_iCivDefPower );
+    case EDICT_WAR_FOOTING:          return ( (int)m_iWarFootPower );
+    case EDICT_RESEARCH_FELLOWSHIPS: return ( (int)m_iFellowsPower );   // flat cost, not a surplus cut
+    }
+    return ( 0 );
+}
+
+// The edict's effect scale. 0..1 for the four ramped edicts (0 = drafted nothing, 1 = fully
+// staffed); for Desperate Measures there is no cap, so report the scrounge multiplier instead
+// (draft / DESPERATE_RATE_PER -- the exact factor CBuilding::Operate scales the rates by).
+float CPlayer::GetEdictScale( int edictId ) const
+{
+    ASSERT_STRICT_VALID( this );
+    switch ( edictId )
+    {
+    case EDICT_DESPERATE_MEASURES:
+        return ( (float)m_iDespDraft / (float)DESPERATE_RATE_PER );
+    case EDICT_PUBLIC_WORKS:
+        return ( SurplusScale( (int)m_iPubWorksDraft, PUBLIC_WORKS_FULL_DRAFT ) );
+    case EDICT_CIVIL_DEFENCE:
+        return ( __min( SurplusScale( (int)m_iCivDefDraft, CIVDEF_FULL_DRAFT ),
+                        SurplusScale( (int)m_iCivDefPower, CIVDEF_FULL_POWER ) ) );
+    case EDICT_WAR_FOOTING:
+        return ( __min( SurplusScale( (int)m_iWarFootDraft, WARFOOT_FULL_DRAFT ),
+                        SurplusScale( (int)m_iWarFootPower, WARFOOT_FULL_POWER ) ) );
+    case EDICT_RESEARCH_FELLOWSHIPS:
+        return ( m_iFellowsDraft * ( FELLOW_RATE_PCT / 100.0f ) );   // lab-worker equivalents
+    }
+    return ( 1.0f );
+}
+
+// One live line for the Edicts section of a host building's info window: what this edict is
+// actually drawing right now and what that buys. "" for a non-surplus edict, an inactive one,
+// or one that happened to draft nothing this pump (there is nothing to say, and a "0 workers"
+// row is just noise under the checkbox).
+std::string CPlayer::GetEdictStatus( int edictId ) const
+{
+    ASSERT_STRICT_VALID( this );
+    if ( !EdictIsSurplus( edictId ) || !IsEdictActive( edictId ) )
+        return ( std::string( ) );
+
+    const int   iPpl   = GetEdictDraftPpl( edictId );
+    const int   iPwr   = GetEdictDraftPwr( edictId );
+    const float fScale = GetEdictScale( edictId );
+    char        buf[160];
+    buf[0] = 0;
+
+    switch ( edictId )
+    {
+    case EDICT_DESPERATE_MEASURES:
+        if ( iPpl <= 0 ) break;
+        snprintf( buf, sizeof( buf ), "Drafting %d workers", iPpl );
+        break;
+    case EDICT_PUBLIC_WORKS:
+        if ( iPpl <= 0 ) break;
+        snprintf( buf, sizeof( buf ), "Drafting %d idle workers: +%d%% build speed",
+                  iPpl, (int)( PUBLIC_WORKS_MAX_PCT * fScale + 0.5f ) );
+        break;
+    case EDICT_CIVIL_DEFENCE:
+        if ( ( iPpl <= 0 ) && ( iPwr <= 0 ) ) break;
+        snprintf( buf, sizeof( buf ), "%d workers + %d power: -%d%% building damage, +%d%% fort speed",
+                  iPpl, iPwr, (int)( CIVDEF_MAX_DMG_PCT * fScale + 0.5f ),
+                  (int)( CIVDEF_MAX_FORT_PCT * fScale + 0.5f ) );
+        break;
+    case EDICT_WAR_FOOTING:
+        if ( ( iPpl <= 0 ) && ( iPwr <= 0 ) ) break;
+        snprintf( buf, sizeof( buf ), "%d workers + %d power: +%d%% infantry build speed",
+                  iPpl, iPwr, (int)( WARFOOT_MAX_INF_PCT * fScale + 0.5f ) );
+        break;
+    case EDICT_RESEARCH_FELLOWSHIPS:
+        if ( iPpl <= 0 ) break;
+        // No per-minute research figure is cheap here (Research() consumes m_iRsrchHave against
+        // the current topic's cost), so quote the equivalent lab staffing instead -- the same
+        // FELLOW_RATE_PCT the credit above uses.
+        snprintf( buf, sizeof( buf ), "%d fellows, %d power: researching as %d lab workers",
+                  iPpl, iPwr, (int)( fScale + 0.5f ) );
+        break;
+    }
+    return ( std::string( buf ) );
 }
 
 void CPlayer::StartLoop( )
@@ -741,6 +981,10 @@ void CPlayer::StartLoop( )
     m_iPplNeedLast    = m_iPplNeedBldg;
     m_iSurplusPplLast = m_iSurplusPplTick;
     m_iSurplusPplTick = 0;
+    m_iPwrHaveLast    = m_iPwrHave;
+    m_iPwrNeedLast    = m_iPwrNeed;
+    m_iSurplusPwrLast = m_iSurplusPwrTick;
+    m_iSurplusPwrTick = 0;
 
     // clear for next count
     m_iPwrHave     = 0;

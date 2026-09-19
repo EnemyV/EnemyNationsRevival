@@ -226,6 +226,11 @@ private:
     SDL2Checkbox* m_chkEdict[kMaxEdictRows] = {};
     int           m_edictIds[kMaxEdictRows] = {};
     int           m_nEdictRows = 0;   // rows actually built (research-gated count at build time)
+    // Live status line under a SURPLUS edict's checkbox (CPlayer::GetEdictStatus): what it is
+    // drafting right now and what that buys. nullptr for a non-surplus row; the label is created
+    // whether or not the edict is on (its height is reserved in computeLayout either way) and
+    // Refresh() just sets it to "" while it is off, so toggling one never resizes the window.
+    SDL2Label*    m_lblEdictStatus[kMaxEdictRows] = {};
     // #43-audit item 2: a mode-aware OUTPUT readout in the "Production Mode" section, mirroring
     // the coal-liq Power-section swap for the BioFuel (oil) / Charcoal (coal) / Fracking (oil)
     // hosts — they have no Power section, so without this enabling the toggle showed no output.
