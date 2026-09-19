@@ -13,12 +13,16 @@
 // something"): every surplus edict is a FLAT cost in one resource PLUS a cut of the surplus of
 // one resource, and the two need not be the same resource. Per edict, in walk order:
 //
+//    3 Research Subsidy     static pct upkeeps + 25% of the spare workers (it is the LOWEST id,
+//                           so it takes its cut first, before Desperate Measures)
 //   13 Desperate Measures   flat 100 workers + 50% of the remaining spare workers
 //   14 Public Works         flat 100 workers + 50% of the remaining spare workers
 //   15 Civil Defence        flat 100 workers + 50% of the remaining surplus POWER
 //   16 War Footing          flat  30 power   + 50% of the remaining spare workers
-//   17 Research Fellowships flat  25 power   + 50% of the remaining spare workers,
-//                           plus 1 further power per 5 fellows
+//
+// Research Subsidy's flat half is not a number this walk books: it is the static +30% research /
+// +25% power / +15% workers in its g_aEdicts row, charged by RecomputeEdictMults + StartLoop. So
+// it contributes nothing to FlatPpl/FlatPwr here, only a cut.
 //
 // Accounting, uniform: only the SURPLUS-DERIVED cuts are added back when the next pump measures
 // the spare; a flat cost stays inside the need. So the spare handed to a pump has already had
@@ -29,8 +33,10 @@
 //   2. SurplusScale is clamped to [0,1] and monotone.
 //   3. With ZERO spare of either resource, every active edict still charges exactly its flat
 //      part -- and nothing more. That is the commitment the operator asked for.
-//   4. With spare S, each edict charges flat_i + 50% of what remains after the earlier cuts, and
-//      the cuts together never exceed S (the flat parts are on top, by design).
+//   4. With spare S, each edict charges flat_i + its pct of what remains after the earlier cuts
+//      (25% for Research Subsidy, 50% for the rest), and the cuts together never exceed S (the
+//      flat parts are on top, by design). 4a pins the walk ORDER that "what remains" depends on.
+//   5a. Research Subsidy's extra research multiplier: 1.0 + 20% * SurplusScale(draft, 300).
 //   5. The fixed point, for BOTH pools with all five edicts on: fed back its own previous cuts,
 //      the walk computes the SAME answer every pump while the economy holds. The naive form
 //      (no add-back) is run alongside as a positive control, to show this fixture can actually
@@ -52,8 +58,9 @@ static const int CIVDEF_BASE_DRAFT      = 100;
 static const int CIVDEF_FULL_POWER      = 150;
 static const int WARFOOT_BASE_POWER     = 30;
 static const int WARFOOT_FULL_DRAFT     = 400;
-static const int FELLOWS_BASE_POWER     = 25;
-static const int FELLOWS_PER_POWER      = 5;
+static const int RSRCH_SUBSIDY_DRAFT_PCT  = 25;
+static const int RSRCH_SUBSIDY_FULL_DRAFT = 300;
+static const int RSRCH_SUBSIDY_MAX_PCT    = 20;
 
 // ---------------------------------------------------------------------------
 // Mirrors edicts.h:
@@ -90,10 +97,10 @@ static float SurplusScale( int iHave, int iFull )
     return ( (float)iHave / (float)iFull );
 }
 
-// Which edicts are on, in walk order (EdictId 13..17).
+// Which edicts are on, in walk order (EdictId 3, then 13..16).
 struct Active
 {
-    bool desp, pubworks, civdef, warfoot, fellows;
+    bool rsub, desp, pubworks, civdef, warfoot;
 };
 
 // What one pump of the walk charged. ppl*/pwr* are the TOTALS booked into m_iPplNeedBldg /
@@ -101,14 +108,21 @@ struct Active
 // m_iSurplusPplTick / m_iSurplusPwrTick for next pump's add-back.
 struct WalkOut
 {
-    int despPpl, pubPpl, civPpl, civPwr, warPpl, warPwr, felPpl, felPwr;
+    int rsubPpl, despPpl, pubPpl, civPpl, civPwr, warPpl, warPwr;
     int ppl, pwr;        // totals booked
     int cutPpl, cutPwr;  // surplus-derived halves
+    float rsubMult;      // m_fSurplusRsrchMult (1.0 when the edict is off)
 };
 
 // ---------------------------------------------------------------------------
 // Mirrors the walk in CPlayer::ApplySurplusEdicts (player.cpp), edict by edict:
 //
+//     if ( IsEdictActive( EDICT_RESEARCH_SUBSIDY ) ) {
+//         int iCut = SurplusShare( (int)lSparePpl, RSRCH_SUBSIDY_DRAFT_PCT );
+//         lSparePpl -= iCut;
+//         m_iRsrchSubDraft = iCut;  AddPplNeedBldg( iCut );  m_iSurplusPplTick += iCut;
+//         m_fSurplusRsrchMult = 1.0f + ( RSRCH_SUBSIDY_MAX_PCT / 100.0f ) *
+//                                          SurplusScale( iCut, RSRCH_SUBSIDY_FULL_DRAFT ); }
 //     if ( IsEdictActive( EDICT_DESPERATE_MEASURES ) ) {
 //         int iCut = SurplusShare( (int)lSparePpl, SURPLUS_DRAFT_PCT );
 //         lSparePpl -= iCut;
@@ -121,16 +135,22 @@ struct WalkOut
 //     if ( IsEdictActive( EDICT_WAR_FOOTING ) ) {
 //         int iCutPpl = SurplusShare( (int)lSparePpl, SURPLUS_DRAFT_PCT );  lSparePpl -= iCutPpl;
 //         m_iWarFootDraft = iCutPpl;  m_iWarFootPower = WARFOOT_BASE_POWER; ... }
-//     if ( IsEdictActive( EDICT_RESEARCH_FELLOWSHIPS ) ) {
-//         int iFellows = SurplusShare( (int)lSparePpl, SURPLUS_DRAFT_PCT );  lSparePpl -= iFellows;
-//         m_iFellowsPower = FELLOWS_BASE_POWER + ( iFellows / FELLOWS_PER_POWER ); ... }
 // ---------------------------------------------------------------------------
 static WalkOut Walk( int sparePpl, int sparePwr, const Active& a )
 {
-    WalkOut w = { 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 };
+    WalkOut w = { 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1.0f };
     if ( sparePpl < 0 ) sparePpl = 0;
     if ( sparePwr < 0 ) sparePwr = 0;
 
+    if ( a.rsub )   // EdictId 3 -- FIRST in the walk, cuts the untouched pool
+    {
+        int cut = SurplusShare( sparePpl, RSRCH_SUBSIDY_DRAFT_PCT );
+        sparePpl -= cut;
+        w.rsubPpl = cut;            // no flat draft: its flat half is the static pct upkeeps
+        w.cutPpl += cut;
+        w.rsubMult = 1.0f + ( RSRCH_SUBSIDY_MAX_PCT / 100.0f ) *
+                                SurplusScale( cut, RSRCH_SUBSIDY_FULL_DRAFT );
+    }
     if ( a.desp )
     {
         int cut = SurplusShare( sparePpl, SURPLUS_DRAFT_PCT );
@@ -161,16 +181,8 @@ static WalkOut Walk( int sparePpl, int sparePwr, const Active& a )
         w.warPwr = WARFOOT_BASE_POWER;  // flat, no power cut
         w.cutPpl += cut;
     }
-    if ( a.fellows )
-    {
-        int cut = SurplusShare( sparePpl, SURPLUS_DRAFT_PCT );
-        sparePpl -= cut;
-        w.felPpl = cut;
-        w.felPwr = FELLOWS_BASE_POWER + ( cut / FELLOWS_PER_POWER );
-        w.cutPpl += cut;
-    }
-    w.ppl = w.despPpl + w.pubPpl + w.civPpl + w.warPpl + w.felPpl;
-    w.pwr = w.civPwr + w.warPwr + w.felPwr;
+    w.ppl = w.rsubPpl + w.despPpl + w.pubPpl + w.civPpl + w.warPpl;
+    w.pwr = w.civPwr + w.warPwr;
     return w;
 }
 
@@ -182,7 +194,9 @@ static int FlatPpl( const Active& a )
 }
 static int FlatPwr( const Active& a )
 {
-    return ( ( a.warfoot ? WARFOOT_BASE_POWER : 0 ) + ( a.fellows ? FELLOWS_BASE_POWER : 0 ) );
+    // Research Subsidy's power cost is a PCT upkeep charged in StartLoop, not a flat bill booked
+    // by this walk, so it is deliberately absent here.
+    return ( a.warfoot ? WARFOOT_BASE_POWER : 0 );
 }
 
 // ---------------------------------------------------------------------------
@@ -252,29 +266,76 @@ int main( )
         CHECK_EQ( w.civPwr,  0 );                               // its surplus half is power
         CHECK_EQ( w.warPpl,  0 );                               // its surplus half is people
         CHECK_EQ( w.warPwr,  a.warfoot ? WARFOOT_BASE_POWER : 0 );
-        CHECK_EQ( w.felPpl,  0 );
-        CHECK_EQ( w.felPwr,  a.fellows ? FELLOWS_BASE_POWER : 0 );
+        // Research Subsidy is PURELY surplus in this walk -- with no slack it drafts nobody and
+        // its extra research bonus is neutral. Its flat half (the static +30% and the pct
+        // upkeeps) is charged elsewhere and is exactly what keeps it a commitment.
+        CHECK_EQ( w.rsubPpl, 0 );
+        CHECK( w.rsubMult == 1.0f );
     }
 
     // -------- 4. flat + 50% of what remains, and the cuts stay inside the spare --------
     {
         // All five on, 1000 spare people and 400 spare power. People cuts, in walk order:
-        //   Desperate 500 (of 1000), Public Works 250 (of 500), War Footing 125 (of 250),
-        //   Fellowships 62 (of 125, floored).   Power cuts: Civil Defence 200 (of 400).
+        //   Research Subsidy 250 (25% of 1000), Desperate 375 (of 750), Public Works 187 (of
+        //   375, floored), War Footing 94 (of 188).   Power cuts: Civil Defence 200 (of 400).
         Active all = { true, true, true, true, true };
         WalkOut w = Walk( 1000, 400, all );
-        CHECK_EQ( w.despPpl, DESPERATE_BASE_DRAFT + 500 );
-        CHECK_EQ( w.pubPpl,  PUBLIC_WORKS_BASE_DRAFT + 250 );
+        CHECK_EQ( w.rsubPpl, 250 );
+        CHECK_EQ( w.despPpl, DESPERATE_BASE_DRAFT + 375 );
+        CHECK_EQ( w.pubPpl,  PUBLIC_WORKS_BASE_DRAFT + 187 );
         CHECK_EQ( w.civPpl,  CIVDEF_BASE_DRAFT );
         CHECK_EQ( w.civPwr,  200 );
-        CHECK_EQ( w.warPpl,  125 );
+        CHECK_EQ( w.warPpl,  94 );
         CHECK_EQ( w.warPwr,  WARFOOT_BASE_POWER );
-        CHECK_EQ( w.felPpl,  62 );
-        CHECK_EQ( w.felPwr,  FELLOWS_BASE_POWER + ( 62 / FELLOWS_PER_POWER ) );
-        CHECK_EQ( w.cutPpl, 500 + 250 + 125 + 62 );
+        CHECK_EQ( w.cutPpl, 250 + 375 + 187 + 94 );
         CHECK_EQ( w.cutPwr, 200 );
         CHECK_EQ( w.ppl, FlatPpl( all ) + w.cutPpl );
-        CHECK_EQ( w.pwr, FlatPwr( all ) + w.cutPwr + ( 62 / FELLOWS_PER_POWER ) );
+        CHECK_EQ( w.pwr, FlatPwr( all ) + w.cutPwr );   // no per-draft power term left in the family
+    }
+
+    // -------- 4a. walk ORDER: Research Subsidy (id 3) cuts before Desperate Measures (id 13) --
+    // The ids are the order, so the lowest-id edict sees the untouched pool. Pinned by the
+    // effect the order HAS -- Desperate's draft shrinks when Research Subsidy is also on -- not
+    // just by re-asserting the number, so a walk reordered in player.cpp trips this.
+    {
+        Active despOnly = { false, true, false, false, false };
+        Active both     = { true,  true, false, false, false };
+        WalkOut wD = Walk( 1000, 0, despOnly );
+        WalkOut wB = Walk( 1000, 0, both );
+        CHECK_EQ( wD.despPpl, DESPERATE_BASE_DRAFT + 500 );    // 50% of the whole 1000
+        CHECK_EQ( wB.rsubPpl, 250 );                           // 25% of the whole 1000, taken first
+        CHECK_EQ( wB.despPpl, DESPERATE_BASE_DRAFT + 375 );    // then 50% of the 750 left
+        CHECK( wB.despPpl < wD.despPpl );
+        // Its cut is 25%, NOT the family's 50%: deliberately the smaller share.
+        CHECK( wB.rsubPpl < SurplusShare( 1000, SURPLUS_DRAFT_PCT ) );
+    }
+
+    // -------- 5a. the extra research multiplier ramps 1.00 -> 1.20 over 300 drafted ----------
+    {
+        Active rs = { true, false, false, false, false };
+        CHECK( Walk( 0, 0, rs ).rsubMult == 1.0f );                   // nothing spare, no extra
+        // 1200 spare -> 300 drafted -> exactly the cap.
+        WalkOut wFull = Walk( 1200, 0, rs );
+        CHECK_EQ( wFull.rsubPpl, RSRCH_SUBSIDY_FULL_DRAFT );
+        CHECK( wFull.rsubMult == 1.0f + RSRCH_SUBSIDY_MAX_PCT / 100.0f );
+        // Past the cap it stays there (SurplusScale clamps) -- no runaway research.
+        CHECK( Walk( 100000, 0, rs ).rsubMult == wFull.rsubMult );
+        // 600 spare -> 150 drafted -> half the extra.
+        CHECK( Walk( 600, 0, rs ).rsubMult == 1.0f + ( RSRCH_SUBSIDY_MAX_PCT / 100.0f ) * 0.5f );
+        // Monotone and bounded across the range, and never below neutral.
+        float prevM = 0.0f;
+        for ( int sp = 0; sp <= 2000; sp += 11 )
+        {
+            WalkOut w = Walk( sp, 0, rs );
+            CHECK( w.rsubMult >= 1.0f );
+            CHECK( w.rsubMult <= 1.0f + RSRCH_SUBSIDY_MAX_PCT / 100.0f );
+            CHECK( w.rsubMult >= prevM );
+            prevM = w.rsubMult;
+            CHECK_EQ( w.rsubPpl, SurplusShare( sp, RSRCH_SUBSIDY_DRAFT_PCT ) );
+            CHECK_EQ( w.cutPpl, w.rsubPpl );   // its whole charge is surplus-derived: all added back
+            CHECK_EQ( w.ppl, w.rsubPpl );      // and it books no flat draft at all
+            CHECK_EQ( w.pwr, 0 );              // nor any flat power
+        }
     }
     // Swept: the cuts can never exceed the spare they were handed, and the booked total is
     // always exactly the flat part plus the cuts.
@@ -287,8 +348,7 @@ int main( )
             CHECK( w.cutPpl >= 0 && w.cutPpl <= sp );
             CHECK( w.cutPwr >= 0 && w.cutPwr <= sp );
             CHECK_EQ( w.ppl, FlatPpl( a ) + w.cutPpl );
-            // the fellows' per-fellow power rides on top of the two flat power bills
-            CHECK_EQ( w.pwr, FlatPwr( a ) + w.cutPwr + ( a.fellows ? w.felPpl / FELLOWS_PER_POWER : 0 ) );
+            CHECK_EQ( w.pwr, FlatPwr( a ) + w.cutPwr );
         }
 
     // -------- 5. the fixed point, both pools (and a positive control) --------
@@ -320,21 +380,18 @@ int main( )
         // answer never moves again.
         for ( int i = 2; i < 8; i++ )
             CHECK_EQ( seenPpl[i], seenPpl[1] );
-        // POWER settles one pump LATER, and this is a property of the design, not a defect:
-        // Research Fellowships' power bill is 25 + fellows/5, so part of the power need depends
-        // on the PEOPLE cut, which itself only reaches its value at pump 1. The power pool reads
-        // the PREVIOUS pump's finished need, so it sees the settled bill for the first time at
-        // pump 2. It is a one-step lag chain that terminates, not an orbit -- the sequence is
-        // monotone into its fixed point and stays there, which the sweep below asserts.
-        for ( int i = 3; i < 8; i++ )
-            CHECK_EQ( seenPwr[i], seenPwr[2] );
+        // POWER settles immediately too, now that no edict's power bill depends on the PEOPLE
+        // cut: the only power terms left are War Footing's flat bill and Civil Defence's cut of
+        // the spare power, so the power pool's "need minus own cut" is constant from pump 1 on.
+        // (Research Subsidy's power cost is a pct upkeep charged outside this walk.)
+        for ( int i = 2; i < 8; i++ )
+            CHECK_EQ( seenPwr[i], seenPwr[1] );
         CHECK( seenPpl[1] > FlatPpl( all ) );   // it really is drafting the surplus
-        CHECK( seenPwr[2] > FlatPwr( all ) );   // and really is drawing surplus power
+        CHECK( seenPwr[1] > FlatPwr( all ) );   // and really is drawing surplus power
     }
     // Swept: over a range of colony sizes and active sets, the walk ALWAYS reaches a fixed point
-    // within 4 pumps and stays on it for the rest of the run. 4 is the lag chain's bound: one
-    // pump to have a finished total at all, one for the people cut, one for the power bill that
-    // depends on it, plus one of slack.
+    // within 4 pumps and stays on it for the rest of the run. One pump is needed to have a
+    // finished total to read at all; the rest is slack (both pools now settle at pump 1).
     for ( int havePpl = 2000; havePpl <= 6000; havePpl += 500 )
         for ( int havePwr = 600; havePwr <= 1400; havePwr += 200 )
             for ( int mask = 0; mask < 32; mask++ )

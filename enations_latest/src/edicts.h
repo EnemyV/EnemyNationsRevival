@@ -34,7 +34,8 @@ enum EdictId
     EDICT_FORTIFY_BORDER = 0,   // Command Center: +fort construction speed, +energy upkeep
     EDICT_NUTRITION,            // Apartment: +population growth, +food drain
     EDICT_MINING_SUBSIDY,       // Office: +mine output, +energy upkeep
-    EDICT_RESEARCH_SUBSIDY,     // Office: +research speed, +workforce upkeep
+    EDICT_RESEARCH_SUBSIDY,     // Office: +research speed, +workforce upkeep, + a cut of the
+                                //   spare workforce for more (surplus family, see below)
     EDICT_AUSTERITY,            // Rocket (civ-wide): +construction speed, +workforce upkeep
     EDICT_AGRICULTURAL,         // Office: +farm output, +25% workers required at farms
     EDICT_OVERCLOCKED_GRID,     // Rocket (tech-gated): +all production, +global power upkeep
@@ -49,7 +50,6 @@ enum EdictId
     EDICT_PUBLIC_WORKS,         // Rocket: flat workers + surplus workers -> construction crews
     EDICT_CIVIL_DEFENCE,        // Rocket: flat workers + surplus POWER -> shelters & forts
     EDICT_WAR_FOOTING,          // Command Center: flat POWER + surplus workers -> infantry
-    EDICT_RESEARCH_FELLOWSHIPS, // Office: flat POWER + surplus workers -> research fellows
     EDICT_COUNT
 };
 
@@ -110,12 +110,16 @@ bool EdictHostHasEdicts( CStructureData::BLDG_TYPE bldgType );
 // something"). Every one is a FLAT cost in one resource PLUS a cut of the SURPLUS of a resource,
 // and the two need not be the same resource:
 //
+//    3 Research Subsidy   pct upkeeps + RSRCH_SUBSIDY_DRAFT_PCT% of the spare workers
 //   13 Desperate Measures  flat workers + SURPLUS_DRAFT_PCT% of the remaining spare workers
 //   14 Public Works        flat workers + SURPLUS_DRAFT_PCT% of the remaining spare workers
 //   15 Civil Defence       flat workers + SURPLUS_POWER_PCT% of the remaining surplus POWER
 //   16 War Footing         flat POWER   + SURPLUS_DRAFT_PCT% of the remaining spare workers
-//   17 Research Fellowships flat POWER  + SURPLUS_DRAFT_PCT% of the remaining spare workers
-//                           (plus 1 more power per FELLOWS_PER_POWER fellows it ends up with)
+//
+// Research Subsidy is the one whose flat half is not a number but the static pct upkeeps in its
+// g_aEdicts row (energy + workforce), charged by RecomputeEdictMults/StartLoop like any other
+// edict's; only its surplus half is priced here. It is also the LOWEST id, so it takes its cut
+// first (see the walk in ApplySurplusEdicts).
 //
 // Exactly ONE surplus input each, so an edict's effect scales with that one quantity -- there is
 // no min() of two ratios to reason about. The flat cost is charged whether or not there is any
@@ -156,9 +160,9 @@ inline float SurplusScale( int iHave, int iFull )
 // UI/harness need the same predicate. Keep in step with the walk in ApplySurplusEdicts.
 inline bool EdictIsSurplus( int id )
 {
-    return ( ( id == EDICT_DESPERATE_MEASURES ) || ( id == EDICT_PUBLIC_WORKS ) ||
-             ( id == EDICT_CIVIL_DEFENCE ) || ( id == EDICT_WAR_FOOTING ) ||
-             ( id == EDICT_RESEARCH_FELLOWSHIPS ) );
+    return ( ( id == EDICT_RESEARCH_SUBSIDY ) || ( id == EDICT_DESPERATE_MEASURES ) ||
+             ( id == EDICT_PUBLIC_WORKS ) || ( id == EDICT_CIVIL_DEFENCE ) ||
+             ( id == EDICT_WAR_FOOTING ) );
 }
 
 // --- Desperate Measures tuning (EDICT_DESPERATE_MEASURES) -----------------------------------
@@ -200,12 +204,14 @@ const int WARFOOT_BASE_POWER = 30;    // power the war effort burns, surplus pow
 const int WARFOOT_FULL_DRAFT = 400;   // drafted workers for the full effect
 const int WARFOOT_MAX_INF_PCT = 100;  // max +pct infantry build speed
 
-// --- Research Fellowships tuning (EDICT_RESEARCH_FELLOWSHIPS) --------------------------------
-// Energy + surplus PEOPLE. Both power terms are flat costs booked into m_iPwrNeed like any
-// building's, so an under-powered colony browns out paying for them instead of getting them
-// free: a fixed FELLOWS_BASE_POWER for the programme plus 1 per FELLOWS_PER_POWER fellows.
-const int FELLOWS_BASE_POWER = 25;  // power the fellowship programme costs before any fellow
-const int FELLOWS_PER_POWER  = 5;   // fellows supported per 1 further power
-const int FELLOW_RATE_PCT    = 25;  // a fellow researches at this pct of a lab WORKER's rate
+// --- Research Subsidy surplus half (EDICT_RESEARCH_SUBSIDY) ----------------------------------
+// Its flat half is the static fRsrchMult/upkeep pcts in its g_aEdicts row (+30% research for
+// +25% power and +15% workers civ-wide). On top of that it seconds a cut of the idle workforce
+// to the labs for up to RSRCH_SUBSIDY_MAX_PCT more. The draft pct is deliberately smaller than
+// SURPLUS_DRAFT_PCT: this edict is cheap, always available early, and must not be the one that
+// eats the whole idle pool before the rocket/command-center edicts get a look at it.
+const int RSRCH_SUBSIDY_DRAFT_PCT = 25;   // pct of the REMAINING spare workforce it drafts
+const int RSRCH_SUBSIDY_FULL_DRAFT = 300; // drafted workers for the full EXTRA bonus
+const int RSRCH_SUBSIDY_MAX_PCT    = 20;  // max EXTRA research pct, on top of the static +30%
 
 #endif // ENATIONS_EDICTS_H

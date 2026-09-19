@@ -110,8 +110,7 @@ void CPlayer::ctor( )
     m_iCivDefPower    = 0;
     m_iWarFootDraft   = 0;
     m_iWarFootPower   = 0;
-    m_iFellowsDraft   = 0;
-    m_iFellowsPower   = 0;
+    m_iRsrchSubDraft  = 0;
     m_iSurplusSparePpl = 0;
     m_iSurplusSparePwr = 0;
     m_iPplBldg        = 0;
@@ -154,6 +153,7 @@ void CPlayer::ctor( )
     m_fSurplusFortMult     = 1.0f;
     m_fSurplusBldgDmgMult  = 1.0f;
     m_fSurplusInfBuildMult = 1.0f;
+    m_fSurplusRsrchMult    = 1.0f;
     m_fAttack         = 1.0;
     m_fDefense        = 1.0;
     m_fPopMod         = 0.0;
@@ -294,6 +294,7 @@ void CPlayer::RecomputeEdictMults( )
     m_fSurplusFortMult     = 1.0f;
     m_fSurplusBldgDmgMult  = 1.0f;
     m_fSurplusInfBuildMult = 1.0f;
+    m_fSurplusRsrchMult    = 1.0f;
 
     for ( int id = 0; id < EDICT_COUNT; ++id )
     {
@@ -640,7 +641,8 @@ void CPlayer::AddGas( int iNum )
 }
 
 // ApplySurplusEdicts -- the ONE per-pump pass that prices every surplus-scaled edict (Desperate
-// Measures, Public Works, Civil Defence, War Footing, Research Fellowships). Called at the end
+// Measures, Public Works, Civil Defence, War Footing, and Research Subsidy's surplus half).
+// Called at the end
 // of StartLoop, for every player including the AI: it is cheap, deterministic, and in a net game
 // every client must compute the identical draft or the economies desync.
 //
@@ -693,12 +695,12 @@ void CPlayer::ApplySurplusEdicts( )
     m_iCivDefPower   = 0;
     m_iWarFootDraft  = 0;
     m_iWarFootPower  = 0;
-    m_iFellowsDraft  = 0;
-    m_iFellowsPower  = 0;
+    m_iRsrchSubDraft = 0;
     m_fSurplusConstMult    = 1.0f;
     m_fSurplusFortMult     = 1.0f;
     m_fSurplusBldgDmgMult  = 1.0f;
     m_fSurplusInfBuildMult = 1.0f;
+    m_fSurplusRsrchMult    = 1.0f;
 
     // Spare workforce / power "as if the surplus edicts were not running" (points 1 + 2 above).
     // A Last field < 0 means there is no finished pump to read yet (new game, or the first pump
@@ -723,6 +725,25 @@ void CPlayer::ApplySurplusEdicts( )
     // never between them borrow more surplus than the colony has idle -- and its result depends
     // only on EdictId order, never on building or player iteration order. They are visited below
     // in that order; keep this walk and EdictIsSurplus (edicts.h) in step.
+
+    // --- EDICT_RESEARCH_SUBSIDY (office): pct upkeeps + a cut of the spare workforce ----------
+    // Its "flat" half is not a number but the static +30% research / +25% power / +15% workers
+    // in its g_aEdicts row, charged by RecomputeEdictMults + StartLoop like any other edict's.
+    // Here we only price the surplus half: a SMALLER cut than the rest of the family
+    // (RSRCH_SUBSIDY_DRAFT_PCT), seconding idle workers to the labs for up to
+    // RSRCH_SUBSIDY_MAX_PCT more research. The cut is surplus-derived, so it IS added back.
+    // Lowest EdictId of the family, so it is visited first and cuts the untouched pool.
+    if ( IsEdictActive( EDICT_RESEARCH_SUBSIDY ) )
+    {
+        int iCut = SurplusShare( (int)lSparePpl, RSRCH_SUBSIDY_DRAFT_PCT );
+        lSparePpl -= iCut;
+
+        m_iRsrchSubDraft = iCut;
+        AddPplNeedBldg( iCut );
+        m_iSurplusPplTick += iCut;
+        m_fSurplusRsrchMult = 1.0f + ( RSRCH_SUBSIDY_MAX_PCT / 100.0f ) *
+                                         SurplusScale( iCut, RSRCH_SUBSIDY_FULL_DRAFT );
+    }
 
     // --- EDICT_DESPERATE_MEASURES (rocket): flat workers + a cut of the spare workforce -------
     if ( IsEdictActive( EDICT_DESPERATE_MEASURES ) )
@@ -790,42 +811,6 @@ void CPlayer::ApplySurplusEdicts( )
         m_fSurplusInfBuildMult = 1.0f + ( WARFOOT_MAX_INF_PCT / 100.0f ) *
                                             SurplusScale( iCutPpl, WARFOOT_FULL_DRAFT );
     }
-
-    // --- EDICT_RESEARCH_FELLOWSHIPS (office): flat POWER + a cut of the spare workforce -------
-    // Energy + surplus people. The power bill is flat FELLOWS_BASE_POWER for the programme plus
-    // one per FELLOWS_PER_POWER fellows it ends up supporting -- both flat costs, so neither is
-    // added back next pump (a bill the colony really pays must stay inside the need, or the
-    // family would see it as free power and spend it again).
-    if ( IsEdictActive( EDICT_RESEARCH_FELLOWSHIPS ) )
-    {
-        int iFellows = SurplusShare( (int)lSparePpl, SURPLUS_DRAFT_PCT );
-        lSparePpl -= iFellows;
-        m_iFellowsDraft = iFellows;
-        m_iFellowsPower = FELLOWS_BASE_POWER + ( iFellows / FELLOWS_PER_POWER );
-        AddPplNeedBldg( iFellows );
-        AddPwrNeed( m_iFellowsPower );
-        m_iSurplusPplTick += iFellows;   // the fellows ARE the surplus half; the power is not
-
-        // Fellows research at FELLOW_RATE_PCT% of ONE laboratory worker, so derive the
-        // per-worker rate from the lab's own definition rather than hard-coding a number the
-        // data could move under us: the lab credits GetRate() for GetPeople() workers (see the
-        // UTresearch case in CBuilding::Operate), so one worker is GetRate()/GetPeople(). The
-        // same m_fDamPerfMult-less throttles the lab applies are applied here (a fellow has no
-        // building to be damaged), and m_iRsrchHave was reset just above in StartLoop, so this
-        // lands in the same per-pump accumulator Research() drains in the 1-second block.
-        if ( iFellows > 0 )
-        {
-            CStructureData const* pSd = theStructures.GetData( CStructureData::research );
-            CBuildResearch*       pBr = ( pSd != NULL ) ? pSd->GetBldResearch( ) : NULL;
-            int                   iLabPpl = ( pSd != NULL ) ? pSd->GetPeople( ) : 0;
-            if ( ( pBr != NULL ) && ( iLabPpl > 0 ) )
-            {
-                float fPerWorker = (float)pBr->GetRate( ) / (float)iLabPpl;
-                AddRsrch( (int)( iFellows * ( FELLOW_RATE_PCT / 100.0f ) * fPerWorker *
-                                 GetPplMult( ) * GetRsrchMult( ) ) );
-            }
-        }
-    }
 }
 
 // --- What ApplySurplusEdicts charged this pump -----------------------------------------------
@@ -837,11 +822,11 @@ int CPlayer::GetEdictDraftPpl( int edictId ) const
     ASSERT_STRICT_VALID( this );
     switch ( edictId )
     {
+    case EDICT_RESEARCH_SUBSIDY:     return ( (int)m_iRsrchSubDraft );
     case EDICT_DESPERATE_MEASURES:   return ( (int)m_iDespDraft );
     case EDICT_PUBLIC_WORKS:         return ( (int)m_iPubWorksDraft );
     case EDICT_CIVIL_DEFENCE:        return ( (int)m_iCivDefDraft );
     case EDICT_WAR_FOOTING:          return ( (int)m_iWarFootDraft );
-    case EDICT_RESEARCH_FELLOWSHIPS: return ( (int)m_iFellowsDraft );
     }
     return ( 0 );
 }
@@ -853,12 +838,13 @@ int CPlayer::GetEdictDraftPwr( int edictId ) const
     {
     case EDICT_CIVIL_DEFENCE:        return ( (int)m_iCivDefPower );    // the surplus half here
     case EDICT_WAR_FOOTING:          return ( (int)m_iWarFootPower );   // flat bill
-    case EDICT_RESEARCH_FELLOWSHIPS: return ( (int)m_iFellowsPower );   // flat bill + per-fellow
+    // Research Subsidy's power cost is the pct upkeep in its g_aEdicts row, not a flat number
+    // this pass booked, so there is nothing to report here.
     }
     return ( 0 );
 }
 
-// The edict's effect scale. 0..1 for the four ramped edicts (0 = drafted nothing, 1 = fully
+// The edict's effect scale. 0..1 for the ramped edicts (0 = drafted nothing, 1 = fully
 // staffed); for Desperate Measures there is no cap, so report the scrounge multiplier instead
 // (draft / DESPERATE_RATE_PER -- the exact factor CBuilding::Operate scales the rates by).
 float CPlayer::GetEdictScale( int edictId ) const
@@ -874,8 +860,8 @@ float CPlayer::GetEdictScale( int edictId ) const
         return ( SurplusScale( (int)m_iCivDefPower, CIVDEF_FULL_POWER ) );
     case EDICT_WAR_FOOTING:     // surplus input is PEOPLE (the power is the flat bill)
         return ( SurplusScale( (int)m_iWarFootDraft, WARFOOT_FULL_DRAFT ) );
-    case EDICT_RESEARCH_FELLOWSHIPS:
-        return ( m_iFellowsDraft * ( FELLOW_RATE_PCT / 100.0f ) );   // lab-worker equivalents
+    case EDICT_RESEARCH_SUBSIDY:   // surplus input is PEOPLE (the static pcts are the flat half)
+        return ( SurplusScale( (int)m_iRsrchSubDraft, RSRCH_SUBSIDY_FULL_DRAFT ) );
     }
     return ( 1.0f );
 }
@@ -918,13 +904,12 @@ std::string CPlayer::GetEdictStatus( int edictId ) const
         snprintf( buf, sizeof( buf ), "%d power + %d workers: +%d%% infantry build speed",
                   iPwr, iPpl, (int)( WARFOOT_MAX_INF_PCT * fScale + 0.5f ) );
         break;
-    case EDICT_RESEARCH_FELLOWSHIPS:
-        if ( ( iPpl <= 0 ) && ( iPwr <= 0 ) ) break;
-        // No per-minute research figure is cheap here (Research() consumes m_iRsrchHave against
-        // the current topic's cost), so quote the equivalent lab staffing instead -- the same
-        // FELLOW_RATE_PCT the credit above uses.
-        snprintf( buf, sizeof( buf ), "%d fellows, %d power: researching as %d lab workers",
-                  iPpl, iPwr, (int)( fScale + 0.5f ) );
+    case EDICT_RESEARCH_SUBSIDY:
+        if ( iPpl <= 0 ) break;
+        // The static +30% is on the checkbox's own description; this line is only the EXTRA the
+        // seconded workers are buying right now.
+        snprintf( buf, sizeof( buf ), "Drafting %d idle workers: +%d%% extra research",
+                  iPpl, (int)( RSRCH_SUBSIDY_MAX_PCT * fScale + 0.5f ) );
         break;
     }
     return ( std::string( buf ) );
