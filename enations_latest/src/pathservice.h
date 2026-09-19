@@ -136,6 +136,11 @@ class PathService
     // EN_PATH_ASYNC_VERIFY: at install, also run the synchronous live search and
     // compare. Needs EN_PATH_PROBES compiled in; a no-op without it.
     static BOOL AsyncVerifyEnabled( void );
+    // Phase 5 step 1. EN_PATH_ASYNC_HUMAN, same value rule, AND EN_PATH_ASYNC: the
+    // eligible set grows from "local AI-owned movers" to "local movers", so a joiner
+    // and a host's own vehicles get the worker too. Absent - the default - the
+    // predicate and the install-side owner test are the v1 AI-only pair.
+    static BOOL AsyncHumanEnabled( void );
 
   private:
     void WorkerMain( void );

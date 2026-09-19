@@ -64,6 +64,14 @@ BOOL PathService::AsyncVerifyEnabled( void )
     return ( ( s_iVerifyOn && AsyncEnabled( ) ) ? TRUE : FALSE );
 }
 
+BOOL PathService::AsyncHumanEnabled( void )
+{
+    static int s_iHumanOn = -1;
+    if ( s_iHumanOn < 0 )
+        s_iHumanOn = ResolveOnOff( getenv( "EN_PATH_ASYNC_HUMAN" ) );
+    return ( ( s_iHumanOn && AsyncEnabled( ) ) ? TRUE : FALSE );
+}
+
 int PathService::ConfiguredWorkers( void )
 {
     const char* psz = getenv( "EN_PATH_WORKERS" );

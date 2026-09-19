@@ -3489,6 +3489,29 @@ enum { kPathAsyncMaxRetries = 3 };
 // THE eligibility predicate. Widening the scope (human owners, bVehBlock searches -
 // plan section 3, phase 5) is a change here and nowhere else.
 //
+// Phase 5 step 1 IS HERE, behind EN_PATH_ASYNC_HUMAN (default off): a LOCAL human
+// owner's mover is admitted too. "Local" is never optional - ownership is
+// authoritative in MP and a remote owner's vehicle is simulated, not commanded, here.
+//
+// Phase 5 step 2 (bVehBlock searches) is NOT implemented, and the reject below is
+// unconditional on purpose. An occupancy-aware search reads TWO snapshot facts, and
+// neither is maintained to a standard that makes it equivalent to the live search:
+//   * cpathmgr.cpp:1234 only consults the occupancy class at all once
+//     fDest.GetUnits() shows a vehicle sub-hex bit (cpathmgr.cpp:1228), and the
+//     snapshot's bUnits comes from PwEncodeRow (pathworld.cpp:221), which re-encodes
+//     only DIRTY rows. A vehicle's sub-hex bits are written by vehicle.inl:76,81
+//     through CHex::OrUnits / NandUnits, which bump the nav epoch and dirty the row
+//     ONLY for the bldg|bridge bits (terrain.h:226-227) - never for ul/ur/ll/lr.
+//   * PathWorld::PublishTick skips the rebuild outright while the epoch is unchanged
+//     (pathworld.cpp:466-471), and says so in as many words: "Vehicle occupancy is
+//     deliberately OUTSIDE it". So bOcc (pathworld.cpp:438) is not rebuilt either.
+// With bVehBlock == FALSE both facts are inert - the cpathmgr.cpp:1234 branch is a
+// no-op and the bldg bit it is nested under IS dirty-tracked - which is exactly why
+// v1 is sound. Turning bVehBlock on would make arbitrarily stale vehicle bits
+// load-bearing, and neither install-side re-check covers it (PathStepLegalLive tests
+// travelability, not occupancy; the one-step test only fires for pathLen == 1). The
+// prerequisite is dirty-tracking the vehicle sub-hex bits, not a knob.
+//
 static BOOL PathAsyncEligible( CVehicle const* pVeh, BOOL bVehBlock )
 {
     // Submit, the pending state and the install are all main-thread contracts. The
@@ -3496,11 +3519,11 @@ static BOOL PathAsyncEligible( CVehicle const* pVeh, BOOL bVehBlock )
     if ( !PathService::AsyncEnabled( ) || !thePathService.IsRunning( ) || !Perf::IsMainThread( ) )
         return ( FALSE );
 
-    // v1 scope, plan section 1.2 D1/D3: occupancy-aware searches keep their
-    // synchronous answer, and the mover must be an AI's local vehicle.
+    // Plan section 1.2 D3: occupancy-aware searches keep their synchronous answer.
+    // See the header comment above for why this one has no switch.
     if ( bVehBlock )
     {
-        Perf::CounterInc( "pa.ineligible" );
+        Perf::CounterInc( "pa.ineligible.vehblock" );
         return ( FALSE );
     }
 
@@ -3520,16 +3543,29 @@ static BOOL PathAsyncEligible( CVehicle const* pVeh, BOOL bVehBlock )
     std::shared_ptr<const PathWorld> ptrSnap = PathWorld::Current( );
     if ( !ptrSnap || ( ptrSnap->Generation( ) != EnNavGameGeneration( ) ) )
     {
-        Perf::CounterInc( "pa.ineligible" );
+        Perf::CounterInc( "pa.ineligible.snap" );
         return ( FALSE );
     }
 
+    // No owner is counted with the remote case: both mean "this seat does not command
+    // this vehicle", and neither is affected by the human switch.
     CPlayer const* pOwner = pVeh->GetOwner( );
-    if ( ( pOwner == NULL ) || !pOwner->IsLocal( ) || !pOwner->IsAI( ) )
+    if ( ( pOwner == NULL ) || !pOwner->IsLocal( ) )
     {
-        Perf::CounterInc( "pa.ineligible" );
+        Perf::CounterInc( "pa.ineligible.owner.remote" );
         return ( FALSE );
     }
+
+    const BOOL bAI = pOwner->IsAI( );
+    if ( !bAI && !PathService::AsyncHumanEnabled( ) )
+    {
+        Perf::CounterInc( "pa.ineligible.owner.human" );
+        return ( FALSE );
+    }
+
+    // What the widening - and only the widening - admitted.
+    if ( !bAI )
+        Perf::CounterInc( "pa.eligible.human" );
 
     Perf::CounterInc( "pa.eligible" );
     return ( TRUE );
@@ -3813,8 +3849,22 @@ void CVehicle::InstallPathResult( PathResult& res )
         return;
     }
 
-    CPlayer const* pOwner = GetOwner( );
-    if ( ( pOwner == NULL ) || !pOwner->IsLocal( ) || !pOwner->IsAI( ) )
+    // The SAME rule PathAsyncEligible applies, re-asked now: the owner can have changed
+    // while the answer was in flight. Rejection is for leaving the eligible set, not for
+    // changing owner - the route is a function of the two hexes and the world, not of
+    // who owns the vehicle, and identity, order generation, staleness and the live
+    // re-checks above already cover everything an ownership change implies about it.
+    // So with EN_PATH_ASYNC_HUMAN on, an AI -> human takeover INSTALLS (the vehicle is
+    // still local and still eligible); with it off, that takeover leaves the eligible
+    // set and the answer is dropped, exactly as v1 dropped it. Going remote always
+    // rejects: this seat no longer commands the vehicle.
+    CPlayer const* pOwner  = GetOwner( );
+    const BOOL     bEligibleOwner =
+        ( ( pOwner != NULL ) && pOwner->IsLocal( ) &&
+          ( pOwner->IsAI( ) || PathService::AsyncHumanEnabled( ) ) )
+            ? TRUE
+            : FALSE;
+    if ( !bEligibleOwner )
     {
         Perf::CounterInc( "pa.reject.owner" );
         ClearPathPending( NULL );
