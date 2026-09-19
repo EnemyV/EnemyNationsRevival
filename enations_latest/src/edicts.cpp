@@ -175,7 +175,7 @@ const EdictDef g_aEdicts[EDICT_COUNT] =
     // bought with SURPLUS_POWER_PCT% of the spare power (CIVDEF_FULL_POWER = full effect).
     // Drives m_fSurplusBldgDmgMult (folded into GetEdictBldgDmgMult beside Meat Shield) and
     // m_fSurplusFortMult (GetEdictFortBuildMult, beside Fortify Border). Gate: fortification.
-    { "Civil Defence", "Civ-wide: workers and surplus power go to shelters and fortifications: buildings take up to 20% less damage, forts build up to 30% faster.\nCost: 100 workers, plus half of your surplus power — which is what the effect scales with. Lost if rocket destroyed.",
+    { "Civil Defence", "Civ-wide: workers and surplus power go to shelters and fortifications: buildings take up to 20% less damage, forts build up to 30% faster.\nCost: 100 workers, plus half of your surplus power; the effect scales with that surplus. Lost if rocket destroyed.",
       CStructureData::rocket, EDICT_CIVWIDE, CRsrchArray::fortification,
       1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f,
       0.0f, 0.0f, 0.0f,
@@ -185,7 +185,7 @@ const EdictDef g_aEdicts[EDICT_COUNT] =
     // surplus PEOPLE. A flat WARFOOT_BASE_POWER bill, and the effect is bought with
     // SURPLUS_DRAFT_PCT% of the spare workforce (WARFOOT_FULL_DRAFT = full effect), spent on
     // m_fSurplusInfBuildMult (folded into GetEdictInfBuildMult beside The Draft). Gate: atk_2.
-    { "War Footing", "Civ-wide: power and idle workers go to the war effort: infantry build up to 100% faster.\nCost: 30 power, plus half of your idle workforce — which is what the effect scales with.",
+    { "War Footing", "Civ-wide: power and idle workers go to the war effort: infantry build up to 100% faster.\nCost: 30 power, plus half of your idle workforce; the effect scales with those workers.",
       CStructureData::command_center, EDICT_CIVWIDE, CRsrchArray::atk_2,
       1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f,
       0.0f, 0.0f, 0.0f,
