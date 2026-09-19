@@ -8933,7 +8933,7 @@ void HarnessDumpPlayerStats( std::string& out )
     out += "pwrhave "     + IntToStr( me->GetPwrHave( ) )     + "\n";
     out += "food "        + IntToStr( me->GetFood( ) )        + "\n";
     out += "foodneed "    + IntToStr( me->GetFoodNeed( ) )    + "\n";
-    out += "rsrchhave "   + IntToStr( me->GetRsrchHave( ) )   + "\n";   // per-pump research people (Fellowships credit lands here)
+    out += "rsrchhave "   + IntToStr( me->GetRsrchHave( ) )   + "\n";   // per-pump research people
 
     // Surplus-scaled edicts (CPlayer::ApplySurplusEdicts): the spare this pump was cut from --
     // measured "as if the surplus edicts were not running", which is why it does not equal

@@ -51,9 +51,13 @@ const EdictDef g_aEdicts[EDICT_COUNT] =
       0.25f, 0.15f, 0.0f,
       1.0f, 1.0f, 1.0f, 1.0f, 1.0f },
 
-    // EDICT_RESEARCH_SUBSIDY — Office-hosted, civ-wide economy policy. Folds
-    // m_fEdictRsrchMult into GetRsrchMult() (plan §2.1; pairs with the RG-1 lever).
-    { "Research Subsidy", "Civ-wide: +30% research speed.\nCost: +25% civ-wide power use, +15% civ-wide workers.",
+    // EDICT_RESEARCH_SUBSIDY — Office-hosted, civ-wide economy policy. TWO halves: the static
+    // one below folds m_fEdictRsrchMult into GetRsrchMult() (plan §2.1; pairs with the RG-1
+    // lever) and charges the pct upkeeps; on top of it ApplySurplusEdicts seconds
+    // RSRCH_SUBSIDY_DRAFT_PCT% of the idle workforce to the labs for up to
+    // RSRCH_SUBSIDY_MAX_PCT more, via m_fSurplusRsrchMult (also folded into GetRsrchMult).
+    // Being the lowest surplus id, it takes its cut of the idle pool first.
+    { "Research Subsidy", "Civ-wide: +30% research speed, and idle workers are seconded to the labs for up to +20% more.\nCost: +25% civ-wide power use, +15% civ-wide workers, plus a quarter of your idle workforce.",
       CStructureData::office, EDICT_CIVWIDE, CRsrchArray::advanced_facilities,
       1.0f, 1.0f, 1.0f, 1.30f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f,
       0.25f, 0.15f, 0.0f,
@@ -187,17 +191,6 @@ const EdictDef g_aEdicts[EDICT_COUNT] =
     // m_fSurplusInfBuildMult (folded into GetEdictInfBuildMult beside The Draft). Gate: atk_2.
     { "War Footing", "Civ-wide: power and idle workers go to the war effort: infantry build up to 100% faster.\nCost: 30 power, plus half of your idle workforce; the effect scales with those workers.",
       CStructureData::command_center, EDICT_CIVWIDE, CRsrchArray::atk_2,
-      1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f,
-      0.0f, 0.0f, 0.0f,
-      1.0f, 1.0f, 1.0f, 1.0f, 1.0f },
-
-    // EDICT_RESEARCH_FELLOWSHIPS — Office, civ-wide. Energy + surplus PEOPLE: a flat
-    // FELLOWS_BASE_POWER for the programme plus 1 more per FELLOWS_PER_POWER fellows, booked
-    // into m_iPwrNeed like a building's own draw so it browns the colony out if it can't afford
-    // it. Each fellow credits AddRsrch at FELLOW_RATE_PCT% of one laboratory worker's rate,
-    // through the same PplMult/RsrchMult throttles the lab itself uses. Gate: medium_facilities.
-    { "Research Fellowships", "Civ-wide: places idle workers on research fellowships: each fellow researches at 25% of a laboratory worker's rate.\nCost: 25 power plus 1 more per 5 fellows, and half of your idle workforce.",
-      CStructureData::office, EDICT_CIVWIDE, CRsrchArray::medium_facilities,
       1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f,
       0.0f, 0.0f, 0.0f,
       1.0f, 1.0f, 1.0f, 1.0f, 1.0f },
