@@ -603,7 +603,9 @@ int main( )
     CHECK( PathService::Enabled( ) == TRUE, "EN_PATH_WORKER=on enables the service" );
 
     _putenv( "EN_PATH_WORKERS=" );
-    CHECK( PathService::ConfiguredWorkers( ) == 1, "one worker by default" );
+    CHECK( PathService::ConfiguredWorkers( ) == (int)PathService::default_workers, "default_workers by default" );
+    CHECK( (int)PathService::default_workers == 2, "default_workers is 2" );
+    CHECK( (int)PathService::default_workers <= (int)PathService::max_workers, "default_workers is within the clamp" );
     _putenv( "EN_PATH_WORKERS=3" );
     CHECK( PathService::ConfiguredWorkers( ) == 3, "EN_PATH_WORKERS is honoured" );
     _putenv( "EN_PATH_WORKERS=99" );

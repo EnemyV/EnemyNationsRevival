@@ -83,8 +83,9 @@ class PathService
   public:
     enum
     {
-        max_workers = 4,      // EN_PATH_WORKERS is clamped to this
-        max_queued  = 4096    // Submit refuses beyond this rather than blocking the main thread
+        max_workers     = 4,   // EN_PATH_WORKERS is clamped to this
+        default_workers = 2,   // measured default (banks win-workers1 / lin-workers1); EN_PATH_WORKERS overrides
+        max_queued      = 4096 // Submit refuses beyond this rather than blocking the main thread
     };
 
     PathService( );

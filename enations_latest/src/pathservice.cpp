@@ -76,7 +76,7 @@ int PathService::ConfiguredWorkers( void )
 {
     const char* psz = getenv( "EN_PATH_WORKERS" );
     if ( psz == NULL || psz[0] == '\0' )
-        return ( 1 );
+        return ( (int)default_workers );
 
     int n = atoi( psz );
     if ( n < 1 )
