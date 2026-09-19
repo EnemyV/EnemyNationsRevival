@@ -2121,13 +2121,24 @@ RepairDone:;
         if ( ( GetData( )->GetType( ) == CStructureData::rocket )
              && GetOwner( )->IsEdictActive( EDICT_DESPERATE_MEASURES ) )
         {
-            // +100 draft workers; fixed 10 lumber / 5 iron / 5 food / 5 coal per minute.
-            // Keep in sync with the "Cost: 100 workers" line in g_aEdicts (edicts.cpp).
-            GetOwner( )->AddPplNeedBldg( GetData( )->GetPeople( ) + 100 );
-            static const AltOutput::AltMat aDesperate[4] =
-                { { CMaterialTypes::lumber, 10 }, { CMaterialTypes::iron, 5 },
-                  { CMaterialTypes::food, 5 },    { CMaterialTypes::coal, 5 } };
-            AltOutput::CreditTrickle( this, (int)theGame.GetOpersElapsed( ), m_afAltAccum, aDesperate, 4 );
+            // The conscription itself is priced ONCE per pump, per player, by
+            // CPlayer::ApplySurplusEdicts (it also books the draft as workforce demand there) --
+            // so all this branch owes is the rocket's own staffing plus the scrounge the draft
+            // buys. The exchange rate stays 10 lumber / 5 iron / 5 food / 5 coal per
+            // DESPERATE_RATE_PER workers however large the draft grows: an empire with idle
+            // population runs the edict bigger, not more efficiently. The rocket info window
+            // quotes these same lines scaled the same way off DESPERATE_BASE_RATES (edicts.cpp),
+            // so the number on screen and the number credited cannot drift.
+            GetOwner( )->AddPplNeedBldg( GetData( )->GetPeople( ) );
+            const int iDraft = GetOwner( )->GetDesperateDraft( );
+            AltOutput::AltMat aDesperate[DESPERATE_RATE_LINES];
+            for ( int i = 0; i < DESPERATE_RATE_LINES; i++ )
+            {
+                aDesperate[i]           = DESPERATE_BASE_RATES[i];
+                aDesperate[i].m_iPerMin = ( aDesperate[i].m_iPerMin * iDraft ) / DESPERATE_RATE_PER;
+            }
+            AltOutput::CreditTrickle( this, (int)theGame.GetOpersElapsed( ), m_afAltAccum,
+                                      aDesperate, DESPERATE_RATE_LINES );
         }
         else
         {

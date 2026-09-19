@@ -45,8 +45,17 @@ enum EdictId
     EDICT_MEAT_SHIELD,          // Command Center: buildings take less damage, +worker requirement
     EDICT_AUTO_RESEARCH,        // Office: auto-researches the next-cheapest available tech (behavior flag)
     EDICT_DESPERATE_MEASURES,   // Rocket (civ-wide): scrounge a multi-resource trickle for +100 workers
+    // --- surplus-scaled family (see SURPLUS_DRAFT_PCT / CPlayer::ApplySurplusEdicts) ----------
+    EDICT_PUBLIC_WORKS,         // Rocket: idle workers -> construction crews (+build speed)
+    EDICT_CIVIL_DEFENCE,        // Rocket: idle workers + surplus power -> shelters & forts
+    EDICT_WAR_FOOTING,          // Command Center: idle workers + surplus power -> infantry
+    EDICT_RESEARCH_FELLOWSHIPS, // Office: idle workers -> research fellows (costs power)
     EDICT_COUNT
 };
+
+// m_dwEdicts / m_dwBldgPolicy are DWORD bitmasks and the ids ARE the bit positions, so the
+// catalog cannot grow past 32 without widening both (and the save field with them).
+static_assert( EDICT_COUNT <= 32, "EdictId is a bit position in a DWORD mask - widen m_dwEdicts first" );
 
 struct EdictDef
 {
@@ -95,14 +104,51 @@ extern const EdictDef g_aEdicts[EDICT_COUNT];
 // Convenience: is this building type an edict host (so SDL2BuildingWindow shows the section)?
 bool EdictHostHasEdicts( CStructureData::BLDG_TYPE bldgType );
 
+// --- Surplus-scaled edicts: the shared cut ---------------------------------------------------
+// A "surplus" edict is one that puts the resources the colony is NOT using to work. Each active
+// one takes this percentage of the spare workforce REMAINING when the walk reaches it (they are
+// visited in EdictId order, and the pool shrinks as it goes), so the family as a whole can never
+// draft more than the colony actually has idle. See CPlayer::ApplySurplusEdicts for why the
+// "spare" it cuts from has to be measured as if these edicts were not running at all.
+const int SURPLUS_DRAFT_PCT = 50;   // pct of the REMAINING spare workforce one edict drafts
+const int SURPLUS_POWER_PCT = 50;   // pct of the REMAINING surplus power one edict draws
+
+// The one place a surplus share is computed. Integer, so the sim, the UI readout and the harness
+// dump all land on the identical number (a float here would let a readout round the other way).
+inline int SurplusShare( int iRemaining, int iPct )
+{
+    if ( iRemaining <= 0 )
+        return ( 0 );
+    return ( ( iRemaining * iPct ) / 100 );
+}
+
+// How fully an edict's draft/draw meets what it wants: 0.0 at nothing, 1.0 at iFull and above.
+// The effect multipliers below are all "max bonus * this", so an edict ramps in smoothly with
+// the colony's slack instead of snapping on.
+inline float SurplusScale( int iHave, int iFull )
+{
+    if ( iFull <= 0 )  return ( 1.0f );
+    if ( iHave >= iFull ) return ( 1.0f );
+    if ( iHave <= 0 )  return ( 0.0f );
+    return ( (float)iHave / (float)iFull );
+}
+
+// Is this edict priced by CPlayer::ApplySurplusEdicts? The behaviour is keyed on the ID here
+// rather than on a new EdictDef field: the surplus edicts each have their OWN formula (not a
+// single shared multiplier), so a data field could only ever have been a flag anyway, and the
+// UI/harness need the same predicate. Keep in step with the walk in ApplySurplusEdicts.
+inline bool EdictIsSurplus( int id )
+{
+    return ( ( id == EDICT_DESPERATE_MEASURES ) || ( id == EDICT_PUBLIC_WORKS ) ||
+             ( id == EDICT_CIVIL_DEFENCE ) || ( id == EDICT_WAR_FOOTING ) ||
+             ( id == EDICT_RESEARCH_FELLOWSHIPS ) );
+}
+
 // --- Desperate Measures tuning (EDICT_DESPERATE_MEASURES) -----------------------------------
 // The rocket conscripts a flat base draft PLUS a cut of the workforce the colony is not using,
 // and scrounges proportionally harder for it: a civ sitting on idle population gets more out of
 // the edict than one already running flat out, at the SAME resources-per-worker exchange rate.
-// See CPlayer::GetDesperateDraft for how the cut is made stable (it cannot be a naive percentage
-// of "spare", because the draft is itself part of what makes the workforce un-spare).
 const int DESPERATE_BASE_DRAFT  = 100;  // workers drafted even with zero spare population
-const int DESPERATE_EXCESS_PCT  = 50;   // pct of the REMAINING spare workforce drafted on top
 const int DESPERATE_RATE_PER    = 200;  // workers that buy one helping of DESPERATE_BASE_RATES.
                                         // Deliberately NOT the base draft: the base is the floor
                                         // of the CONSCRIPTION, this is the EXCHANGE RATE, and the
@@ -115,5 +161,28 @@ const int DESPERATE_RATE_PER    = 200;  // workers that buy one helping of DESPE
 // so the number on screen and the number credited come from this one table. Def in edicts.cpp.
 const int DESPERATE_RATE_LINES = 4;
 extern const AltOutput::AltMat DESPERATE_BASE_RATES[DESPERATE_RATE_LINES];
+
+// --- Public Works tuning (EDICT_PUBLIC_WORKS) ------------------------------------------------
+const int PUBLIC_WORKS_FULL_DRAFT = 300;  // drafted workers that buy the FULL construction bonus
+const int PUBLIC_WORKS_MAX_PCT    = 30;   // max +pct build speed (= +1% per 10 drafted at full)
+
+// --- Civil Defence tuning (EDICT_CIVIL_DEFENCE) ----------------------------------------------
+// Two inputs, and the effect scales with the SMALLER of the two ratios: workers with no power
+// (or power with no workers) buy nothing, which is the point of a two-input edict.
+const int CIVDEF_FULL_DRAFT   = 300;  // drafted workers for the full effect
+const int CIVDEF_FULL_POWER   = 150;  // surplus power drawn for the full effect
+const int CIVDEF_MAX_DMG_PCT  = 20;   // max pct of building damage TAKEN removed
+const int CIVDEF_MAX_FORT_PCT = 30;   // max +pct fortification build speed
+
+// --- War Footing tuning (EDICT_WAR_FOOTING) --------------------------------------------------
+const int WARFOOT_FULL_DRAFT = 400;   // drafted workers for the full effect
+const int WARFOOT_FULL_POWER = 200;   // surplus power drawn for the full effect
+const int WARFOOT_MAX_INF_PCT = 100;  // max +pct infantry build speed
+
+// --- Research Fellowships tuning (EDICT_RESEARCH_FELLOWSHIPS) --------------------------------
+// The power half is NOT a surplus draw: it is a flat cost booked into m_iPwrNeed like any other
+// building's, so an under-powered colony browns out paying for it instead of getting it free.
+const int FELLOWS_PER_POWER = 5;   // fellows supported per 1 power of flat cost
+const int FELLOW_RATE_PCT   = 25;  // a fellow researches at this pct of a lab WORKER's rate
 
 #endif // ENATIONS_EDICTS_H

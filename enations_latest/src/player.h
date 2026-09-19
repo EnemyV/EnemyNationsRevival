@@ -166,6 +166,11 @@ class CPlayer : public CObject
 
     void StartGame( );
     void StartLoop( );
+    // Surplus-scaled edicts: one per-player pass, run at the END of StartLoop (after the
+    // need/have counters are snapshotted and cleared) so every such edict reads the SAME
+    // "as if we were not running" spare and none of them depends on building iteration
+    // order. See the long comment on the definition in player.cpp.
+    void ApplySurplusEdicts( );
     void PeopleAndFood( int iNumSec );
     void Research( int iNumSec );
     void CPlayer::CitizenConstruction( );
@@ -241,13 +246,15 @@ class CPlayer : public CObject
         ASSERT_STRICT_VALID( this );
         m_iPplNeedBldg += iAdd;
     }
-    // Desperate Measures: the worker draft this tick, and the running total of what the edict
-    // actually drew (recorded by the rocket so next tick can add it back — see GetDesperateDraft).
-    int  GetDesperateDraft( ) const;
-    void AddDesperateDraft( int iAdd )
+    // Desperate Measures: the worker draft for THIS pump. Computed once per pump per player by
+    // ApplySurplusEdicts (called at the end of StartLoop) and cached — the rocket's Operate and
+    // the rocket info window both read this same number, so the sim and the readout cannot
+    // disagree, and the draft does not depend on where the rocket falls in the building
+    // iteration order. See CPlayer::ApplySurplusEdicts for why it must be computed there.
+    int  GetDesperateDraft( ) const
     {
         ASSERT_STRICT_VALID( this );
-        m_iDespDraftTick += iAdd;
+        return ( m_iDespDraft );
     }
     void AddPplBldg( int iAdd )
     {
@@ -356,8 +363,9 @@ class CPlayer : public CObject
     float GetConstProd( ) const
     {
         ASSERT_STRICT_VALID( this );
-        // civ-wide edict bonuses: per-category (Const) + global (Overclocked Grid).
-        return ( m_fConstProd * m_fEdictConstMult * m_fEdictGlobalProdMult );
+        // civ-wide edict bonuses: per-category (Const) + surplus-scaled (Public Works) +
+        // global (Overclocked Grid).
+        return ( m_fConstProd * m_fEdictConstMult * m_fSurplusConstMult * m_fEdictGlobalProdMult );
     }
     float GetMtrlsProd( ) const
     {
@@ -402,14 +410,22 @@ class CPlayer : public CObject
     // --- Edicts v1 (civ-wide policy toggles; see edicts.h / RecomputeEdictMults) ---
     bool  IsEdictActive( int edictId ) const { return ( m_dwEdicts & ( 1u << edictId ) ) != 0; }
     DWORD GetEdicts( ) const { return ( m_dwEdicts ); }
-    float GetEdictFortBuildMult( ) const { return ( m_fEdictFortBuildMult ); }
+    // Fortify Border * Civil Defence (the surplus half is recomputed each pump).
+    float GetEdictFortBuildMult( ) const { return ( m_fEdictFortBuildMult * m_fSurplusFortMult ); }
     float GetEdictFarmWorkerMult( ) const { return ( m_fEdictFarmWorkerMult ); } // BuildFarm worker-need scale
     float GetEdictMineEnergyMult( ) const { return ( m_fEdictMineEnergyMult ); }  // BuildMine power-need scale
     float GetEdictMineWorkerMult( ) const { return ( m_fEdictMineWorkerMult ); }  // BuildMine worker-need scale
-    float GetEdictBldgDmgMult( ) const { return ( m_fEdictBldgDmgMult ); }         // Meat Shield: building damage-taken (projbase.cpp)
+    float GetEdictBldgDmgMult( ) const { return ( m_fEdictBldgDmgMult * m_fSurplusBldgDmgMult ); }  // Meat Shield * Civil Defence: building damage-taken (projbase.cpp)
     float GetEdictMoveMult( ) const { return ( m_fEdictMoveMult ); }       // Turbochargers (vehmove.cpp, != walk)
     float GetEdictVisionMult( ) const { return ( m_fEdictVisionMult ); }   // Total Surveillance (AssignData spotting)
-    float GetEdictInfBuildMult( ) const { return ( m_fEdictInfBuildMult ); } // The Draft (infantry build speed)
+    float GetEdictInfBuildMult( ) const { return ( m_fEdictInfBuildMult * m_fSurplusInfBuildMult ); } // The Draft * War Footing (infantry build speed)
+    // --- surplus-scaled edicts: this pump's cached numbers (UI readout + harness `pstats`) ---
+    int         GetSurplusSparePpl( ) const { return ( (int)m_iSurplusSparePpl ); }
+    int         GetSurplusSparePwr( ) const { return ( (int)m_iSurplusSparePwr ); }
+    int         GetEdictDraftPpl( int edictId ) const;   // workers this edict drafted this pump
+    int         GetEdictDraftPwr( int edictId ) const;   // power it drew/cost this pump
+    float       GetEdictScale( int edictId ) const;      // its effect scale (0..1; Desperate: draft/RATE_PER)
+    std::string GetEdictStatus( int edictId ) const;     // one live line for the info window ("" = nothing to say)
     float GetEdictInfPopMult( ) const { return ( m_fEdictInfPopMult ); }   // The Draft (infantry population cost)
     void  ToggleEdict( int edictId, bool bOn );   // flips the bit, then RecomputeEdictMults (local only)
     void  ToggleEdictNet( int edictId, bool bOn );// user-initiated toggle: local + broadcast (MP sync)
@@ -915,14 +931,34 @@ class CPlayer : public CObject
     LONG  m_iPwrNeed;      // power needed by all buildings
     LONG  m_iPwrHave;      // power presently generated
     LONG  m_iPplNeedBldg;  // people needed by all buildings
-    // Desperate Measures needs to know the SPARE workforce, which the live m_iPplNeedBldg above
-    // cannot answer: mid-tick it is a partial sum (its value depends on where the rocket falls in
-    // the building iteration order), and it already contains the edict's own draft, so a
-    // percentage of it would feed back on itself. Both are runtime-only, snapshotted in StartLoop
-    // where the tick's total is final; -1 = no finished total yet (fresh game / just-loaded save).
-    LONG  m_iPplNeedLast;   // last tick's FINISHED m_iPplNeedBldg (-1 = none yet)
-    LONG  m_iDespDraftLast; // workers Desperate Measures drafted last tick (added back as spare)
-    LONG  m_iDespDraftTick; // accumulating this tick (N rockets each add their draft)
+    // A surplus-scaled edict needs to know the SPARE workforce, which the live m_iPplNeedBldg
+    // above cannot answer: mid-tick it is a partial sum (its value depends on where a building
+    // falls in the iteration order), and it already contains the edicts' own drafts, so a
+    // percentage of it would feed back on itself. All runtime-only, snapshotted in StartLoop
+    // where the tick's total is final; -1 = no finished total yet (fresh game / just-loaded
+    // save), which ApplySurplusEdicts reads as "no spare".
+    LONG  m_iPplNeedLast;    // last tick's FINISHED m_iPplNeedBldg (-1 = none yet)
+    LONG  m_iSurplusPplLast; // workers ALL surplus edicts drafted last tick (added back as spare)
+    LONG  m_iSurplusPplTick; // same, accumulating for this tick (ApplySurplusEdicts)
+    // The power half of the same machinery. m_iPwrNeedLast == -1 is the same "no finished pump
+    // yet" sentinel. Only SURPLUS draws are summed into m_iSurplusPwrTick: Research Fellowships'
+    // power is a flat cost, not a cut of the surplus, so adding it back would inflate the spare.
+    LONG  m_iPwrHaveLast;    // last tick's FINISHED m_iPwrHave
+    LONG  m_iPwrNeedLast;    // last tick's FINISHED m_iPwrNeed (-1 = none yet)
+    LONG  m_iSurplusPwrLast; // surplus power ALL surplus edicts drew last tick (added back)
+    LONG  m_iSurplusPwrTick; // same, accumulating for this tick (ApplySurplusEdicts)
+    // Per-edict results for THIS pump -- what the sim charged and what the UI/harness quote, so
+    // the two cannot disagree. All 0 when the edict is inactive.
+    LONG  m_iDespDraft;      // Desperate Measures draft (GetDesperateDraft)
+    LONG  m_iPubWorksDraft;  // Public Works draft
+    LONG  m_iCivDefDraft;    // Civil Defence draft / power draw
+    LONG  m_iCivDefPower;
+    LONG  m_iWarFootDraft;   // War Footing draft / power draw
+    LONG  m_iWarFootPower;
+    LONG  m_iFellowsDraft;   // Research Fellowships fellows / flat power cost
+    LONG  m_iFellowsPower;
+    LONG  m_iSurplusSparePpl;  // the spare this pump was cut from (harness `pplspare`)
+    LONG  m_iSurplusSparePwr;  // ditto for power (harness `pwrspare`)
     LONG  m_iPplBldg;      // people presently have EXCEPT in vehicles
     LONG  m_iPplVeh;       // people in vehicles (Have+Veh == Total)
     LONG  m_iFood;         // food on hand
@@ -980,6 +1016,15 @@ class CPlayer : public CObject
     float m_fEdictMineEnergyMult;  // mine-only power need (mainloop.cpp BuildMine)
     float m_fEdictMineWorkerMult;  // mine-only worker need (mainloop.cpp BuildMine)
     float m_fEdictBldgDmgMult;     // building damage-taken (Meat Shield; projbase.cpp)
+    // Surplus-edict multipliers — DYNAMIC, recomputed from scratch every pump by
+    // ApplySurplusEdicts (they scale with the draft, so they are not derivable from g_aEdicts
+    // the way the m_fEdict* fields above are). Neutral 1.0 when no surplus edict is active.
+    // Each is folded into the SAME accessor as its static twin, so every existing consumer
+    // picks it up with no call-site change.
+    float m_fSurplusConstMult;     // Public Works   → GetConstProd
+    float m_fSurplusFortMult;      // Civil Defence  → GetEdictFortBuildMult
+    float m_fSurplusBldgDmgMult;   // Civil Defence  → GetEdictBldgDmgMult
+    float m_fSurplusInfBuildMult;  // War Footing    → GetEdictInfBuildMult
     float m_fEdictFuelCarry;       // runtime-only: fractional gas-surcharge carry (not serialized)
     BOOL  m_bAutoRsrchPending;     // runtime-only: AutoResearch edict posted a set_rsrch, awaiting it (not serialized)
     // Upkeep — recurring cost (sum of active edicts' pct), applied as extra per-loop demand:

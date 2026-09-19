@@ -8933,6 +8933,25 @@ void HarnessDumpPlayerStats( std::string& out )
     out += "pwrhave "     + IntToStr( me->GetPwrHave( ) )     + "\n";
     out += "food "        + IntToStr( me->GetFood( ) )        + "\n";
     out += "foodneed "    + IntToStr( me->GetFoodNeed( ) )    + "\n";
+    out += "rsrchhave "   + IntToStr( me->GetRsrchHave( ) )   + "\n";   // per-pump research people (Fellowships credit lands here)
+
+    // Surplus-scaled edicts (CPlayer::ApplySurplusEdicts): the spare this pump was cut from --
+    // measured "as if the surplus edicts were not running", which is why it does not equal
+    // pplbldg - pplneedbldg -- then one line per surplus edict with exactly what it charged and
+    // the effect scale that bought. These are the SAME cached numbers the sim and the info
+    // window use, so a headless driver can verify the whole family without the UI.
+    out += "pplspare " + IntToStr( me->GetSurplusSparePpl( ) ) + "\n";
+    out += "pwrspare " + IntToStr( me->GetSurplusSparePwr( ) ) + "\n";
+    for ( int id = 0; id < EDICT_COUNT; ++id )
+    {
+        if ( !EdictIsSurplus( id ) )
+            continue;
+        char line[128];
+        snprintf( line, sizeof( line ), "edictdraft %d ppl %d pwr %d mult %.3f\n",
+                  id, me->GetEdictDraftPpl( id ), me->GetEdictDraftPwr( id ),
+                  (double)me->GetEdictScale( id ) );
+        out += line;
+    }
 }
 
 //---------------------------------------------------------------------------

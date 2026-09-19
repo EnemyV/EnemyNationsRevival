@@ -383,6 +383,27 @@ static int nCivEdictsHostMax(CBuilding* b) {
     }
     return n;
 }
+// How many of this host's civ-wide edicts are SURPLUS edicts (research ignored, same
+// size-for-the-max rule as nCivEdictsHostMax): each gets an extra status line under its
+// checkbox, so the section has to reserve a row for each of them.
+static int nSurplusEdictRowsMax(CBuilding* b) {
+    CStructureData::BLDG_TYPE bt = b->GetData()->GetBldgType();
+    CStructureData::BLDG_TYPE gt = b->GetData()->GetType();
+    int n = 0;
+    for ( int id = 0; id < EDICT_COUNT; ++id ) {
+        if ( g_aEdicts[id].scope != EDICT_CIVWIDE ) continue;
+        if ( !EdictIsSurplus( id ) ) continue;
+        CStructureData::BLDG_TYPE host = g_aEdicts[id].hostBuilding;
+        if ( host == bt || host == gt ) ++n;
+    }
+    return n;
+}
+// The Edicts section's height: one ROW_H per hosted edict plus one per surplus edict's live
+// status line. Used by BOTH computeLayout (the reservation) and BuildEdicts (the box) — they
+// must not drift, or the box outline and the section slot disagree.
+static int edictsSecH(CBuilding* b) {
+    return BOX_PAD + HDR_H + ( nCivEdictsHostMax(b) + nSurplusEdictRowsMax(b) ) * ROW_H + BOX_PAD;
+}
 // Show the Edicts section only on an edict-host building that I own.
 static bool secEdicts(CBuilding* b) {
     return ( b->GetOwner() && b->GetOwner()->IsMe() ) && ( nCivEdictsFor(b) > 0 );
@@ -616,7 +637,7 @@ static BldgLayout computeLayout(CBuilding* b) {
     if ( secTurret(b)     ) L.secs[n++] = { SEC_TURRET,     TURRET_H };
     // Height reserved for the UNGATED host maximum (not just the discovered rows) so a
     // research discovery while the window is open can add its row via Rebuild in place.
-    if ( secEdicts(b)     ) L.secs[n++] = { SEC_EDICTS,     BOX_PAD + HDR_H + nCivEdictsHostMax(b) * ROW_H + BOX_PAD };
+    if ( secEdicts(b)     ) L.secs[n++] = { SEC_EDICTS,     edictsSecH(b) };
     if ( secAltOutput(b)  ) L.secs[n++] = { SEC_ALTOUTPUT,  ALTOUTPUT_H };
 
     int total = 0;
@@ -834,7 +855,7 @@ void SDL2BuildingWindow::NullSectionWidgets() {
     m_lblTurretRange = nullptr; m_lblTurretDmg = nullptr; m_lblTurretReload = nullptr;
     m_lblTurretDps = nullptr; m_btnShowRange = nullptr;
     m_chkAltOut = nullptr;
-    for ( int i = 0; i < kMaxEdictRows; i++ ) { m_chkEdict[i] = nullptr; m_edictIds[i] = 0; }
+    for ( int i = 0; i < kMaxEdictRows; i++ ) { m_chkEdict[i] = nullptr; m_edictIds[i] = 0; m_lblEdictStatus[i] = nullptr; }
     m_nEdictRows = 0;
     m_lblProduction = nullptr; m_progProduction = nullptr;
     m_lblMilStrength = nullptr; m_lblInfantry = nullptr; m_lblVehicles = nullptr; m_lblMilEnergy = nullptr;
@@ -1048,7 +1069,7 @@ int SDL2BuildingWindow::BuildAltOutput(int x, int y, int w) {
 int SDL2BuildingWindow::BuildEdicts(int x, int y, int w) {
     // Box + returned height use the UNGATED host maximum (matches computeLayout's
     // reservation) so a row a later research discovery adds always fits in place.
-    int H = BOX_PAD + HDR_H + nCivEdictsHostMax(m_pBldg) * ROW_H + BOX_PAD;
+    int H = edictsSecH(m_pBldg);
     AddOutline(x, y, w, H);
     int yh = Header(x + BOX_PAD, y + BOX_PAD, w - 2 * BOX_PAD, "Edicts", kAccentGold);
     CStructureData::BLDG_TYPE bt = m_pBldg->GetData()->GetBldgType();
@@ -1070,6 +1091,9 @@ int SDL2BuildingWindow::BuildEdicts(int x, int y, int w) {
         const int kInfoSz = 14;
         int cbX = x + BOX_PAD + 4;
         int cbW = w - 2 * BOX_PAD - 8 - ( kInfoSz + 4 );
+        // The CHECKBOX row's y. A surplus edict advances cy below to lay out its status line, so
+        // the (i) icon must be positioned from this saved y or it drifts down onto that line.
+        int cbY = cy;
         SDL2Checkbox* chk = AddWidget<SDL2Checkbox>( cbX, cy, cbW, ROW_H,
                                  e.name, checked,
                                  [this, me, eid]( bool on ){
@@ -1078,11 +1102,21 @@ int SDL2BuildingWindow::BuildEdicts(int x, int y, int w) {
                                      // defer the relayout to OnFrame (don't free this checkbox mid-callback).
                                      if ( eid == EDICT_DESPERATE_MEASURES ) m_bNeedRelayout = true;
                                  } );
+        // A surplus edict gets a live status line under its checkbox: what it is drafting right
+        // now and what that buys (CPlayer::GetEdictStatus — the cached per-pump numbers the sim
+        // itself used, never a second copy of the formula). Created regardless of the edict's
+        // state and filled in by Refresh(), so toggling it never changes the section's height.
+        SDL2Label* lblSt = nullptr;
+        if ( EdictIsSurplus( id ) ) {
+            cy += ROW_H;
+            lblSt = AddWidget<SDL2Label>( cbX + 12, cy - 2, cbW - 12, ROW_H, "" );
+        }
         // Track the row so Refresh() can re-sync the checkbox from the player bitmask
-        // (external toggles: harness setedict, last-host auto-revoke §29).
+        // (external toggles: harness setedict, last-host auto-revoke §29) and refill the status line.
         if ( m_nEdictRows < kMaxEdictRows ) {
             m_chkEdict[m_nEdictRows]  = chk;
             m_edictIds[m_nEdictRows] = id;
+            m_lblEdictStatus[m_nEdictRows] = lblSt;
             m_nEdictRows++;
         }
         // (i) info icon — hover reveals the edict's scope (#36) then its effect
@@ -1090,7 +1124,7 @@ int SDL2BuildingWindow::BuildEdicts(int x, int y, int w) {
         std::string tip = ( e.scope == EDICT_CIVWIDE ) ? "Civilization-wide"
                                                         : "This building only";
         if ( e.desc && e.desc[0] ) { tip += "\n"; tip += e.desc; }
-        AddWidget<SDL2InfoIcon>( cbX + cbW + 4, cy + ( ROW_H - kInfoSz ) / 2,
+        AddWidget<SDL2InfoIcon>( cbX + cbW + 4, cbY + ( ROW_H - kInfoSz ) / 2,
                                  kInfoSz, kInfoSz, tip );
         cy += ROW_H;
     }
@@ -2096,9 +2130,14 @@ void SDL2BuildingWindow::Refresh() {
     // request the deferred Rebuild — the frame was sized for the ungated host maximum,
     // so the new row fits without a window resize. (Same OnFrame relayout path as C6.)
     if ( m_nEdictRows > 0 ) {
-        for ( int i = 0; i < m_nEdictRows; i++ )
+        for ( int i = 0; i < m_nEdictRows; i++ ) {
             if ( m_chkEdict[i] )
                 m_chkEdict[i]->SetChecked( p->IsEdictActive( m_edictIds[i] ) );
+            // Surplus edicts: re-read this pump's cached draft/effect. "" while the edict is
+            // off or drafting nothing — the row keeps its reserved height either way.
+            if ( m_lblEdictStatus[i] )
+                m_lblEdictStatus[i]->SetText( p->GetEdictStatus( m_edictIds[i] ).c_str() );
+        }
         if ( nCivEdictsFor( m_pBldg ) != m_nEdictRows )
             m_bNeedRelayout = true;
     }

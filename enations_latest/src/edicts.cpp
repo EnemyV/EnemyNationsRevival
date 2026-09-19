@@ -139,12 +139,62 @@ const EdictDef g_aEdicts[EDICT_COUNT] =
       0.0f, 0.0f, 0.0f,
       1.0f, 1.0f, 1.0f, 1.0f, 1.0f },
 
-    // EDICT_DESPERATE_MEASURES — Rocket, civ-wide BEHAVIOR edict (all mults neutral). The production
-    // (10 lumber/5 iron/5 food/5 coal per min + 100 workers) is hardcoded in CBuilding::Operate's
-    // UTwarehouse case, gated on IsEdictActive. Default-available (gate: nothing, always discovered).
+    // EDICT_DESPERATE_MEASURES — Rocket, civ-wide BEHAVIOR edict (all mults neutral). The DRAFT is
+    // priced once per pump by CPlayer::ApplySurplusEdicts (flat DESPERATE_BASE_DRAFT plus
+    // SURPLUS_DRAFT_PCT% of the spare workforce); CBuilding::Operate's UTwarehouse case, gated on
+    // IsEdictActive, credits DESPERATE_BASE_RATES scaled by draft/DESPERATE_RATE_PER.
+    // Default-available (gate: nothing, always discovered).
     // Net-synced via ToggleEdictNet; revoked on rocket death via EdictHostLost (rocket host).
     { "Desperate Measures", "Frantically scrounge base resources: +10 lumber, +5 iron, +5 food, +5 coal / min per 200 workers drafted.\nConscripts 100 workers plus half of your idle workforce, and scrounges proportionally harder. Lost if rocket destroyed.",
       CStructureData::rocket, EDICT_CIVWIDE, CRsrchArray::nothing,
+      1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f,
+      0.0f, 0.0f, 0.0f,
+      1.0f, 1.0f, 1.0f, 1.0f, 1.0f },
+
+    // --- surplus-scaled family --------------------------------------------------------------
+    // Every one of these has ALL its catalog mults neutral and ALL its upkeep pcts zero: their
+    // bonus AND their cost are computed live each pump from the colony's spare workforce/power
+    // by CPlayer::ApplySurplusEdicts, which writes the dynamic m_fSurplus*Mult fields that the
+    // matching Get* accessors fold in beside these static ones. Nothing here is a placeholder to
+    // be filled in later -- a value in these columns would be a SECOND, static effect on top.
+
+    // EDICT_PUBLIC_WORKS — Rocket, civ-wide (lost if the rocket is destroyed, §29). People only:
+    // drafts SURPLUS_DRAFT_PCT% of the spare workforce and turns it into construction speed
+    // (m_fSurplusConstMult -> GetConstProd), ramping to PUBLIC_WORKS_MAX_PCT at
+    // PUBLIC_WORKS_FULL_DRAFT drafted. Gate: const_2.
+    { "Public Works", "Civ-wide: puts idle workers on construction crews: +1% build speed per 10 drafted, up to +30%.\nCost: drafts half of your idle workforce. Lost if rocket destroyed.",
+      CStructureData::rocket, EDICT_CIVWIDE, CRsrchArray::const_2,
+      1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f,
+      0.0f, 0.0f, 0.0f,
+      1.0f, 1.0f, 1.0f, 1.0f, 1.0f },
+
+    // EDICT_CIVIL_DEFENCE — Rocket, civ-wide (lost if the rocket is destroyed, §29). TWO inputs:
+    // spare workers AND surplus power, and the effect scales with the smaller of the two ratios
+    // (see CIVDEF_FULL_*). Drives m_fSurplusBldgDmgMult (folded into GetEdictBldgDmgMult beside
+    // Meat Shield) and m_fSurplusFortMult (GetEdictFortBuildMult, beside Fortify Border).
+    // Gate: fortification.
+    { "Civil Defence", "Civ-wide: idle workers and surplus power go to shelters and fortifications: buildings take up to 20% less damage, forts build up to 30% faster.\nCost: drafts half your idle workforce and half your surplus power; the effect scales with the smaller of the two. Lost if rocket destroyed.",
+      CStructureData::rocket, EDICT_CIVWIDE, CRsrchArray::fortification,
+      1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f,
+      0.0f, 0.0f, 0.0f,
+      1.0f, 1.0f, 1.0f, 1.0f, 1.0f },
+
+    // EDICT_WAR_FOOTING — Command Center, civ-wide. Same two-input shape as Civil Defence, at a
+    // bigger appetite (WARFOOT_FULL_*), spending it on m_fSurplusInfBuildMult (folded into
+    // GetEdictInfBuildMult beside The Draft). Gate: atk_2.
+    { "War Footing", "Civ-wide: idle workers and surplus power go to the war effort: infantry build up to 100% faster.\nCost: drafts half your idle workforce and half your surplus power; the effect scales with the smaller of the two.",
+      CStructureData::command_center, EDICT_CIVWIDE, CRsrchArray::atk_2,
+      1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f,
+      0.0f, 0.0f, 0.0f,
+      1.0f, 1.0f, 1.0f, 1.0f, 1.0f },
+
+    // EDICT_RESEARCH_FELLOWSHIPS — Office, civ-wide. People from the surplus, power as a FLAT
+    // cost (1 per FELLOWS_PER_POWER fellows, booked into m_iPwrNeed like a building's own draw,
+    // so it browns the colony out if it can't afford it). Each fellow credits AddRsrch at
+    // FELLOW_RATE_PCT% of one laboratory worker's rate, through the same PplMult/RsrchMult
+    // throttles the lab itself uses. Gate: medium_facilities.
+    { "Research Fellowships", "Civ-wide: places idle workers on research fellowships: each fellow researches at 25% of a laboratory worker's rate.\nCost: drafts half your idle workforce; +1 power per 5 fellows.",
+      CStructureData::office, EDICT_CIVWIDE, CRsrchArray::medium_facilities,
       1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f,
       0.0f, 0.0f, 0.0f,
       1.0f, 1.0f, 1.0f, 1.0f, 1.0f },
