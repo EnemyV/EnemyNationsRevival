@@ -1,5 +1,6 @@
 #include "stdafx.h"
 #include "SDL2Dialogs.h"
+#include "en_hangdump.h"   // EnHangHeartbeat() - hang-watchdog liveness beat
 #include <sstream>   // locale-grouped number formatting for the load-game stats
 #include <locale>
 #include "RenderBackend.h"   // RenderBackendOpenGLAvailable() — grey out OpenGL until done
@@ -2413,6 +2414,7 @@ void SDL2_RunCredits(GameWindow* gameWindow) {
     bool running = true;
 
     while (running) {
+        EnHangHeartbeat();   // the credits roll pumps here, not through PollEvents
         SDL_Event event;
         while (SDL_PollEvent(&event)) {
             if (event.type == SDL_QUIT) { running = false; ::PostQuitMessage(0); break; }

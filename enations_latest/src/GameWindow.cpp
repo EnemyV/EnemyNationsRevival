@@ -1,5 +1,6 @@
 #include "stdafx.h"
 #include "en_logpath.h"   // EnLogPath - logs to the launch dir, not the exe dir
+#include "en_hangdump.h"   // EnHangHeartbeat() - hang-watchdog liveness beat
 #include "GameWindow.h"
 #include "framecap.h"   // #45 frame-capture debug mode
 #include "en_harness.h"   // EnHarness_Service() — services harness requests on the render thread
@@ -945,6 +946,11 @@ static bool HandleTrackpadPan(SDL_Event& event, SDL_Window* win)
 #endif  // __APPLE__
 
 bool GameWindow::PollEvents() {
+    // Hang watchdog: beat BEFORE the re-entrancy guard, so the nested pumps
+    // that run during load/worldgen/save (BaseYield -> PollEvents) also count
+    // as "the main thread is alive" even though the outer loop is blocked.
+    EnHangHeartbeat( );
+
     // Guard against re-entrancy: DoModal's PeekMessage pump can trigger
     // BaseYield() → PollEvents() while a dialog event loop is already active.
     // If we drain SDL events here, the dialog never sees them and hangs.

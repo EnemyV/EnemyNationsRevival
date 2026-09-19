@@ -71,6 +71,7 @@ set(enations_sources
         lastplnt.cpp
         lastplnt.rc
         WinMain.cpp
+        en_hangdump.cpp   # hang watchdog + the dump-path helper shared with WinMain's crash dumper
         license.cpp
         main.cpp
         mainloop.cpp
