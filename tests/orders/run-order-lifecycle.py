@@ -122,6 +122,18 @@ for sig in ('void CVehicle::AddOrder(',
 missing = [n for n in ('ReestablishOrderIdentity', 'ArmedForOrder', 'OrderArrivalFailed', 'CheckOrderStall')
            if ('CVehicle::' + n) not in source]
 
+# unit.cpp: the MOVEMENT-append entry point and the two methods that decide whether a
+# list holding only queued orders counts as a route (the Shift-move-after-queued-roads
+# TRAP). HasMoveStops does not exist on an older --baseline-ref; the scene stands in.
+UNIT = 'enations_latest/src/unit.cpp'
+unit_src = read(UNIT)
+for sig, opt in (('void CVehicle::SetLocation(', False),
+                 ('BOOL CVehicle::HasMoveStops(', True),
+                 ('void CVehicle::ResumeUnit(', False)):
+    parts.append(method(sig, src=unit_src, optional=opt))
+if 'CVehicle::HasMoveStops' not in unit_src:
+    missing.append('HasMoveStops')
+
 # Operate's two order blocks, lifted verbatim and wrapped as callable methods so the test
 # drives the SHIPPED poll order rather than a re-typed one.
 parts.append('void CVehicle::TickCompletion() {\n' +
@@ -142,7 +154,7 @@ out.mkdir(parents=True, exist_ok=True)
 (out / 'lifecycle_actual.inc').write_text(actual, encoding='utf-8')
 (out / 'lifecycle_missing.inc').write_text(
     '\n'.join('#define MISSING_' + n for n in missing) + '\n', encoding='utf-8')
-print('[orders] production methods (vehicle.cpp + vehmove.cpp) SHA256:', hashlib.sha256(actual.encode()).hexdigest(), flush=True)
+print('[orders] production methods (vehicle.cpp + vehmove.cpp + unit.cpp) SHA256:', hashlib.sha256(actual.encode()).hexdigest(), flush=True)
 if missing:
     print('[orders] absent from this source (stand-ins used):', ', '.join(missing), flush=True)
 

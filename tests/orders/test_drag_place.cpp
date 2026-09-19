@@ -324,6 +324,18 @@ class CVehicle
         ++m_nNextOrder;
         return ( FALSE );
     }
+    // the predicate itself lives on CVehicle (unit.cpp) - tests/orders/test_order_lifecycle
+    // compiles the production body; area.cpp's HasMoveStops(pVeh) only forwards to it
+    BOOL HasMoveStops( ) const
+    {
+        for ( POSITION p = m_route.GetHeadPosition( ); p != NULL; )
+        {
+            CRoute* pR = m_route.GetNext( p );
+            if ( ( pR != NULL ) && ( !CRoute::IsOrder( pR->GetRouteType( ) ) ) )
+                return ( TRUE );
+        }
+        return ( FALSE );
+    }
 };
 
 // ------------------------------------------------------------------ the area window

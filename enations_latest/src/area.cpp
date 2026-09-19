@@ -4387,11 +4387,17 @@ void CWndArea::ShiftQueueMove( CVehicle* pVeh, CSubHex const& sub )
 {
     ASSERT_STRICT_VALID( pVeh );
 
+    // Decide fresh-vs-append BEFORE ResumeUnit can arm `route` off the list below - and
+    // ask the list itself, not just the event: a PAUSED vehicle still holding movement
+    // stops is appended to (ResumeUnit puts it back on them), while a list holding only
+    // queued ORDERS is not a route at all and starts a fresh queue. Reading the event
+    // after ResumeUnit used to answer "routing" for an order-only list, which is how a
+    // Shift-move after queued roads handed SetLocation an order node as its position.
+    BOOL bFresh = ( pVeh->GetEvent( ) != CVehicle::route ) && ( !pVeh->HasMoveStops( ) );
+
     pVeh->ResumeUnit( );
     pVeh->TempTargetOff( );
     pVeh->_SetTarget( NULL );
-
-    BOOL bFresh = ( pVeh->GetEvent( ) != CVehicle::route );
 
     // Shift-click on an EXISTING queued waypoint DELETES it (toggle-off) instead of
     // appending a duplicate. (operator feature.) Only when already routing; match by hex.
@@ -4484,15 +4490,11 @@ void CWndArea::ShiftQueueMove( CVehicle* pVeh, CSubHex const& sub )
 // if it were a stop and delete it unexecuted - so the FIRST order appended onto a
 // vehicle that is running stops takes the list over through StopRoute (which also hands
 // it back from the auto-router). The other direction is enforced in CVehicle::SetLocation.
+// The predicate itself now lives on CVehicle (unit.cpp) - ResumeUnit needs the same
+// question answered - so this is a thin forwarder for the call sites below.
 static BOOL HasMoveStops( CVehicle* pVeh )
 {
-    for ( POSITION p = pVeh->GetRouteList( ).GetHeadPosition( ); p != NULL; )
-    {
-        CRoute* pR = pVeh->GetRouteList( ).GetNext( p );
-        if ( ( pR != NULL ) && ( !CRoute::IsOrder( pR->GetRouteType( ) ) ) )
-            return ( TRUE );
-    }
-    return ( FALSE );
+    return ( pVeh->HasMoveStops( ) );
 }
 
 void CWndArea::StopRoute( CVehicle* pVeh )
@@ -4509,6 +4511,12 @@ void CWndArea::StopRoute( CVehicle* pVeh )
     pVeh->SetRoutePos( NULL );
     pVeh->SetRouteLoop( TRUE );
     pVeh->ClearOrders( );   // #38: the list is already empty; this resets the order state
+    // The list is gone, so the "routing" EVENT must go too. Left set, NextOrder's busy
+    // test (vehicle.cpp) refuses for ever - queued roads never start - and a later
+    // Shift-move sees event == route, takes the non-fresh path and appends onto a list
+    // it believes it owns. Plain-move callers already do this right after StopRoute.
+    if ( pVeh->GetEvent( ) == CVehicle::route )
+        pVeh->SetEvent( CVehicle::none );
     if ( pVeh->m_pSdlRoute != NULL )
         pVeh->m_pSdlRoute->RefreshRoute( );
 }
