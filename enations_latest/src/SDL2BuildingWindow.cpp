@@ -1091,6 +1091,9 @@ int SDL2BuildingWindow::BuildEdicts(int x, int y, int w) {
         const int kInfoSz = 14;
         int cbX = x + BOX_PAD + 4;
         int cbW = w - 2 * BOX_PAD - 8 - ( kInfoSz + 4 );
+        // The CHECKBOX row's y. A surplus edict advances cy below to lay out its status line, so
+        // the (i) icon must be positioned from this saved y or it drifts down onto that line.
+        int cbY = cy;
         SDL2Checkbox* chk = AddWidget<SDL2Checkbox>( cbX, cy, cbW, ROW_H,
                                  e.name, checked,
                                  [this, me, eid]( bool on ){
@@ -1099,8 +1102,6 @@ int SDL2BuildingWindow::BuildEdicts(int x, int y, int w) {
                                      // defer the relayout to OnFrame (don't free this checkbox mid-callback).
                                      if ( eid == EDICT_DESPERATE_MEASURES ) m_bNeedRelayout = true;
                                  } );
-        // Track the row so Refresh() can re-sync the checkbox from the player bitmask
-        // (external toggles: harness setedict, last-host auto-revoke §29).
         // A surplus edict gets a live status line under its checkbox: what it is drafting right
         // now and what that buys (CPlayer::GetEdictStatus — the cached per-pump numbers the sim
         // itself used, never a second copy of the formula). Created regardless of the edict's
@@ -1110,6 +1111,8 @@ int SDL2BuildingWindow::BuildEdicts(int x, int y, int w) {
             cy += ROW_H;
             lblSt = AddWidget<SDL2Label>( cbX + 12, cy - 2, cbW - 12, ROW_H, "" );
         }
+        // Track the row so Refresh() can re-sync the checkbox from the player bitmask
+        // (external toggles: harness setedict, last-host auto-revoke §29) and refill the status line.
         if ( m_nEdictRows < kMaxEdictRows ) {
             m_chkEdict[m_nEdictRows]  = chk;
             m_edictIds[m_nEdictRows] = id;
@@ -1121,7 +1124,7 @@ int SDL2BuildingWindow::BuildEdicts(int x, int y, int w) {
         std::string tip = ( e.scope == EDICT_CIVWIDE ) ? "Civilization-wide"
                                                         : "This building only";
         if ( e.desc && e.desc[0] ) { tip += "\n"; tip += e.desc; }
-        AddWidget<SDL2InfoIcon>( cbX + cbW + 4, cy + ( ROW_H - kInfoSz ) / 2,
+        AddWidget<SDL2InfoIcon>( cbX + cbW + 4, cbY + ( ROW_H - kInfoSz ) / 2,
                                  kInfoSz, kInfoSz, tip );
         cy += ROW_H;
     }
