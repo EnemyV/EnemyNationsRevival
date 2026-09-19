@@ -96,8 +96,9 @@ void CPlayer::ctor( )
     m_iPwrHave        = 0;
     m_iPplNeedBldg    = 1;
     m_iPplNeedLast    = -1;   // no finished tick yet -- Desperate Measures drafts the flat base
-    m_iDespDraftLast  = 0;
-    m_iDespDraftTick  = 0;
+    m_iSurplusPplLast = 0;
+    m_iSurplusPplTick = 0;
+    m_iDespDraft      = 0;
     m_iPplBldg        = 0;
     m_iPplVeh         = 0;
     m_fPplMult        = 1.0;
@@ -611,48 +612,73 @@ void CPlayer::AddGas( int iNum )
     m_aiMade[CMaterialTypes::gas] += iNum;
 }
 
-// Desperate Measures (EDICT_DESPERATE_MEASURES): how many workers the rocket conscripts this
-// tick. The edict's scrounge rate scales with this, so an empire with idle population gets more
-// out of it -- at the same resources-per-worker rate, it just runs bigger.
+// ApplySurplusEdicts -- the ONE per-pump pass that prices every surplus-scaled edict (today:
+// Desperate Measures; the rest of the family lands on top of this same walk). Called at the end
+// of StartLoop, for every player including the AI: it is cheap, deterministic, and in a net game
+// every client must compute the identical draft or the economies desync.
 //
-//   draft = DESPERATE_BASE_DRAFT + DESPERATE_EXCESS_PCT% of the spare workforce left after it
+//   Desperate Measures: draft = DESPERATE_BASE_DRAFT + SURPLUS_DRAFT_PCT% of the spare left
+//   after the base, and the scrounge scales with the draft -- so an empire with idle population
+//   gets MORE out of the edict, at the same resources-per-worker exchange rate.
 //
-// The whole difficulty is making that percentage HOLD STILL. The draft is itself part of the
+// The whole difficulty is making that percentage HOLD STILL. A draft is itself part of the
 // workforce need, so a naive pct of "spare = have - need" chases its own tail: draft up -> spare
-// down -> draft down -> spare up, oscillating every tick and flickering the output with it. Two
-// things are required, and neither alone is enough:
+// down -> draft down -> spare up, oscillating every pump and flickering the output with it.
+// Three things are required, and none alone is enough:
 //
-//   1. Read LAST tick's FINISHED need. The live m_iPplNeedBldg is a partial sum while the
-//      buildings are still accumulating, so its mid-tick value depends on where the rocket
-//      happens to sit in the iteration order -- jitter even with no feedback at all.
-//   2. Add our own previous draft back before taking the cut. What is left is the spare
-//      workforce as it would be if this edict were not running -- a quantity the draft does not
-//      appear in. The draft therefore computes the same answer every tick while the rest of the
-//      economy holds, which is the fixed point we want, rather than orbiting one.
+//   1. Read LAST pump's FINISHED need (m_iPplNeedLast). The live m_iPplNeedBldg is a partial sum
+//      while the buildings are still accumulating, so its mid-pump value depends on where a
+//      building happens to sit in the iteration order -- jitter even with no feedback at all.
+//   2. Add the surplus edicts' own previous draw back (m_iSurplusPplLast) before taking the cut.
+//      What is left is the spare workforce as it would be IF THESE EDICTS WERE NOT RUNNING -- a
+//      quantity the draft does not appear in. The draft then computes the same answer every pump
+//      while the rest of the economy holds: the fixed point we want, rather than an orbit round it.
+//   3. Compute it HERE, once, not at each host building. Two rockets asking a live counter would
+//      get two different answers; here the cached m_iDespDraft is what the sim charges AND what
+//      the info window quotes.
 //
 // The flat base comes out of the spare FIRST, so the scaling half can never by itself push the
 // colony into a workforce deficit. A colony with no slack pays exactly the flat base, i.e. what
 // this edict has always cost.
-int CPlayer::GetDesperateDraft( ) const
+void CPlayer::ApplySurplusEdicts( )
 {
 
     ASSERT_STRICT_VALID( this );
 
-    // No finished tick to read yet (new game, or the first tick after a load -- these are
-    // runtime-only). Reading a zeroed need here would score the ENTIRE workforce as spare and
-    // spike the draft for one tick.
-    if ( m_iPplNeedLast < 0 )
-        return ( DESPERATE_BASE_DRAFT );
+    // Clear this pump's cached results -- an inactive edict drafts nothing.
+    m_iDespDraft = 0;
 
-    // spare workforce as if this edict were not drafting (point 2 above)
-    LONG lSpare = m_iPplBldg - ( m_iPplNeedLast - m_iDespDraftLast );
+    // Spare workforce "as if the surplus edicts were not running" (points 1 + 2 above).
+    // m_iPplNeedLast < 0 means there is no finished pump to read yet (new game, or the first
+    // pump after a load -- these fields are runtime-only, deliberately not serialized). Scoring
+    // a zeroed need would make the ENTIRE workforce look spare and spike the draft for one pump,
+    // so treat the spare as 0: only Desperate's flat base applies, exactly as it always has.
+    LONG lSparePpl = 0;
+    if ( m_iPplNeedLast >= 0 )
+        lSparePpl = m_iPplBldg - ( m_iPplNeedLast - m_iSurplusPplLast );
+    if ( lSparePpl < 0 )
+        lSparePpl = 0;
 
-    // the flat base is taken out of the spare before the percentage
-    lSpare -= DESPERATE_BASE_DRAFT;
-    if ( lSpare <= 0 )
-        return ( DESPERATE_BASE_DRAFT );
+    // --- EDICT_DESPERATE_MEASURES (rocket): flat base + a cut of what is left ------------------
+    // Each surplus edict takes its cut of the REMAINING pool and shrinks it for the next one, so
+    // the walk is bounded (they can never between them draft more than the spare) and its result
+    // depends only on EdictId order -- never on building or player iteration order.
+    if ( IsEdictActive( EDICT_DESPERATE_MEASURES ) )
+    {
+        // the flat base is taken out of the spare before the percentage
+        lSparePpl -= DESPERATE_BASE_DRAFT;
+        if ( lSparePpl < 0 )
+            lSparePpl = 0;
+        int iCut = SurplusShare( (int)lSparePpl, SURPLUS_DRAFT_PCT );
+        lSparePpl -= iCut;
 
-    return ( DESPERATE_BASE_DRAFT + (int)( ( lSpare * DESPERATE_EXCESS_PCT ) / 100 ) );
+        m_iDespDraft = DESPERATE_BASE_DRAFT + iCut;
+        // Book the draft as demand HERE (this runs after StartLoop's reset, so we are seeding
+        // the pump's fresh need) and remember it for next pump's add-back. The rocket's own
+        // GetPeople() is still booked by CBuilding::Operate; this is only the conscription.
+        AddPplNeedBldg( m_iDespDraft );
+        m_iSurplusPplTick += m_iDespDraft;
+    }
 }
 
 void CPlayer::StartLoop( )
@@ -706,6 +732,16 @@ void CPlayer::StartLoop( )
         SampleHistory( );
     }
 
+    // Surplus-scaled edicts read the workforce as of a FINISHED pump, so snapshot here -- after
+    // the edict upkeep fold-in above (so it matches the need m_fPplMult was just computed from)
+    // and before the reset below wipes it. The drafts roll over the same way: what the surplus
+    // edicts drew this pump becomes next pump's add-back. (The upkeep pct also scaled the drafts
+    // inside m_iPplNeedBldg while the add-back is the raw figure; the difference is
+    // upkeepPct * draft, which only makes the spare estimate slightly conservative.)
+    m_iPplNeedLast    = m_iPplNeedBldg;
+    m_iSurplusPplLast = m_iSurplusPplTick;
+    m_iSurplusPplTick = 0;
+
     // clear for next count
     m_iPwrHave     = 0;
     m_iPwrNeed     = 0;
@@ -713,6 +749,11 @@ void CPlayer::StartLoop( )
     m_iFoodProd    = 0;
 
     m_iRsrchHave = 0;
+
+    // Price the surplus-scaled edicts for the pump that is about to run. This must be AFTER the
+    // reset (it seeds the fresh need with the drafts) and after m_fPplMult/m_fPwrMult are
+    // computed above (the research credit is throttled by them, like any other producer).
+    ApplySurplusEdicts( );
 }
 
 // Append one colony-stat sample to the ring buffer (called once per period from

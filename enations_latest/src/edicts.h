@@ -95,14 +95,28 @@ extern const EdictDef g_aEdicts[EDICT_COUNT];
 // Convenience: is this building type an edict host (so SDL2BuildingWindow shows the section)?
 bool EdictHostHasEdicts( CStructureData::BLDG_TYPE bldgType );
 
+// --- Surplus-scaled edicts: the shared cut ---------------------------------------------------
+// A "surplus" edict is one that puts the resources the colony is NOT using to work. Each active
+// one takes this percentage of the spare workforce REMAINING when the walk reaches it (they are
+// visited in EdictId order, and the pool shrinks as it goes), so the family as a whole can never
+// draft more than the colony actually has idle. See CPlayer::ApplySurplusEdicts for why the
+// "spare" it cuts from has to be measured as if these edicts were not running at all.
+const int SURPLUS_DRAFT_PCT = 50;   // pct of the REMAINING spare workforce one edict drafts
+
+// The one place a surplus share is computed. Integer, so the sim, the UI readout and the harness
+// dump all land on the identical number (a float here would let a readout round the other way).
+inline int SurplusShare( int iRemaining, int iPct )
+{
+    if ( iRemaining <= 0 )
+        return ( 0 );
+    return ( ( iRemaining * iPct ) / 100 );
+}
+
 // --- Desperate Measures tuning (EDICT_DESPERATE_MEASURES) -----------------------------------
 // The rocket conscripts a flat base draft PLUS a cut of the workforce the colony is not using,
 // and scrounges proportionally harder for it: a civ sitting on idle population gets more out of
 // the edict than one already running flat out, at the SAME resources-per-worker exchange rate.
-// See CPlayer::GetDesperateDraft for how the cut is made stable (it cannot be a naive percentage
-// of "spare", because the draft is itself part of what makes the workforce un-spare).
 const int DESPERATE_BASE_DRAFT  = 100;  // workers drafted even with zero spare population
-const int DESPERATE_EXCESS_PCT  = 50;   // pct of the REMAINING spare workforce drafted on top
 const int DESPERATE_RATE_PER    = 200;  // workers that buy one helping of DESPERATE_BASE_RATES.
                                         // Deliberately NOT the base draft: the base is the floor
                                         // of the CONSCRIPTION, this is the EXCHANGE RATE, and the

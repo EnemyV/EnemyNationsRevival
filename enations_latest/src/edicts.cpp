@@ -139,9 +139,11 @@ const EdictDef g_aEdicts[EDICT_COUNT] =
       0.0f, 0.0f, 0.0f,
       1.0f, 1.0f, 1.0f, 1.0f, 1.0f },
 
-    // EDICT_DESPERATE_MEASURES — Rocket, civ-wide BEHAVIOR edict (all mults neutral). The production
-    // (10 lumber/5 iron/5 food/5 coal per min + 100 workers) is hardcoded in CBuilding::Operate's
-    // UTwarehouse case, gated on IsEdictActive. Default-available (gate: nothing, always discovered).
+    // EDICT_DESPERATE_MEASURES — Rocket, civ-wide BEHAVIOR edict (all mults neutral). The DRAFT is
+    // priced once per pump by CPlayer::ApplySurplusEdicts (flat DESPERATE_BASE_DRAFT plus
+    // SURPLUS_DRAFT_PCT% of the spare workforce); CBuilding::Operate's UTwarehouse case, gated on
+    // IsEdictActive, credits DESPERATE_BASE_RATES scaled by draft/DESPERATE_RATE_PER.
+    // Default-available (gate: nothing, always discovered).
     // Net-synced via ToggleEdictNet; revoked on rocket death via EdictHostLost (rocket host).
     { "Desperate Measures", "Frantically scrounge base resources: +10 lumber, +5 iron, +5 food, +5 coal / min per 200 workers drafted.\nConscripts 100 workers plus half of your idle workforce, and scrounges proportionally harder. Lost if rocket destroyed.",
       CStructureData::rocket, EDICT_CIVWIDE, CRsrchArray::nothing,

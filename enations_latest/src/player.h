@@ -166,6 +166,11 @@ class CPlayer : public CObject
 
     void StartGame( );
     void StartLoop( );
+    // Surplus-scaled edicts: one per-player pass, run at the END of StartLoop (after the
+    // need/have counters are snapshotted and cleared) so every such edict reads the SAME
+    // "as if we were not running" spare and none of them depends on building iteration
+    // order. See the long comment on the definition in player.cpp.
+    void ApplySurplusEdicts( );
     void PeopleAndFood( int iNumSec );
     void Research( int iNumSec );
     void CPlayer::CitizenConstruction( );
@@ -241,13 +246,15 @@ class CPlayer : public CObject
         ASSERT_STRICT_VALID( this );
         m_iPplNeedBldg += iAdd;
     }
-    // Desperate Measures: the worker draft this tick, and the running total of what the edict
-    // actually drew (recorded by the rocket so next tick can add it back — see GetDesperateDraft).
-    int  GetDesperateDraft( ) const;
-    void AddDesperateDraft( int iAdd )
+    // Desperate Measures: the worker draft for THIS pump. Computed once per pump per player by
+    // ApplySurplusEdicts (called at the end of StartLoop) and cached — the rocket's Operate and
+    // the rocket info window both read this same number, so the sim and the readout cannot
+    // disagree, and the draft does not depend on where the rocket falls in the building
+    // iteration order. See CPlayer::ApplySurplusEdicts for why it must be computed there.
+    int  GetDesperateDraft( ) const
     {
         ASSERT_STRICT_VALID( this );
-        m_iDespDraftTick += iAdd;
+        return ( m_iDespDraft );
     }
     void AddPplBldg( int iAdd )
     {
@@ -915,14 +922,16 @@ class CPlayer : public CObject
     LONG  m_iPwrNeed;      // power needed by all buildings
     LONG  m_iPwrHave;      // power presently generated
     LONG  m_iPplNeedBldg;  // people needed by all buildings
-    // Desperate Measures needs to know the SPARE workforce, which the live m_iPplNeedBldg above
-    // cannot answer: mid-tick it is a partial sum (its value depends on where the rocket falls in
-    // the building iteration order), and it already contains the edict's own draft, so a
-    // percentage of it would feed back on itself. Both are runtime-only, snapshotted in StartLoop
-    // where the tick's total is final; -1 = no finished total yet (fresh game / just-loaded save).
-    LONG  m_iPplNeedLast;   // last tick's FINISHED m_iPplNeedBldg (-1 = none yet)
-    LONG  m_iDespDraftLast; // workers Desperate Measures drafted last tick (added back as spare)
-    LONG  m_iDespDraftTick; // accumulating this tick (N rockets each add their draft)
+    // A surplus-scaled edict needs to know the SPARE workforce, which the live m_iPplNeedBldg
+    // above cannot answer: mid-tick it is a partial sum (its value depends on where a building
+    // falls in the iteration order), and it already contains the edicts' own drafts, so a
+    // percentage of it would feed back on itself. All runtime-only, snapshotted in StartLoop
+    // where the tick's total is final; -1 = no finished total yet (fresh game / just-loaded
+    // save), which ApplySurplusEdicts reads as "no spare".
+    LONG  m_iPplNeedLast;    // last tick's FINISHED m_iPplNeedBldg (-1 = none yet)
+    LONG  m_iSurplusPplLast; // workers ALL surplus edicts drafted last tick (added back as spare)
+    LONG  m_iSurplusPplTick; // same, accumulating for this tick (ApplySurplusEdicts)
+    LONG  m_iDespDraft;      // this pump's Desperate Measures draft (GetDesperateDraft)
     LONG  m_iPplBldg;      // people presently have EXCEPT in vehicles
     LONG  m_iPplVeh;       // people in vehicles (Have+Veh == Total)
     LONG  m_iFood;         // food on hand
