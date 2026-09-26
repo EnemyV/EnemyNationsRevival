@@ -11,6 +11,7 @@
 
 #include "caitmgr.hpp"
 
+#include "aicargo.h"  // carrier capacity by cargo weight
 #include "aisnap.h"  // Tier-B world snapshot (lock-free AI reads)
 #include "caidata.hpp"
 #include "cpathmgr.h"
@@ -18,6 +19,10 @@
 #include "logging.h"  // dave's logging system
 #include "stdafx.h"
 
+
+// aicargo.h mirrors base.h's MAX_CARGO; keep them in step
+static_assert( enaicargo::kSlotsPerVehicle == MAX_CARGO,
+               "enaicargo::kSlotsPerVehicle is out of step with base.h MAX_CARGO" );
 
 #define new DEBUG_NEW
 
@@ -1101,9 +1106,26 @@ void CAITaskMgr::CheckFactorys( void )
                     continue;
                 }
                 BOOL bPaused = pBldg->IsPaused( );
+                // idle: not paused, not being built, not waiting, nothing in production
+                BOOL bIdle = FALSE;
+                if ( !bPaused && !pBldg->IsConstructing( ) )
+                {
+                    int iUnion = pBldg->GetData( )->GetUnionType( );
+                    CBuildUnit const* pBU = NULL;
+                    if ( iUnion == CStructureData::UTshipyard )
+                        pBU = ( (CShipyardBuilding*)pBldg )->GetBldUnt( );
+                    else if ( iUnion == CStructureData::UTvehicle )
+                        pBU = ( (CVehicleBuilding*)pBldg )->GetBldUnt( );
+
+                    if ( !pBldg->IsWaiting( ) )
+                        bIdle = ( pBU == NULL );
+                }
                 LeaveCriticalSection( &cs );
 
-                if ( !bPaused )
+                // idle factories too: one that missed its one-shot "built" offer is
+                // otherwise never asked again. Below is the same ClearTaskUnit +
+                // AssignProductionTask pair the "built" path runs.
+                if ( !bPaused && !bIdle )
                     continue;
 
                 // make sure unit is doing nothing
@@ -4229,6 +4251,9 @@ BOOL CAITaskMgr::IsStagingCompete( CAITask* pTask, int iType /*=0*/ )
                 case CTransportData::landing_craft:
                     iCounts[1] += 1;
                     break;
+                // escort bucket = all three escort hulls (CAI_TF_SHIPS)
+                case CTransportData::destroyer:
+                case CTransportData::cruiser:
                 case CTransportData::gun_boat:
                     iCounts[2] += 1;
                     break;
@@ -4300,6 +4325,8 @@ BOOL CAITaskMgr::IsStagingCompete( CAITask* pTask, int iType /*=0*/ )
             case CTransportData::landing_craft:
                 iTypeChecking = 1;
                 break;
+            case CTransportData::destroyer:
+            case CTransportData::cruiser:
             case CTransportData::gun_boat:
                 iTypeChecking = 2;
                 break;
@@ -4441,6 +4468,8 @@ BOOL CAITaskMgr::ContinueStaging( CAIUnit* pStagingVeh, CAITask* pTask )
         case CTransportData::landing_craft:
             iStagingType = 1;
             break;
+        case CTransportData::destroyer:
+        case CTransportData::cruiser:
         case CTransportData::gun_boat:
             iStagingType = 2;
             break;
@@ -4550,6 +4579,9 @@ BOOL CAITaskMgr::ContinueStaging( CAIUnit* pStagingVeh, CAITask* pTask )
                 case CTransportData::landing_craft:
                     iCounts[1] += 1;
                     break;
+                // escort bucket = all three escort hulls (CAI_TF_SHIPS)
+                case CTransportData::destroyer:
+                case CTransportData::cruiser:
                 case CTransportData::gun_boat:
                     iCounts[2] += 1;
                     break;
@@ -6676,6 +6708,9 @@ void CAITaskMgr::LoadLandingCraft( CAIUnit* pUnit, CAITask* pTask )
     CSubHex subhexHead( 0, 0 );
     CSubHex subhexTail( 0, 0 );
     int     iCnt = 0;
+    // this function only loads rangers: room for one infantry slot
+    const int iCost    = enaicargo::CargoCost( true );
+    BOOL      bHasRoom = FALSE;
 
     EnterCriticalSection( &cs );
     CVehicle* pVehicle = theVehicleMap.GetVehicle( pUnit->GetID( ) );
@@ -6685,15 +6720,17 @@ void CAITaskMgr::LoadLandingCraft( CAIUnit* pUnit, CAITask* pTask )
         return;
     }
     iCnt = pVehicle->GetCargoCount( );
-    if ( iCnt < MAX_CARGO )
+    // by cargo weight, the engine's own load gate, not by object count
+    bHasRoom = enaicargo::HasRoomFor( pVehicle->GetCargoSize( ), pVehicle->GetEffPeopleCarry( ), iCost );
+    if ( bHasRoom )
     {
         subhexHead = pVehicle->GetPtHead( );
         subhexTail = pVehicle->GetPtTail( );
     }
     LeaveCriticalSection( &cs );
 
-    // carrier is too full
-    if ( !subhexHead.x && !subhexHead.y )
+    // carrier is too full (the flag, not a zeroed subhex: a craft can be at 0,0)
+    if ( !bHasRoom )
         return;
 
 #ifdef _LOGOUT
@@ -6753,14 +6790,17 @@ void CAITaskMgr::LoadIFV( CAIUnit* pUnit, CAITask* pTask )
         LeaveCriticalSection( &cs );
         return;
     }
-    if ( pVehicle->GetCargoCount( ) < MAX_CARGO )
+    // infantry carrier: its cargo is infantry, one slot each (enaicargo).
+    BOOL bHasRoom = enaicargo::HasRoomFor( pVehicle->GetCargoSize( ), pVehicle->GetEffPeopleCarry( ),
+                                           enaicargo::CargoCost( true ) );
+    if ( bHasRoom )
     {
         subhexUnit = pVehicle->GetPtTail( );
     }
     LeaveCriticalSection( &cs );
 
-    // carrier is too full
-    if ( !subhexUnit.x && !subhexUnit.y )
+    // carrier is too full (flag, not a zeroed subhex -- see LoadLandingCraft)
+    if ( !bHasRoom )
         return;
 
 #ifdef _LOGOUT
@@ -6935,6 +6975,12 @@ void CAITaskMgr::LoadTroops( CAIUnit* puCargo, CAITask* pTask )
     else  // infantry only
         iCarrierType = CTransportData::infantry_carrier;
 
+    // this cargo unit's weight in carrier slots (static type data, no lock)
+    int                   iCargoCost = enaicargo::CargoCost( false );
+    CTransportData const* pCargoData = pGameData->GetTransportData( puCargo->GetTypeUnit( ) );
+    if ( pCargoData != NULL )
+        iCargoCost = enaicargo::CargoCost( pCargoData->IsPeople( ) ? true : false );
+
     if ( m_pGoalMgr->m_plUnits != NULL )
     {
         CHexCoord hexCargo, hexCarrier, hexCarrierDest;
@@ -7017,7 +7063,9 @@ void CAITaskMgr::LoadTroops( CAIUnit* puCargo, CAITask* pTask )
                     LeaveCriticalSection( &cs );
                     continue;
                 }
-                if ( pVehicle->GetCargoCount( ) >= MAX_CARGO )
+                // room for THIS cargo unit's weight
+                if ( !enaicargo::HasRoomFor( pVehicle->GetCargoSize( ), pVehicle->GetEffPeopleCarry( ),
+                                             iCargoCost ) )
                 {
                     LeaveCriticalSection( &cs );
                     continue;

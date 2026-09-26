@@ -112,6 +112,7 @@ public:
 
 	BOOL IsArtillery( int iVehType );
 	BOOL IsCombatVehicle( int iVehType );
+	BOOL IsCombatShip( int iVehType );
 	BOOL IsTruck( DWORD dwID );
 	BOOL IsLoaded( DWORD dwID );
 	BOOL IsHexOfUnit( CAIHex *pHex );

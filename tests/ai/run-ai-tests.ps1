@@ -49,7 +49,10 @@ $srcClaim   = Join-Path $here 'test_ai_claim.cpp'
 $exeClaimOd = Join-Path $outDir 'ai_claim_tests_Od.exe'
 $exeClaimO2 = Join-Path $outDir 'ai_claim_tests_O2.exe'
 $exePick    = Join-Path $outDir 'ai_rsrchpick_tests.exe'
+$srcCargo   = Join-Path $here 'test_ai_cargo.cpp'
+$exeCargo   = Join-Path $outDir 'ai_cargo_tests.exe'
 $caigmgr    = Join-Path $here '..\..\enations_latest\src\caigmgr.cpp'
+$caitmgr    = Join-Path $here '..\..\enations_latest\src\caitmgr.cpp'
 $cairoute   = Join-Path $here '..\..\enations_latest\src\cairoute.cpp'
 $caiunit    = Join-Path $here '..\..\enations_latest\src\caiunit.hpp'
 $vehicleH   = Join-Path $here '..\..\enations_latest\src\vehicle.h'
@@ -64,6 +67,7 @@ $clStopgap = "cl /nologo /EHsc /std:c++17 /W4 `"$srcStopgap`" /Fo`"$outDir\ai_st
 $clClaimOd = "cl /nologo /EHsc /std:c++17 /W4 /Od `"$srcClaim`" /Fo`"$outDir\ai_claim_Od.obj`" /Fe`"$exeClaimOd`""
 $clClaimO2 = "cl /nologo /EHsc /std:c++17 /W4 /O2 `"$srcClaim`" /Fo`"$outDir\ai_claim_O2.obj`" /Fe`"$exeClaimO2`""
 $clPick    = "cl /nologo /EHsc /std:c++17 /W4 `"$srcPick`" /Fo`"$outDir\ai_rsrchpick.obj`" /Fe`"$exePick`""
+$clCargo   = "cl /nologo /EHsc /std:c++17 /W4 `"$srcCargo`" /Fo`"$outDir\ai_cargo.obj`" /Fe`"$exeCargo`""
 
 # compile + run logic suite
 cmd /c "`"$vcvars`" >nul 2>&1 && $clLogic && `"$exeLogic`""
@@ -139,5 +143,19 @@ if (Test-Path $caigmgr) {
     $pickExit = $LASTEXITCODE
 }
 
-if ($logicExit -ne 0 -or $dataExit -ne 0 -or $pathsExit -ne 0 -or $stopgapExit -ne 0 -or $claimExit -ne 0 -or $pickExit -ne 0) { exit 1 }
+# compile + run the cargo/capacity suite: the shipped enaicargo helper plus a
+# source lint over the two AI files that use it.
+$cargoExit = 0
+cmd /c "`"$vcvars`" >nul 2>&1 && $clCargo"
+if ($LASTEXITCODE -ne 0) { exit 2 }
+$cargoArgs = @()
+foreach ($p in @($caitmgr, $caigmgr)) {
+    if (Test-Path $p) { $cargoArgs += (Resolve-Path $p).Path } else { break }
+}
+if ($cargoArgs.Count -lt 2) { Write-Host "[ai_cargo] SKIP source lint (caitmgr/caigmgr not found)"; $cargoArgs = @() }
+& $exeCargo @cargoArgs
+$cargoExit = $LASTEXITCODE
+if ($cargoExit -eq 2) { Write-Host "[ai_cargo] SKIP (cannot open a source path)"; $cargoExit = 0 }
+
+if ($logicExit -ne 0 -or $dataExit -ne 0 -or $pathsExit -ne 0 -or $stopgapExit -ne 0 -or $claimExit -ne 0 -or $pickExit -ne 0 -or $cargoExit -ne 0) { exit 1 }
 exit 0

@@ -924,6 +924,26 @@ BOOL CAIData::IsCombatVehicle( int iVehType )
 }
 
 //
+// determines if the vehicle type passed is a combat SHIP. Kept separate from
+// IsCombatVehicle, which land-routing code relies on. landing_craft is a
+// transport, sized by CAI_TF_LANDING, so it is not a combat ship.
+//
+BOOL CAIData::IsCombatShip( int iVehType )
+{
+    BOOL bRet = FALSE;
+    switch ( iVehType )
+    {
+    case CTransportData::gun_boat:
+    case CTransportData::destroyer:
+    case CTransportData::cruiser:
+        bRet = TRUE;
+    default:
+        break;
+    }
+    return ( bRet );
+}
+
+//
 // determine if the dwID passed belongs to a truck
 //
 BOOL CAIData::IsTruck( DWORD dwID )

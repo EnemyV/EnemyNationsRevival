@@ -17,6 +17,10 @@
 #include "stdafx.h"
 #include "enprobes.h"   // probe gates - was relying on a transitive include
 
+// spare a SCARCE material's source must hold before a proactive haul moves it;
+// EXCESS_IDLE_MATERIALS (a truckload) suits only materials that pile up
+#define NAV_SCARCE_IDLE_MATERIALS 200
+
 #define new DEBUG_NEW
 
 #if THREADS_ENABLED
@@ -708,6 +712,12 @@ void CAIRouter::FillPriorities( void )
     // move xillium from mine to rocket
     if ( m_plTrucksAvailable->GetCount( ) > MINIMUM_IDLE_TRUCKS_AI )
         IdleTruckTask( CMaterialTypes::copper, CStructureData::copper, CStructureData::rocket );
+
+    // copper to the shipyards too (capital ships need it; num_types covers both
+    // yards). Scarce, so a lower source bar, and an empty yard may receive it.
+    if ( m_plTrucksAvailable->GetCount( ) > MINIMUM_IDLE_TRUCKS_AI )
+        IdleTruckTask( CMaterialTypes::copper, CStructureData::copper, CStructureData::num_types,
+                       NAV_SCARCE_IDLE_MATERIALS, TRUE );
 }
 
 #if 0
@@ -831,7 +841,7 @@ m_iPlayer, pUnit->GetID(), pUnit->GetParam(CAI_UNASSIGNED) );
 // pGameData->GetMaterialCapacity(pTruck) of iMat and deliver
 // it to the to-building
 //
-void CAIRouter::IdleTruckTask( int iMat, int iFromBldg, int iToBldg )
+void CAIRouter::IdleTruckTask( int iMat, int iFromBldg, int iToBldg, int iMinSrc, BOOL bAllowEmptyDest )
 {
     int      iExcess = 0, iBestFromExcess = 0, iBestToExcess = 0xFFFE;
     CAIUnit* paiFrom = NULL;
@@ -874,7 +884,7 @@ void CAIRouter::IdleTruckTask( int iMat, int iFromBldg, int iToBldg )
                 {
                     if ( pUnit->GetTypeUnit( ) == iFromBldg )
                     {
-                        iExcess = snapB.aiStore[iMat] - EXCESS_IDLE_MATERIALS;
+                        iExcess = snapB.aiStore[iMat] - iMinSrc;
                         if ( iExcess > 0 && iExcess > iBestFromExcess )
                         {
                             iBestFromExcess = iExcess;
@@ -923,7 +933,7 @@ void CAIRouter::IdleTruckTask( int iMat, int iFromBldg, int iToBldg )
                 if ( AiSnap::ReadBldg( pUnit->GetID( ), snapTo ) )
                 {
                     iExcess = snapTo.aiStore[iMat];
-                    if ( iExcess > 0 && iExcess < iBestToExcess )
+                    if ( ( iExcess > 0 || bAllowEmptyDest ) && iExcess < iBestToExcess )
                     {
                         iBestToExcess = iExcess;
                         paiTo         = pUnit;
@@ -2499,8 +2509,10 @@ BOOL CAIRouter::NeedsCommodities( CAIUnit* pCAIBldg )
                     CBuildUnit const* pBuildVeh = pShipBldg->GetBldUnt( );
                     if ( pBuildVeh != NULL )
                     {
+                        // two hulls' inputs, like the UTvehicle branch above, so a
+                        // yard does not stall on every delivery
                         for ( int i = 0; i < CMaterialTypes::num_build_types; ++i )
-                            aiMatsNeeded[i] = pBuildVeh->GetInput( i );
+                            aiMatsNeeded[i] = pBuildVeh->GetInput( i ) * 2;
                     }
                 }
             }

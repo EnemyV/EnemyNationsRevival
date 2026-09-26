@@ -58,7 +58,10 @@ public:
     void FillPriorities( void );
 	BOOL NeedTransports( void );
     BOOL FindTransport( CAIUnit *pCAIBldg );
-	void IdleTruckTask( int iMat, int iFromBldg, int iToBldg );
+	// iMinSrc: spare a source must hold before a proactive haul moves any.
+	// bAllowEmptyDest: the destination may hold none of the material yet.
+	void IdleTruckTask( int iMat, int iFromBldg, int iToBldg, int iMinSrc = EXCESS_IDLE_MATERIALS,
+	                    BOOL bAllowEmptyDest = FALSE );
 
 	void GetTrucksAvailable( void );
 	CAIUnit *GetNearestTruck( CAIUnit *pCAIBldg );

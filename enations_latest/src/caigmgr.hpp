@@ -156,6 +156,7 @@ public:
 	void ClearStagingVehicle( int iVeh, WORD *awTypes );
 	void ProducingStagingVehicle( WORD *awTypes );
 	void SetAssaultStagingVehicle( WORD *awTypes );
+	int  GetCarrierCapacity( int iVehType );
 		
 	void ProduceVehicles( int iVeh );
 	void ProduceMaterials( int iMat );
