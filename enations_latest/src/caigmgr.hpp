@@ -82,7 +82,10 @@ public:
 	CHexCoord m_ahexLastStageRoad[4];	// per-goal last staging-road midpoint (transient)
 	// staging watchdog (Phase 3) - transient, idx 0=IDG_LANDWAR 1=IDG_ADVDEFENSE 2=IDG_SEAINVADE
 	int   m_iBldgLostRecent;		// bunker mode: own buildings lost (rolling)
-	DWORD m_dwDefenseUntil;			// bunker mode: suppress OFFENSIVE launches until
+	DWORD m_dwDefenseUntil;			// any building lost: war pressure until (WarPressure)
+	DWORD m_adwBldgLostAt[3];		// bunker mode: times of the last 3 buildings lost (ring)
+	int   m_iBldgLostSlot;			// next slot in m_adwBldgLostAt
+	BOOL  IsBunkered( void );		// 3 buildings lost within 10 min: hold offense
 	DWORD m_dwGunsUntil;			// recently attacked: hold guns-or-butter ON until
 	BOOL  WarPressure( void );		// at war with anyone, or attacked recently
 	CAIMap *m_pMap;	// CAIMgr's CAIMap

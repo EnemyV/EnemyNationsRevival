@@ -374,6 +374,9 @@ CAIGoalMgr::CAIGoalMgr( BOOL bRestart, int iPlayer, CAIMap* pMap, CAIUnitList* p
     m_iBldgLostRecent = 0;
     m_dwDefenseUntil  = 0;
     m_dwGunsUntil     = 0;
+    for ( int iBl = 0; iBl < 3; ++iBl )
+        m_adwBldgLostAt[iBl] = 0;
+    m_iBldgLostSlot = 0;
 
     m_pwaRatios    = NULL;
     m_pwaUnits     = NULL;
@@ -4877,6 +4880,20 @@ void CAIGoalMgr::NoteBuildingLost( void )
 {
     m_iBldgLostRecent++;
     m_dwDefenseUntil = theGame.GettimeGetTime( ) + 600000;
+    m_adwBldgLostAt[m_iBldgLostSlot] = theGame.GettimeGetTime( );
+    m_iBldgLostSlot                  = ( m_iBldgLostSlot + 1 ) % 3;
+}
+
+// Bunker mode holds offensive launches only while being overrun (3 buildings
+// lost within 10 minutes), so it can lift during a sustained war. Any single
+// loss still raises war pressure for 10 minutes (m_dwDefenseUntil).
+BOOL CAIGoalMgr::IsBunkered( void )
+{
+    DWORD dwNow = theGame.GettimeGetTime( );
+    for ( int i = 0; i < 3; ++i )
+        if ( m_adwBldgLostAt[i] == 0 || dwNow - m_adwBldgLostAt[i] >= 600000 )
+            return FALSE;   // fewer than 3 losses inside the window
+    return TRUE;
 }
 
 // war pressure = at war with anyone, or attacked recently. Guns-or-butter is
@@ -7130,7 +7147,7 @@ void CAIGoalMgr::LaunchAssault( CAITask* pTask )
 #endif
     // bunker mode: while losing buildings, OFFENSIVE launches wait at home
     // (ADVDEFENSE staging and all reactive combat are unaffected)
-    if ( theGame.GettimeGetTime( ) < m_dwDefenseUntil &&
+    if ( IsBunkered( ) &&
          ( pTask->GetGoalID( ) == IDG_LANDWAR || pTask->GetGoalID( ) == IDG_SEAINVADE ) )
     {
 #if EN_AI_PROBES_WAR && defined(_WIN32)
