@@ -3701,7 +3701,9 @@ void CVehicle::CheckExit( )
                 }
                 else if ( x >= pBldg->GetCX( ) )
                 {
-                    TRAP( );
+                    // east-side exit, handled below as the mirror of the x < 0
+                    // case; the 1996 TRAP only marked it as never seen run
+                    EN_TRAP_REMOVED( "CheckExit: new vehicle leaves its building on the east side" );
                     m_ptHead.x = ( pBldg->GetHex( ).X( ) + pBldg->GetCX( ) - 1 ) * 2 + 1;
                     m_ptTail.x = m_ptHead.x - 1;
                     m_ptHead.y = m_ptTail.y = _next.Y( ) * 2;
