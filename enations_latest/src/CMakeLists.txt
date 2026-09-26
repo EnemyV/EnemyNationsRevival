@@ -1,7 +1,16 @@
 message("Current CMAKE_SOURCE_DIR: ${CMAKE_SOURCE_DIR}")
 
 option(EN_BUILD_HARNESS "Compile the control socket and game-side harness" ON)
-option(EN_TRAFFIC_PROBES "Compile traffic event probes (runtime EN_WAIT_LOG still required)" ON)
+# Traffic event probes (runtime EN_WAIT_LOG still required). AUTO = compiled in for the
+# Debug config only; ON/OFF force it for every config. A build dir that already caches the
+# old BOOL (EN_TRAFFIC_PROBES=ON) keeps it - pass -DEN_TRAFFIC_PROBES=AUTO to switch.
+set(EN_TRAFFIC_PROBES AUTO CACHE STRING "Traffic probes: AUTO (on in Debug, off otherwise), ON, OFF")
+set_property(CACHE EN_TRAFFIC_PROBES PROPERTY STRINGS AUTO ON OFF)
+if (EN_TRAFFIC_PROBES STREQUAL "AUTO")
+    set(_EN_TRAFFIC_DEF "$<IF:$<CONFIG:Debug>,1,0>")
+else ()
+    set(_EN_TRAFFIC_DEF "$<BOOL:${EN_TRAFFIC_PROBES}>")
+endif ()
 
 # Dev cheat surface. OFF by default: a debug build is NOT a cheat build.
 # Turn on deliberately with -DEN_CHEAT=ON (needed for the in-dev End-key
@@ -278,7 +287,7 @@ endif ()
 add_executable(enations WIN32 ${enations_sources})
 target_compile_definitions(enations PRIVATE
     EN_BUILD_HARNESS=$<BOOL:${EN_BUILD_HARNESS}>
-    EN_TRAFFIC_PROBES=$<BOOL:${EN_TRAFFIC_PROBES}>)
+    EN_TRAFFIC_PROBES=${_EN_TRAFFIC_DEF})
 
 # network/ TUs do winsock2-before-windows.h ordering themselves; skip the
 # force-included PCH (stdafx.h->windows.h pulls winsock1 and breaks ws2tcpip.h).
