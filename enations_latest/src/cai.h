@@ -288,6 +288,8 @@
 #define CAI_TASKSWITCH			0x0004	// this unit's task was switched 
 										// old task saved in CAI_UNASSIGNED
 #define CAI_IS_CARGO			0x0008  // this vehicle is on a cargo ship
+#define CAI_LANDING				0x0010  // landing craft sent to a landing hex to unload;
+										// unload on arrival (CAIMgr::DestinationResponse)
 
 /////////////////////////////////////////////////////////////////////////////
 

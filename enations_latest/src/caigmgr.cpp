@@ -7933,7 +7933,14 @@ void CAIGoalMgr::UpdateTaskForce( CAITask* pTask, CHexCoord& hcStart, CHexCoord&
                     {
                         AiVehSnap snapLC;
                         if ( AiSnap::ReadVeh( pUnit->GetID( ), snapLC ) && snapLC.iCargoCount > 0 )
+                        {
                             pUnit->SetTask( IDT_SEEKATSEA );
+                            // remember the wave's hex: SeekOpfor holds the craft on
+                            // it until it gets there (CAI_ROUTE_X/Y are truck-only)
+                            pUnit->SetParam( CAI_ROUTE_X, hex.X( ) );
+                            pUnit->SetParam( CAI_ROUTE_Y, hex.Y( ) );
+                            pUnit->ClearClaimProgress( );
+                        }
                     }
                     // ships only
                     else if ( pVehData->GetBaseType( ) == CTransportData::ship )

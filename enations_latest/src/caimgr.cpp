@@ -3012,6 +3012,21 @@ void CAIMgr::DestinationResponse( CAIMsg* pMsg )
     }
 #endif
 
+    // A landing craft sent in to unload (CAITaskMgr::UnloadCargo) unloads on
+    // arrival instead of re-running its task, which would sail it back out.
+    // Only at a shore: the flag can outlive its trip; elsewhere it is dropped.
+    if ( pMsg->m_iMsg == CNetCmd::veh_dest && ( pUnit->GetStatus( ) & CAI_LANDING ) &&
+         pUnit->GetTypeUnit( ) == CTransportData::landing_craft )
+    {
+        pUnit->SetStatus( pUnit->GetStatus( ) & ~CAI_LANDING );
+        CHexCoord hexArr( pMsg->m_iX, pMsg->m_iY );
+        if ( m_pMap->m_pMapUtil->IsLandingArea( hexArr ) )
+        {
+            pUnit->UnloadCargo( );
+            return;
+        }
+    }
+
     // handle any left over messages
     if ( pMsg->m_iMsg == CNetCmd::veh_dest || pMsg->m_iMsg == CNetCmd::unit_repaired )
     {
@@ -3660,7 +3675,9 @@ BOOL CAIMgr::AutoFire( CUnit* pFiring, CUnit const* pTarget )
         if ( iPlayerFiring == m_iPlayer && pVeh->GetCargoCount( ) )
         {
             CAIUnit* paiUnit = m_plUnits->GetUnitNY( dwIDFiring );
-            if ( paiUnit != NULL )
+            // Not a landing craft, which would dump its cargo at sea: where it
+            // lands is the invasion's call (SeekOpfor / CAITaskMgr::UnloadCargo).
+            if ( paiUnit != NULL && iTypeFiring != CTransportData::landing_craft )
                 paiUnit->UnloadCargo( );
         }
     }

@@ -226,6 +226,33 @@ static void LintTaskMgr( const std::string& src )
     // the mirrored constant is pinned to base.h on the game side
     CHECK( CountOccurrences( src, "enaicargo::kSlotsPerVehicle == MAX_CARGO" ) == 1 );
 
+    //  an idle empty landing craft is released back to the lift pool
+    size_t cmt = src.find( "An IDLE, EMPTY landing craft belongs back in the lift pool" );
+    CHECK( cmt != std::string::npos );
+    size_t rel = ( cmt == std::string::npos ? std::string::npos : src.find( "ClearTaskUnit( pUnit );", cmt ) );
+    CHECK( rel != std::string::npos );
+    if ( rel != std::string::npos )
+    {
+        //  the guard between the comment and the release
+        std::string guard = src.substr( cmt, rel - cmt );
+        CHECK( guard.size( ) < 3000 );
+
+        //  only landing craft, and only ones NOT already staging
+        CHECK( guard.find( "CTransportData::landing_craft" ) != std::string::npos );
+        CHECK( guard.find( "GetTask( ) != IDT_PREPAREWAR" ) != std::string::npos );
+        //  never a loaded craft -- a delivery in progress must not be disturbed
+        CHECK( guard.find( "iCargoCount <= 0" ) != std::string::npos );
+        //  and only when a staging task actually exists, or this churns every pass
+        CHECK( guard.find( "GetNavyTask( CTransportData::landing_craft )" ) != std::string::npos );
+    }
+    //  the release goes through the ordinary assignment path, not a private one
+    size_t relEnd = ( rel == std::string::npos ? 0 : rel );
+    if ( relEnd )
+    {
+        std::string body = src.substr( relEnd, 400 );
+        CHECK( body.find( "ClearTaskUnit( pUnit );" ) != std::string::npos );
+        CHECK( body.find( "AssignTask( pUnit );" ) != std::string::npos );
+    }
 }
 
 static void LintGoalMgr( const std::string& src )
