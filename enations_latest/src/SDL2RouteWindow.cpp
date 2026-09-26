@@ -298,6 +298,13 @@ void SDL2RouteWindow::RebuildList() {
             case CRoute::repair:
                 typeStr = "Repair";
                 break;
+
+            // #38: a queued MOVE keeps the building name the lookup above found - unlike
+            // build/build_road, a move really is "go to that place", so naming what stands
+            // there is right.
+            case CRoute::move:
+                typeStr = "Move";
+                break;
         }
 
         entry.text = loc + " - " + typeStr;

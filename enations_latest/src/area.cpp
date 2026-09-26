@@ -4387,6 +4387,58 @@ void CWndArea::ShiftQueueMove( CVehicle* pVeh, CSubHex const& sub )
 {
     ASSERT_STRICT_VALID( pVeh );
 
+    // #38 A SHIFT-MOVE BEHIND QUEUED OR RUNNING JOBS IS AN ORDER, NOT A ROUTE.
+    //
+    // Operator 2026-09-19: "when build a building, then queueing up roads, it worked well.
+    // then i queued up a movement and it canceled the existing queue (overwrote it)."
+    // A crane holding only ORDERS has no movement stops, so the bFresh test below reads
+    // TRUE, the fresh-queue path deletes every queued road, and SetLocation's ClearOrders
+    // takes anything it missed - the whole work queue gone for one Shift-click. Routes and
+    // orders cannot share a list, so the answer is not to append a waypoint: it is to
+    // append the move AS AN ORDER, which waits its turn behind the jobs already queued and
+    // then drives, and leaves the running job alone (NextOrder's busy test refuses until
+    // the crane is idle).
+    //
+    // The same rule while a crane job is RUNNING but nothing is queued yet: a plain
+    // placement leaves an empty list, so HasOrders is FALSE and only the event (or the
+    // dispatch state) says the crane is working.
+    if ( pVeh->HasOrders( ) || pVeh->IsRunningOrder( ) ||
+         ( pVeh->GetEvent( ) == CVehicle::build ) ||
+         ( pVeh->GetEvent( ) == CVehicle::build_road ) ||
+         ( pVeh->GetEvent( ) == CVehicle::repair_bldg ) )
+    {
+        CHexCoord hexMv( sub );   // AddOrder takes a hex, as the append path below does
+
+        // Shift-click on an already queued MOVE order deletes it, the same toggle-off the
+        // waypoint block below gives. Only an order that is NOT the one currently under
+        // way: deleting that would leave the crane driving at a destination no row names.
+        auto&    rlq = pVeh->GetRouteList( );
+        POSITION pq  = rlq.GetHeadPosition( );
+        while ( pq != NULL )
+        {
+            POSITION cur = pq;
+            CRoute*  pR  = rlq.GetNext( pq );
+            if ( ( pR != NULL ) && ( pR->GetRouteType( ) == CRoute::move ) &&
+                 ( pR->GetCoord( ) == hexMv ) &&
+                 ( !( pVeh->IsRunningOrder( ) && ( cur == pVeh->GetRoutePos( ) ) ) ) )
+            {
+                delete pR;
+                rlq.RemoveAt( cur );
+                if ( pVeh->GetRoutePos( ) == cur )
+                    pVeh->SetRoutePos( rlq.GetHeadPosition( ) );
+                if ( pVeh->m_pSdlRoute != NULL )
+                    pVeh->m_pSdlRoute->RefreshRoute( );
+                return;
+            }
+        }
+
+        pVeh->AddOrder( hexMv, CRoute::move, 0, 0 );
+        pVeh->NextOrder( );   // dispatches only if the crane is genuinely idle
+        if ( pVeh->m_pSdlRoute != NULL )
+            pVeh->m_pSdlRoute->RefreshRoute( );
+        return;
+    }
+
     // Decide fresh-vs-append BEFORE ResumeUnit can arm `route` off the list below - and
     // ask the list itself, not just the event: a PAUSED vehicle still holding movement
     // stops is appended to (ResumeUnit puts it back on them), while a list holding only

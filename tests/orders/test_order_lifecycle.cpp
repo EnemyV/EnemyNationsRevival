@@ -47,7 +47,7 @@ struct CHexCoord {
 // --------------------------------------------------------------------------- route
 class CRoute {
   public:
-    enum { waypoint, unload, load, build, build_road, repair };
+    enum { waypoint, unload, load, build, build_road, repair, move };
     CRoute(CHexCoord const &hex, int iType, int iBldgType = 0, int iDir = 0)
         : m_hex(hex), m_hexEnd(hex), m_iType((BYTE)iType),
           m_iBldgType((BYTE)iBldgType), m_iDir((BYTE)iDir) {}
@@ -200,6 +200,8 @@ class CVehicle : public CUnit {
     int          m_cMode        = stop;
     BOOL         m_bResume      = FALSE;
     int          m_iHoldFrames  = 0;
+    // ArmedForOrder's move case: still driving.
+    BOOL         IsOnTheMove() const { return (m_cMode == moving); }
     CHexCoord    m_hexStart, m_hexEnd;
     CHexCoord    m_hexBldg;
     int          m_iBldgType = 0, m_iBuildDir = 0;
@@ -243,6 +245,13 @@ class CVehicle : public CUnit {
         m_iOrderState = order_road;
     }
     void SiteGone() { m_pBldg = nullptr; m_iEvent = none; m_cMode = stop; }
+    // ArrivedDest, case none: the MOVE-order half, which is all of that case a queued
+    // move touches. The vehicle stops where it was sent and the dispatch is consumed.
+    void ArriveMoveDest() {
+        m_cMode = stop;
+        if ((m_iOrderState == order_sent) && (m_iOrderKind == CRoute::move))
+            OrderEnded();
+    }
     void GiveUpShortOfDest() { m_cMode = stop; OrderArrivalFailed(); }
 
     // A SAVE/LOAD round trip. The serializer restores the queue, the cursor, the loop
@@ -715,6 +724,63 @@ int main() {
         v.AddOrder(CHexCoord(30, 30), CRoute::build_road, 0, 0);
         check(v.NextOrder() != FALSE, "order-only list: dispatches");
         check_eq(v.m_iEvent, CVehicle::build_road, "order-only list: the ORDER's event is armed");
+    }
+
+    // ---------------------------------------------------------------- the operator's
+    // Shift-move-after-queued-roads bug (2026-09-19): a queued MOVE is an ORDER, so it
+    // waits its turn behind the roads instead of turning the queue into a route.
+    {
+        theBuildingHex.live.clear();
+        CVehicle v; v.owner = &g_me;
+
+        v.AddOrder(CHexCoord(30, 30), CRoute::build_road, 0, 0);
+        v.AddOrder(CHexCoord(40, 40), CRoute::build_road, 0, 0);
+        v.AddOrder(CHexCoord(50, 50), CRoute::move, 0, 0);
+        check_eq(v.m_route.GetCount(), 3, "queued move: nothing was wiped by the append");
+        check(v.HasMoveStops() == FALSE, "queued move: an order queue, not a route");
+
+        // the crane is busy laying a road right now - NextOrder must refuse
+        v.m_iEvent = CVehicle::build_road;
+        v.m_cMode  = CVehicle::run;
+        check(v.NextOrder() == FALSE, "queued move: busy crane refuses the dispatch");
+        check_eq(v.m_route.GetCount(), 3, "queued move: and the queue is untouched");
+
+        // idle: the roads go first, in order
+        v.m_iEvent = CVehicle::none;
+        v.m_cMode  = CVehicle::stop;
+        check(v.NextOrder() != FALSE, "queued move: idle crane dispatches");
+        check_eq(v.m_iOrderKind, CRoute::build_road, "queued move: the FIRST road went first");
+        check_eq(v.m_hexOrder.X(), 30, "queued move: and it is the head order");
+
+        v.OrderEnded(); v.OrderComplete();
+        v.m_iEvent = CVehicle::none;    // the road run ended: the crane is idle again
+        v.m_cMode  = CVehicle::stop;
+        check(v.NextOrder() != FALSE, "queued move: second road dispatches");
+        check_eq(v.m_iOrderKind, CRoute::build_road, "queued move: second road is a road too");
+        check_eq(v.m_hexOrder.X(), 40, "queued move: and it is the second one");
+
+        v.OrderEnded(); v.OrderComplete();
+        check_eq(v.m_route.GetCount(), 1, "queued move: only the move is left");
+        v.m_iEvent = CVehicle::none;
+        v.m_cMode  = CVehicle::stop;
+        check(v.NextOrder() != FALSE, "queued move: the move dispatches last");
+        check_eq(v.m_iOrderKind, CRoute::move, "queued move: dispatched kind is move");
+        check_eq(v.m_hexOrder.X(), 50, "queued move: at the hex that was clicked");
+        check_eq(v.m_iEvent, CVehicle::none, "queued move: runs under event none");
+        check_eq(v.m_cMode, CVehicle::moving, "queued move: and it is driving");
+
+        // while driving it is NOT a give-up, so the watchdogs leave it alone
+        check(v.ArmedForOrder() == FALSE, "queued move: driving is not idle-and-armed");
+        v.m_cMode = CVehicle::stop;
+        check(v.ArmedForOrder() != FALSE, "queued move: idle and not arrived IS");
+
+        // arrival completes it and the queue is empty
+        v.m_cMode = CVehicle::moving;
+        v.ArriveMoveDest();
+        check_eq(v.m_iOrderState, CVehicle::order_done, "queued move: arrival ends the order");
+        Tick(v);
+        check_eq(v.m_route.GetCount(), 0, "queued move: the list is empty afterwards");
+        check_eq(v.m_iOrderState, CVehicle::order_none, "queued move: and nothing is running");
     }
 
     std::printf("[orders] lifecycle: %d checks, %d failures, %d traps\n", checks, failures, g_traps);

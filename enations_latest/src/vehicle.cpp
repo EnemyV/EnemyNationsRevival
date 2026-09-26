@@ -927,6 +927,10 @@ void CVehicle::ReestablishOrderIdentity() {
             break;
 
         default:
+            // CRoute::move lands here on purpose: a move has no site and no road run, so
+            // there are no crane facts to match it against. A move that was under way
+            // when the game was saved comes back stopped wherever it stood, with the
+            // entry still on the list, and the idle poll simply dispatches it again.
             return;
     }
 
@@ -1042,6 +1046,19 @@ BOOL CVehicle::NextOrder() {
             break;
         }
 
+        case CRoute::move: {
+            // exactly what a plain right-click move commits (area.cpp, case lmb_goto:
+            // TempTargetOff / SetEvent(none) / ResumeUnit / SetDestAndSfx), minus the
+            // sound and the selection housekeeping, which belong to the UI and not to a
+            // dispatch. SetDestAndSfx is SetDest, which is SetDestAndMode(.., sub).
+            // ResumeUnit runs FIRST: on an order-only list it arms nothing, but it must
+            // not undo the event this dispatch sets.
+            ResumeUnit();
+            SetEvent(none);
+            SetDestAndMode(pR->GetCoord(), sub);
+            break;
+        }
+
         default:
             TRAP();     // an order kind with no dispatch - add it to this switch
             m_iOrderState = order_none;
@@ -1062,6 +1079,16 @@ BOOL CVehicle::ArmedForOrder() const {
         case CRoute::build:      return (m_iEvent == CVehicle::build);
         case CRoute::build_road: return (m_iEvent == CVehicle::build_road);
         case CRoute::repair:     return (m_iEvent == CVehicle::repair_bldg);
+
+        // A MOVE order sends nothing on the wire, so `none` is not an in-flight window
+        // here - `none` IS the event a move runs under, the same as a plain right-click
+        // move. What makes it still under way is the MOVEMENT: travelling or in traffic
+        // (IsOnTheMove). Path searches are synchronous on this lane, so there is no
+        // pending-answer state to wait out (the threaded-pathing lane adds a
+        // !PathPending() term here). Idle and not arrived is the genuine give-up the
+        // two watchdogs act on.
+        case CRoute::move:       return ((m_iEvent == CVehicle::none) &&
+                                         (!IsOnTheMove()));
     }
     return (FALSE);
 }

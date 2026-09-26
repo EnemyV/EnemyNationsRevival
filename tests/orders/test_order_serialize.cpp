@@ -264,7 +264,7 @@ static int test_source_lint(const char *newUnit, const char *vehicleH, const cha
         std::printf("[orders] SKIP vehicle.h lint (cannot open %s)\n", vehicleH);
         return 2;
     }
-    lint_needs(s, "enum { waypoint, unload, load, build, build_road, repair };", "the order kinds");
+    lint_needs(s, "enum { waypoint, unload, load, build, build_road, repair, move };", "the order kinds");
     lint_needs(s, "static BOOL\t\tIsOrder (int iType) { return (iType >= build); }", "IsOrder");
     lint_needs(s, "m_iBldgType;", "the payload member");
     lint_needs(s, "m_hexEnd;", "the road end member");

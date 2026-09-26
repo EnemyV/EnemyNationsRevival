@@ -271,7 +271,12 @@ public:
 		// waypoint/unload/load are the 1996 movement STOPS. build (and the kinds added
 		// after it) are ORDERS: the vehicle does a job at the hex instead of only
 		// stopping there. Both kinds live on the one list, CVehicle::m_route.
-		enum { waypoint, unload, load, build, build_road, repair };
+		// move: drive to the hex, then the order is complete - a movement that waits its
+		// turn behind queued jobs (a waypoint STOP would be a route, and routes and orders
+		// do not mix on one list).
+		// APPEND ONLY: these values are serialized (CRoute::Serialize), so nothing here
+		// may be renumbered.
+		enum { waypoint, unload, load, build, build_road, repair, move };
 
 		CRoute () : m_iType (waypoint), m_iBldgType (0), m_iDir (0) {}
 		CRoute (CHexCoord & hex, int iType) { ASSERT ((0 <= iType) && (iType <= load));
@@ -280,7 +285,7 @@ public:
 		// order form: the payload names WHICH building and which way round it faces;
 		// a build_road order uses m_hex / m_hexEnd as the segment's two ends instead.
 		CRoute (CHexCoord const & hex, int iType, int iBldgType, int iDir)
-												{ ASSERT ((0 <= iType) && (iType <= repair));
+												{ ASSERT ((0 <= iType) && (iType <= move));
 													m_hex = hex; m_hexEnd = hex; m_iType = (BYTE) iType;
 													m_iBldgType = (BYTE) iBldgType; m_iDir = (BYTE) iDir; }
 		~CRoute () {}
@@ -404,6 +409,10 @@ public:
 		void					StopUnit ();
 		void					ResumeUnit ();
 		BOOL					HasMoveStops () const;		// #38: list holds a MOVEMENT stop (not just orders)
+		BOOL					HasOrders () const;			// #38: list holds a queued ORDER
+		// #38: TRUE from a dispatch until the order it started is consumed, whatever
+		// kind it is - the half of "this vehicle has a job" that m_iEvent cannot carry.
+		BOOL					IsRunningOrder () const { return (m_iOrderState != order_none); }
 
 		void					EnterBuilding ();
 		void					ExitBuilding ();

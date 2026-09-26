@@ -26,7 +26,7 @@ namespace orders {
 // ---------------------------------------------------------------------------
 // CRoute (vehicle.h)
 // ---------------------------------------------------------------------------
-enum { waypoint, unload, load, build, build_road, repair };
+enum { waypoint, unload, load, build, build_road, repair, move };
 
 inline bool IsOrder(int iType) { return iType >= build; }   // CRoute::IsOrder
 

@@ -4003,6 +4003,20 @@ BOOL CVehicle::HasMoveStops( ) const
     return ( FALSE );
 }
 
+// #38: TRUE while this list still holds a queued ORDER. The mirror of HasMoveStops, and
+// the question ShiftQueueMove has to ask before it decides a Shift-move starts a route:
+// a list of orders is a work queue, and turning it into a route deletes every one of them.
+BOOL CVehicle::HasOrders( ) const
+{
+    for ( POSITION p = m_route.GetHeadPosition( ); p != NULL; )
+    {
+        CRoute* pR = m_route.GetNext( p );
+        if ( ( pR != NULL ) && ( CRoute::IsOrder( pR->GetRouteType( ) ) ) )
+            return ( TRUE );
+    }
+    return ( FALSE );
+}
+
 void CVehicle::ResumeUnit( )
 {
 

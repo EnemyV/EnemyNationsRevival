@@ -662,6 +662,18 @@ void CVehicle::ArrivedDest() {
         }
 
         case none : {
+            // #38 MOVE ORDER: ARRIVING IS THE WHOLE JOB. A queued move runs under event
+            // `none`, exactly like the plain right-click move it is copied from, so this
+            // is where its dispatch is consumed. Above the IsMe / building tests below,
+            // which are about what a vehicle does once it has arrived, not about whether
+            // it did - a crane that arrives INSIDE a building must still finish its move.
+            // OrderEnded only sets order_done; the idle branch's OrderComplete deletes
+            // the entry by kind + hex (the hex NextOrder stored is the entry's own
+            // GetCoord, so the match always holds) and NextOrder starts the next one.
+            // A no-op when nothing was dispatched, so a plain move is unaffected.
+            if ((m_iOrderState == order_sent) && (m_iOrderKind == CRoute::move))
+                OrderEnded();
+
             // nothing to do if not me (AI does it's own thing)
             if (!GetOwner()->IsMe())
                 return;
