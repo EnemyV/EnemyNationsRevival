@@ -7071,6 +7071,23 @@ BOOL CWndArea::OnMouseWheel( UINT nFlags, short zDelta, CPoint pt )
 void CWndArea::OnKeyUp( UINT nChar, UINT nRepCnt, UINT nFlags )
 {
 
+    // Releasing Shift leaves the road / building tool; the crane stays selected and
+    // its queued orders stay queued (road cancel path, not CancelBuildUnit).
+    if ( nChar == VK_SHIFT )
+    {
+        if ( ( m_iMode == road_begin ) || ( m_iMode == road_set ) )
+        {
+            ClrRoadIcons( );
+            CancelRoadUnit( );
+        }
+        else if ( ( m_iMode == build_ready ) || ( m_iMode == build_loc ) )
+        {
+            ReleaseMouse( );   // may still be captured from a drag-place press
+            SelectOff( );
+            SetButtonState( );
+        }
+    }
+
     // handle changes in CTRL & SHIFT which changes the cursor
     if ( ( nChar == VK_CONTROL ) || ( nChar == VK_SHIFT ) )
         SetMouseState( );
