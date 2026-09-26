@@ -789,8 +789,10 @@ void CTransport::InitData() {
         // Artillery range +35% (light/med/heavy_art), computed from the RAW .dat range —
         // ReadUnitData clamps m_iRange to 10 before this ran, which silently neutered the
         // buff to 12->13 (verifier-caught; operator: "fix it"). True values now: light
-        // 7->9, med 9->12, heavy 13->17 (clamp 19). MAX_SPOTTING 31 covers it:
-        // m_iMaxRange = 17 + 17/2 + 2 = 27 <= 31. Frigate (cruiser) +25% is unaffected
+        // 7->9, med 9->12, heavy 13->17 (clamp 19). MAX_SPOTTING 31 covers it: the width
+        // table is now sized for the biggest EFFECTIVE range, i.e. including the level-4
+        // range research bonus (+62.5%, CUnit::AssignData), so
+        // m_iMaxRange = 17 + (17>>1) + (17>>3) + 2 = 29 <= 31. Frigate (cruiser) +25% is unaffected
         // by the raw switch (its own clamp 12 binds either way).
         if (pTd->m_iType == CTransportData::light_art ||
             pTd->m_iType == CTransportData::med_art ||
@@ -838,21 +840,28 @@ void CTransport::InitData() {
             CVehicle::m_iMaxRange = pTd->_GetSpottingRange();
         if (pTd->_GetRange() > CVehicle::m_iMaxRange)
             CVehicle::m_iMaxRange = pTd->_GetRange();
+        // must match the table growth below (effective range = data range + the level-4 bonus + 2)
         ASSERT_STRICT ((0 < CVehicle::m_iMaxRange) &&
-                       (CVehicle::m_iMaxRange + CVehicle::m_iMaxRange / 2 <= MAX_SPOTTING));
+                       (CVehicle::m_iMaxRange + (CVehicle::m_iMaxRange >> 1) +
+                        (CVehicle::m_iMaxRange >> 3) + 2 <= MAX_SPOTTING));
 
         ptrMmio->AscendChunk();
     }
 
     ptrMmio->AscendList();
 
-    // create the spotting range table
-    CVehicle::m_iMaxRange += CVehicle::m_iMaxRange / 2 + 2;
+    // create the spotting range table -- size it for the biggest EFFECTIVE range, not the
+    // biggest range in the data: research multiplies a unit's range/spotting, and at level 4
+    // the range bonus is +62.5% (CUnit::AssignData). heavy_art 17 -> 17+8+2+2 = 29 <= 31.
+    {
+        int iMax = CVehicle::m_iMaxRange;
+        CVehicle::m_iMaxRange = iMax + (iMax >> 1) + (iMax >> 3) + 2;
+    }
 
     ASSERT_STRICT ((0 < CVehicle::m_iMaxRange) && (CVehicle::m_iMaxRange <= MAX_SPOTTING));
     ASSERT_STRICT (CVehicle::m_apiWid == NULL);
     CVehicle::m_apiWid = new int *[CVehicle::m_iMaxRange + 1];
-    memset(CVehicle::m_apiWid, 0, sizeof(int *) * CVehicle::m_iMaxRange);
+    memset(CVehicle::m_apiWid, 0, sizeof(int *) * (CVehicle::m_iMaxRange + 1));
 
     for (int iRange = 0; iRange < CVehicle::m_iMaxRange; iRange++) {
         int *piOn = CVehicle::m_apiWid[iRange] = new int[iRange * 2 + 2];

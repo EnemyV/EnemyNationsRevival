@@ -1336,7 +1336,23 @@ void CUnit::AssignData( CUnitData const* pData )
         else                 spBonus = ( spB >> 1 ) + ( spB >> 3 ) + ( spB >> 4 ) + ( spB >> 5 ) + ( spB >> 6 ); // spot_7: +73.4375%
         m_iSpottingRange = __min( MAX_SPOTTING, spB + spBonus );
     }
-    m_iRange = GetData( )->_GetRange( ) + ( GetData( )->_GetRange( ) >> ( 4 - GetOwner( )->GetRangeLevel( ) ) );
+    // Weapon range: same shape as spotting above. range_1..3 double the bonus per level
+    // (>>3,>>2,>>1); range_4 has to DIMINISH (+62.5%) because >> ( 4 - lvl ) would shift by 0
+    // at level 4 — a full doubling — which is what ran the effective range past the width
+    // table (heavy_art 17 -> 34 with only 27 rows). See research.h range_4 / player.cpp SetRsrch.
+    {
+        int rB = GetData( )->_GetRange( );
+        int rL = GetOwner( )->GetRangeLevel( );
+        int rBonus;
+        if ( rL <= 3 ) rBonus = rB >> ( 4 - rL );             // none..range_3: /16 /8 /4 /2
+        else           rBonus = ( rB >> 1 ) + ( rB >> 3 );    // range_4: +62.5%
+        m_iRange = rB + rBonus;
+        // m_iRange indexes CVehicle::m_apiWid, whose rows are 0..m_iMaxRange-1 (CVehicle::DetermineOppo
+        // vehoppo.cpp, CBuilding::DetermineOppo unit.cpp — AssignData runs for buildings too).
+        // Debug traps so a data/tuning error is caught at the source; Release never runs off the table.
+        ASSERT( m_iRange < CVehicle::m_iMaxRange );
+        m_iRange = __min( m_iRange, CVehicle::m_iMaxRange - 1 );
+    }
     for ( int iInd = 0; iInd < CUnitData::num_attacks; iInd++ )
         m_iAttack[iInd] =
             (int)( 0.5f + GetOwner( )->GetAttackMult( ) *
@@ -6455,6 +6471,11 @@ void CUnit::Serialize( CArchive& ar )
 
         ar >> m_iSpottingRange;
         ar >> m_iRange;
+        // m_iRange is SAVED, so it is not re-derived by AssignData on load — a save written
+        // before the range_4 fix carries the un-diminished value (heavy_art 34) and would index
+        // CVehicle::m_apiWid past its last row. Re-apply the AssignData clamp on the way in.
+        // No ASSERT here: a stale save is not a code error, and the level-4 bake is fixed above.
+        m_iRange = __min( m_iRange, CVehicle::m_iMaxRange - 1 );
         for ( int iInd = 0; iInd < CUnitData::num_attacks; iInd++ ) ar >> m_iAttack[iInd];
         ar >> m_iDefense;
         ar >> m_iAccuracy;
