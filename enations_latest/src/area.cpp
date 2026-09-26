@@ -5184,9 +5184,9 @@ void CWndArea::BuildOn( int iIndex )
     ASSERT_STRICT_VALID( m_pUnit );
     ASSERT_STRICT( ( 0 <= iIndex ) && ( iIndex < theStructures.GetNumBuildings( ) ) );
 
-    // for events
-    ( (CVehicle*)m_pUnit )->SetEvent( CVehicle::none );
-    ( (CVehicle*)m_pUnit )->SetBldgType( iIndex );
+    // Picking a type arms the window; it is not a command to the crane. Placement
+    // sets the crane's event and type itself, so a crane that is building keeps
+    // its job until the player actually places.
 
     CStructureData const* pData = theStructures.GetData( iIndex );
 
