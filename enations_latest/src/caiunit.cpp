@@ -1227,6 +1227,37 @@ void CAIUnit::AttackUnit( DWORD dwTarget )
     // unit_damage alerts were re-commanding the same target ~2x/sec forever)
     m_dwTimeLastAtkCmd = theGame.GettimeGetTime( );
 
+    // Don't re-order a vehicle onto the target it is already engaging (every
+    // AssignUnits pass re-runs SeekOpfor). Only when attacking and stopped or
+    // moving: in other route modes _SetTarget also restarts a blocked unit.
+    if ( GetType( ) == CUnit::vehicle )
+    {
+        BOOL bEngaged = FALSE;
+        EnterCriticalSection( &cs );
+        CVehicle* pVeh = theVehicleMap.GetVehicle( m_dwID );
+        if ( pVeh != NULL && pVeh->GetTarget( ) != NULL )
+        {
+            CUnit* pTgt = theVehicleMap.GetVehicle( dwTarget );
+            // resolve the target as the engine's Attack() does: a vehicle
+            // not owning its hex is hit via its building, else its carrier
+            if ( pTgt != NULL && !( (CVehicle*)pTgt )->GetHexOwnership( ) )
+            {
+                CUnit* pCover = theBuildingHex._GetBuilding( ( (CVehicle*)pTgt )->GetPtHead( ) );
+                if ( pCover != NULL )
+                    pTgt = pCover;
+                else if ( ( (CVehicle*)pTgt )->GetTransport( ) != NULL )
+                    pTgt = ( (CVehicle*)pTgt )->GetTransport( );
+            }
+            if ( pTgt == NULL )
+                pTgt = theBuildingMap.GetBldg( dwTarget );
+            bEngaged = pTgt != NULL && pVeh->GetTarget( ) == pTgt && pVeh->GetEvent( ) == CVehicle::attack &&
+                       ( pVeh->GetRouteMode( ) == CVehicle::stop || pVeh->GetRouteMode( ) == CVehicle::moving );
+        }
+        LeaveCriticalSection( &cs );
+        if ( bEngaged )
+            return;
+    }
+
     CMsgAttack msg( m_dwID, dwTarget );
     theGame.PostToServer( (CNetCmd*)&msg, sizeof( CMsgAttack ) );
 }
