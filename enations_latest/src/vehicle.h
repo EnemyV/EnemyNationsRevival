@@ -403,6 +403,7 @@ public:
 		void					SetFromMsg (CMsgVehLoc * pMsg, BOOL bWorld);
 		void					StopUnit ();
 		void					ResumeUnit ();
+		BOOL					HasMoveStops () const;		// #38: list holds a MOVEMENT stop (not just orders)
 
 		void					EnterBuilding ();
 		void					ExitBuilding ();

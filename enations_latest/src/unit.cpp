@@ -3521,8 +3521,29 @@ void CVehicle::SetLocation( CHexCoord& hex, POSITION pos, int iType )
     // driven to, trips the Debug TRAP in ArrivedDest's default branch, and is deleted
     // unexecuted. This is THE movement-append entry point, so dropping the orders here
     // covers Shift-queued moves, the route window and the #42 in-flight-dest seed.
+    // ...and the caller's insert-after POSITION must survive that purge. ShiftQueueMove
+    // passes the TAIL, and on a vehicle holding queued orders the tail IS an order node:
+    // ClearOrders frees it, the walk below then runs off the end and trips the TRAP (and
+    // in Release silently AddTails). If pos names an order, re-anchor to the new tail -
+    // "insert after the last entry" still means "append after the remaining stops", and
+    // an emptied list falls into the pos == NULL / AddHead path. A pos that is NOT on
+    // this list is still foreign and still trips the TRAP below.
     if ( !CRoute::IsOrder( iType ) )
+    {
+        BOOL bPosIsOrder = FALSE;
+        for ( POSITION p = m_route.GetHeadPosition( ); ( p != NULL ) && ( !bPosIsOrder ); )
+        {
+            POSITION cur = p;
+            CRoute*  pRc = m_route.GetNext( p );
+            if ( cur == pos )
+                bPosIsOrder = ( ( pRc != NULL ) && ( CRoute::IsOrder( pRc->GetRouteType( ) ) ) );
+        }
+
         ClearOrders( );
+
+        if ( bPosIsOrder )
+            pos = m_route.GetTailPosition( );
+    }
 
     // if its a building get it's entrance
     hex.Wrap( );
@@ -3969,12 +3990,30 @@ void CVehicle::StopUnit( )
     SetDest( GetPtNext( ) );
 }
 
+// #38: TRUE while this list still holds a MOVEMENT stop. An order queue and a movement
+// route share the one list, so "non-empty" no longer means "on a route".
+BOOL CVehicle::HasMoveStops( ) const
+{
+    for ( POSITION p = m_route.GetHeadPosition( ); p != NULL; )
+    {
+        CRoute* pR = m_route.GetNext( p );
+        if ( ( pR != NULL ) && ( !CRoute::IsOrder( pR->GetRouteType( ) ) ) )
+            return ( TRUE );
+    }
+    return ( FALSE );
+}
+
 void CVehicle::ResumeUnit( )
 {
 
     CUnit::ResumeUnit( );
 
-    if ( GetRouteList( ).GetCount( ) > 0 )
+    // A list holding ONLY queued orders is not a route: arming `route` there sends the
+    // vehicle driving at the first order's hex (SetEvent's case route -> SetDestAndMode),
+    // trips ArrivedDest's default TRAP on arrival, and makes ShiftQueueMove read the
+    // event as "already routing" - which is how a Shift-move after queued roads reached
+    // SetLocation with an ORDER node as its insert-after position.
+    if ( HasMoveStops( ) )
         SetEvent( CVehicle::route );
 }
 

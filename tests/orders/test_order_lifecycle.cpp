@@ -41,13 +41,14 @@ struct CHexCoord {
     short &Y() { return yy; }
     BOOL operator==(CHexCoord const &o) const { return (xx == o.xx) && (yy == o.yy); }
     BOOL operator!=(CHexCoord const &o) const { return !(*this == o); }
+    void Wrap() {}                 // the scene map is not a torus
 };
 
 // --------------------------------------------------------------------------- route
 class CRoute {
   public:
     enum { waypoint, unload, load, build, build_road, repair };
-    CRoute(CHexCoord const &hex, int iType, int iBldgType, int iDir)
+    CRoute(CHexCoord const &hex, int iType, int iBldgType = 0, int iDir = 0)
         : m_hex(hex), m_hexEnd(hex), m_iType((BYTE)iType),
           m_iBldgType((BYTE)iBldgType), m_iDir((BYTE)iDir) {}
     CHexCoord const &GetCoord() const { return m_hex; }
@@ -76,7 +77,20 @@ struct RouteList {
         (tail ? tail->next : head) = p;
         tail = p; ++n; return p;
     }
+    POSITION AddHead(CRoute *v) {
+        Node *p = new Node{ v, nullptr, head };
+        (head ? head->prev : tail) = p;
+        head = p; ++n; return p;
+    }
+    POSITION InsertAfter(POSITION at, CRoute *v) {
+        if (at == nullptr) return AddHead(v);
+        if (at == tail) return AddTail(v);
+        Node *p = new Node{ v, at, at->next };
+        at->next->prev = p;
+        at->next = p; ++n; return p;
+    }
     POSITION GetHeadPosition() const { return head; }
+    POSITION GetTailPosition() const { return tail; }
     CRoute  *GetAt(POSITION p) const { return p->val; }
     CRoute  *GetNext(POSITION &p) const { CRoute *v = p->val; p = p->next; return v; }
     void     RemoveAt(POSITION p) {
@@ -103,6 +117,8 @@ struct CBuilding {
     int cx = 1, cy = 1; // supplementary scene footprint, default preserves existing cases
     CHexCoord const &GetHex() const { return hex; }
     BldgData const  *GetData() const { return &data; }
+    CHexCoord        GetExitHex() const { return hex; }   // SetLocation redirects onto these
+    CHexCoord        GetShipHex() const { return hex; }
 };
 
 struct BuildingHex {
@@ -138,7 +154,12 @@ struct Game {
 struct RouteWindow { int refreshes = 0; void RefreshRoute() { ++refreshes; } };
 
 // --------------------------------------------------------------------------- vehicle
-class CVehicle {
+// CVehicle::ResumeUnit chains to its base, so the scene supplies an inert one.
+struct CUnit { void ResumeUnit() {} };
+
+struct VehData { bool boat = false; BOOL IsBoat() const { return boat; } };
+
+class CVehicle : public CUnit {
   public:
     enum ORDER_STATE { order_none, order_sent, order_work, order_road, order_done };
     enum VEH_EVENT { none, route, build, build_road, attack, load, repair_self, repair_bldg };
@@ -161,6 +182,9 @@ class CVehicle {
     void TickCompletion();
     void TickIdlePoll();
     void TestRepairArrival();      // ArrivedDest's repair_bldg case, verbatim
+    void SetLocation(CHexCoord &hex, POSITION pos, int iType);   // unit.cpp
+    BOOL HasMoveStops() const;                                   // unit.cpp
+    void ResumeUnit();                                           // unit.cpp
 
     // ---- scene ----
     RouteList    m_route;
@@ -188,7 +212,10 @@ class CVehicle {
     Owner   *GetOwner() const { return owner; }
     POSITION GetRoutePos() const { return m_pos; }
     void     SetRoutePos(POSITION p) { m_pos = p; }
-    void     ResumeUnit() { ++resumes; }
+    VehData   m_data;
+    VehData  *GetData() const { return const_cast<VehData *>(&m_data); }
+    RouteList &GetRouteList() { return m_route; }
+    RouteList const &GetRouteList() const { return m_route; }
     void     SetEvent(int e) { m_iEvent = e; }
     void     SetEventAndRoute(int e, int m) { m_iEvent = e; m_cMode = m; }
     void     SetBuilding(CHexCoord const &h, int t, int d) { m_hexBldg = h; m_iBldgType = t; m_iBuildDir = d; }
@@ -246,6 +273,10 @@ void CVehicle::OrderArrivalFailed() {}
 #endif
 #ifdef MISSING_CheckOrderStall
 void CVehicle::CheckOrderStall() {}
+#endif
+#ifdef MISSING_HasMoveStops
+// the pre-fix rule: any non-empty list counted as a route
+BOOL CVehicle::HasMoveStops() const { return (m_route.GetCount() > 0); }
 #endif
 
 // BuildBldgDest picks the footprint hex closest to the crane. The scene keeps the order's
@@ -622,6 +653,68 @@ int main() {
         check_eq(w.m_iEvent, CVehicle::none, "repair arrival: a finished bridge goes idle too");
         check_eq(w.m_iOrderState, CVehicle::order_done, "repair arrival: and ends the order");
         theBridgeHex.unit = nullptr;
+    }
+
+    // ---------------------------------------------------------------- the Shift-move
+    // after queued roads (operator dump, Debug int3 in SetLocation).
+    //
+    // ResumeUnit used to arm `route` on ANY non-empty list, so a crane holding only
+    // queued ORDERS was "routing": ShiftQueueMove then took its append path, read the
+    // list TAIL - an order node - and handed it to SetLocation, whose ClearOrders freed
+    // it before the walk looked for it. The walk fell off the end and hit the TRAP.
+    {
+        theBuildingHex.live.clear();
+        int trapsBefore = g_traps;
+
+        CVehicle v; v.owner = &g_me;
+        v.AddOrder(CHexCoord(30, 30), CRoute::build_road, 0, 0);
+        v.AddOrder(CHexCoord(31, 31), CRoute::build, 4, 0);
+
+        v.ResumeUnit();
+        check_eq(v.m_iEvent, CVehicle::none, "order-only list: ResumeUnit does NOT arm route");
+        check(v.HasMoveStops() == FALSE, "order-only list: no movement stop on it");
+
+        // ...and even reached that way, the append must survive the order purge
+        CHexCoord hexWp(12, 12);
+        v.SetLocation(hexWp, v.m_route.GetTailPosition(), CRoute::waypoint);
+        check_eq(g_traps - trapsBefore, 0, "shift-move after orders: no TRAP");
+        check_eq(v.m_route.GetCount(), 1, "shift-move after orders: the orders are gone");
+        check_eq(v.m_route.GetAt(v.m_route.GetHeadPosition())->GetRouteType(),
+                 CRoute::waypoint, "shift-move after orders: the waypoint is what is left");
+        check_eq(v.m_route.GetAt(v.m_route.GetHeadPosition())->GetCoord().X(), 12,
+                 "shift-move after orders: and it is the clicked hex");
+        check(v.HasMoveStops() != FALSE, "shift-move after orders: now it IS a route");
+        v.ResumeUnit();
+        check_eq(v.m_iEvent, CVehicle::route, "movement stop: ResumeUnit arms route again");
+    }
+
+    // A waypoint already on the list keeps the ordinary insert-after path: the new stop
+    // goes AFTER the tail, the order behind it is dropped, and nothing traps.
+    {
+        theBuildingHex.live.clear();
+        int trapsBefore = g_traps;
+
+        CVehicle v; v.owner = &g_me;
+        CHexCoord hexA(5, 5);
+        v.SetLocation(hexA, nullptr, CRoute::waypoint);
+        v.AddOrder(CHexCoord(30, 30), CRoute::build_road, 0, 0);
+
+        CHexCoord hexB(6, 6);
+        v.SetLocation(hexB, v.m_route.GetTailPosition(), CRoute::waypoint);
+        check_eq(g_traps - trapsBefore, 0, "append after a waypoint: no TRAP");
+        check_eq(v.m_route.GetCount(), 2, "append after a waypoint: two stops");
+        POSITION p = v.m_route.GetHeadPosition();
+        check_eq(v.m_route.GetNext(p)->GetCoord().X(), 5, "append after a waypoint: first stop kept");
+        check_eq(v.m_route.GetNext(p)->GetCoord().X(), 6, "append after a waypoint: new stop is last");
+    }
+
+    // (c) dispatch: NextOrder's own ResumeUnit must not pre-empt the order's event.
+    {
+        theBuildingHex.live.clear();
+        CVehicle v; v.owner = &g_me;
+        v.AddOrder(CHexCoord(30, 30), CRoute::build_road, 0, 0);
+        check(v.NextOrder() != FALSE, "order-only list: dispatches");
+        check_eq(v.m_iEvent, CVehicle::build_road, "order-only list: the ORDER's event is armed");
     }
 
     std::printf("[orders] lifecycle: %d checks, %d failures, %d traps\n", checks, failures, g_traps);
