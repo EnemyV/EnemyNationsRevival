@@ -211,8 +211,6 @@ void CPlayer::ctor( )
 
     m_pXferToClient = NULL;
 
-    m_bPauseMsgs = FALSE;
-
     m_iBuiltBldgsHave = 1;
     m_bPlacedRocket   = FALSE;
     m_bSpectator      = FALSE;
@@ -1946,6 +1944,7 @@ void CGame::ctor( )
 
     m_uTimer     = 0;
     m_bUnPauseMe = m_bShouldPause = m_bShouldNetPause = m_bPauseMsgs = m_bMessages = m_bAnimate = m_bOperate = FALSE;
+    m_aPausedNet.clear( );
     m_dwElapsedTime                                                                                  = 0;
     m_dwOperTimeLast = m_dwFrameTimeLast = timeGetTime( );
     m_dwFramesElapsed = m_dwOpersElapsed = m_dwOperSecElapsed = m_dwOperSecFrames;
@@ -2210,6 +2209,71 @@ void CGame::SetMessagesPaused(BOOL bPause )
         m_uTimer = 0;
     }
     theGame.ClearNetPause();
+}
+
+// Host: connection idNet sent pause_messages. We stay paused while ANY connection
+// has a pause outstanding. The key is the sender's net id (the vdmplay msgFrom),
+// never its plyr num: a Load Network Game joiner's plyr num changes between its
+// pause and its unpause, which left one flag set forever and the host paused for
+// good (joiner stopped getting veh_comp_loc).
+void CGame::NetPauseRequest( VPPLAYERID idNet, BOOL bPause )
+{
+
+    ASSERT( m_bServer );
+
+    std::vector<VPPLAYERID>::iterator it = std::find( m_aPausedNet.begin( ), m_aPausedNet.end( ), idNet );
+    if ( bPause )
+    {
+        // net id 0 is never a live connection, so nothing could ever unpause it
+        ASSERT( idNet != 0 );
+        if ( ( idNet != 0 ) && ( it == m_aPausedNet.end( ) ) )
+            m_aPausedNet.push_back( idNet );
+        SetMessagesPaused( TRUE );
+        return;
+    }
+
+    if ( it != m_aPausedNet.end( ) )
+        m_aPausedNet.erase( it );
+
+    // any other connection still paused - wait for the rest. NOT a fault (it was a
+    // TRAP, which froze the host at the start of the first 3-client MP game): with
+    // several clients the pause windows overlap routinely, e.g. at game start.
+    if ( !m_aPausedNet.empty( ) )
+    {
+        if ( theApp.m_pLogFile != NULL )
+            theApp.Log( "Pause: staying paused, another player still paused" );
+        return;
+    }
+
+    // everyone says ok
+    if ( theApp.m_pLogFile != NULL )
+    {
+        SYSTEMTIME st;
+        char       sBuf[200];
+        GetLocalTime( &st );
+        sprintf( sBuf, "Pause: Off at %d:%d", st.wMinute, st.wSecond );
+        theApp.Log( sBuf );
+    }
+    SetMessagesPaused( FALSE );
+}
+
+// Host: connection idNet is gone (left, taken over by the AI, or removed). Its
+// outstanding pause goes with it; resume if it was the last one holding us.
+void CGame::NetPauseDrop( VPPLAYERID idNet )
+{
+
+    if ( ( !m_bServer ) || ( idNet == 0 ) )
+        return;
+
+    std::vector<VPPLAYERID>::iterator it = std::find( m_aPausedNet.begin( ), m_aPausedNet.end( ), idNet );
+    if ( it == m_aPausedNet.end( ) )
+        return;
+
+    // was TRAP (untested 1996 path): a joiner whose link drops mid-load does this
+    EN_TRAP_REMOVED( "NetPauseDrop: a connection left with a pause outstanding - dropped" );
+    m_aPausedNet.erase( it );
+    if ( m_aPausedNet.empty( ) )
+        SetMessagesPaused( FALSE );
 }
 
 extern void EnMpDiagLog( const char* fmt, ... );   // [mp-plyr] trace (netapi.cpp)
@@ -2610,6 +2674,8 @@ void CGame::AiTakeOverPlayer( CPlayer* pPlr, BOOL bStartThread, BOOL bShowDlg )
                  pPlr->GetPlyrNum( ), pPlr->GetName( ), ( _GetMe( ) == pPlr ) ? 1 : 0,
                  (int)m_bServer, (int)bStartThread );
 
+    const VPPLAYERID idNet = pPlr->GetNetNum( );   // its pause is keyed by this
+
     pPlr->SetAI( TRUE );
     pPlr->SetLocal( m_bServer );
     pPlr->SetState( CPlayer::ready );
@@ -2619,24 +2685,8 @@ void CGame::AiTakeOverPlayer( CPlayer* pPlr, BOOL bStartThread, BOOL bShowDlg )
 
     if ( m_bServer )
     {
-        if ( pPlr->m_bPauseMsgs )
-        {
-            TRAP( );
-            pPlr->m_bPauseMsgs = FALSE;
-            POSITION pos;
-            for ( pos = theGame.GetAll( ).GetHeadPosition( ); pos != NULL; )
-            {
-                CPlayer* pPlr = theGame.GetAll( ).GetNext( pos );
-                // if any player says pause - we pause
-                if ( pPlr->m_bPauseMsgs )
-                {
-                    TRAP( );
-                    goto NoUnPause;
-                }
-            }
-            SetMessagesPaused(FALSE);
-        }
-    NoUnPause:
+        // undo its pausing (OnMsgLeave already did, keyed by the same net id)
+        NetPauseDrop( idNet );
 
         // tell them
         CDlgSaveMsg dlgMsg( CWnd::FromHandle( theApp.m_wndMain.m_hWnd ) );
@@ -2677,7 +2727,14 @@ void CGame::AiReleasePlayer( CPlayer* pPlr, int iNetNum, const char* pName, BOOL
 
     if ( m_bServer )
     {
-        ::AiKillPlayer( pPlr->GetAiHdl( ) );
+        // the player is human now: it must not keep a handle to a manager that
+        // is going away (AiTakeOverPlayer would later hand it the freed one)
+        DWORD_PTR dwAiID = pPlr->GetAiHdl( );
+        pPlr->SetAiHdl( 0 );
+        if ( bPlaying )
+            ::AiKillPlayer( dwAiID );    // its running thread deletes it (Manage -> AiDeletePlayer)
+        else
+            ::AiDeletePlayer( dwAiID );  // StartGame: its thread was never started, so nothing else ever would
         pPlr->m_iNumAiGpfs = 0;
 
         // CDlgPlyrList removed (Phase 2d) — SDL2PlayerListDialog refreshes on open.
@@ -2760,28 +2817,8 @@ void CGame::RemovePlayer( CPlayer* pPlr )
     // we're dead
     pPlr->SetState( CPlayer::dead );
 
-    // undo pausing
-    if ( m_bServer )
-    {
-        if ( pPlr->m_bPauseMsgs )
-        {
-            TRAP( );
-            pPlr->m_bPauseMsgs = FALSE;
-            POSITION pos;
-            for ( pos = theGame.GetAll( ).GetHeadPosition( ); pos != NULL; )
-            {
-                CPlayer* pPlr = theGame.GetAll( ).GetNext( pos );
-                // if any player says pause - we pause
-                if ( pPlr->m_bPauseMsgs )
-                {
-                    TRAP( );
-                    goto NoUnPause;
-                }
-            }
-            SetMessagesPaused(FALSE);
-        }
-    }
-NoUnPause:
+    // undo pausing (keyed by its connection; no-op for the AI and the host)
+    NetPauseDrop( pPlr->GetNetNum( ) );
 
     // CDlgPlyrList removed (Phase 2d) — SDL2PlayerListDialog refreshes on open.
     // (CDlgRelations RemovePlayer removed)
@@ -2923,8 +2960,14 @@ void CGame::ProcessAllMessages( )
     if ( !m_bMessages )
         return;
 
+    // A start deferred by the client waiting room (CmdStart / start_loaded_game,
+    // netapi.cpp) runs from the join flow once the lobby closes. Whatever the
+    // host queued behind it must wait for that start, as it did in 1996 when
+    // the start ran in-line.
+    extern bool g_bClientLobbyWaiting, g_bClientStartReceived;
+
     // process all messages so we have none pending
-    while ( TRUE )
+    while ( !( g_bClientLobbyWaiting && g_bClientStartReceived ) )
     {
         EnterCriticalSection( &cs );
         if (m_messagePointerList.GetCount( ) <= 0 )

@@ -424,6 +424,9 @@ void EnMpDiagLog( const char* fmt, ... )
 static void OnMsgLeave( VPPLAYERID id )
 {
 
+    // the connection is gone - so is any pause it asked the host for
+    theGame.NetPauseDrop( id );
+
     // will be NULL if we deleted it
     CPlayer* pPlr = theGame._GetPlayer( id );
     if ( pPlr == NULL )
@@ -1513,28 +1516,42 @@ static void CmdEnumPlyrs( int iNetNum )
     }
 }
 
-static void CmdPlyrJoin( CNetPlyrJoin* /*pMsg*/ )
+static void CmdPlyrJoin( CNetPlyrJoin* pMsg )
 {
-    // CDlgPickPlayer removed (Phase 2d). The MFC load-join path that received
-    // these messages is dead; the SDL2 SDL2PickPlayerDialog populates its own
-    // listbox from theGame state via CNetPlyrJoin sent earlier in the handshake.
+    // A saved player the host offers us (reply to our CNetEnumPlyrs). The 1996
+    // handler added it to CDlgPickPlayer's listbox; SDL2PickPlayerDialog reads
+    // the same data from CJoinMulti::m_loadPlyrs.
     if ( ( theApp.m_pCreateGame == NULL ) || ( theGame.AmServer( ) ) ||
          ( theApp.m_pCreateGame->m_iTyp != CCreateBase::load_join ) )
     {
         TRAP( );
         return;
     }
+
+    std::vector<CNetPlyrJoin*>& lst = ( (CJoinMulti*)theApp.m_pCreateGame )->m_loadPlyrs;
+    for ( CNetPlyrJoin*& pOld : lst )
+        if ( pOld->m_iPlyrNum == pMsg->m_iPlyrNum )
+        {
+            delete[] (char*)pOld;
+            pOld = CNetPlyrJoin::Alloc( pMsg );
+            return;
+        }
+    lst.push_back( CNetPlyrJoin::Alloc( pMsg ) );
 }
 
 static void CmdSelectPlyr( CNetSelectPlyr* pMsg )
 {
 
-    CPlayer* pPlrWasMe = theGame.GetPlayer( pMsg->m_iNetNum );
-    CPlayer* pPlr      = theGame.GetPlayerByPlyr( pMsg->m_iPlyrNum );
-    if ( pPlr->GetState( ) != CPlayer::ready )
+    // the asker must still be an unassigned joiner (m_lstLoad) and the saved
+    // player must exist and be free
+    CPlayer* pPlrWasMe = theGame._GetPlayer( pMsg->m_iNetNum );
+    CPlayer* pPlr      = theGame._GetPlayerByPlyr( pMsg->m_iPlyrNum );
+    if ( ( pPlrWasMe != NULL ) && ( theGame.m_lstLoad.Find( pPlrWasMe, NULL ) != NULL ) && ( pPlr != NULL ) &&
+         ( pPlr->GetState( ) != CPlayer::ready ) )
     {
         theGame.LoadToPlyr( pPlrWasMe, pPlr );
         pPlr->SetState( CPlayer::ready );
+        pPlr->m_iPerInit = 0;   // claimed; CmdInitDone sets 100 once the save is loaded there
         theApp.m_pCreateGame->UpdateBtns( );
 
         pMsg->ToOk( );
@@ -1560,13 +1577,16 @@ static void CmdSelectPlyr( CNetSelectPlyr* pMsg )
         return;
     }
 
-    TRAP( );
+    // m_iNetNum is a net number; PostToClient( int ) takes a PLAYER number.
     pMsg->ToNotOk( );
-    theGame.PostToClient( pMsg->m_iNetNum, pMsg, sizeof( CNetSelectPlyr ) );
+    theNet.Send( pMsg->m_iNetNum, pMsg, sizeof( CNetSelectPlyr ) );
 }
 
 static void CmdSelectOk( CNetSelectPlyr* )
 {
+
+    if ( theApp.m_pCreateGame->m_iTyp == CCreateBase::load_join )
+        ( (CJoinMulti*)theApp.m_pCreateGame )->m_iPickReply = 1;
 
     theApp.m_pCreateGame->ClosePick( );
     SDL2CreateStatus* pDlg = theApp.m_pCreateGame->GetDlgStatus( );
@@ -1580,23 +1600,22 @@ static void CmdSelectOk( CNetSelectPlyr* )
 
 static void CmdSelectNotOk( CNetSelectPlyr* )
 {
-    TRAP( );
-
     if ( theApp.m_pCreateGame->m_iTyp != CCreateBase::load_join )
         return;
 
-    // CDlgPickPlayer removed (Phase 2d) — the MFC m_dlgWait
-    // (CDlgPickWait) modal that gated re-entry is gone; SDL2 join
-    // flow re-enables itself when its DoModal loop resumes.
+    // SDL2PickPlayerDialog re-enables its list when it sees this
+    ( (CJoinMulti*)theApp.m_pCreateGame )->m_iPickReply = -1;
 }
 
-static void CmdPlayerTaken( CNetSelectPlyr* /*pMsg*/ )
+static void CmdPlayerTaken( CNetSelectPlyr* pMsg )
 {
-    // CDlgPickPlayer removed (Phase 2d). The MFC handler walked the dialog's
-    // listbox to mark the taken player and refresh button state; the SDL2
-    // join flow re-queries theGame state from its own DoModal loop.
-    if ( theApp.m_pCreateGame == NULL ) return;
-    TRAP( );
+    // someone claimed a saved player - grey it out in our pick list
+    if ( ( theApp.m_pCreateGame == NULL ) || ( theApp.m_pCreateGame->m_iTyp != CCreateBase::load_join ) )
+        return;
+
+    for ( CNetPlyrJoin* pData : ( (CJoinMulti*)theApp.m_pCreateGame )->m_loadPlyrs )
+        if ( pData->m_iPlyrNum == pMsg->m_iPlyrNum )
+            pData->m_bAvail = FALSE;
 }
 
 // sending the game file to this player
@@ -1699,6 +1718,10 @@ static void CmdPlayer( CNetPlayer* pNp )
     {
         POSITION pos = theGame.GetAll( ).Find( pPlr );
         theGame.GetAll( ).RemoveAt( pos );
+        // and out of the AI list too (a saved AI a human claimed is still in it);
+        // it goes back below only if this message says it is AI
+        if ( ( pos = theGame.GetAi( ).Find( pPlr ) ) != NULL )
+            theGame.GetAi( ).RemoveAt( pos );
     }
     else
     {
@@ -1870,7 +1893,10 @@ static void CmdInitDone( CNetInitDone* pMsg )
     if ( theApp.m_pCreateGame->m_iTyp != CCreateBase::load_multi )
         pPlyr->SetState( CPlayer::wait );
     else
+    {
         pPlyr->SetState( CPlayer::ready );
+        pPlyr->m_iPerInit = 100;   // the save is loaded there - the host lobby may start
+    }
 
     POSITION pos;
     for ( pos = theGame.GetAll( ).GetTailPosition( ); pos != NULL; )
@@ -3901,6 +3927,13 @@ void CGame::ProcessMessage(CNetCmd* pCmd )
         break;
 
     case CNetCmd::start_loaded_game:
+        // Same deferral as CmdStart: a joiner in its waiting room starts the
+        // loaded game from the join flow, after the modal lobby has closed.
+        if ( g_bClientLobbyWaiting )
+        {
+            g_bClientStartReceived = true;
+            break;
+        }
         theGame.StartGame( FALSE );
         break;
 
@@ -3976,54 +4009,21 @@ void CGame::ProcessMessage(CNetCmd* pCmd )
             break;
         }
 
-        CPlayer* pPlr = theGame.GetPlayerByPlyr( pMsg->m_iPlyrNum );
-        // if pausing us, set that player to paused and pause
-        if ( pMsg->m_bPause )
-        {
-            if ( theApp.m_pLogFile != NULL )
-            {
-                SYSTEMTIME st;
-                char       sBuf[200];
-                GetLocalTime( &st );
-                sprintf( sBuf, "Pause: On at %d:%d", st.wMinute, st.wSecond );
-                theApp.Log( sBuf );
-            }
-            pPlr->m_bPauseMsgs = TRUE;
-            SetMessagesPaused(TRUE);
-            break;
-        }
-
-        // mark that player as un-paused and then check all to see if can restart
-        pPlr->m_bPauseMsgs = FALSE;
-        POSITION pos;
-        for ( pos = theGame.GetAll( ).GetHeadPosition( ); pos != NULL; )
-        {
-            CPlayer* pPlr = theGame.GetAll( ).GetNext( pos );
-            // if any player says pause - we pause
-            if ( pPlr->m_bPauseMsgs )
-            {
-                // NOT a fault (was TRAP): with several clients, pause windows overlap
-                // routinely — e.g. game start, where every joiner pauses while it builds
-                // the world and unpauses as it finishes. First unpause arriving while a
-                // slower client is still paused lands here by design: stay paused and
-                // wait for the rest. (The TRAP froze the host in the debugger mid-start
-                // of the first 3-client MP game, 2026-07-01.)
-                if ( theApp.m_pLogFile != NULL )
-                    theApp.Log( "Pause: staying paused, another player still paused" );
-                return;
-            }
-        }
-
-        // everyone says ok
-        if ( theApp.m_pLogFile != NULL )
+        // Host: the request belongs to the CONNECTION it came in on - msgFrom, the
+        // sender's vdmplay net id stamped by vpSendData. m_iPlyrNum is not usable
+        // as the key: a Load Network Game joiner sends it first as its lobby
+        // number (or 0 -> GetPlayerByPlyr(0) = the host itself) and later as the
+        // saved player it claimed, so a pause and its unpause named different
+        // players and the host stayed paused for the rest of the game.
+        if ( pMsg->m_bPause && ( theApp.m_pLogFile != NULL ) )
         {
             SYSTEMTIME st;
             char       sBuf[200];
             GetLocalTime( &st );
-            sprintf( sBuf, "Pause: Off at %d:%d", st.wMinute, st.wSecond );
+            sprintf( sBuf, "Pause: On at %d:%d", st.wMinute, st.wSecond );
             theApp.Log( sBuf );
         }
-        SetMessagesPaused(FALSE);
+        theGame.NetPauseRequest( pMsg->msgFrom, pMsg->m_bPause );
         break;
     }
 

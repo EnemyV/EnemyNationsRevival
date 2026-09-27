@@ -83,6 +83,16 @@ public:
 		};
 		std::vector<SessionEntry> m_sessions;
 
+		// Load join (joining a saved game, m_iTyp == load_join). The host answers
+		// our CNetEnumPlyrs with one CNetPlyrJoin per saved player (CmdPlyrJoin
+		// keeps a copy here, CmdPlayerTaken clears m_bAvail); SDL2PickPlayerDialog
+		// lists them. m_iPickReply is the host's answer to our CNetSelectPlyr:
+		// 0 none yet, 1 cmd_select_ok, -1 cmd_select_not_ok. m_bGameLoaded is set
+		// by GameLoaded once the save file has arrived and been read.
+		std::vector<CNetPlyrJoin *> m_loadPlyrs;
+		int		m_iPickReply = 0;
+		BOOL	m_bGameLoaded = FALSE;
+
 		void	OnSessionEnum (LPCVPSESSIONINFO pSi);
 		void	OnSessionClose (LPCVPSESSIONINFO pSi);
 

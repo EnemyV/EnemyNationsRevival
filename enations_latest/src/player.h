@@ -837,8 +837,6 @@ class CPlayer : public CObject
 
     CVPTransfer* m_pXferToClient;  // from server to this player
 
-    BOOL m_bPauseMsgs;
-
     BOOL m_bMsgDead;  // displayed message it is dead
 
     int  m_iBuiltBldgsHave;
@@ -1213,6 +1211,14 @@ class CGame : public CObject
     void SetMessagesPaused( BOOL bPause );
     void ResetPauseTimer( ) { m_uTimer = 0; }
 
+    // Host: remote connections that asked us to stop high-volume sends
+    // (pause_messages). Keyed by the sender's vdmplay net id, which is fixed for
+    // the life of its connection; its plyr num is not (a Load Network Game joiner
+    // goes lobby number -> claimed saved player between a pause and its unpause).
+    void NetPauseRequest( VPPLAYERID idNet, BOOL bPause );
+    void NetPauseDrop( VPPLAYERID idNet );   // that connection is gone
+    void NetPauseClearAll( ) { m_aPausedNet.clear( ); }
+
     BOOL ShouldPause( ) const { return m_bShouldPause; }
     void SetShouldPause( ) { m_bShouldPause = TRUE; }
     void ClearShouldPause( ) { m_bShouldPause = FALSE; }
@@ -1451,6 +1457,7 @@ class CGame : public CObject
     BOOL m_bShouldNetPause;   // net told me to stop posting
     BOOL m_bUnPauseMe;  // unpause me next oppo
     UINT m_uTimer;
+    std::vector<VPPLAYERID> m_aPausedNet;  // host: net ids with a pause outstanding
 
     BOOL  m_bMessages;        // process messages
     BOOL  m_bAnimate;         // animate the screen

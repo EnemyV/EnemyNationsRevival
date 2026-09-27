@@ -1205,14 +1205,7 @@ void CWndMain::OnTimer(UINT nIDEvent)
 		// only stop messages for 10 seconds max
 		case 119 :
 			if ( theGame.AmServer () )
-				{
-				POSITION pos;
-				for (pos = theGame.GetAll ().GetHeadPosition(); pos != NULL; )
-					{
-					CPlayer *pPlr = theGame.GetAll().GetNext (pos);
-					pPlr->m_bPauseMsgs = FALSE;
-					}
-				}
+				theGame.NetPauseClearAll ();
               theGame.ResetPauseTimer();
               theGame.SetMessagesPaused(FALSE);
 

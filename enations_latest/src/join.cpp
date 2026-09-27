@@ -78,6 +78,10 @@ void CJoinMulti::CloseAll( )
 
     ClosePick( );
 
+    for ( CNetPlyrJoin* pData : m_loadPlyrs )
+        delete[] (char*)pData;
+    m_loadPlyrs.clear( );
+
     CCreateNewBase::CloseAll( );
     CCreateLoadBase::CloseAll( );
     CMultiBase::CloseAll( );
@@ -207,7 +211,7 @@ void CJoinMulti::GameLoaded( void* pBuf, int iLen )
     // decompress the file
     int   iDecompLen;
     void* pDeComp = CoDec::Decompress( pBuf, iLen, iDecompLen );
-    free( pBuf );
+    delete[] (char*)pBuf;   // CmdGetFile allocated it with new char[]
 
     // put it in a CMemFile
     CMemFile filMem;
@@ -259,6 +263,16 @@ void CJoinMulti::GameLoaded( void* pBuf, int iLen )
             }
         }
 
+        // Serialize put every player the SAVE had as AI in the AI list. A player
+        // this join made human (above all us, when we claimed a saved AI) must
+        // leave it, or PostToAllAi keeps routing AI traffic to it (ASSERT IsAI).
+        if ( !pPlr->IsAI( ) )
+        {
+            POSITION posAi = theGame.GetAi( ).Find( pPlr, NULL );
+            if ( posAi != NULL )
+                theGame.GetAi( ).RemoveAt( posAi );
+        }
+
         // new list box
         if ( pPlr->GetNetNum( ) != 0 )
             m_wndPlyrList.AddPlayer( pPlr );
@@ -274,6 +288,7 @@ void CJoinMulti::GameLoaded( void* pBuf, int iLen )
 
     CNetInitDone msg( theGame.GetMe( ) );
     theGame.PostToServer( &msg, sizeof( msg ) );
+    m_bGameLoaded = TRUE;
 
     // done
     pDlg = theApp.m_pCreateGame->GetDlgStatus( );
