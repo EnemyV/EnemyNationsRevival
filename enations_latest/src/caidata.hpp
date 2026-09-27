@@ -136,6 +136,7 @@ public:
 
 	// specific location from the map
 	int GetCHexData( CAIHex *pHex );
+	int GetCHexDataRun( CAIHex *aHex, int n );	// n hexes, one cs hold
 	int GetCHexTerrain( CAIHex *pHex );
 
 	// get range in distance between locations

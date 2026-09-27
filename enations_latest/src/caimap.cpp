@@ -354,7 +354,18 @@ void CAIMap::UpdateMap( CAIMsg *pMsg )
 	m_iLand = 0;
 	m_iLake = 0;
 
-	for( int i=0; i<m_iMapSize; ++i )
+	// Rescan in chunks: ONE yield (outside any lock) and ONE cs hold per chunk
+	// instead of per hex. With ~20 AI threads rescanning at once the per-hex
+	// yield/lock made a pass take tens of seconds (ai.msg.proc -> 0); per chunk
+	// it is ~1k of each per 65k-hex pass. Behaviour is unchanged: same hexes,
+	// same order, same ConvertStatus/count updates, all done OUTSIDE the lock.
+	// 64: one hold fills 64 hexes (a few us) - short next to the main thread's
+	// per-frame use of cs - while cutting yields and lock trips 64x.
+	const int kScanChunk = 64;
+	CAIHex aChunk[kScanChunk];
+	int    aOff[kScanChunk];
+
+	for( int i0=0; i0<m_iMapSize; i0 += kScanChunk )
 	{
 		// this throws an exception because it is executing
 		// from the game and not from a thread when called
@@ -363,33 +374,46 @@ void CAIMap::UpdateMap( CAIMsg *pMsg )
 #if THREADS_ENABLED
 	myYieldThread();
 #endif
-		m_pMapUtil->OffsetToXY( i, &aiHex.m_iX, &aiHex.m_iY );
-		if( aiHex.m_iX < 0 || aiHex.m_iX >= (int)m_wCols ||
-			aiHex.m_iY < 0 || aiHex.m_iY >= (int)m_wRows )
-			continue;
+		const int iEnd = ( m_iMapSize - i0 < kScanChunk ) ? m_iMapSize : i0 + kScanChunk;
+		int n = 0;
+		for( int i=i0; i<iEnd; ++i )
+		{
+			CAIHex& rHex = aChunk[n];
+			m_pMapUtil->OffsetToXY( i, &rHex.m_iX, &rHex.m_iY );
+			if( rHex.m_iX < 0 || rHex.m_iX >= (int)m_wCols ||
+				rHex.m_iY < 0 || rHex.m_iY >= (int)m_wRows )
+				continue;
+			aOff[n++] = i;
+		}
 
-		// get location from game data
-		pGameData->GetCHexData(&aiHex);
+		// get location from game data (one cs hold for the whole chunk)
+		pGameData->GetCHexDataRun( aChunk, n );
 
-		// help out goalmgr by counting ocean/land
-		if( aiHex.m_cTerrain == CHex::ocean )
-			++m_iOcean;
-		else if( aiHex.m_cTerrain == CHex::lake )
-			++m_iLake;
-		else
-			++m_iLand;
+		for( int k=0; k<n; ++k )
+		{
+			CAIHex& rHex = aChunk[k];
+			const int i = aOff[k];
 
-		// determine status word for that location
-		wStatus = m_pwaMap[i];
+			// help out goalmgr by counting ocean/land
+			if( rHex.m_cTerrain == CHex::ocean )
+				++m_iOcean;
+			else if( rHex.m_cTerrain == CHex::lake )
+				++m_iLake;
+			else
+				++m_iLand;
 
-		// examine location data and update status
-		wStatus = m_pMapUtil->ConvertStatus( &aiHex, wStatus );
+			// determine status word for that location
+			wStatus = m_pwaMap[i];
 
-		// update map array with status
-		m_pwaMap[i] = wStatus;
+			// examine location data and update status
+			wStatus = m_pMapUtil->ConvertStatus( &rHex, wStatus );
 
-		if( bBuildBase && ( wStatus & ( MSW_AI_BUILDING | MSW_OPFOR_BUILDING ) ) )
-			s_aiBldgOffsets.push_back( i );
+			// update map array with status
+			m_pwaMap[i] = wStatus;
+
+			if( bBuildBase && ( wStatus & ( MSW_AI_BUILDING | MSW_OPFOR_BUILDING ) ) )
+				s_aiBldgOffsets.push_back( i );
+		}
 	}
 
 	if( bBuildBase )
