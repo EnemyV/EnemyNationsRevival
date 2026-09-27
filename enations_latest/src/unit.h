@@ -519,6 +519,26 @@ class CUnit : public CUnitTile
         // 2026-08-02; verified against the serialize code before rewriting it.)
         alt_oil         = 0x0800,
 
+        // Per-material auto-stock veto, one bit per HAULABLE material, in the order
+        // given by CBuilding's kBlockableMat table (unit.cpp): lumber, steel, copper,
+        // oil, coal, iron. SET = "the auto-router must not bring me this", so a zeroed
+        // flags word -- every existing building, and every building loaded out of a
+        // save written before this existed -- means "accept everything", i.e. exactly
+        // the old behaviour. That is what lets this ship with NO save-format bump:
+        // CUnit::Serialize already writes the flags word as a full DWORD
+        // (new_unit.cpp), so these bits round-trip and read back 0 from old saves.
+        // Only warehouses and the rocket expose the checkboxes (CanBlockMaterials).
+        no_stock_base   = 0x1000,
+        no_stock_mask   = 0x3F000,    // 6 materials, 0x1000 .. 0x20000
+
+        // Player has taken this building OUT of the automatic truck network entirely:
+        // the router will neither deliver to it nor collect from it, and it stops
+        // contributing surplus to warehouse demand. Manual routes and hand-loading are
+        // unaffected. Same inverted sense as the veto bits above -- SET = excluded --
+        // so a zeroed flags word (and therefore every older save) means "in the
+        // network", which is the pre-existing behaviour.
+        no_autoroute    = 0x40000,
+
         // The OR of every flag above -- kept last, derived, so CUnit::AssertValid's
         // flag-mask check (new_unit.cpp) can assert against ~all_flags instead of a
         // hand-written mask that silently goes stale each time a flag is added
@@ -527,7 +547,7 @@ class CUnit : public CUnitTile
         // assert -- if a new flag is added, add it here and the assert stays correct.
         all_flags       = dying | selected | stopped | event | destroying | scenario
                         | repair_stop | abandoned | dead | unit_set_damage | show_bldg
-                        | alt_oil
+                        | alt_oil | no_stock_mask | no_autoroute
     };
     void         SetFlag( UNIT_FLAGS fl ) { m_unitFlags = (UNIT_FLAGS)( (int)m_unitFlags | (int)fl ); }
     void         ClrFlag( UNIT_FLAGS fl ) { m_unitFlags = (UNIT_FLAGS)( (int)m_unitFlags & ~(int)fl ); }
