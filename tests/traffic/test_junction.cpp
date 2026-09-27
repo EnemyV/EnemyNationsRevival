@@ -249,7 +249,7 @@ struct CVehicle {
     BOOL CanEnterBldg(CBuilding *) { return TRUE; }
     BOOL HavePathOrNext() { return TRUE; }
     void PathNextHex() {}
-    void GetPath(BOOL) {}
+    void GetPath(BOOL, BOOL = TRUE) {}   // production: GetPath(BOOL bNoOcc, BOOL bAllowAsync = TRUE)
     void MakeBlocked() { ++blockedCalls; ++g_recovery; }
     void PostArrivedOrBlocked() { ++blockedCalls; ++g_recovery; }
     void OrderArrivalFailed() {}

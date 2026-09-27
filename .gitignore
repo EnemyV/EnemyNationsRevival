@@ -69,6 +69,7 @@ __pycache__/
 /tests/traffic/remote-loc-out/
 /tests/path/pathmgr-out/
 /tests/path/pathworld-out/
+/tests/path/pathservice-out/
 /tests/orders/lifecycle-out/
 /tests/orders/dragplace-out/
 /tests/orders/roadghost-out/

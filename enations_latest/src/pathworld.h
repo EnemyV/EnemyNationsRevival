@@ -149,6 +149,7 @@ class PathWorld
     static void                             Clear( void );
 
     // EN_PATH_SNAP names a value: 1 / true / on / yes enable the per-tick build.
+    // Absent, it follows EN_PATH_ASYNC (on by default in 3.00.015).
     static BOOL Enabled( void );
     // Called once per main-loop tick from the publication point.
     static void PublishTick( void );

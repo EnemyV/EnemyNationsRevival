@@ -17,6 +17,8 @@
 #include "netcmd.h"
 #include "enprobes.h"
 
+#include <stdint.h>
+
 
 class CWndRoute;
 class SDL2RouteWindow;
@@ -26,6 +28,7 @@ class CTransportData;
 class CVehicle;
 class CBridgeUnit;
 class CEnNavView;
+struct PathResult;   // pathservice.h - one worker's answer, installed by CVehicle
 
 
 int  TrafficOpts ();   // EN_TRAFFIC bitmask: which traffic rules are live
@@ -506,7 +509,24 @@ public:
 		// because NextRoadHex calls this too (vehicle.cpp).
 		static CHexCoord	RoadStepToward (CHexCoord const & hexFrom, CHexCoord const & hexEnd);
 
-		void					GetPath (BOOL bNoOcc);
+		// bAllowAsync == FALSE forces the synchronous search at a call site that cannot
+		// tolerate a deferred answer (see CVehicle::GetNextHex).
+		void					GetPath (BOOL bNoOcc, BOOL bAllowAsync = TRUE);
+
+		// The post-search half of GetPath, shared by the synchronous search and the
+		// worker install so the two can never drift. Takes ownership of phexPath.
+		void					ApplyPathResult (CHexCoord * phexPath, int iPathLen,
+		                                     CHexCoord const & hexDest, CHexCoord const & hexPrevEnd);
+
+		// An answer is outstanding: this vehicle has no path yet, and "no path" must
+		// not be read as "no route exists".
+		BOOL					PathPending () const { return ((m_dwPathReqId != 0) ? TRUE : FALSE); }
+		void					ClearPathPending (char const * pszReason);
+
+		// Main thread, from the drain. Validates one worker answer and either installs
+		// it through ApplyPathResult or frees it; res.path is disposed of either way.
+		void					InstallPathResult (PathResult & res);
+
 		BOOL					HavePath () const;
 		BOOL					HavePathOrNext () const;
 		void					PathNextHex ();
@@ -581,6 +601,7 @@ public:
 													{ CSubHex _sub (hex.X () * 2, hex.Y () * 2);
 														SetDestAndMode (_sub, iMode); }
 		void					SetDestAndMode (CSubHex sub, VEH_POS iMode, BOOL bTrafficDetour = FALSE);
+		DWORD					GetOrderGen () const { return (m_dwOrderGen); }
 		void					KickStart ();
 
 		void					SetEventAndRoute (VEH_EVENT iEvent, VEH_MODE iMode) { SetEvent (iEvent); SetRouteMode (iMode); }
@@ -778,6 +799,19 @@ protected:
 #if EN_PATH_PROBES
 		CHexCoord			m_hexLastClamp;					// mpath.reclamp probe: hex of last clamped path, (-1,-1) = none (transient, not saved)
 #endif
+		// Bumped by every SetDestAndMode. An async path answer that comes back against
+		// an older value is answering a question this vehicle no longer asks.
+		// Transient, NOT serialized - it is only ever compared with itself within one
+		// process, so a save that restored it would say nothing a fresh 0 does not.
+		DWORD					m_dwOrderGen;
+
+		// Outstanding worker search (plan section 2.4). All three are transient and NOT
+		// serialized: quiesce clears every pending id before a save, so no save can
+		// contain one, and a request id is only ever compared against ids minted by this
+		// process anyway.
+		uint64_t			m_dwPathReqId;					// 0 = nothing outstanding
+		uint64_t			m_uPathReqTick;					// drain tick the request was submitted on
+		int						m_iPathRetries;					// discarded answers for the CURRENT order
 
 		DWORD					m_dwTimeJump;						// for AI trucks & cranes we transport if can't get there by this time
 

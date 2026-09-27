@@ -16,6 +16,7 @@
 #include "chproute.hpp"
 #include "event.h"
 #include "cpathmgr.h"
+#include "pathservice.h"   // the in-Move scope: a search asked for from Move is synchronous
 #include "player.h"
 #include "area.h"
 #include "bridge.h"
@@ -43,6 +44,24 @@ void CVehicle::Move() {
 #endif
 
     ASSERT_VALID (this);
+
+    // A search is outstanding: this vehicle has no answer yet, so it does not advance
+    // this tick. Running on would read the stale route as the new one, and reaching
+    // FindNextHex with no route would take the no-path exit and report blocked for a
+    // question that has not been answered. The drain resumes it (CVehicle::KickStart).
+    if (PathPending()) {
+        Perf::CounterInc("pa.wait.move");
+        return;
+    }
+
+    // A search asked for from in here is answered on this thread: the Done label
+    // below requires a moving vehicle to hold a real next step by the time this call
+    // returns, and a vehicle left pending holds none (unit.cpp PathAsyncEligible).
+    EnPathAsyncMoveScope pathMoveScope(this);
+
+    // which exit reached Done, for the diagnostic there
+    char const *pszDoneWhere = "moved";
+
 #ifndef _GG
 #ifdef STRICTER_ASSERTS2
     // i *think* this happens when a vehicle cant path to its destination, like if its trying to go to an island or something
@@ -130,6 +149,7 @@ void CVehicle::Move() {
             ASSERT ((m_cMode == blocked) || (m_cMode == stop));
 #endif
 #endif
+            pszDoneWhere = "findnext";
             goto Done;
         }
         ASSERT ((m_cMode != moving) || (m_ptDest == m_ptHead) || (m_ptNext != m_ptHead));
@@ -141,6 +161,7 @@ void CVehicle::Move() {
         ASSERT (m_ptHead.SameHex(m_hexDest));
         ArrivedDest();
         ASSERT_VALID (this);
+        pszDoneWhere = "arriveddest";
         goto Done;
     }
 
@@ -152,6 +173,10 @@ void CVehicle::Move() {
 
     // we're all done moving - fix spotting & tell everyone
     Done:
+    if ((m_cMode == moving) && (m_ptNext == m_ptHead))
+        EnPathAsyncLogNoNext((unsigned long) GetID(), (int) m_cMode, (unsigned long long) m_dwPathReqId,
+                             m_iPathRetries, m_iPathLen, m_iPathOff, m_iStepsLeft,
+                             (long long) (EnPathAsyncTick() - m_uPathReqTick), pszDoneWhere);
     ASSERT ((m_cMode != moving) || (m_ptNext != m_ptHead));
     ASSERT ((m_cMode != moving) || (theVehicleHex.GetVehicle(m_ptNext) == this));
 
@@ -1087,7 +1112,14 @@ BOOL CVehicle::GetNextHex(BOOL bNew) {
             if (HavePathOrNext())
                 PathNextHex();
             else {
-                GetPath(FALSE);
+                // SYNCHRONOUS on purpose. This is the one mover site that cannot
+                // tolerate a deferred answer: it runs inside FindNextHex's
+                // movement-point loop, and its only failure exit returns FALSE, which
+                // FindNextHex turns into m_ptNext = m_ptHead while m_cMode is still
+                // moving - a state Move's own ASSERT (moving implies m_ptNext !=
+                // m_ptHead) forbids. Deferring here would force a `blocked` transition
+                // the synchronous flow would not have made.
+                GetPath(FALSE, FALSE);
 
                 // if the new end location is no closer - we're done
                 if ((m_phexPath != NULL) && (m_iPathLen > 0)) {
@@ -3944,6 +3976,13 @@ BOOL CVehicle::TryNewSub(BOOL bNoNewPath) {
             // into the oncoming lane or finds no route at all.
             GetPath(FALSE);
 
+            // no route yet: the FindSub below would pick a step toward the OLD
+            // m_hexNext and commit the vehicle to moving on a route it is about to
+            // replace. Report "no new next" instead; the caller's ladder treats that
+            // as a failed attempt, which is what a pending answer is.
+            if (PathPending())
+                return (FALSE);
+
             // see if we can find one using the new path
             m_ptNext = m_ptHead;        // so tries all directions
             FindSub();
@@ -4041,6 +4080,15 @@ void CVehicle::HandleBlocked() {
 
     if (!GetOwner()->IsLocal()) {
         TRAP();
+        return;
+    }
+
+    // Pending is blocked-WITHOUT-retry (plan section 2.4): the recovery ladder is
+    // driven by m_iNumRetries, and spending rungs while the route it would re-path
+    // with is already on its way both wastes them and can beam the vehicle away from
+    // the source hex the answer was computed for.
+    if (PathPending()) {
+        Perf::CounterInc("pa.wait.blocked");
         return;
     }
 
@@ -4211,6 +4259,8 @@ void CVehicle::HandleBlocked() {
                 if (nd.m_hexOn != _hexHead) {
                     TRAP();
                     GetPath(FALSE);
+                    if (PathPending())
+                        return;     // the rest of the ladder needs the route this asked for
                     if (HavePathOrNext())
                         if (TryNewSub(TRUE)) {
 #ifdef _LOGOUT
@@ -4289,6 +4339,8 @@ void CVehicle::HandleBlocked() {
             (abs(CHexCoord::Diff(m_hexNext.X() - _hexHead.X())) > 1) ||
             (abs(CHexCoord::Diff(m_hexNext.Y() - _hexHead.Y())) > 1)) {
             GetPath(FALSE);
+            if (PathPending())
+                return;     // as above: this rung exists to act on the route just asked for
             if (HavePathOrNext())
                 if (TryNewSub(TRUE)) {
 #ifdef _LOGOUT
@@ -4474,6 +4526,9 @@ void CVehicle::HandleBlocked() {
 #endif
             return;
         }
+        // TryNewSub re-paths when bGotPath is FALSE, so it can leave us pending
+        if (PathPending())
+            return;
         bGotPath = TRUE;
     }
 
@@ -4492,6 +4547,8 @@ void CVehicle::HandleBlocked() {
             // bug - it is the first re-path after a bump, so the vehicles in the
             // way are the ones still driving. Path THROUGH them and queue.
             GetPath(FALSE);
+            if (PathPending())
+                return;     // TryNextHex below would step along the route being replaced
 
             bGotPath = TRUE;
         }
@@ -5310,6 +5367,12 @@ void CVehicle::StartTravel(BOOL bGetPath) {
     if (bGetPath)
         if (!HavePathOrNext())
             GetPath(FALSE);
+
+    // the answer is not in yet - "no path" here would be a verdict on a question
+    // still being asked (plan section 2.4). Leave the vehicle as it is; the drain
+    // re-enters this function through KickStart once the route lands.
+    if (PathPending())
+        return;
 
     // if no path we are blocked
     if (!HavePathOrNext()) {

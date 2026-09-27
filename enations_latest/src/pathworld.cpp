@@ -10,6 +10,8 @@
 
 #include "stdafx.h"
 #include "Perf.h"
+#include "enprobes.h"      // EN_PATH_PROBES - the per-world size report below
+#include "pathservice.h"   // PathService::AsyncRequested - EN_PATH_SNAP's default
 #include "terrain.inl"
 #include "building.inl"
 #include "vehicle.inl"
@@ -176,9 +178,11 @@ void PathWorld::Clear( void )
     std::atomic_store( &s_ptrCurrent, std::shared_ptr<const PathWorld>( ) );
 }
 
-// EN_PATH_SNAP must carry a VALUE: 1 / true / on / yes (any case) turn the
-// per-tick build on. Absent, empty, or anything unrecognised leaves it off, so
-// the obvious way to switch it off really does. Resolved once, then cached.
+// EN_PATH_SNAP, when SET, must carry a VALUE: 1 / true / on / yes (any case) turn
+// the per-tick build on; anything else leaves it off, so the obvious way to switch it
+// off really does. ABSENT or empty, it follows EN_PATH_ASYNC (PathService::
+// AsyncRequested - on in the shipped default), because the async install cannot run
+// without a published snapshot. Resolved once, then cached.
 static int s_iSnapOn = -1;
 
 BOOL PathWorld::Enabled( void )
@@ -187,7 +191,9 @@ BOOL PathWorld::Enabled( void )
     {
         s_iSnapOn              = 0;
         const char* pszEnv = getenv( "EN_PATH_SNAP" );
-        if ( pszEnv != NULL && pszEnv[0] != '\0' )
+        if ( pszEnv == NULL || pszEnv[0] == '\0' )
+            s_iSnapOn = PathService::AsyncRequested( ) ? 1 : 0;
+        else
         {
             char sz[8];
             int  i = 0;
@@ -495,6 +501,7 @@ void PathWorld::PublishTick( void )
     Perf::CounterAdd( "pw.build.rows", (int64_t)iRows );
     Perf::GaugeSet( "pw.bytes", (int64_t)ptr->Bytes( ) );
 
+#if EN_PATH_PROBES
     // Sizes once per world, the way the shadow instance reports its arena.
     static uint32_t s_uSaid = 0;
     if ( s_uSaid != ptr->Generation( ) )
@@ -516,4 +523,5 @@ void PathWorld::PublishTick( void )
             fclose( pf );
         }
     }
+#endif
 }

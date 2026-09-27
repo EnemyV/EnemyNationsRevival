@@ -59,6 +59,7 @@ set(enations_sources
         cpathmap.cpp
         cpathmgr.cpp
         pathworld.cpp
+        pathservice.cpp
         creatmul.cpp
         creatsin.cpp
         credits.cpp

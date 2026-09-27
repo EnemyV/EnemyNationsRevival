@@ -26,6 +26,7 @@
 #include "ipccomm.h"
 #include "cpathmgr.h"
 #include "pathworld.h"
+#include "pathservice.h"
 #include "help.h"
 #include "research.h"
 #include "chproute.hpp"
@@ -749,6 +750,11 @@ void CConquerApp::CreateNewWorld(unsigned uRand, AIinit *pAiData, int iSide, int
     EnPathShadowInit((iSide * iSideSize), (iSide * iSideSize));
 #endif
 
+    // The worker pool, after thePathMgr.Init has succeeded so the map size is known and
+    // after EnNavNewGame so no worker can be handed a snapshot of the previous world.
+    // No-op unless EN_PATH_WORKER is set.
+    EnPathWorkerStart((iSide * iSideSize), (iSide * iSideSize));
+
     CpMark( "thePathMgr.Init" );
 
     // create all the windows (in reverse order of importance)
@@ -1293,6 +1299,16 @@ void CConquerApp::NewWorld() {
     // newworld.cpp:1409) and ExitInstance() (the quit path) already do. Guarded on m_bInGame
     // because the normal from-menu NewWorld (m_bInGame==FALSE) has no AI threads running yet;
     // the subsequent load restarts them via StartAi(), same as the ClearWorld path.
+    // Same reasoning as the AI join below, one rung earlier: the RemoveAll() teardown
+    // further down frees world state, and a load-while-in-game reaches here WITHOUT
+    // passing through DestroyWorld/ClearWorld. Unconditional because Stop is a no-op
+    // when nothing is running, and the load path restarts the service at its own
+    // thePathMgr.Init (player.cpp).
+    EnPathWorkerStop();
+#if EN_PATH_PROBES
+    EnPathWorkerRefsClear();
+#endif
+
     if ( m_bInGame )
         myThreadClose( (THREADEXITFUNC)AiExit );
 
@@ -1422,6 +1438,16 @@ void CConquerApp::RestartWorld() {
 void CConquerApp::DestroyWorld() {
 
     ASSERT (TestEverything());
+
+    // Stop+join the path workers FIRST, before ANY world state is torn down - the same
+    // rule the AI threads already follow here. A worker only ever reads the PathWorld
+    // its request pins, so nothing below can be freed under it; what must not happen is
+    // thePathMgr.Close() and the static teardown at the foot of this function running
+    // while a worker still owns a CPathMgr of its own.
+    EnPathWorkerStop();
+#if EN_PATH_PROBES
+    EnPathWorkerRefsClear();   // the reference routes those workers were being diffed against
+#endif
 
     // stop outstanding cache requests
 //BUGBUG	theDiskCache.KillAllRequests ();
@@ -1581,6 +1607,14 @@ void CConquerApp::DestroyWorld() {
 }
 
 void CConquerApp::ClearWorld() {
+
+    // Before anything else, for the same reason as DestroyWorld: this function ends in
+    // thePathMgr.Close() and EnNavNewGame(), and no worker may still be holding its own
+    // CPathMgr when it does.
+    EnPathWorkerStop();
+#if EN_PATH_PROBES
+    EnPathWorkerRefsClear();
+#endif
 
     theGame.SetShouldAnimate(FALSE);
     theGame.SetShouldOperate(FALSE);
