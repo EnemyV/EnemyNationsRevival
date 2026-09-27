@@ -151,10 +151,8 @@ namespace
         //    move makes the produced oil exportable (an oil plant's own fuel is oil, which the
         //    router refuses to source, so the delivery rules in EffInputMat/EffOutputMat and the
         //    human router's source rule are what make this work at all).
-        //    SAVE HAZARD, knowingly unguarded (no VER_RELEASE bump this phase): an OLD save with
-        //    a liquefying COAL plant reloads with alt_oil set on a plant that now resolves to
-        //    CHARCOAL -- it silently demands lumber it has never been sent and its oil income
-        //    stops. Test on fresh saves only until the migration lands.
+        //    An OLD (pre-release-8) save's liquefying COAL plant would reload as CHARCOAL on the
+        //    same bit; ClearRelocatedMode drops that bit on load, so it comes back generating power.
         {
             "Coal Liquefaction",
             "Stops power generation; cracks delivered coal into oil at 3:1 (2:1 with Catalytic Coal Cracking)",
@@ -184,9 +182,9 @@ namespace
         //    harvest was diverted into the kiln (CPlayer::GetCharcoalPct). There is no harvest at
         //    a power plant, so the tier ladder now scales the RATIO instead
         //    (CPlayer::GetCharcoalRatio, 4/3/3/2/2 lumber per coal, via m_pfnRatioIn).
-        //    SAVE HAZARD, knowingly unguarded (no VER_RELEASE bump this phase): an OLD save with
-        //    a charcoal-burning LUMBER MILL reloads with alt_oil set on a mill that no longer
-        //    matches any def, so the toggle silently does nothing there. Fresh saves only.
+        //    An OLD (pre-release-8) save's charcoal-burning LUMBER MILL would reload with alt_oil
+        //    set, which on a mill now means SLASH AND BURN; ClearRelocatedMode drops that bit on
+        //    load, so the mill never inherits the destructive mode without a new choice.
         {
             "Charcoal",
             "Stops power generation; chars delivered lumber into coal at 4:1, improving to 2:1 with Charcoal research, at +2 workers",
@@ -328,8 +326,8 @@ namespace
         //    CFarmBuilding::BuildFarm (AltOutput::SLASH_BURN_MULT), gated by
         //    CFarmBuilding::SlashBurnActive( ); the two UI rate readouts apply the same
         //    multiplier through the same predicate so the displayed rate matches the sim.
-        //    NOT YET IMPLEMENTED: the deforestation half. Until it lands, the toggle is a pure
-        //    250% harvest bonus and the tooltip below promises a cost the sim does not charge.
+        //    The deforestation half is the Slash and Burn walk in new_unit.cpp (it retypes the
+        //    nearest forest hex to plain, replicates it, and invalidates nearby scrounge caches).
         {
             "Slash and Burn",
             "Cuts at 250% of the normal rate -- but PERMANENTLY destroys the forest around this mill, until there is nothing left to cut. Cannot be undone.",
@@ -435,6 +433,12 @@ namespace AltOutput
             return;
         if ( theGame.m_pHpRtr )
             theGame.m_pHpRtr->MsgOutMat( pBldg );
+    }
+
+    void ClearRelocatedMode( CBuilding* pBldg )
+    {
+        if ( pBldg && ( IsLumberMill( pBldg ) || IsCoalPowerPlant( pBldg ) ) )
+            pBldg->ClrFlag( CUnit::alt_oil );
     }
 
     void Convert( CBuilding* pBldg, int iAmount, float& fAccum, float fThrottle )

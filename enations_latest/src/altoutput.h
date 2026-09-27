@@ -166,6 +166,13 @@ namespace AltOutput
     // notified -- there is no first delivery to schedule, and four shipped features must not change.
     void SetToggle( CBuilding* pBldg, bool bOn );
 
+    // LOAD migration for saves before release 8 (014 writes 7). Those saves set alt_oil with the
+    // OLD host meanings -- Charcoal on the lumber mill, Coal Liquefaction on the coal plant -- and
+    // the same bit now means Slash and Burn on the mill and Charcoal on the coal plant. Clears it
+    // on those two hosts so an old choice is dropped rather than reinterpreted. Call once the
+    // building's m_pUnitData is restored.
+    void ClearRelocatedMode( CBuilding* pBldg );
+
     // Shared production helper. Call from a building's production loop with the amount of
     // primary production this call represents (food harvested for a farm, input burned for
     // a power plant, etc.; or the game-OPERS elapsed this call for an eFlatTrickle def

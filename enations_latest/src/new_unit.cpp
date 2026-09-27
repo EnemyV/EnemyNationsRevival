@@ -6562,6 +6562,11 @@ void CBuilding::Serialize( CArchive& ar )
         ar >> w;
         m_pUnitData = theStructures.GetData( w );
 
+        // Before release 8, alt_oil on a lumber mill / coal plant meant a mode that has since
+        // moved (see AltOutput::ClearRelocatedMode). Drop it instead of reinterpreting it.
+        if ( theGame.m_dwVer < 8 )
+            AltOutput::ClearRelocatedMode( this );
+
         if ( 0 <= m_iSpriteID )
             m_psprite = theStructures.GetSprite( m_iSpriteID );
 
