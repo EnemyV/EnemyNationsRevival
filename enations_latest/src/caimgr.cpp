@@ -420,7 +420,8 @@ void CAIMgr::Manage( void )
 #endif
 #if EN_AI_PROBES_ECON && defined(_WIN32)
                 {
-                    int iTopic = -1, iPts = -1, iHave = -1, iFails = -1;
+                    int      iTopic = -1, iHave = -1, iFails = -1;
+                    LONGLONG iPts   = -1;   // m_iPtsDiscovered is 64-bit (save release 9)
                     int iCanP = -1, iPDisc = -1, iPMissBldg = -1;   // pontoon gate breakdown
                     EnterCriticalSection( &cs );
                     CPlayer* pPlyr = pGameData->GetPlayerData( m_iPlayer );
@@ -444,7 +445,7 @@ void CAIMgr::Manage( void )
                     if ( m_pGoalMgr != NULL && m_pGoalMgr->m_pMap != NULL )
                         iFails = m_pGoalMgr->m_pMap->m_iBridgeSpanFails;
                     char szR[176];
-                    sprintf( szR, "[RSRCHSTAT] plyr %d topic %d pts %d have %d bridgefails %d pontoon can %d disc %d missbldg %d\n",
+                    sprintf( szR, "[RSRCHSTAT] plyr %d topic %d pts %lld have %d bridgefails %d pontoon can %d disc %d missbldg %d\n",
                              m_iPlayer, iTopic, iPts, iHave, iFails, iCanP, iPDisc, iPMissBldg );
                     OutputDebugStringA( szR );
                     // queue depth: ~0 = trickle (scheduler flaw); large/growing = backlog.

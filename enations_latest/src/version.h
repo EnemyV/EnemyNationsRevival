@@ -56,15 +56,28 @@ const char GameLogFile[] = "ENations.log";
 //   - CRoute::Serialize: the order-queue payload (m_iBldgType, m_iDir, m_hexEnd) for
 //     BUGS #38, so a queued build/road order survives save/load as an order rather than
 //     decaying into a bare movement stop (pre-8 entries are movement stops only).
-#define         VER_RELEASE     8
+// Release 9: CRsrchStatus::m_iPtsDiscovered widened from a 32-bit LONG to a 64-bit
+// LONGLONG, so research-points-so-far can climb past 2^31. This is a WIDTH change to an
+// existing field, not a new one, so the read is gated both ways: a save at release >= 9
+// carries 8 bytes, anything older carries 4 and is widened on load (see
+// CRsrchStatus::Serialize). The WRITER always writes 64-bit. The matching wire field,
+// CNetSaveInfo::m_iPtsDiscovered, widened with it, taking that message from 40 to 44 bytes
+// -- a PROTOCOL change, so release-9 clients cannot play against older ones. Nothing
+// refuses that pairing at join: the browser checks VER_MAJOR/VER_MINOR only (join.cpp),
+// m_cVerRelease is advertised but never compared, and the gameplay data hash covers the
+// DAT tables, not code. Every seat must run this build. Why: the in-code research ladders now price
+// their top tiers in the hundreds of millions, and m_iPtsRequired went 64-bit first; a
+// 32-bit accumulator could not climb to meet them, capping any topic at ~2^31 and wrapping
+// negative on the way (which trips the RandNum assert in CPlayer::Research).
+#define         VER_RELEASE     9
 
 // 3.1.001: display version only. No HEADER change - VER_MAJOR/VER_MINOR stay 3/0, so
 // every 3.00.x save still passes the major/minor check and loads. (VER_RELEASE is
-// bumped to 8 above by BUGS #99. The release counter is NOT part of that major/minor
-// header check - but it is not ignored either: a save whose counter is ABOVE this
-// build's is refused outright (BUGS #102), and a counter BELOW it is read with its own
-// layout, which is what the m_dwVer >= N field gates exist to do.) Bumping VER_MINOR
-// would refuse them all (CGame::Serialize).
+// bumped to 9 above: 8 by BUGS #99, 9 by the 64-bit research points. The release
+// counter is NOT part of that major/minor header check - but it is not ignored either:
+// a save whose counter is ABOVE this build's is refused outright (BUGS #102), and a
+// counter BELOW it is read with its own layout, which is what the m_dwVer >= N field
+// gates exist to do.) Bumping VER_MINOR would refuse them all (CGame::Serialize).
 #define         VER_STRING                              "3.1.001"
 #define         RES_VER_STRING                          "3.1.001\0"
 

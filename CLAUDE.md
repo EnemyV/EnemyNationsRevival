@@ -76,7 +76,7 @@ Run dir = the folder with the DLLs next to the exe. Smoke milestone: reaches wor
 - `OutputDebugString` is a trap for live reading (needs a DBWIN listener, blocks ~10s on a dead one) —
   probes you need to read live should write to a file. Probe gates: `enations_latest/src/enprobes.h`.
 - Diagnostic files land in the game's *working directory*, not always the run dir — search, don't assume.
-- **Save format is 8** (`VER_RELEASE 8`). Older saves load — that is what the `m_dwVer >= N` gates are
+- **Save format is 9** (`VER_RELEASE 9`). Older saves load — that is what the `m_dwVer >= N` gates are
   for — but a save this build writes is refused by any older exe, and a *forward* save (one written to a
   newer counter) is refused outright here rather than silently desyncing the stream. The
   `Cheat\IgnoreSaveVersion` override is compiled out of a shipping Release (`player.cpp:3606`), so when

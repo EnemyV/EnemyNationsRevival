@@ -1098,7 +1098,8 @@ void CPlayer::Research( int iNumSec )
     {
         if ( !m_bAutoRsrchPending )
         {
-            int iBest = 0, iMinCost = 0x7FFFFFFF;
+            int       iBest    = 0;
+            long long iMinCost = 0x7FFFFFFFFFFFFFFFLL;   // 64-bit: m_iPtsRequired is
             for ( int i = 1; i < theRsrch.GetSize( ); ++i )   // cheapest available; lowest index wins ties
                 if ( CanRsrch( i ) && theRsrch.ElementAt( i ).m_iPtsRequired < iMinCost )
                 {
@@ -1164,8 +1165,17 @@ void CPlayer::Research( int iNumSec )
         // (m_iPtsDiscovered is unbounded) making RandNum's argument NEGATIVE ->
         // rand.cpp:49 assert. Drop the factor: identical odds, no overflow. Research
         // runs only for local players, so no cross-machine RNG-stream impact.
-        if ( RandNum( pRs->m_iPtsDiscovered ) > pRi->m_iPtsRequired )
+    {
+        // RandNum takes an int and asserts on a negative argument, but m_iPtsDiscovered is
+        // 64-bit now -- narrowing it implicitly is exactly how this line produced a negative
+        // roll before. Saturate instead. With costs held under RSRCH_PTS_CEILING this branch
+        // never sees a value that large anyway (it only runs while discovered <= required * 2).
+        LONGLONG llRoll = pRs->m_iPtsDiscovered;
+        if ( llRoll > 0x7FFFFFFF )
+            llRoll = 0x7FFFFFFF;
+        if ( RandNum( (int)llRoll ) > pRi->m_iPtsRequired )
             bFoundIt = TRUE;
+    }
 
     if ( !bFoundIt )
     {

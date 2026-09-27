@@ -4078,7 +4078,15 @@ void CGame::ProcessMessage(CNetCmd* pCmd )
                 if ( !pRs->m_bDiscovered )
                 {
                     CRsrchItem* pRi = &theRsrch.ElementAt( pMsg->m_iRsrch );
-                    pRs->m_iPtsDiscovered += ( pRi->m_iPtsRequired * theGame.m_iAi ) / 2;
+                    // Both sides are 64-bit now (save release 9), so this no longer has to be
+                    // squeezed back into 32 bits; keep the negative guard only, since a wrapped
+                    // or corrupt value here reaches RandNum( ) in CPlayer::Research, which
+                    // asserts on a negative argument.
+                    LONGLONG llNew = pRs->m_iPtsDiscovered
+                                   + ( pRi->m_iPtsRequired * (LONGLONG)theGame.m_iAi ) / 2;
+                    if ( llNew < 0 )
+                        llNew = 0;
+                    pRs->m_iPtsDiscovered = llNew;
                 }
             }
         break;

@@ -113,7 +113,7 @@ enum { CUR_NULL = -1, CUR_STALE = -2 };
 // BUGS #99 (integration): a NULL cursor now stores an out-of-range SENTINEL, and the
 // loader honours it only on a counter >= 8 save. Counter <= 7 writers still stored N-1
 // and counter <= 7 loaders still walk to it, so the shipped behaviour of every old save
-// is unchanged. VER_RELEASE is 8 on this branch, so the sentinel is what a new save
+// is unchanged. VER_RELEASE is 9 on this branch (>= 8), so the sentinel is what a new save
 // carries.
 enum { ROUTE_POS_NONE = 0xffff };
 

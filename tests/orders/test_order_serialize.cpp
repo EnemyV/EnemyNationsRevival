@@ -273,11 +273,12 @@ static int test_source_lint(const char *newUnit, const char *vehicleH, const cha
         std::printf("[orders] SKIP version.h lint (cannot open %s)\n", versionH);
         return 2;
     }
-    // The counter is 8 in this integration (the traffic series' format-8 save plus
-    // BUGS #99), so the v8 gates the order payload sits behind are now LIVE: a save
-    // written by this build carries the payload and the loop flag. Pinned, because the
-    // serialize model's v7-versus-v8 claims are only meaningful against a known counter.
-    lint_needs(s, "#define         VER_RELEASE     8", "VER_RELEASE is 8 in this integration");
+    // The counter reached 8 with the traffic series' format-8 save plus BUGS #99, so the
+    // v8 gates the order payload sits behind are LIVE: a save written by this build
+    // carries the payload and the loop flag. 3.00.015 then took it to 9 (64-bit research
+    // points), which leaves every >= 8 gate live. Pinned, because the serialize model's
+    // v7-versus-v8 claims are only meaningful against a known counter.
+    lint_needs(s, "#define         VER_RELEASE     9", "VER_RELEASE is 9 in this integration");
 
     // The dispatcher half of the model has no byte stream to compare against, so these
     // pin the two invariants a fixture cannot see: one list never holds both kinds, and
