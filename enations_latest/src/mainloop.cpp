@@ -8,6 +8,7 @@
 
 #include "enprobes.h"
 #include "en_logpath.h"   // EnLogPath - msgtype.log beside the other probe sinks
+#include "en_hangdump.h"   // EnHangHeartbeat() - hang-watchdog liveness beat
 #include "ai.h"
 #include "altoutput.h"
 #include "edicts.h"     // EDICT_DESPERATE_MEASURES (rocket scrounge edict)
@@ -178,6 +179,10 @@ int CConquerApp::Run( )
                 s_dwLastLoop = dwLoopNow;
             }
 #endif
+
+            // Hang watchdog: one beat per main-loop iteration. If this stops
+            // moving for EN_HANGDUMP_SECS the watchdog writes a full minidump.
+            EnHangHeartbeat( );
 
             uint64_t _perfPumpStart = Perf::IsEnabled() ? Perf::NowIfEnabled() : 0;
 

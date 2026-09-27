@@ -2,6 +2,7 @@
 
 #define PL_MPEG_IMPLEMENTATION
 #include "pl_mpeg.h"
+#include "en_hangdump.h"   // EnHangHeartbeat() - hang-watchdog liveness beat
 #include "SDL2Video.h"
 #include "GameWindow.h"
 #include "lastplnt.h"
@@ -144,6 +145,7 @@ bool SDL2VideoPlayer::PlayVideo(GameWindow* gameWindow, const std::string& fileP
     Uint32 lastFrameTime = SDL_GetTicks();
 
     while (!plm_has_ended(plm)) {
+        EnHangHeartbeat();   // video playback pumps here, not through PollEvents
         SDL_Event event;
         while (SDL_PollEvent(&event)) {
             if (event.type == SDL_QUIT) { completed = false; goto cleanup; }
