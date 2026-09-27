@@ -4065,7 +4065,9 @@ void CGame::ProcessMessage(CNetCmd* pCmd )
         }
         if ( !pPlr->IsLocal( ) )
         {
-            TRAP( );
+            // Was a 1996 TRAP: this is the normal path whenever a player on another seat
+            // finishes a topic, so it crashed every Debug host in multiplayer.
+            EN_TRAP_REMOVED( "research_disc: a remote player discovered a topic" );
             pPlr->UpdateRacialAttributes( pMsg->m_iRsrch );
             ( pPlr->GetRsrch( pMsg->m_iRsrch ) ).m_bDiscovered = TRUE;
         }

@@ -1645,7 +1645,7 @@ void CConquerApp::GraphicsEnginePump( )
                     int iNum = msgDam.AddUnit( pBldg, iDam );
                     if ( iNum >= NUM_UNIT_DAMAGE_ELEM )
                     {
-                        TRAP( );
+                        EN_TRAP_REMOVED( "damage batch full (buildings) - flushed early" );   // was a 1996 TRAP: a full packet is normal in big fights
                         theGame.PostToServer( &msgDam, sizeof( msgDam ) );
                         msgDam.Reset( );
                     }
@@ -1657,7 +1657,7 @@ void CConquerApp::GraphicsEnginePump( )
                     int iNum = msgSetDam.AddUnit( pBldg );
                     if ( iNum >= NUM_UNIT_SET_DAMAGE_ELEM )
                     {
-                        TRAP( );
+                        EN_TRAP_REMOVED( "set-damage batch full (buildings) - flushed early" );   // was a 1996 TRAP: a full packet is normal in big fights
                         theGame.PostToAllClients( &msgSetDam, sizeof( msgSetDam ), FALSE );
                         msgSetDam.Reset( );
                     }
@@ -1693,7 +1693,7 @@ void CConquerApp::GraphicsEnginePump( )
                     int iNum = msgDam.AddUnit( pVeh, iDam );
                     if ( iNum >= NUM_UNIT_DAMAGE_ELEM )
                     {
-                        TRAP( );
+                        EN_TRAP_REMOVED( "damage batch full (vehicles) - flushed early" );   // was a 1996 TRAP: a full packet is normal in big fights
                         theGame.PostToServer( &msgDam, sizeof( msgDam ) );
                         msgDam.Reset( );
                     }
@@ -1705,7 +1705,7 @@ void CConquerApp::GraphicsEnginePump( )
                     int iNum = msgSetDam.AddUnit( pVeh );
                     if ( iNum >= NUM_UNIT_SET_DAMAGE_ELEM )
                     {
-                        TRAP( );
+                        EN_TRAP_REMOVED( "set-damage batch full (vehicles) - flushed early" );   // was a 1996 TRAP: a full packet is normal in big fights
                         theGame.PostToAllClients( &msgSetDam, sizeof( msgSetDam ), FALSE );
                         msgSetDam.Reset( );
                     }
