@@ -73,15 +73,15 @@ const char GameLogFile[] = "ENations.log";
 // negative on the way (which trips the RandNum assert in CPlayer::Research).
 #define         VER_RELEASE     9
 
-// 3.1.001: display version only. No HEADER change - VER_MAJOR/VER_MINOR stay 3/0, so
+// 3.00.015: display version only. No HEADER change - VER_MAJOR/VER_MINOR stay 3/0, so
 // every 3.00.x save still passes the major/minor check and loads. (VER_RELEASE is
 // bumped to 9 above: 8 by BUGS #99, 9 by the 64-bit research points. The release
 // counter is NOT part of that major/minor header check - but it is not ignored either:
 // a save whose counter is ABOVE this build's is refused outright (BUGS #102), and a
 // counter BELOW it is read with its own layout, which is what the m_dwVer >= N field
 // gates exist to do.) Bumping VER_MINOR would refuse them all (CGame::Serialize).
-#define         VER_STRING                              "3.1.001"
-#define         RES_VER_STRING                          "3.1.001\0"
+#define         VER_STRING                              "3.00.015"
+#define         RES_VER_STRING                          "3.00.015\0"
 
 #ifdef _DEBUG
 	#define         VER_FLAGS         VS_FF_DEBUG | VS_FF_PRIVATEBUILD | VS_FF_PRERELEASE
