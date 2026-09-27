@@ -396,6 +396,35 @@ public:
 					// idea as the attack tiers and the same FLAT cost ramp. See CPlayer::GetBldgArmorMult.
 					bldg_armor_2,
 					bldg_armor_3,
+					// Drive-Core Resonance (in-code) -- ONE topic, no tiers, and the only research
+					// whose entire payload is an EDICT. It unlocks Resonance Sweep at the Command
+					// Center (EDICT_RESONANCE_SWEEP): while that edict is on, the colony pings for
+					// enemy ROCKETS and resolves a random one each recharge -- revealing it,
+					// refreshing what we know of it, or clearing it if it has since been destroyed
+					// (CPlayer::ResonanceSweep). The recharge is RESONANCE_SWEEP_RELOAD_SECS at full
+					// power and stretches when the grid is short. Costs 6x the 248,000-point
+					// spot_3 topic (1,488,000: dearer than every DAT topic, well under the deep
+					// combat tiers) and is gated on spot_3 + nuclear + advanced_facilities -- the
+					// sensor line to hear the return, the reactor physics to know what a drive core
+					// sounds like, and the plant to drive the emitter. Appended LAST so no earlier
+					// enum index shifts (old saves store discovered-flags positionally;
+					// RDPATH_SAVE_COUNT==53 stays put).
+					drive_core_resonance,
+					// Drive-Core Resonance 2-6 (in-code). Each tier widens the Resonance Sweep's
+					// ping from a bare contact into REAL VISION: tier 2 lights a 1-hex ring of
+					// ground around the rocket it finds, up to a 5-hex ring at tier 6
+					// (CPlayer::GetSweepRings), for RESONANCE_SWEEP_LIT_SECS before it goes dark
+					// again. Each tier also costs 3x the previous in points and adds
+					// RESONANCE_SWEEP_POWER_TIER to the edict's flat power draw. Kept CONTIGUOUS
+					// with tier 1 above so the tier arithmetic stays a subtraction, and appended
+					// LAST so no earlier enum index shifts (RDPATH_SAVE_COUNT==53 stays put).
+					// NOTE the multiplier is capped by what an int can hold -- see RSRCH_PTS_CEILING
+					// in research.cpp before raising it.
+					drive_core_resonance_2,
+					drive_core_resonance_3,
+					drive_core_resonance_4,
+					drive_core_resonance_5,
+					drive_core_resonance_6,
 					num_types	};
 
 	CRsrchArray () {}

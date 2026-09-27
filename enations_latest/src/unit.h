@@ -40,6 +40,16 @@ class CProjMap;
 class CUnit;
 
 
+// A hex just crossed from unseen to seen for pViewer: re-sync the remembered ground
+// (road / bridge / slash-and-burn), drop a building that died out of sight, and reveal +
+// refresh an enemy building standing on it. Lives in unit.cpp, lifted out of
+// CUnit::IncrementSpotting so the Resonance Sweep edict can light a ring of hexes around an
+// enemy rocket under exactly the same reveal rules a scouting unit uses.
+// The CALLER owns the visibility counter: IncVisible( ) first, and call this only on the
+// transition (GetVisibility( ) has just become 1).
+void EnHexBecameVisible( CHex* pHex, CHexCoord& hex, CPlayer* pViewer );
+
+
 // this is so we don't have to keep allocating & sizing CDib on each call
 class CUnitShowStat
 {
