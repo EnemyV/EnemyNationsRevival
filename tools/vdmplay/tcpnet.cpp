@@ -35,7 +35,6 @@ static int JoinAddrLogOn() {
 
 static int netCount = 0;
 static int gSimulateFrags = FALSE;
-static int gMaxSends = 5;
 static int gSimulateFlow = FALSE;
 static int gLogSocketFull = FALSE;
 
@@ -236,7 +235,6 @@ CTcpNet::CTcpNet(CTDLogger* log, u_short streamPort, u_short dgPort, u_short wel
 
     m_sockBufSize = vpFetchInt("TCP", "OBUFSIZE", 8)* 1024;
  gSimulateFrags = vpFetchInt("TCP", "SimFrag", 0);
- gMaxSends = vpFetchInt("TCP", "MaxSends", 10);
  gSimulateFlow = vpFetchInt("TCP", "SimFlow", 0);
  gLogSocketFull = vpFetchInt("TCP", "LogSocketFull", 0);
  m_lastKeekTime = 0;
@@ -1251,12 +1249,16 @@ void CTcpNet::CheckFlow()
 void CTcpNet::CTCPLink::SendWaitingData()
 {
  char logBuf[128];
- int  maxSends = gMaxSends;
 
  if (m_socket == INVALID_SOCKET)
   return;
 
  m_queue.Lock();
+ // Drain the queued batch while the nonblocking socket accepts it. An
+ // arbitrary packet cap can leave a writable socket with an ever-growing
+ // backlog and no new FD_WRITE edge. The snapshot bounds this call; partial
+ // writes and WSAEWOULDBLOCK below retain the remainder for the next callback.
+ unsigned maxSends = m_queue.Count();
  
  Datagram* d;
 
@@ -1299,7 +1301,9 @@ void CTcpNet::CTCPLink::SendWaitingData()
    break;
   }
 
-  WORD chksum = calcsum(data, size);
+  // The checksum covers the stored packet, not just the unsent suffix. A
+  // successful partial write advances m_offset without changing that packet.
+  WORD chksum = calcsum(d->m_data, d->m_size);
   if (d->GetSum() != chksum)
   {
    wsprintf(logBuf, 
