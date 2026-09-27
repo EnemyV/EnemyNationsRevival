@@ -28,15 +28,30 @@ param(
 $ErrorActionPreference = 'Stop'
 
 # Resolve MSBuild. Prefer 32-bit (matches Win32 target).
-$msbuild = 'C:\Program Files\Microsoft Visual Studio\2022\Community\MSBuild\Current\Bin\MSBuild.exe'
-if (-not (Test-Path $msbuild)) {
-    $msbuild = 'C:\Program Files\Microsoft Visual Studio\2022\Enterprise\MSBuild\Current\Bin\MSBuild.exe'
+# Editions are probed by name first because that is the common case and costs no
+# subprocess; vswhere is the fallback that finds anything else - notably BuildTools,
+# which has no Community/Enterprise/Professional directory and installs under
+# 'Program Files (x86)'. A headless build VM usually has ONLY BuildTools, so without
+# this fallback build.ps1 dies there with "MSBuild.exe not found".
+$msbuild = $null
+foreach ( $vsRoot in @( "$env:ProgramFiles\Microsoft Visual Studio\2022",
+                        "${env:ProgramFiles(x86)}\Microsoft Visual Studio\2022" ) ) {
+    foreach ( $ed in @( 'Community', 'Enterprise', 'Professional', 'BuildTools' ) ) {
+        $cand = Join-Path $vsRoot "$ed\MSBuild\Current\Bin\MSBuild.exe"
+        if ( Test-Path $cand ) { $msbuild = $cand; break }
+    }
+    if ( $msbuild ) { break }
 }
-if (-not (Test-Path $msbuild)) {
-    $msbuild = 'C:\Program Files\Microsoft Visual Studio\2022\Professional\MSBuild\Current\Bin\MSBuild.exe'
+if ( -not $msbuild ) {
+    $vswhere = Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio\Installer\vswhere.exe'
+    if ( Test-Path $vswhere ) {
+        $found = & $vswhere -latest -products * -requires Microsoft.Component.MSBuild `
+                            -find 'MSBuild\**\Bin\MSBuild.exe' 2>$null | Select-Object -First 1
+        if ( $found -and (Test-Path $found) ) { $msbuild = $found }
+    }
 }
-if (-not (Test-Path $msbuild)) {
-    Write-Error "MSBuild.exe not found. Edit build.ps1 to add your VS install path."
+if ( -not $msbuild ) {
+    Write-Error "MSBuild.exe not found (probed VS2022 Community/Enterprise/Professional/BuildTools under both Program Files roots, then vswhere). Install the C++ build tools or edit build.ps1."
     exit 2
 }
 

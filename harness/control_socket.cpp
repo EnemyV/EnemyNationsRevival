@@ -780,19 +780,25 @@ void handle_command(const std::string& line, en_socket_t conn) {
         push_mouse_button(x,y,SDL_BUTTON_LEFT,true,id,1);  push_mouse_button(x,y,SDL_BUTTON_LEFT,false,id,1);
         push_mouse_button(x,y,SDL_BUTTON_LEFT,true,id,2);  push_mouse_button(x,y,SDL_BUTTON_LEFT,false,id,2);
     } else if (strcmp(cmd, "dragid") == 0) {
-        // dragid <winId> <x1> <y1> <x2> <y2> [right] — press at (x1,y1), drag to
-        // (x2,y2), release. Needed for gestures the game reads as a drag: crane
+        // dragid <winId> <x1> <y1> <x2> <y2> [right] [shift|ctrl|alt] — press at (x1,y1),
+        // drag to (x2,y2), release. Needed for gestures the game reads as a drag: crane
         // road-build (press 'R', then drag start->end), box-select, and the
         // right-drag line-move. The game CaptureMouse()s on press, so the move +
         // release route to the captured window regardless of the move's target.
-        unsigned id=0; int x1=0,y1=0,x2=0,y2=0; char rb[16]={0};
-        sscanf(line.c_str(), "%*s %u %d %d %d %d %15s", &id, &x1,&y1,&x2,&y2, rb);
-        Uint8 btn = (rb[0]=='r') ? SDL_BUTTON_RIGHT : SDL_BUTTON_LEFT;
+        // The optional modifier token is held across the gesture exactly as clickid
+        // holds it, so a Shift+drag QUEUES a road segment (area.cpp road_set) or a
+        // line-move instead of replacing the crane's orders.
+        unsigned id=0; int x1=0,y1=0,x2=0,y2=0; char t1[16]={0}, t2[16]={0}, mods[16]={0};
+        sscanf(line.c_str(), "%*s %u %d %d %d %d %15s %15s", &id, &x1,&y1,&x2,&y2, t1, t2);
+        Uint8 btn = SDL_BUTTON_LEFT;
+        parse_click_opts(t1, t2, &btn, mods, sizeof(mods));
+        SDL_Keymod prev = hold_mods(mods);
         push_mouse_move(x1,y1,id);
         push_mouse_button(x1,y1,btn,true,id);
         for (int s=1; s<=4; ++s)   // interpolate so the game tracks the drag path
             push_mouse_move(x1+(x2-x1)*s/4, y1+(y2-y1)*s/4, id);
         push_mouse_button(x2,y2,btn,false,id);
+        restore_mods(mods, prev);
     } else if (strcmp(cmd, "moveid") == 0) {
         unsigned id=0; int x=0,y=0; sscanf(line.c_str(), "%*s %u %d %d", &id, &x, &y); push_mouse_move(x,y,id);
     } else if (strcmp(cmd, "move") == 0) {

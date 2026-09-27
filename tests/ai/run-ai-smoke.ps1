@@ -29,7 +29,7 @@ $here     = Split-Path -Parent $MyInvocation.MyCommand.Path
 $repoRoot = (Resolve-Path (Join-Path $here '..\..')).Path
 $perfLog  = Join-Path $RunDir 'perf.log'
 $dbgLog   = 'd:\tmp\aitests\smoke-dbg.log'
-New-Item -ItemType Directory -Force -Path 'd:\tmp\aitests' | Out-Null
+New-Item -ItemType Directory -Force -Path (Join-Path $env:TEMP 'aitests') | Out-Null
 
 function Fail([string]$msg) { Write-Host "SMOKE FAIL: $msg" -ForegroundColor Red; exit 1 }
 function Note([string]$msg) { Write-Host "  $msg" }

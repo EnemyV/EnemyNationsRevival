@@ -25,16 +25,18 @@ $here     = Split-Path -Parent $MyInvocation.MyCommand.Path
 $repoRoot = (Resolve-Path (Join-Path $here '..\..')).Path
 
 # Same VS 2022 roots build.ps1 / run-ai-tests.ps1 key off of.
-$roots = @(
-    'C:\Program Files\Microsoft Visual Studio\2022\Community',
-    'C:\Program Files\Microsoft Visual Studio\2022\Enterprise',
-    'C:\Program Files\Microsoft Visual Studio\2022\Professional'
-)
+$roots = @()
+foreach ( $vsBase in @( "$env:ProgramFiles\Microsoft Visual Studio\2022",
+                        "${env:ProgramFiles(x86)}\Microsoft Visual Studio\2022" ) ) {
+    foreach ( $vsEd in @( 'Community', 'Enterprise', 'Professional', 'BuildTools' ) ) {
+        $roots += ( Join-Path $vsBase $vsEd )
+    }
+}
 $vs = $roots | Where-Object { Test-Path (Join-Path $_ 'VC\Auxiliary\Build\vcvars64.bat') } | Select-Object -First 1
 if (-not $vs) { Write-Error 'VS 2022 vcvars64.bat not found (edit roots in run-net-tests.ps1).'; exit 2 }
 $vcvars = Join-Path $vs 'VC\Auxiliary\Build\vcvars64.bat'
 
-$outDir = 'd:\tmp\nettests'
+$outDir = (Join-Path $env:TEMP 'nettests')
 New-Item -ItemType Directory -Force -Path $outDir | Out-Null
 
 $tcpnetPath  = Join-Path $repoRoot 'tools\vdmplay\tcpnet.cpp'

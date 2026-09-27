@@ -12,17 +12,19 @@
 # Exit codes: 0 all pass, 1 a test failed, 2 toolchain / compile error.
 
 param(
-    [string]$OutDir = 'd:\tmp\econtests'
+    [string]$OutDir = (Join-Path $env:TEMP 'econtests')
 )
 
 $ErrorActionPreference = 'Stop'
 $here = Split-Path -Parent $MyInvocation.MyCommand.Path
 
-$roots = @(
-    'C:\Program Files\Microsoft Visual Studio\2022\Community',
-    'C:\Program Files\Microsoft Visual Studio\2022\Enterprise',
-    'C:\Program Files\Microsoft Visual Studio\2022\Professional'
-)
+$roots = @()
+foreach ( $vsBase in @( "$env:ProgramFiles\Microsoft Visual Studio\2022",
+                        "${env:ProgramFiles(x86)}\Microsoft Visual Studio\2022" ) ) {
+    foreach ( $vsEd in @( 'Community', 'Enterprise', 'Professional', 'BuildTools' ) ) {
+        $roots += ( Join-Path $vsBase $vsEd )
+    }
+}
 $vs = $roots | Where-Object { Test-Path (Join-Path $_ 'VC\Auxiliary\Build\vcvars64.bat') } | Select-Object -First 1
 if (-not $vs) { Write-Error 'VS 2022 vcvars64.bat not found (edit roots in run-pplpwr-firerate-guard-tests.ps1).'; exit 2 }
 

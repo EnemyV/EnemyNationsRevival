@@ -9,17 +9,19 @@
 $ErrorActionPreference = 'Stop'
 $here = Split-Path -Parent $MyInvocation.MyCommand.Path
 
-$roots = @(
-    'C:\Program Files\Microsoft Visual Studio\2022\Community',
-    'C:\Program Files\Microsoft Visual Studio\2022\Enterprise',
-    'C:\Program Files\Microsoft Visual Studio\2022\Professional'
-)
+$roots = @()
+foreach ( $vsBase in @( "$env:ProgramFiles\Microsoft Visual Studio\2022",
+                        "${env:ProgramFiles(x86)}\Microsoft Visual Studio\2022" ) ) {
+    foreach ( $vsEd in @( 'Community', 'Enterprise', 'Professional', 'BuildTools' ) ) {
+        $roots += ( Join-Path $vsBase $vsEd )
+    }
+}
 $vs = $roots | Where-Object { Test-Path (Join-Path $_ 'VC\Auxiliary\Build\vcvars64.bat') } | Select-Object -First 1
 if (-not $vs) { Write-Error 'VS 2022 vcvars64.bat not found (edit roots in run-ai-concurrency.ps1).'; exit 2 }
 
 $vcvars = Join-Path $vs 'VC\Auxiliary\Build\vcvars64.bat'
 $src    = Join-Path $here 'test_ai_concurrency.cpp'
-$outDir = 'd:\tmp\aitests'
+$outDir = (Join-Path $env:TEMP 'aitests')
 New-Item -ItemType Directory -Force -Path $outDir | Out-Null
 $obj = Join-Path $outDir 'ai_conc.obj'
 $exe = Join-Path $outDir 'ai_conc.exe'
