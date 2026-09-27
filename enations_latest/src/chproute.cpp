@@ -4356,13 +4356,41 @@ void CHPRouter::Pump( void )
 }
 
 //
-// for each building need commodities, the truck passed has
-// been destroyed, so the building to which this truck was
-// assigned, needs to be toggled that it does not have
-// this truck anymore
+// Release pending pickup ships when their truck's route is aborted.
 //
+void CHPRouter::ReleasePickupShips( DWORD dwTruckID )
+{
+    // Aborting a land route must release its pending pickup, but must not
+    // take a loaded ship or an active unload leg out of service.
+    if ( !dwTruckID || IsVehicleCargo( dwTruckID ) )
+        return;
+
+    POSITION pos = m_plUnits->GetHeadPosition( );
+    while ( pos != NULL )
+    {
+        CAIUnit* pShip = (CAIUnit*)m_plUnits->GetNext( pos );
+        if ( pShip == NULL || pShip->GetOwner( ) != m_iPlayer || pShip->GetType( ) != CUnit::vehicle )
+            continue;
+        if ( !( pShip->GetStatus( ) & CAI_IN_USE ) || pShip->GetParamDW( CAI_LOC_X ) != dwTruckID ||
+             pShip->GetParamDW( CAI_DEST_X ) != 0 )
+            continue;
+        BOOL bEmptyShip = FALSE;
+        EnterCriticalSection( &cs );
+        CVehicle* pVehicle = theVehicleMap.GetVehicle( pShip->GetID( ) );
+        if ( pVehicle != NULL )
+            bEmptyShip = pVehicle->GetData( )->GetType( ) == CTransportData::light_cargo &&
+                         pVehicle->GetCargoCount( ) == 0;
+        LeaveCriticalSection( &cs );
+        if ( bEmptyShip )
+            UnAssignShip( pShip );
+    }
+}
+
+// For each building needing commodities, remove its assignment to the
+// destroyed truck and make the building eligible for a replacement.
 void CHPRouter::UnassignTrucks( DWORD dwTruckID )
 {
+    ReleasePickupShips( dwTruckID );
     CAIUnit* pTruck = m_plUnits->GetUnitNY( dwTruckID );
     if ( pTruck == NULL )
         return;
@@ -4404,8 +4432,6 @@ void CHPRouter::UnassignTrucks( DWORD dwTruckID )
             }
         }
     }
-
-    // now unassign any ships that may be assigned to this truck
 }
 
 //
@@ -4422,6 +4448,7 @@ void CHPRouter::UnassignTrucks( CAIUnit* pBldg )
         dwID = pBldg->GetParamDW( i );
         if ( dwID )
         {
+            ReleasePickupShips( dwID );
             CAIUnit* pTruck = m_plUnits->GetUnitNY( dwID );
             if ( pTruck != NULL )
             {
@@ -4466,6 +4493,7 @@ void CHPRouter::UnassignTrucks( CAIUnit* pBldg )
             // should be just trucks left
             if ( pUnit->GetDataDW( ) == pBldg->GetID( ) )
             {
+                ReleasePickupShips( pUnit->GetID( ) );
                 // now unassign the truck
                 pUnit->SetDataDW( 0 );
                 pUnit->ClearParam( );
