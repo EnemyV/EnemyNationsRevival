@@ -3412,13 +3412,20 @@ void CFarmBuilding::BuildFarm( )
     // built farm's m_iTerMult never fell. (A food farm sited on zero-fertility soil hits the same
     // path; same rule, and it is correct for it too.)
     //
-    // `stopped` is what CBuilding::Operate gates on (m_unitFlags & (stopped | abandoned)), so the
-    // building idles instead of ticking. It is self-correcting rather than a one-way door: if the
-    // flag is ever cleared while the site is still barren, the next tick simply re-sets it.
+    // Set `stopped` AND `abandoned`, exactly as the dead mine does. `stopped` alone was not enough:
+    // from the next tick CBuilding::Operate takes its stopped branch, which charges HALF power and
+    // workers to every finished, non-abandoned building -- forever, since the mill never reaches
+    // this branch again. `abandoned` is what that branch exempts. It is a one-way door, and that is
+    // right: nothing at runtime turns a hex back into forest, and a food farm's m_iTerMult is fixed
+    // at placement. Its other effects match a dead extractor: the panel reads "(exhausted)" at 0
+    // cost, repair crews are released instead of welded, the router still collects leftover stock
+    // but never treats it as a live source, and the AI stops counting a dead MILL (lumber is in its
+    // extractor range) and builds a replacement.
     if ( m_iTerMult <= 0 )
     {
         m_iBuildDone = 0;
         SetFlag( stopped );
+        SetFlag( abandoned );
         m_iLastPer = 0;
         AnimateOperating( FALSE );
         return;
