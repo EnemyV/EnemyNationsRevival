@@ -222,6 +222,9 @@ public:
 
     bool IsChecked() const { return m_checked; }
     void SetChecked(bool c) { m_checked = c; }
+    // Live label: the edict rows fold their current draft numbers into the checkbox text
+    // ("Public Works (1,231 workers)"), so Refresh() rewrites it every pump.
+    void SetText(const std::string& t) { m_text = t; }
 
 private:
     std::string m_text;
@@ -243,6 +246,9 @@ public:
     void Render(SDL_Surface* dst, TTF_Font* font) override;
     void RenderOverlay(SDL_Surface* dst, TTF_Font* font, const SDL_Rect& dlgRect) override;
     bool HandleEvent(const SDL_Event& event) override;
+    // Live tip: RenderOverlay renders m_tip afresh on every hovered frame (nothing is
+    // cached), so replacing the string takes effect immediately.
+    void SetTip(const std::string& t) { m_tip = t; }
 
 private:
     std::string m_tip;

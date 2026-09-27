@@ -2156,15 +2156,22 @@ RepairDone:;
 
     // R&D from this building
     case CStructureData::UTresearch: {
+        // EDICT_AUTO_RESEARCH's scoped half: every research center needs
+        // AUTO_RSRCH_LAB_WORKER_PCT% more workers while the edict is active. Power is untouched,
+        // and the idle branch's half-staff rule scales the surcharge with it.
+        int iLabPpl = GetData( )->GetPeople( );
+        if ( GetOwner( )->IsEdictActive( EDICT_AUTO_RESEARCH ) )
+            iLabPpl = (int)( iLabPpl * ( 1.0f + AUTO_RSRCH_LAB_WORKER_PCT / 100.0f ) + 0.5f );
+
         if ( GetOwner( )->GetRsrchItem( ) != 0 )
         {
             GetOwner( )->AddPwrNeed( GetData( )->GetPower( ) );
-            GetOwner( )->AddPplNeedBldg( GetData( )->GetPeople( ) );
+            GetOwner( )->AddPplNeedBldg( iLabPpl );
         }
         else
         {
             GetOwner( )->AddPwrNeed( GetData( )->GetPower( ) / 2 );
-            GetOwner( )->AddPplNeedBldg( GetData( )->GetPeople( ) / 2 );
+            GetOwner( )->AddPplNeedBldg( iLabPpl / 2 );
         }
 
         CBuildResearch* pBr  = GetData( )->GetBldResearch( );

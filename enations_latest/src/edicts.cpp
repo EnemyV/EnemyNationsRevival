@@ -51,9 +51,13 @@ const EdictDef g_aEdicts[EDICT_COUNT] =
       0.25f, 0.15f, 0.0f,
       1.0f, 1.0f, 1.0f, 1.0f, 1.0f },
 
-    // EDICT_RESEARCH_SUBSIDY — Office-hosted, civ-wide economy policy. Folds
-    // m_fEdictRsrchMult into GetRsrchMult() (plan §2.1; pairs with the RG-1 lever).
-    { "Research Subsidy", "Civ-wide: +30% research speed.\nCost: +25% civ-wide power use, +15% civ-wide workers.",
+    // EDICT_RESEARCH_SUBSIDY — Office-hosted, civ-wide economy policy. TWO halves: the static
+    // one below folds m_fEdictRsrchMult into GetRsrchMult() (plan §2.1; pairs with the RG-1
+    // lever) and charges the pct upkeeps; on top of it ApplySurplusEdicts seconds
+    // RSRCH_SUBSIDY_DRAFT_PCT% of the idle workforce to the labs for up to
+    // RSRCH_SUBSIDY_MAX_PCT more, via m_fSurplusRsrchMult (also folded into GetRsrchMult).
+    // Being the lowest surplus id, it takes its cut of the idle pool first.
+    { "Research Subsidy", "Civ-wide: +30% research speed, and idle workers are seconded to the labs for up to +20% more.\nCost: +25% civ-wide power use, +15% civ-wide workers, plus a quarter of your idle workforce.",
       CStructureData::office, EDICT_CIVWIDE, CRsrchArray::advanced_facilities,
       1.0f, 1.0f, 1.0f, 1.30f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f,
       0.25f, 0.15f, 0.0f,
@@ -130,10 +134,14 @@ const EdictDef g_aEdicts[EDICT_COUNT] =
       0.0f, 0.30f, 0.0f,
       1.0f, 1.0f, 1.0f, 1.0f, 1.0f },
 
-    // EDICT_AUTO_RESEARCH — Office-hosted, civ-wide. Pure BEHAVIOR flag (all mults neutral):
+    // EDICT_AUTO_RESEARCH — Office-hosted, civ-wide. BEHAVIOR edict (all mults neutral):
     // CPlayer::Research() auto-starts the cheapest available topic when idle (see the hook there).
-    // No downside cost specified by the operator (flagged). Gate: medium_facilities.
-    { "AutoResearch", "Civ-wide: automatically researches the next-cheapest available technology.",
+    // Its cost is NOT in the columns below: the flat AUTO_RSRCH_POWER / AUTO_RSRCH_WORKERS are
+    // billed civ-wide in CPlayer::StartLoop and the AUTO_RSRCH_LAB_WORKER_PCT surcharge at each
+    // research center in CBuilding::Operate, both keyed on IsEdictActive like Precision Mining.
+    // Gate: medium_facilities.
+    { "AutoResearch", "Civ-wide: automatically researches the next-cheapest available technology.\n"
+                      "Cost: 5 power, 5 workers, and research centers need +20% more workers.",
       CStructureData::office, EDICT_CIVWIDE, CRsrchArray::medium_facilities,
       1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f,
       0.0f, 0.0f, 0.0f,
@@ -157,44 +165,36 @@ const EdictDef g_aEdicts[EDICT_COUNT] =
     // by CPlayer::ApplySurplusEdicts, which writes the dynamic m_fSurplus*Mult fields that the
     // matching Get* accessors fold in beside these static ones. Nothing here is a placeholder to
     // be filled in later -- a value in these columns would be a SECOND, static effect on top.
+    // Each is a FLAT cost in one resource plus a cut of the surplus of one resource (operator:
+    // never just surplus), so switching one on always commits the colony to something.
 
-    // EDICT_PUBLIC_WORKS — Rocket, civ-wide (lost if the rocket is destroyed, §29). People only:
-    // drafts SURPLUS_DRAFT_PCT% of the spare workforce and turns it into construction speed
-    // (m_fSurplusConstMult -> GetConstProd), ramping to PUBLIC_WORKS_MAX_PCT at
-    // PUBLIC_WORKS_FULL_DRAFT drafted. Gate: const_2.
-    { "Public Works", "Civ-wide: puts idle workers on construction crews: +1% build speed per 10 drafted, up to +30%.\nCost: drafts half of your idle workforce. Lost if rocket destroyed.",
+    // EDICT_PUBLIC_WORKS — Rocket, civ-wide (lost if the rocket is destroyed, §29). People both
+    // sides: a flat PUBLIC_WORKS_BASE_DRAFT plus SURPLUS_DRAFT_PCT% of the spare workforce, all
+    // of it turned into construction speed (m_fSurplusConstMult -> GetConstProd), ramping to
+    // PUBLIC_WORKS_MAX_PCT at PUBLIC_WORKS_FULL_DRAFT total. Gate: const_2.
+    { "Public Works", "Civ-wide: puts workers on construction crews: +1% build speed per 10 drafted, up to +30%.\nCost: 100 workers plus half of your idle workforce. Lost if rocket destroyed.",
       CStructureData::rocket, EDICT_CIVWIDE, CRsrchArray::const_2,
       1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f,
       0.0f, 0.0f, 0.0f,
       1.0f, 1.0f, 1.0f, 1.0f, 1.0f },
 
-    // EDICT_CIVIL_DEFENCE — Rocket, civ-wide (lost if the rocket is destroyed, §29). TWO inputs:
-    // spare workers AND surplus power, and the effect scales with the smaller of the two ratios
-    // (see CIVDEF_FULL_*). Drives m_fSurplusBldgDmgMult (folded into GetEdictBldgDmgMult beside
-    // Meat Shield) and m_fSurplusFortMult (GetEdictFortBuildMult, beside Fortify Border).
-    // Gate: fortification.
-    { "Civil Defence", "Civ-wide: idle workers and surplus power go to shelters and fortifications: buildings take up to 20% less damage, forts build up to 30% faster.\nCost: drafts half your idle workforce and half your surplus power; the effect scales with the smaller of the two. Lost if rocket destroyed.",
+    // EDICT_CIVIL_DEFENCE — Rocket, civ-wide (lost if the rocket is destroyed, §29). Population
+    // + surplus ENERGY: a flat CIVDEF_BASE_DRAFT of workers mans the shelters, and the EFFECT is
+    // bought with SURPLUS_POWER_PCT% of the spare power (CIVDEF_FULL_POWER = full effect).
+    // Drives m_fSurplusBldgDmgMult (folded into GetEdictBldgDmgMult beside Meat Shield) and
+    // m_fSurplusFortMult (GetEdictFortBuildMult, beside Fortify Border). Gate: fortification.
+    { "Civil Defence", "Civ-wide: workers and surplus power go to shelters and fortifications: buildings take up to 20% less damage, forts build up to 30% faster.\nCost: 100 workers, plus half of your surplus power; the effect scales with that surplus. Lost if rocket destroyed.",
       CStructureData::rocket, EDICT_CIVWIDE, CRsrchArray::fortification,
       1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f,
       0.0f, 0.0f, 0.0f,
       1.0f, 1.0f, 1.0f, 1.0f, 1.0f },
 
-    // EDICT_WAR_FOOTING — Command Center, civ-wide. Same two-input shape as Civil Defence, at a
-    // bigger appetite (WARFOOT_FULL_*), spending it on m_fSurplusInfBuildMult (folded into
-    // GetEdictInfBuildMult beside The Draft). Gate: atk_2.
-    { "War Footing", "Civ-wide: idle workers and surplus power go to the war effort: infantry build up to 100% faster.\nCost: drafts half your idle workforce and half your surplus power; the effect scales with the smaller of the two.",
+    // EDICT_WAR_FOOTING — Command Center, civ-wide. The mirror of Civil Defence: energy +
+    // surplus PEOPLE. A flat WARFOOT_BASE_POWER bill, and the effect is bought with
+    // SURPLUS_DRAFT_PCT% of the spare workforce (WARFOOT_FULL_DRAFT = full effect), spent on
+    // m_fSurplusInfBuildMult (folded into GetEdictInfBuildMult beside The Draft). Gate: atk_2.
+    { "War Footing", "Civ-wide: power and idle workers go to the war effort: infantry build up to 100% faster.\nCost: 30 power, plus half of your idle workforce; the effect scales with those workers.",
       CStructureData::command_center, EDICT_CIVWIDE, CRsrchArray::atk_2,
-      1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f,
-      0.0f, 0.0f, 0.0f,
-      1.0f, 1.0f, 1.0f, 1.0f, 1.0f },
-
-    // EDICT_RESEARCH_FELLOWSHIPS — Office, civ-wide. People from the surplus, power as a FLAT
-    // cost (1 per FELLOWS_PER_POWER fellows, booked into m_iPwrNeed like a building's own draw,
-    // so it browns the colony out if it can't afford it). Each fellow credits AddRsrch at
-    // FELLOW_RATE_PCT% of one laboratory worker's rate, through the same PplMult/RsrchMult
-    // throttles the lab itself uses. Gate: medium_facilities.
-    { "Research Fellowships", "Civ-wide: places idle workers on research fellowships: each fellow researches at 25% of a laboratory worker's rate.\nCost: drafts half your idle workforce; +1 power per 5 fellows.",
-      CStructureData::office, EDICT_CIVWIDE, CRsrchArray::medium_facilities,
       1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f,
       0.0f, 0.0f, 0.0f,
       1.0f, 1.0f, 1.0f, 1.0f, 1.0f },

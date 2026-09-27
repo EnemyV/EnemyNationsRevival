@@ -405,7 +405,8 @@ class CPlayer : public CObject
     float GetRsrchMult( ) const
     {
         ASSERT_STRICT_VALID( this );
-        return ( m_fRsrchProd * m_fEdictRsrchMult * m_fEdictGlobalProdMult );   // Research Subsidy + Overclocked Grid (RG-1)
+        // Research Subsidy's static half * its surplus half (seconded idle workers) * Overclocked Grid (RG-1)
+        return ( m_fRsrchProd * m_fEdictRsrchMult * m_fSurplusRsrchMult * m_fEdictGlobalProdMult );
     }
     // --- Edicts v1 (civ-wide policy toggles; see edicts.h / RecomputeEdictMults) ---
     bool  IsEdictActive( int edictId ) const { return ( m_dwEdicts & ( 1u << edictId ) ) != 0; }
@@ -425,7 +426,7 @@ class CPlayer : public CObject
     int         GetEdictDraftPpl( int edictId ) const;   // workers this edict drafted this pump
     int         GetEdictDraftPwr( int edictId ) const;   // power it drew/cost this pump
     float       GetEdictScale( int edictId ) const;      // its effect scale (0..1; Desperate: draft/RATE_PER)
-    std::string GetEdictStatus( int edictId ) const;     // one live line for the info window ("" = nothing to say)
+    std::string GetEdictEffectText( int edictId ) const; // live effect clause for the (i) tooltip ("" = nothing to say)
     float GetEdictInfPopMult( ) const { return ( m_fEdictInfPopMult ); }   // The Draft (infantry population cost)
     void  ToggleEdict( int edictId, bool bOn );   // flips the bit, then RecomputeEdictMults (local only)
     void  ToggleEdictNet( int edictId, bool bOn );// user-initiated toggle: local + broadcast (MP sync)
@@ -939,8 +940,8 @@ class CPlayer : public CObject
     LONG  m_iSurplusPplLast; // workers ALL surplus edicts drafted last tick (added back as spare)
     LONG  m_iSurplusPplTick; // same, accumulating for this tick (ApplySurplusEdicts)
     // The power half of the same machinery. m_iPwrNeedLast == -1 is the same "no finished pump
-    // yet" sentinel. Only SURPLUS draws are summed into m_iSurplusPwrTick: Research Fellowships'
-    // power is a flat cost, not a cut of the surplus, so adding it back would inflate the spare.
+    // yet" sentinel. Only SURPLUS draws are summed into m_iSurplusPwrTick: War Footing's power,
+    // for one, is a flat cost, not a cut of the surplus, so adding it back would inflate the spare.
     LONG  m_iPwrHaveLast;    // last tick's FINISHED m_iPwrHave
     LONG  m_iPwrNeedLast;    // last tick's FINISHED m_iPwrNeed (-1 = none yet)
     LONG  m_iSurplusPwrLast; // surplus power ALL surplus edicts drew last tick (added back)
@@ -953,8 +954,7 @@ class CPlayer : public CObject
     LONG  m_iCivDefPower;
     LONG  m_iWarFootDraft;   // War Footing draft / power draw
     LONG  m_iWarFootPower;
-    LONG  m_iFellowsDraft;   // Research Fellowships fellows / flat power cost
-    LONG  m_iFellowsPower;
+    LONG  m_iRsrchSubDraft;  // Research Subsidy's seconded idle workers (its surplus half)
     LONG  m_iSurplusSparePpl;  // the spare this pump was cut from (harness `pplspare`)
     LONG  m_iSurplusSparePwr;  // ditto for power (harness `pwrspare`)
     LONG  m_iPplBldg;      // people presently have EXCEPT in vehicles
@@ -1023,6 +1023,7 @@ class CPlayer : public CObject
     float m_fSurplusFortMult;      // Civil Defence  → GetEdictFortBuildMult
     float m_fSurplusBldgDmgMult;   // Civil Defence  → GetEdictBldgDmgMult
     float m_fSurplusInfBuildMult;  // War Footing    → GetEdictInfBuildMult
+    float m_fSurplusRsrchMult;     // Research Subsidy (surplus half) → GetRsrchMult
     float m_fEdictFuelCarry;       // runtime-only: fractional gas-surcharge carry (not serialized)
     BOOL  m_bAutoRsrchPending;     // runtime-only: AutoResearch edict posted a set_rsrch, awaiting it (not serialized)
     // Upkeep — recurring cost (sum of active edicts' pct), applied as extra per-loop demand:

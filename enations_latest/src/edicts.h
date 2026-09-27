@@ -34,7 +34,8 @@ enum EdictId
     EDICT_FORTIFY_BORDER = 0,   // Command Center: +fort construction speed, +energy upkeep
     EDICT_NUTRITION,            // Apartment: +population growth, +food drain
     EDICT_MINING_SUBSIDY,       // Office: +mine output, +energy upkeep
-    EDICT_RESEARCH_SUBSIDY,     // Office: +research speed, +workforce upkeep
+    EDICT_RESEARCH_SUBSIDY,     // Office: +research speed, +workforce upkeep, + a cut of the
+                                //   spare workforce for more (surplus family, see below)
     EDICT_AUSTERITY,            // Rocket (civ-wide): +construction speed, +workforce upkeep
     EDICT_AGRICULTURAL,         // Office: +farm output, +25% workers required at farms
     EDICT_OVERCLOCKED_GRID,     // Rocket (tech-gated): +all production, +global power upkeep
@@ -43,13 +44,13 @@ enum EdictId
     EDICT_DRAFT,                // Command Center: +infantry build speed, +infantry population cost
     EDICT_PRECISION_MINING,     // Office: +mine output, +energy & +worker requirement at mines
     EDICT_MEAT_SHIELD,          // Command Center: buildings take less damage, +worker requirement
-    EDICT_AUTO_RESEARCH,        // Office: auto-researches the next-cheapest available tech (behavior flag)
+    EDICT_AUTO_RESEARCH,        // Office: auto-researches the next-cheapest available tech;
+                                //   flat power + workers civ-wide, +pct workers at research centers
     EDICT_DESPERATE_MEASURES,   // Rocket (civ-wide): scrounge a multi-resource trickle for +100 workers
     // --- surplus-scaled family (see SURPLUS_DRAFT_PCT / CPlayer::ApplySurplusEdicts) ----------
-    EDICT_PUBLIC_WORKS,         // Rocket: idle workers -> construction crews (+build speed)
-    EDICT_CIVIL_DEFENCE,        // Rocket: idle workers + surplus power -> shelters & forts
-    EDICT_WAR_FOOTING,          // Command Center: idle workers + surplus power -> infantry
-    EDICT_RESEARCH_FELLOWSHIPS, // Office: idle workers -> research fellows (costs power)
+    EDICT_PUBLIC_WORKS,         // Rocket: flat workers + surplus workers -> construction crews
+    EDICT_CIVIL_DEFENCE,        // Rocket: flat workers + surplus POWER -> shelters & forts
+    EDICT_WAR_FOOTING,          // Command Center: flat POWER + surplus workers -> infantry
     EDICT_COUNT
 };
 
@@ -105,11 +106,32 @@ extern const EdictDef g_aEdicts[EDICT_COUNT];
 bool EdictHostHasEdicts( CStructureData::BLDG_TYPE bldgType );
 
 // --- Surplus-scaled edicts: the shared cut ---------------------------------------------------
-// A "surplus" edict is one that puts the resources the colony is NOT using to work. Each active
-// one takes this percentage of the spare workforce REMAINING when the walk reaches it (they are
-// visited in EdictId order, and the pool shrinks as it goes), so the family as a whole can never
-// draft more than the colony actually has idle. See CPlayer::ApplySurplusEdicts for why the
-// "spare" it cuts from has to be measured as if these edicts were not running at all.
+// A "surplus" edict puts the resources the colony is NOT using to work -- but NONE of them is
+// purely opportunistic (operator: "nothing should be JUST surplus, it should always be base +
+// something"). Every one is a FLAT cost in one resource PLUS a cut of the SURPLUS of a resource,
+// and the two need not be the same resource:
+//
+//    3 Research Subsidy   pct upkeeps + RSRCH_SUBSIDY_DRAFT_PCT% of the spare workers
+//   13 Desperate Measures  flat workers + SURPLUS_DRAFT_PCT% of the remaining spare workers
+//   14 Public Works        flat workers + SURPLUS_DRAFT_PCT% of the remaining spare workers
+//   15 Civil Defence       flat workers + SURPLUS_POWER_PCT% of the remaining surplus POWER
+//   16 War Footing         flat POWER   + SURPLUS_DRAFT_PCT% of the remaining spare workers
+//
+// Research Subsidy is the one whose flat half is not a number but the static pct upkeeps in its
+// g_aEdicts row (energy + workforce), charged by RecomputeEdictMults/StartLoop like any other
+// edict's; only its surplus half is priced here. It is also the LOWEST id, so it takes its cut
+// first (see the walk in ApplySurplusEdicts).
+//
+// Exactly ONE surplus input each, so an edict's effect scales with that one quantity -- there is
+// no min() of two ratios to reason about. The flat cost is charged whether or not there is any
+// slack, which means switching an edict on is always a real commitment and CAN push the colony
+// into workforce or power deficit; that is the point, not an oversight. The edicts are visited
+// in EdictId order and each cut shrinks the pool for the next, so the family together can never
+// take more surplus than the colony actually has idle.
+//
+// Accounting (uniform across the family -- see CPlayer::ApplySurplusEdicts): only the SURPLUS-
+// DERIVED cuts are added back when next pump measures the spare. A flat cost stays inside the
+// need, because it is a bill the colony is really paying, not idle capacity being borrowed.
 const int SURPLUS_DRAFT_PCT = 50;   // pct of the REMAINING spare workforce one edict drafts
 const int SURPLUS_POWER_PCT = 50;   // pct of the REMAINING surplus power one edict draws
 
@@ -139,9 +161,9 @@ inline float SurplusScale( int iHave, int iFull )
 // UI/harness need the same predicate. Keep in step with the walk in ApplySurplusEdicts.
 inline bool EdictIsSurplus( int id )
 {
-    return ( ( id == EDICT_DESPERATE_MEASURES ) || ( id == EDICT_PUBLIC_WORKS ) ||
-             ( id == EDICT_CIVIL_DEFENCE ) || ( id == EDICT_WAR_FOOTING ) ||
-             ( id == EDICT_RESEARCH_FELLOWSHIPS ) );
+    return ( ( id == EDICT_RESEARCH_SUBSIDY ) || ( id == EDICT_DESPERATE_MEASURES ) ||
+             ( id == EDICT_PUBLIC_WORKS ) || ( id == EDICT_CIVIL_DEFENCE ) ||
+             ( id == EDICT_WAR_FOOTING ) );
 }
 
 // --- Desperate Measures tuning (EDICT_DESPERATE_MEASURES) -----------------------------------
@@ -163,26 +185,44 @@ const int DESPERATE_RATE_LINES = 4;
 extern const AltOutput::AltMat DESPERATE_BASE_RATES[DESPERATE_RATE_LINES];
 
 // --- Public Works tuning (EDICT_PUBLIC_WORKS) ------------------------------------------------
-const int PUBLIC_WORKS_FULL_DRAFT = 300;  // drafted workers that buy the FULL construction bonus
+// Flat workers + surplus workers; the bonus scales with the TOTAL of the two.
+const int PUBLIC_WORKS_BASE_DRAFT = 100;  // workers conscripted even with zero spare population
+const int PUBLIC_WORKS_FULL_DRAFT = 300;  // total drafted workers that buy the FULL bonus
 const int PUBLIC_WORKS_MAX_PCT    = 30;   // max +pct build speed (= +1% per 10 drafted at full)
 
 // --- Civil Defence tuning (EDICT_CIVIL_DEFENCE) ----------------------------------------------
-// Two inputs, and the effect scales with the SMALLER of the two ratios: workers with no power
-// (or power with no workers) buy nothing, which is the point of a two-input edict.
-const int CIVDEF_FULL_DRAFT   = 300;  // drafted workers for the full effect
+// Population + surplus ENERGY: the flat cost is workers, the scaling input is spare power, so
+// the effect is set by the POWER drawn (drafted workers buy nothing on their own here).
+const int CIVDEF_BASE_DRAFT   = 100;  // workers manning the shelters, spare population or not
 const int CIVDEF_FULL_POWER   = 150;  // surplus power drawn for the full effect
 const int CIVDEF_MAX_DMG_PCT  = 20;   // max pct of building damage TAKEN removed
 const int CIVDEF_MAX_FORT_PCT = 30;   // max +pct fortification build speed
 
 // --- War Footing tuning (EDICT_WAR_FOOTING) --------------------------------------------------
+// Energy + surplus PEOPLE: the mirror image of Civil Defence -- flat power bill, effect set by
+// the workers drafted.
+const int WARFOOT_BASE_POWER = 30;    // power the war effort burns, surplus power or not
 const int WARFOOT_FULL_DRAFT = 400;   // drafted workers for the full effect
-const int WARFOOT_FULL_POWER = 200;   // surplus power drawn for the full effect
 const int WARFOOT_MAX_INF_PCT = 100;  // max +pct infantry build speed
 
-// --- Research Fellowships tuning (EDICT_RESEARCH_FELLOWSHIPS) --------------------------------
-// The power half is NOT a surplus draw: it is a flat cost booked into m_iPwrNeed like any other
-// building's, so an under-powered colony browns out paying for it instead of getting it free.
-const int FELLOWS_PER_POWER = 5;   // fellows supported per 1 power of flat cost
-const int FELLOW_RATE_PCT   = 25;  // a fellow researches at this pct of a lab WORKER's rate
+// --- Auto Research tuning (EDICT_AUTO_RESEARCH) ----------------------------------------------
+// The edict's own effect is pure behaviour (CPlayer::Research auto-starts the cheapest topic), so
+// its whole price is these three numbers. The two flat costs are billed civ-wide once per pump in
+// CPlayer::StartLoop -- inside the need, so they are a real bill and never look like spare
+// capacity -- and the pct is a SCOPED surcharge charged at each research center in
+// CBuilding::Operate's UTresearch case (so it scales with how many labs the civ runs).
+const int AUTO_RSRCH_POWER          = 5;   // flat civ-wide power while active
+const int AUTO_RSRCH_WORKERS        = 5;   // flat civ-wide workers while active
+const int AUTO_RSRCH_LAB_WORKER_PCT = 20;  // extra pct of workers EVERY research center needs
+
+// --- Research Subsidy surplus half (EDICT_RESEARCH_SUBSIDY) ----------------------------------
+// Its flat half is the static fRsrchMult/upkeep pcts in its g_aEdicts row (+30% research for
+// +25% power and +15% workers civ-wide). On top of that it seconds a cut of the idle workforce
+// to the labs for up to RSRCH_SUBSIDY_MAX_PCT more. The draft pct is deliberately smaller than
+// SURPLUS_DRAFT_PCT: this edict is cheap, always available early, and must not be the one that
+// eats the whole idle pool before the rocket/command-center edicts get a look at it.
+const int RSRCH_SUBSIDY_DRAFT_PCT = 25;   // pct of the REMAINING spare workforce it drafts
+const int RSRCH_SUBSIDY_FULL_DRAFT = 300; // drafted workers for the full EXTRA bonus
+const int RSRCH_SUBSIDY_MAX_PCT    = 20;  // max EXTRA research pct, on top of the static +30%
 
 #endif // ENATIONS_EDICTS_H

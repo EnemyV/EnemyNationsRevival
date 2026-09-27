@@ -383,26 +383,12 @@ static int nCivEdictsHostMax(CBuilding* b) {
     }
     return n;
 }
-// How many of this host's civ-wide edicts are SURPLUS edicts (research ignored, same
-// size-for-the-max rule as nCivEdictsHostMax): each gets an extra status line under its
-// checkbox, so the section has to reserve a row for each of them.
-static int nSurplusEdictRowsMax(CBuilding* b) {
-    CStructureData::BLDG_TYPE bt = b->GetData()->GetBldgType();
-    CStructureData::BLDG_TYPE gt = b->GetData()->GetType();
-    int n = 0;
-    for ( int id = 0; id < EDICT_COUNT; ++id ) {
-        if ( g_aEdicts[id].scope != EDICT_CIVWIDE ) continue;
-        if ( !EdictIsSurplus( id ) ) continue;
-        CStructureData::BLDG_TYPE host = g_aEdicts[id].hostBuilding;
-        if ( host == bt || host == gt ) ++n;
-    }
-    return n;
-}
-// The Edicts section's height: one ROW_H per hosted edict plus one per surplus edict's live
-// status line. Used by BOTH computeLayout (the reservation) and BuildEdicts (the box) — they
-// must not drift, or the box outline and the section slot disagree.
+// The Edicts section's height: exactly one ROW_H per hosted edict. A surplus edict's live
+// draft numbers ride in its checkbox label (and its effect clause in the (i) tooltip), so no
+// row reserves a second line. Used by BOTH computeLayout (the reservation) and BuildEdicts
+// (the box) — they must not drift, or the box outline and the section slot disagree.
 static int edictsSecH(CBuilding* b) {
-    return BOX_PAD + HDR_H + ( nCivEdictsHostMax(b) + nSurplusEdictRowsMax(b) ) * ROW_H + BOX_PAD;
+    return BOX_PAD + HDR_H + nCivEdictsHostMax(b) * ROW_H + BOX_PAD;
 }
 // Show the Edicts section only on an edict-host building that I own.
 static bool secEdicts(CBuilding* b) {
@@ -855,7 +841,7 @@ void SDL2BuildingWindow::NullSectionWidgets() {
     m_lblTurretRange = nullptr; m_lblTurretDmg = nullptr; m_lblTurretReload = nullptr;
     m_lblTurretDps = nullptr; m_btnShowRange = nullptr;
     m_chkAltOut = nullptr;
-    for ( int i = 0; i < kMaxEdictRows; i++ ) { m_chkEdict[i] = nullptr; m_edictIds[i] = 0; m_lblEdictStatus[i] = nullptr; }
+    for ( int i = 0; i < kMaxEdictRows; i++ ) { m_chkEdict[i] = nullptr; m_edictIds[i] = 0; m_icoEdict[i] = nullptr; }
     m_nEdictRows = 0;
     m_lblProduction = nullptr; m_progProduction = nullptr;
     m_lblMilStrength = nullptr; m_lblInfantry = nullptr; m_lblVehicles = nullptr; m_lblMilEnergy = nullptr;
@@ -1066,6 +1052,16 @@ int SDL2BuildingWindow::BuildAltOutput(int x, int y, int w) {
 // One SDL2Checkbox per edict; toggling calls CPlayer::ToggleEdictNet, which applies the
 // bonus+upkeep locally (RecomputeEdictMults) and, in a net game, broadcasts CNetEdictToggle
 // so every client converges deterministically.
+// The STATIC part of an edict's (i) tooltip: its scope, then its effect text. Shared by
+// BuildEdicts (which creates the icon) and Refresh (which appends the live effect clause for
+// an active surplus edict) so the two cannot drift.
+static std::string edictTip(const EdictDef& e) {
+    std::string tip = ( e.scope == EDICT_CIVWIDE ) ? "Civilization-wide"
+                                                   : "This building only";
+    if ( e.desc && e.desc[0] ) { tip += "\n"; tip += e.desc; }
+    return tip;
+}
+
 int SDL2BuildingWindow::BuildEdicts(int x, int y, int w) {
     // Box + returned height use the UNGATED host maximum (matches computeLayout's
     // reservation) so a row a later research discovery adds always fits in place.
@@ -1091,9 +1087,6 @@ int SDL2BuildingWindow::BuildEdicts(int x, int y, int w) {
         const int kInfoSz = 14;
         int cbX = x + BOX_PAD + 4;
         int cbW = w - 2 * BOX_PAD - 8 - ( kInfoSz + 4 );
-        // The CHECKBOX row's y. A surplus edict advances cy below to lay out its status line, so
-        // the (i) icon must be positioned from this saved y or it drifts down onto that line.
-        int cbY = cy;
         SDL2Checkbox* chk = AddWidget<SDL2Checkbox>( cbX, cy, cbW, ROW_H,
                                  e.name, checked,
                                  [this, me, eid]( bool on ){
@@ -1102,30 +1095,20 @@ int SDL2BuildingWindow::BuildEdicts(int x, int y, int w) {
                                      // defer the relayout to OnFrame (don't free this checkbox mid-callback).
                                      if ( eid == EDICT_DESPERATE_MEASURES ) m_bNeedRelayout = true;
                                  } );
-        // A surplus edict gets a live status line under its checkbox: what it is drafting right
-        // now and what that buys (CPlayer::GetEdictStatus — the cached per-pump numbers the sim
-        // itself used, never a second copy of the formula). Created regardless of the edict's
-        // state and filled in by Refresh(), so toggling it never changes the section's height.
-        SDL2Label* lblSt = nullptr;
-        if ( EdictIsSurplus( id ) ) {
-            cy += ROW_H;
-            lblSt = AddWidget<SDL2Label>( cbX + 12, cy - 2, cbW - 12, ROW_H, "" );
-        }
+        // (i) info icon — hover reveals the edict's scope (#36) then its effect
+        // text (EdictDef::desc), one per line. For a surplus edict Refresh() appends the live
+        // effect clause the current draft is buying.
+        SDL2InfoIcon* ico = AddWidget<SDL2InfoIcon>( cbX + cbW + 4, cy + ( ROW_H - kInfoSz ) / 2,
+                                                     kInfoSz, kInfoSz, edictTip( e ) );
         // Track the row so Refresh() can re-sync the checkbox from the player bitmask
-        // (external toggles: harness setedict, last-host auto-revoke §29) and refill the status line.
+        // (external toggles: harness setedict, last-host auto-revoke §29) and refresh the
+        // live draft numbers in the label / the effect clause in the tooltip.
         if ( m_nEdictRows < kMaxEdictRows ) {
-            m_chkEdict[m_nEdictRows]  = chk;
+            m_chkEdict[m_nEdictRows] = chk;
             m_edictIds[m_nEdictRows] = id;
-            m_lblEdictStatus[m_nEdictRows] = lblSt;
+            m_icoEdict[m_nEdictRows] = ico;
             m_nEdictRows++;
         }
-        // (i) info icon — hover reveals the edict's scope (#36) then its effect
-        // text (EdictDef::desc), one per line.
-        std::string tip = ( e.scope == EDICT_CIVWIDE ) ? "Civilization-wide"
-                                                        : "This building only";
-        if ( e.desc && e.desc[0] ) { tip += "\n"; tip += e.desc; }
-        AddWidget<SDL2InfoIcon>( cbX + cbW + 4, cbY + ( ROW_H - kInfoSz ) / 2,
-                                 kInfoSz, kInfoSz, tip );
         cy += ROW_H;
     }
     return y + H + SEC_PAD;
@@ -2131,12 +2114,38 @@ void SDL2BuildingWindow::Refresh() {
     // so the new row fits without a window resize. (Same OnFrame relayout path as C6.)
     if ( m_nEdictRows > 0 ) {
         for ( int i = 0; i < m_nEdictRows; i++ ) {
+            const int       id = m_edictIds[i];
+            const EdictDef& e  = g_aEdicts[id];
+            const bool      on = p->IsEdictActive( id );
             if ( m_chkEdict[i] )
-                m_chkEdict[i]->SetChecked( p->IsEdictActive( m_edictIds[i] ) );
-            // Surplus edicts: re-read this pump's cached draft/effect. "" while the edict is
-            // off or drafting nothing — the row keeps its reserved height either way.
-            if ( m_lblEdictStatus[i] )
-                m_lblEdictStatus[i]->SetText( p->GetEdictStatus( m_edictIds[i] ).c_str() );
+                m_chkEdict[i]->SetChecked( on );
+            // A SURPLUS edict carries its live draft numbers IN the checkbox label
+            // ("Public Works (1,231 workers)") — the cached per-pump numbers the sim itself
+            // used, never a second copy of the formula. Off, or drafting nothing, and the
+            // label is just the plain name; either way the row is one ROW_H.
+            std::string label = e.name;
+            if ( EdictIsSurplus( id ) && on ) {
+                int ppl = p->GetEdictDraftPpl( id );
+                int pwr = p->GetEdictDraftPwr( id );
+                if ( ( ppl > 0 ) && ( pwr > 0 ) )
+                    label += " (" + FmtNum( ppl ) + " workers, " + FmtNum( pwr ) + " power)";
+                else if ( ppl > 0 )
+                    label += " (" + FmtNum( ppl ) + " workers)";
+                else if ( pwr > 0 )
+                    label += " (" + FmtNum( pwr ) + " power)";
+            }
+            if ( m_chkEdict[i] )
+                m_chkEdict[i]->SetText( label );
+            // The (i) tooltip: the same static scope+description BuildEdicts made, plus — for an
+            // active surplus edict — what the current draft is buying right now.
+            if ( m_icoEdict[i] ) {
+                std::string tip = edictTip( e );
+                if ( EdictIsSurplus( id ) && on ) {
+                    std::string effect = p->GetEdictEffectText( id );
+                    if ( !effect.empty( ) ) { tip += "\n"; tip += effect; }
+                }
+                m_icoEdict[i]->SetTip( tip );
+            }
         }
         if ( nCivEdictsFor( m_pBldg ) != m_nEdictRows )
             m_bNeedRelayout = true;
@@ -2270,12 +2279,17 @@ void SDL2BuildingWindow::Refresh() {
         if ( bScroungeRocket ) {
             // Desperate Measures scales with the draft, so scale the quoted rate the same way the
             // sim credits it (CBuilding::Operate) off the one shared table in edicts.cpp.
+            // The draft count lives HERE now (the edict's checkbox row is one line, like every
+            // other edict) — this is the only place Desperate Measures' headcount is shown.
             int iDraft = m_pBldg->GetOwner()->GetDesperateDraft();
-            str = "Producing:";
+            str = "Drafting " + FmtNum( iDraft ) + " workers: ";
+            bool bFirst = true;
             for ( int i = 0; i < DESPERATE_RATE_LINES; i++ ) {
                 int rate = ( DESPERATE_BASE_RATES[i].m_iPerMin * iDraft ) / DESPERATE_RATE_PER;
                 if ( rate <= 0 ) continue;
-                str += " +" + std::to_string( rate ) + " " +
+                if ( !bFirst ) str += ", ";
+                bFirst = false;
+                str += "+" + std::to_string( rate ) + " " +
                        std::string( CMaterialTypes::GetDesc( DESPERATE_BASE_RATES[i].m_iMat ).c_str() );
             }
             str += " / min";
