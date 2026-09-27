@@ -2060,6 +2060,16 @@ int CConquerApp::ExitInstance( )
     // AiThread bEndThreads check this join completes in ~100ms per worker.
     myThreadClose( (THREADEXITFUNC)AiExit );
 
+    // Delete the world while the unit-type data it points at still exists: every building
+    // and vehicle reads its CStructureData/CTransportData in its destructor (a mine's
+    // UpdateGround does), and the sprite Close()s below free that data. Quitting through
+    // the window (SDL_QUIT -> ExitInstance) used to run them first = a read of freed data
+    // on every building, an access violation at quit on large saves. The in-game menu
+    // quit (CloseWorld) already tears the world down in this order.
+    DestroyExceptMain( );  // if in create
+    if ( m_wndBar.IsCreated() )
+        DestroyWorld( );  // game
+
     // close out sprites
     theTransports.Close( );
     theTurrets.Close( );
@@ -2079,9 +2089,6 @@ int CConquerApp::ExitInstance( )
     delete m_pdlgPause;
     m_pdlgPause = NULL;
 
-    DestroyExceptMain( );  // if in create
-    if ( m_wndBar.IsCreated() )
-        DestroyWorld( );  // game
     DestroyMain( );       // main window (dialog)
 
     // draw black so no palette uglyness
