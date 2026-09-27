@@ -7,10 +7,10 @@
 // little-endian — so a given build CONFIG's layout is identical across
 // MSVC/gcc/clang on x86-64 and ARM64.
 //
-// PER-CONFIG (this matters): several wire structs embed CSubHex/CObject-derived
+// PER-CONFIG (this matters): some wire structs embed CObject-derived
 // members that declare `virtual AssertValid()` under `#ifdef _DEBUG`. So in a
 // _DEBUG build those structs are polymorphic and gain an 8-byte vtable pointer
-// (e.g. _CMsgVeh = 76 debug / 60 release; two CSubHex @ +8 each). The WIRE
+// (CSubHex is not virtual, so the vehicle messages match in both). The WIRE
 // format is the RELEASE layout (MP ships Release) — but we pin BOTH configs so a
 // future `long`/pointer/`time_t` add or repad breaks the build in either config.
 // Sizes are pack(1) canonical; cross-compiler-identical within a config.
@@ -35,35 +35,35 @@ static_assert(sizeof(CNetPlay)==16, "CNetPlay");
 static_assert(sizeof(CNetToAi)==16, "CNetToAi");
 static_assert(sizeof(CNetToHp)==21, "CNetToHp");
 static_assert(sizeof(CNetGetFile)==28, "CNetGetFile");
-static_assert(sizeof(_CMsgVeh)==76, "_CMsgVeh");
+static_assert(sizeof(_CMsgVeh)==60, "_CMsgVeh");
 static_assert(sizeof(_CMsgBldg)==36, "_CMsgBldg");
 static_assert(sizeof(_CMsgRoad)==32, "_CMsgRoad");
 static_assert(sizeof(_CMsgBridge)==48, "_CMsgBridge");
-static_assert(sizeof(_CMsgVehGo)==148, "_CMsgVehGo");
+static_assert(sizeof(_CMsgVehGo)==116, "_CMsgVehGo");
 static_assert(sizeof(CMsgUnitDamage)==40, "CMsgUnitDamage");
 static_assert(sizeof(CMsgUnitSetDamage)==24, "CMsgUnitSetDamage");
 static_assert(sizeof(CMsgPlaceBldg)==36, "CMsgPlaceBldg");
-static_assert(sizeof(CMsgPlaceVeh)==76, "CMsgPlaceVeh");
+static_assert(sizeof(CMsgPlaceVeh)==60, "CMsgPlaceVeh");
 static_assert(sizeof(CMsgBuildBldg)==36, "CMsgBuildBldg");
 static_assert(sizeof(CMsgBuildVeh)==24, "CMsgBuildVeh");
 static_assert(sizeof(CMsgBuildRoad)==32, "CMsgBuildRoad");
 static_assert(sizeof(CMsgBuildBridge)==48, "CMsgBuildBridge");
-static_assert(sizeof(CMsgVehGoto)==148, "CMsgVehGoto");
+static_assert(sizeof(CMsgVehGoto)==116, "CMsgVehGoto");
 static_assert(sizeof(CMsgTransMat)==60, "CMsgTransMat");
 static_assert(sizeof(CMsgUnitControl)==17, "CMsgUnitControl");
 static_assert(sizeof(CMsgUnitRepair)==28, "CMsgUnitRepair");
 static_assert(sizeof(CMsgDestroyUnit)==16, "CMsgDestroyUnit");
 static_assert(sizeof(CMsgBldgNew)==36, "CMsgBldgNew");
 static_assert(sizeof(CMsgBldgStat)==48, "CMsgBldgStat");
-static_assert(sizeof(CMsgVehNew)==76, "CMsgVehNew");
+static_assert(sizeof(CMsgVehNew)==60, "CMsgVehNew");
 static_assert(sizeof(CMsgVehStat)==32, "CMsgVehStat");
-static_assert(sizeof(CMsgVehLoc)==148, "CMsgVehLoc");
+static_assert(sizeof(CMsgVehLoc)==116, "CMsgVehLoc");
 static_assert(sizeof(CMsgVehDest)==28, "CMsgVehDest");
 static_assert(sizeof(CMsgRoadNew)==32, "CMsgRoadNew");
 static_assert(sizeof(CMsgRoadDone)==32, "CMsgRoadDone");
 static_assert(sizeof(CMsgBridgeNew)==48, "CMsgBridgeNew");
 static_assert(sizeof(CMsgBridgeDone)==48, "CMsgBridgeDone");
-static_assert(sizeof(CMsgVehSetDest)==48, "CMsgVehSetDest");
+static_assert(sizeof(CMsgVehSetDest)==40, "CMsgVehSetDest");
 static_assert(sizeof(CMsgUnitDying)==24, "CMsgUnitDying");
 static_assert(sizeof(CMsgDeleteUnit)==24, "CMsgDeleteUnit");
 static_assert(sizeof(CMsgAttack)==20, "CMsgAttack");
