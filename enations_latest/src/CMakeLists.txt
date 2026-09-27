@@ -715,7 +715,7 @@ if (WIN32)
     set(EN_REQS "  - 64-bit Windows\n  - Microsoft Visual C++ 2015-2022 Redistributable (x64)\n      https://aka.ms/vs/17/release/vc_redist.x64.exe")
     set(EN_INCLUDED "All game files are included")
     set(EN_CONTENTS_HEADING "CONTENTS")
-    set(EN_CONTENTS "  enations.exe   - the game binary (MSVC x64 Release)\n  SDL2*.dll      - SDL2 runtime libraries\n  vdmplay.dll    - video playback\n  ENations.dat   - bundled game data (~516 MB), no separate download needed\n  data/          - baked terrain set\n  res/           - cursor art\n  assets/        - intro/logo videos")
+    set(EN_CONTENTS "  enations.exe   - the game binary (MSVC x64 Release)\n  SDL2*.dll      - SDL2 runtime libraries\n  vdmplay.dll    - multiplayer networking\n  ENations.dat   - bundled game data (~516 MB), no separate download needed\n  data/          - baked terrain set\n  res/           - cursor art\n  assets/        - intro/logo videos")
 elseif (APPLE)
     set(EN_PLATFORM "macOS ARM64")
     set(EN_RUN "./enations")
@@ -728,7 +728,7 @@ else ()
     # Linux needs system SDL2 libs (EN_REQS above), so the zip is not fully self-contained.
     set(EN_INCLUDED "All game files are included")
     set(EN_CONTENTS_HEADING "CONTENTS")
-    set(EN_CONTENTS "  enations       - the game binary (gcc x64 Release)\n  ENations.dat   - bundled game data (~516 MB), no separate download needed\n  data/          - baked terrain set\n  res/           - cursor art\n  assets/        - intro/logo videos")
+    set(EN_CONTENTS "  enations       - the game binary (gcc x64 Release)\n  libvdmplay_posix.so - multiplayer networking\n  ENations.dat   - bundled game data (~516 MB), no separate download needed\n  data/          - baked terrain set\n  res/           - cursor art\n  assets/        - intro/logo videos")
 endif ()
 
 configure_file("${CMAKE_CURRENT_SOURCE_DIR}/../../packaging/README.txt.in"
