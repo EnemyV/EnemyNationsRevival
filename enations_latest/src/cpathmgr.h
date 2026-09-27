@@ -30,6 +30,12 @@ const int MAX_BOTH_INDEX = 4096;
 #include "terrain.inl"
 #include "enprobes.h"  // EN_PATH_PROBES compile gate (shadow-instance members below)
 
+// The navigation read seam (ennavview.h). Every live-world read a search makes goes
+// through a view; the search body below is a template over the view type, so
+// CEnLiveNavView and CEnSnapNavView each get their own inlined copy and neither
+// pays an indirect call in the innermost A* loop. Both instantiations are used
+// inside cpathmgr.cpp, so no explicit instantiation is needed here.
+
 class CCell
 {
 public:
@@ -112,7 +118,6 @@ class CPathMgr
 	CHexCoord m_lastFrom;	// to stop repeating path requests
 	CHexCoord m_lastTo;
 
-	BOOL IsHexMovingVehicle ( CHexCoord const & hex );
 	BOOL m_bVehBlock;	// indicates if vehicles on path block path
 
 	CTransportData const *m_pTD; // pointer for this vehicle type
@@ -211,10 +216,10 @@ public:
     CHexCoord* GetPath( CVehicle* pVehicle, CHexCoord& hexFrom, CHexCoord& hexTo, int& iPathLen, int iVehType = 0,
                         BOOL bVehBlock = FALSE, BOOL bDirectPath = FALSE );
 
-	CHexCoord *CreateHexPath( int& iPathLen, CCell *pDestCell );
+	template <class TView> CHexCoord *CreateHexPath( TView const & view, int& iPathLen, CCell *pDestCell );
 	int GetCellDirection( CHexCoord& fromHex, CHexCoord& toHex );
-	void AdjustDestination( void );
-	void ChangeDestination( void );
+	template <class TView> void AdjustDestination( TView const & view );
+	template <class TView> void ChangeDestination( TView const & view );
 
 	void GetHeadingCell( int iPos, CCell *pFromCell, int& iX, int& iY );
 	void GetFromCell( CVehicle *pVeh, CCell *pFromCell );
@@ -228,9 +233,9 @@ public:
 
 	int GetPathCount( CCell *pDestCell );
 	BOOL AtDestination( CCell *pCell );
-	BOOL CanEnterBridge( CCell *pFromCell, CCell *pToCell );
-	void GetCellCosts( int iPos, CCell *pFromCell, CCell *pToCell );
-	void GetCellAt( int iPos, CCell *pFromCell, int& iX, int& iY );
+	template <class TView> BOOL CanEnterBridge( TView const & view, CCell *pFromCell, CCell *pToCell );
+	template <class TView> void GetCellCosts( TView const & view, int iPos, CCell *pFromCell, CCell *pToCell );
+	template <class TView> void GetCellAt( TView const & view, int iPos, CCell *pFromCell, int& iX, int& iY );
 
 	// BUGBUG
 	// these are used only if the array of cells is used
@@ -245,8 +250,11 @@ public:
 	int GetMapCellCount() const { return (int)m_mapCell.GetCount(); }
 
 	private:
-    CHexCoord* _GetPath( CVehicle* pVehicle, CHexCoord& hexFrom, CHexCoord& hexTo, int& iPathLen, int iVehType = 0,
-                         BOOL bVehBlock = FALSE, BOOL bDirectPath = FALSE );
+    // ONE search body, instantiated per view type. The view is passed in rather than
+    // constructed here: a snapshot search must read the snapshot it was handed.
+    template <class TView>
+    CHexCoord* _GetPath( TView const& view, CVehicle* pVehicle, CHexCoord& hexFrom, CHexCoord& hexTo, int& iPathLen,
+                         int iVehType = 0, BOOL bVehBlock = FALSE, BOOL bDirectPath = FALSE );
 
 #if EN_PATH_PROBES
     // GetPathProd() is the body GetPath() has always had, verbatim, including its

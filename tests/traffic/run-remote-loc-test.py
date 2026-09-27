@@ -102,7 +102,17 @@ else:
     path_source = (subprocess.check_output(['git', '-C', str(ROOT), 'show',
                                           args.baseline_ref + ':enations_latest/src/cpathmgr.cpp']).decode()
                    if args.baseline_ref else (ROOT / 'enations_latest/src/cpathmgr.cpp').read_text(encoding='utf-8'))
-    actual += '\n' + method('BOOL CPathMgr::IsHexMovingVehicle(', path_source)
+    if 'BOOL CPathMgr::IsHexMovingVehicle(' in path_source:
+        actual += '\n' + method('BOOL CPathMgr::IsHexMovingVehicle(', path_source)
+    else:
+        # The nav-view seam moved the body into the live view (ennavview.h, the FIRST
+        # IsHexMovingVehicle there; the second is the snapshot view's). Same text, so
+        # compile it under the fixture's CPathMgr name.
+        nav = (subprocess.check_output(['git', '-C', str(ROOT), 'show',
+                                        args.baseline_ref + ':enations_latest/src/ennavview.h']).decode()
+               if args.baseline_ref else (ROOT / 'enations_latest/src/ennavview.h').read_text(encoding='utf-8'))
+        live = method('BOOL IsHexMovingVehicle( CHexCoord const& hex ) const', nav)
+        actual += '\nBOOL CPathMgr::IsHexMovingVehicle( CHexCoord const& hex )\n' + live[live.index('{'):]
     case, include = 'test_remote_loc.cpp', 'remote_loc_actual.inc'
 (out / include).write_text(actual, encoding='utf-8')
 print('Production methods SHA256:', hashlib.sha256(actual.encode()).hexdigest(), flush=True)
