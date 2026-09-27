@@ -156,6 +156,7 @@ void CJoinMulti::OnSessionEnum( LPCVPSESSIONINFO pSi )
             s.startPos     = pPub->m_iPos;
             s.cFlags       = pPub->m_cFlags;
             s.dataHash     = pPub->m_dwDataHash;
+            s.verRelease   = pPub->m_cVerRelease;
             return;
         }
     }
@@ -170,6 +171,7 @@ void CJoinMulti::OnSessionEnum( LPCVPSESSIONINFO pSi )
     e.startPos     = pPub->m_iPos;
     e.cFlags       = pPub->m_cFlags;
     e.dataHash     = pPub->m_dwDataHash;
+    e.verRelease   = pPub->m_cVerRelease;
     m_sessions.push_back( e );
 }
 

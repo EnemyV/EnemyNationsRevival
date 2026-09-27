@@ -241,6 +241,8 @@ const std::unordered_map<UINT, std::string>& string_table() {
         { IDS_EVENT_BRIDGE_HALTED,     "Bridge construction halted - ground unsuitable" },
         // 015 phase 3 data-hash refusal. %1/%2/%3 positional (strPrintf), verbatim from lastplnt.rc.
         { IDS_DATA_MISMATCH,           "Game data differs.\n\n%1 is running gameplay data %2; this machine has %3.\n\nThe unit, research and text tables must match to play together. Art, sound and music may differ freely." },
+        // VER_RELEASE refusal at join (SDL2Dialogs.cpp), verbatim from lastplnt.rc.
+        { IDS_BUILD_MISMATCH,          "Game version differs.\n\n%1 is running save and network format %2; this machine has %3.\n\nEvery player must run the same Enemy Nations build to play together." },
         { IDS_EVENT_ROAD_DONE,         "Construction of a road has completed" },
         { IDS_EVENT_MANF_HALT,         "%1 has halted manufacturing" },
         { IDS_EVENT_GOTO_CANT,         "%1 is stuck" },

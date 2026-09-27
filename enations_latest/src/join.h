@@ -80,6 +80,7 @@ public:
 			int          startPos;
 			char         cFlags;
 			DWORD        dataHash;   // the host's published gameplay hash (015 phase 3)
+			WORD         verRelease; // the host's published VER_RELEASE (save + wire format)
 		};
 		std::vector<SessionEntry> m_sessions;
 

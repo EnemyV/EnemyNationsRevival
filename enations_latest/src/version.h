@@ -62,10 +62,12 @@ const char GameLogFile[] = "ENations.log";
 // carries 8 bytes, anything older carries 4 and is widened on load (see
 // CRsrchStatus::Serialize). The WRITER always writes 64-bit. The matching wire field,
 // CNetSaveInfo::m_iPtsDiscovered, widened with it, taking that message from 40 to 44 bytes
-// -- a PROTOCOL change, so release-9 clients cannot play against older ones. Nothing
-// refuses that pairing at join: the browser checks VER_MAJOR/VER_MINOR only (join.cpp),
-// m_cVerRelease is advertised but never compared, and the gameplay data hash covers the
-// DAT tables, not code. Every seat must run this build. Why: the in-code research ladders now price
+// -- a PROTOCOL change, so release-9 clients cannot play against older ones. The gameplay
+// data hash covers the DAT tables, not code, so the JOINER compares the host's published
+// m_cVerRelease with its own and refuses a mismatch (SDL2Dialogs.cpp, beside the hash
+// check). The HOST cannot check: CNetJoin carries no release field, so an older joiner is
+// not refused there (its short save_info is dropped by FitsBuffer instead). Every seat
+// must run this build. Why: the in-code research ladders now price
 // their top tiers in the hundreds of millions, and m_iPtsRequired went 64-bit first; a
 // 32-bit accumulator could not climb to meet them, capping any topic at ~2^31 and wrapping
 // negative on the way (which trips the RandNum assert in CPlayer::Research).

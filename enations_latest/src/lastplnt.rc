@@ -1614,6 +1614,7 @@ BEGIN
     IDS_EVENT_ROCKET_CANT_LAND "Your rocket cannot land here"
     IDS_EVENT_BRIDGE_HALTED "Bridge construction halted - ground unsuitable"
     IDS_DATA_MISMATCH       "Game data differs.\n\n%1 is running gameplay data %2; this machine has %3.\n\nThe unit, research and text tables must match to play together. Art, sound and music may differ freely."
+    IDS_BUILD_MISMATCH      "Game version differs.\n\n%1 is running save and network format %2; this machine has %3.\n\nEvery player must run the same Enemy Nations build to play together."
     IDS_LOAD_MUSIC          "Arranging Music"
     IDS_JOIN_LOAD_FILE      "Receiving game..."
     IDS_JOIN_FILE_ERROR     "Could not receive game from server"

@@ -1562,7 +1562,7 @@ class CNetSaveInfo : public CNetCmd
     int m_iRsrchItem;
     // 64-bit with CRsrchStatus::m_iPtsDiscovered (save release 9). Takes this message from 40
     // to 44 bytes under pack(1) -- a wire-layout change, pinned by wire_layout_assert.cpp.
-    // Nothing refuses a pre-9 peer at join (see version.h), so every seat must run this build.
+    // Only the joiner refuses a different VER_RELEASE (see version.h); FitsBuffer drops a short one.
     LONGLONG m_iPtsDiscovered;
 };
 

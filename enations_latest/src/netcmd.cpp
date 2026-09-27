@@ -1611,6 +1611,10 @@ BOOL CNetCmd::FitsBuffer( int cbAvail ) const
     // so a truncated 12-byte datagram would pass validation and the RX cast would read
     // m_iX/m_iY/m_iType off the end of the buffer.
     case hex_retype:           cbNeed = sizeof( CNetHexRetype ); break;
+    // MUST be listed, same reason: save_info went from 40 to 44 bytes at save release 9,
+    // so a short (pre-9 peer) record must be refused, not read 4 bytes past its end.
+    case need_save_info:       cbNeed = sizeof( CNetNeedSaveInfo ); break;
+    case save_info:            cbNeed = sizeof( CNetSaveInfo ); break;
     case unit_damage:          cbNeed = sizeof( CMsgUnitDamage ); break;
     case unit_set_damage:      cbNeed = sizeof( CMsgUnitSetDamage ); break;
     case destroy_unit:

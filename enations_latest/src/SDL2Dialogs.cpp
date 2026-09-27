@@ -2206,6 +2206,32 @@ bool SDL2_RunJoinNetworkFlow(GameWindow* gameWindow) {
         if ( ( chosenIdx >= 0 ) && ( chosenIdx < (int)pJoin->m_sessions.size() ) )
         {
             const CJoinMulti::SessionEntry& pick = pJoin->m_sessions[chosenIdx];
+
+            // Same check for the build's save/wire format counter, which the host
+            // publishes beside the hash. The data hash does not cover code: two
+            // builds with identical data can still disagree on a message layout
+            // (release 9 widened CNetSaveInfo), so a different VER_RELEASE is refused
+            // here too, with the reason.
+            if ( pick.verRelease != (WORD)VER_RELEASE )
+            {
+                std::string sMsg = strPrintf( EnLoadStdString( IDS_BUILD_MISMATCH ).c_str(),
+                                              pick.gameName.c_str(),
+                                              std::to_string( (unsigned)pick.verRelease ).c_str(),
+                                              std::to_string( (unsigned)VER_RELEASE ).c_str() );
+
+                char szLog[256];
+                snprintf( szLog, sizeof( szLog ), "[VER_RELEASE] not joining '%s': host %u, this machine %u",
+                          pick.gameName.c_str(), (unsigned)pick.verRelease, (unsigned)VER_RELEASE );
+                OutputDebugStringA( szLog );
+                OutputDebugStringA( "\n" );
+                theApp.Log( szLog );
+
+                SDL_ShowSimpleMessageBox( SDL_MESSAGEBOX_ERROR, "Enemy Nations", sMsg.c_str(),
+                                          gameWindow ? gameWindow->GetWindow() : nullptr );
+                chosenIdx = -1;
+                continue;   // back to the browser
+            }
+
             if ( !endataguard::JoinAllowed( pick.dataHash, theGame.m_dwDataHash ) )
             {
                 char szTheirs[16] = { 0 };
