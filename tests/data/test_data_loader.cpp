@@ -13,7 +13,8 @@
 // patch ROOT keeping its case (phase 2c), the FVER version gate, fallback to
 // the container, loose-wins-over-container precedence, the manifest marker and
 // the root it selects (phase 2b), the registry pin written only for a container
-// that opened, OpenAsFile's name-as-given try, and GetContainerEntrySize.
+// that opened, OpenAsFile's name-as-given try, GetContainerEntrySize, and the
+// loose-only language fallback to DEF_COUNTRY_CODE (and its hash parity).
 //
 // Usage: test_data_loader.exe [scratch dir]   (default %TEMP%\en_dataloader_test)
 
@@ -343,6 +344,9 @@ void TestContainerFallbackAndLoosePrecedence( )
         CMmio* p = df.OpenAsMMIO( "units", "UNIT" );
         CHECK( p != NULL );
         CHECK( MmioOpened( sDat ) );  // came out of the container
+        std::vector<unsigned char> resolved;
+        CHECK( endataread::ReadRiffEntry( df, "units", "UNIT", resolved ) );
+        CHECK( resolved == MakeRif( "UNIT", kRifVer, "CONTAINER" ) );
         delete p;
         df.Close( );
     }
@@ -357,6 +361,9 @@ void TestContainerFallbackAndLoosePrecedence( )
         CHECK( p != NULL );
         CHECK( MmioOpened( sData + "\\units\\units.rif" ) );
         CHECK( !MmioOpened( sDat ) );
+        std::vector<unsigned char> resolved;
+        CHECK( endataread::ReadRiffEntry( df, "units", "UNIT", resolved ) );
+        CHECK( resolved == MakeRif( "UNIT", kRifVer, "LOOSE" ) );
         delete p;
         df.Close( );
     }
@@ -653,6 +660,147 @@ void TestUnreadableEntryIsAMissNotGarbage( )
     df.Close( );
 }
 
+//---------------------------------------------------------------------------
+//  The language file in a loose-only install. The release ships language/9
+//  only; a non-English Windows asks for language/<its code>. The container
+//  path has always fallen back to DEF_COUNTRY_CODE for a missing language
+//  entry; the loose-only path must too, or the game cannot start.
+//---------------------------------------------------------------------------
+
+std::string LooseEnglishOnly( const char* pDir )
+{
+    const std::string sData = g_root + "\\" + pDir + "\\data";
+    WriteText( sData + "\\manifest.txt", "language/9/9.rif 1 x\n" );
+    WriteFile( sData + "\\language\\9\\9.rif", MakeRif( "LANG", kRifVer, "ENGLISH" ) );
+    return sData;
+}
+
+void TestLooseLanguageFallsBackToEnglish( )
+{
+    const std::string sData = LooseEnglishOnly( "LangFallback" );
+
+    CDataFile df;
+    df._Init( NULL, sData.c_str( ), kRifVer );
+    df.SetCountryCode( 7 );  // German Windows, no registry override
+    ResetLogs( );
+
+    CMmio* p      = NULL;
+    bool   bThrew = false;
+    try
+    {
+        p = df.OpenAsMMIO( NULL, "LANG" );
+    }
+    catch ( ... )
+    {
+        bThrew = true;
+    }
+    CHECK( !bThrew );
+    CHECK( p != NULL );
+    CHECK( LoggedOpen( "language\\7\\7.rif" ) );  // the locale's file was tried first
+    CHECK( MmioOpened( sData + "\\language\\9\\9.rif" ) );
+    delete p;
+
+    // Sticky, as in the container path: later opens go straight to English.
+    ResetLogs( );
+    std::vector<unsigned char> buf;
+    CHECK( endataread::ReadRiffEntry( df, NULL, "LANG", buf ) );
+    CHECK( buf == MakeRif( "LANG", kRifVer, "ENGLISH" ) );
+    CHECK( !LoggedOpen( "7.rif" ) );
+    df.Close( );
+}
+
+void TestLooseLanguageHashIsLocaleIndependent( )
+{
+    // The MP guard: a German-locale peer and an English-locale peer on the same
+    // loose-only release must hash the language entry identically.
+    const std::string sData = LooseEnglishOnly( "LangHash" );
+    const char* const kLang[] = { "LANG" };
+
+    unsigned long hEn = 0, hDe = 0;
+    {
+        CDataFile df;
+        df._Init( NULL, sData.c_str( ), kRifVer );
+        df.SetCountryCode( 9 );
+        hEn = HashOneRiff( df, NULL, "LANG", kLang, 1 );
+        df.Close( );
+    }
+    {
+        CDataFile df;
+        df._Init( NULL, sData.c_str( ), kRifVer );
+        df.SetCountryCode( 7 );
+        try
+        {
+            hDe = HashOneRiff( df, NULL, "LANG", kLang, 1 );
+        }
+        catch ( ... )
+        {
+            hDe = 0;
+        }
+        df.Close( );
+    }
+    CHECK_EQ( hDe, hEn );
+
+    // ...and the instrument is live: an empty set (no language file read at
+    // all) hashes differently from the English file.
+    {
+        const std::string sEmpty = g_root + "\\LangHashEmpty\\data";
+        MakeDirs( sEmpty );
+        CDataFile df;
+        df._Init( NULL, sEmpty.c_str( ), kRifVer );
+        unsigned long hMiss = 0;
+        try
+        {
+            hMiss = HashOneRiff( df, NULL, "LANG", kLang, 1 );
+        }
+        catch ( ... )
+        {
+            hMiss = 0;
+        }
+        CHECK( hMiss != hEn );
+        df.Close( );
+    }
+}
+
+void TestLooseLanguagePresentIsUnchanged( )
+{
+    // No-op cases: the locale's own file is served when it exists, and code 9
+    // is never redirected.
+    const std::string sData = LooseEnglishOnly( "LangBoth" );
+    WriteFile( sData + "\\language\\7\\7.rif", MakeRif( "LANG", kRifVer, "GERMAN" ) );
+
+    for ( int iCode = 7; iCode <= 9; iCode += 2 )
+    {
+        CDataFile df;
+        df._Init( NULL, sData.c_str( ), kRifVer );
+        df.SetCountryCode( iCode );
+        ResetLogs( );
+        std::vector<unsigned char> buf;
+        CHECK( endataread::ReadRiffEntry( df, NULL, "LANG", buf ) );
+        CHECK( buf == MakeRif( "LANG", kRifVer, iCode == 7 ? "GERMAN" : "ENGLISH" ) );
+        CHECK( iCode == 7 ? !LoggedOpen( "9.rif" ) : !LoggedOpen( "7.rif" ) );
+        df.Close( );
+    }
+
+    // And with no English file either, the open still fails (once, no loop).
+    const std::string sNone = g_root + "\\LangNone\\data";
+    MakeDirs( sNone );
+    CDataFile df;
+    df._Init( NULL, sNone.c_str( ), kRifVer );
+    df.SetCountryCode( 7 );
+    bool bThrew = false;
+    try
+    {
+        CMmio* p = df.OpenAsMMIO( NULL, "LANG" );
+        delete p;
+    }
+    catch ( ... )
+    {
+        bThrew = true;
+    }
+    CHECK( bThrew );
+    df.Close( );
+}
+
 }  // namespace
 
 int main( )
@@ -684,6 +832,9 @@ int main( )
     TestRiffBytesAreTheWholeFileUnderBothOffsetConventions( );
     TestLooseAndContainerHashTheSame( );
     TestUnreadableEntryIsAMissNotGarbage( );
+    TestLooseLanguageFallsBackToEnglish( );
+    TestLooseLanguageHashIsLocaleIndependent( );
+    TestLooseLanguagePresentIsUnchanged( );
 
     return microtest::Summary( );
 }

@@ -239,5 +239,9 @@ bool HarnessNewGame(int ai, int pos, int size, int numai, int worldType = 0, int
 // Render/game thread only. Backs the `gamestate` cmd.
 void HarnessDumpGameState(std::string& out);
 
+// Return the startup-computed gameplay-data fingerprint. Read-only; serviced
+// on the render thread so the harness transport never reads game state directly.
+void HarnessDataHash(std::string& out);
+
 #endif // EN_BUILD_HARNESS
 #endif // EN_HARNESS_H

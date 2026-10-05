@@ -373,6 +373,13 @@ std::string            g_gameStateResult;
 std::atomic<bool>      g_gameStatePending{false};
 std::atomic<bool>      g_gameStateDone{false};
 
+// Pending `datahash` request: read-only startup fingerprint, serviced on the
+// render thread alongside the other game-state snapshots.
+std::mutex             g_dataHashMutex;
+std::string            g_dataHashResult;
+std::atomic<bool>      g_dataHashPending{false};
+std::atomic<bool>      g_dataHashDone{false};
+
 // Pending screenshot request, serviced on the render thread.
 std::mutex              g_shotMutex;
 std::string            g_shotPath;
@@ -932,6 +939,14 @@ void handle_command(const std::string& line, en_socket_t conn) {
         if (!g_gameStateDone.load()) out = "err gamestate timeout (not in-game?)\n";
         en_send(conn, out.c_str(), out.size());
         return;
+    } else if (strcmp(cmd, "datahash") == 0) {
+        g_dataHashDone = false; g_dataHashPending = true;
+        for (int i = 0; i < 400 && !g_dataHashDone.load(); ++i) { en_sleep_poll(); }
+        std::string out;
+        { std::lock_guard<std::mutex> lk(g_dataHashMutex); out = g_dataHashResult; }
+        if (!g_dataHashDone.load()) out = "err datahash timeout\n";
+        en_send(conn, out.c_str(), out.size());
+        return;
     } else if (strcmp(cmd, "quit") == 0) {
         SDL_Event e; SDL_zero(e); e.type=SDL_QUIT; SDL_PushEvent(&e);
     } else if (strcmp(cmd, "wins") == 0) {
@@ -1222,6 +1237,13 @@ void EnHarness_Service() {
         HarnessDumpGameState(out);
         { std::lock_guard<std::mutex> lk(g_gameStateMutex); g_gameStateResult = out; }
         g_gameStateDone = true;
+        return;
+    }
+    if (g_dataHashPending.exchange(false)) {
+        std::string out;
+        HarnessDataHash(out);
+        { std::lock_guard<std::mutex> lk(g_dataHashMutex); g_dataHashResult = out; }
+        g_dataHashDone = true;
         return;
     }
     if (g_raisePending.exchange(false)) {

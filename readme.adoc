@@ -25,8 +25,8 @@ ported to a 64-bit SDL2 build that runs natively on Windows, Linux, and macOS.
 == Just want to play?
 
 Grab a zip from the https://github.com/EnemyV/EnemyNationsRevival/releases[Releases page].
-Each release ships three self-contained archives (Windows x64, Linux x64, macOS arm64) with the
-game, the data file, and all runtime libraries included. Unzip and run.
+Each release ships three archives (Windows x64, Linux x64, macOS arm64) with the game, loose data
+files, and platform runtime files included. Unzip and run.
 
 == Project status
 
@@ -50,14 +50,16 @@ Known limitations:
 See link:BUILD.md[BUILD.md]. Short version: CMake on all three platforms, Visual Studio 2022 on
 Windows, gcc plus the SDL2 dev packages on Linux, Homebrew SDL2 on macOS.
 
-The game needs the data archive `ENations.dat` (~516 MB) at runtime. It is not in the repo.
-The release zips already include it; if you build from source you can take it from a release zip
-or download it here:
+The game needs its original data, either as the `ENations.dat` archive (~516 MB) or as the
+equivalent loose files under `data/`. Neither data form is stored in this repo. Release zips
+include the loose files; for a source build, you can download the original archive here and
+extract it using the instructions in link:BUILD.md[BUILD.md]:
 
 https://drive.google.com/file/d/16y40cxiC0dcmfB2vwZXU5VATqGD6fe_p/view?usp=sharing
 
-Place it next to the executable. The path is stored in the `Game\DataFile` setting (Windows
-registry, or `~/.config/enations/registry.ini` on Linux/macOS).
+For container-based developer runs, place it next to the executable. Loose data in `data/`
+takes precedence. The legacy container path can also be stored in the `Game\DataFile` setting
+(Windows registry, or `~/.config/enations/registry.ini` on Linux/macOS).
 
 == Structure
 

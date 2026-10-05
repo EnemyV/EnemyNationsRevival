@@ -5,7 +5,8 @@ SDL2-based** build of the 1996 Windward Studios RTS. No MFC, no DirectDraw. This
 takes you from a clean checkout to a running game.
 
 > **Just want to play?** Grab a prebuilt archive from the **Releases** page instead. Each
-> is self-contained (game + data + libraries) for Windows x64, Linux x64, and macOS arm64.
+> includes the game, loose data files, and platform runtime files for Windows x64, Linux x64,
+> and macOS arm64.
 > This guide is for building **from source**.
 
 ---
@@ -18,8 +19,8 @@ takes you from a clean checkout to a running game.
 | **Linux x64** (gcc) | `cmake -S . -B build -DCMAKE_BUILD_TYPE=Release` | `cmake --build build --target enations -j$(nproc)` | `build/enations_latest/src/enations` |
 | **macOS** (Apple Silicon, clang) | `cmake -S . -B build-mac -DCMAKE_BUILD_TYPE=Release` | `cmake --build build-mac --target enations -j8` | `build-mac/enations_latest/src/enations` |
 
-All platforms then need the game-data file **`ENations.dat`** at runtime. See
-[Game data & running](#3-game-data--running).
+For source builds, provide either `ENations.dat` or a complete loose `data/` set. Release
+archives use loose data files. See [Game data & running](#3-game-data--running).
 
 ---
 
@@ -109,15 +110,17 @@ cmake --build build-mac --target enations -j8
 
 ## 3. Game data & running
 
-The engine needs the original data archive **`ENations.dat`** (~516 MiB). It is **not in the
-repo** (it ships on the 1997 game CD / the later freeware release; a download link is in
-`readme.adoc`). The renderer also wants the baked GPU terrain set under `data/terrain_gpu/`.
+The game needs the original game data, supplied either as `ENations.dat` (~516 MiB) or as a
+complete loose `data/` set. The original archive is **not in the repo** (it ships on the 1997
+game CD / the later freeware release; a download link is in `readme.adoc`). Release archives
+ship the loose set and do not need `ENations.dat`. The renderer also wants the baked GPU terrain
+set under `data/terrain_gpu/`.
 
 **Easiest path:** download the matching platform archive from the **Releases** page (it already
-contains `ENations.dat`, `data/`, and the runtime libraries) and **drop your freshly-built
-binary in over the one in that folder.** Then run it from that directory.
+contains the loose game data under `data/` and the runtime files), then **drop your freshly-built
+binary in over the one in that folder.** Run it from that directory.
 
-Otherwise, assemble a run directory yourself:
+For a developer run, you can use the original container:
 
 ```sh
 # Linux/macOS example
@@ -127,10 +130,10 @@ cp /path/to/ENATIONS.DAT run/ENations.dat
 cd run && ../build/enations_latest/src/enations      # (build-mac/... on macOS)
 ```
 
-On Windows, run `enations.exe` from a directory that contains `ENations.dat`, `data/`, and the
-SDL2 DLLs (the Releases archive layout).
+On Windows, run `enations.exe` from a directory that contains `ENations.dat`, the terrain files,
+and the SDL2 DLLs. A complete loose set works in place of the container.
 
-### Running from a loose `data/` set instead of the container (GH #36)
+### Loose game data (GH #36)
 
 The container is not required any more. `tools/data/dat_extract.py` (discussion repo) splits an
 `ENATIONS.DAT` into one byte-identical file per entry under `data/`, in the nested lower-case
@@ -139,18 +142,33 @@ loose-only install is intended: with it present the loader runs without a contai
 throwing and offering the "locate ENations.dat" prompt. A loose entry always wins over the
 container when both are there, so you can also override single entries.
 
-To make a build stage a loose set beside the binary, point the CMake cache entry at the directory
-that **contains** `data/`:
+The release package contains this extracted set under `data/` beside the executable. To make a
+build stage the set beside its binary, point the CMake cache entry at the directory that
+**contains** `data/`:
 
 ```sh
 cmake -S . -B cmakeBuild-x64 -A x64 -DEN_LOOSE_DATA_DIR=/path/to/extract-out
 ```
 
-Configure then FAILS if `<dir>/data/manifest.txt` is missing, counts the files it found, and prints
-the count; a POST_BUILD step copies `data/` next to `enations` and echoes the same count into the
-build log. Empty (the default) stages nothing and the build behaves exactly as before. The glob is
-**configure-time**, so re-run configure after a merge and verify by *counting staged files*, as the
-release rules require. There is no installer step: a release archive is the staged run directory.
+Configure fails if `<dir>/data/manifest.txt` is missing, counts the files it found, and prints the
+count; a POST_BUILD step copies `data/` next to `enations` and echoes the same count into the build
+log. The glob is **configure-time**, so re-run configure after a merge and verify the staged file
+count before packaging. The release archive is assembled from the staged run directory with
+`tools/package_release.py`; it checks the manifest and excludes developer saves, logs, symbols,
+and any `ENations.dat` container. Example (Windows PowerShell; use the matching build output and
+extracted `data/` directory on other platforms):
+
+```powershell
+python tools/package_release.py `
+  --runtime-dir cmakeBuild-x64/enations_latest/src/Release `
+  --loose-data-dir C:/game-data/data `
+  --vdmplay-ini packaging/vdmplay.ini `
+  --output release-artifacts/enations-windows-x64-3.00.015.zip
+```
+
+The extractor writes `manifest.txt` with one relative path, byte size, and SHA-256 per file.
+The package command verifies that inventory and the resulting archive includes a directory named
+after the ZIP file, containing the executable and `data/` tree.
 
 In multiplayer the host compares a hash of the GAMEPLAY files only — `units.rif`, `research.rif`,
 `version.rif`, `files/stdgta.dat`, `create.rif`'s RACE list and `9.rif`'s text lists — and refuses a

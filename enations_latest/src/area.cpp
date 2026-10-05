@@ -9233,4 +9233,13 @@ void HarnessDumpGameState( std::string& out )
     out = buf;
 }
 
+// Read the immutable gameplay-data fingerprint computed during startup. This
+// stays on the render thread through the harness request service.
+void HarnessDataHash( std::string& out )
+{
+    char buf[32];
+    snprintf( buf, sizeof( buf ), "datahash %08lx\n", (unsigned long)theGame.m_dwDataHash );
+    out = buf;
+}
+
 #endif // EN_BUILD_HARNESS

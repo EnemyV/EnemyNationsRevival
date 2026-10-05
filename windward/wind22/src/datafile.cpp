@@ -606,6 +606,13 @@ CMmio *CDataFile::OpenAsMMIO(const char *pFilename, const char *pRif) {
     //  If here, file was not found in patch dir ( or
     //  no patch dir was given ), and no datafile was
     //  opened, so return NULL ( no file found ).
+    //  If searching for language file try searching
+    //  for US version, as the datafile path above does.
+    if (pFilename == NULL && m_countryCode != DEF_COUNTRY_CODE) {
+        m_countryCode = DEF_COUNTRY_CODE;
+        return OpenAsMMIO(NULL, pRif);
+    }
+
     // No container open. Since 015 phase 2 that is the loose-only install: _Init
     // only returns without a container when the patch dir carries a manifest.txt,
     // so getting here means a LOOSE ENTRY is missing, of the wrong FVER, or
