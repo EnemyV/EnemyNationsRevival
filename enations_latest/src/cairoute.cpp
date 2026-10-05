@@ -713,8 +713,11 @@ void CAIRouter::FillPriorities( void )
     if ( m_plTrucksAvailable->GetCount( ) > MINIMUM_IDLE_TRUCKS_AI )
         IdleTruckTask( CMaterialTypes::copper, CStructureData::copper, CStructureData::rocket );
 
-    // copper to the shipyards too (capital ships need it; num_types covers both
-    // yards). Scarce, so a lower source bar, and an empty yard may receive it.
+    // copper to the vehicle buildings that consume it too (capital ships, heavy
+    // armour, their repairs). num_types is the factory/yard/repair set, which
+    // IdleTruckTask narrows to the ones whose builds or repairs cost copper - in the
+    // stock data heavy, light_2, repair and shipyard_3. Scarce, so a lower source
+    // bar, and an empty destination may receive it.
     if ( m_plTrucksAvailable->GetCount( ) > MINIMUM_IDLE_TRUCKS_AI )
         IdleTruckTask( CMaterialTypes::copper, CStructureData::copper, CStructureData::num_types,
                        NAV_SCARCE_IDLE_MATERIALS, TRUE );
@@ -834,6 +837,31 @@ m_iPlayer, pUnit->GetID(), pUnit->GetParam(CAI_UNASSIGNED) );
 #endif
 
 //
+// TRUE when a building of type iBldgType can ever consume iMat: some unit its factory
+// builds, or its bay repairs, costs it. These are the per-unit CBuildUnit inputs the
+// building's own GetInputs reports, totalled per type at load (sprtinit.cpp).
+//
+static BOOL IdleDestUsesMaterial( int iBldgType, int iMat )
+{
+    if ( iMat < 0 || iMat >= CMaterialTypes::num_build_types )
+        return ( FALSE );
+    CStructureData const* pSd = pGameData->GetStructureData( iBldgType );
+    if ( pSd == NULL )
+        return ( FALSE );
+    switch ( pSd->GetUnionType( ) )
+    {
+        case CStructureData::UTvehicle:
+            return ( pSd->GetBldVehicle( )->GetTotalInput( iMat ) > 0 );
+        case CStructureData::UTshipyard:
+            return ( pSd->GetBldShipyard( )->GetTotalInput( iMat ) > 0 );
+        case CStructureData::UTrepair:
+            return ( pSd->GetBldRepair( )->GetTotalRepair( iMat ) > 0 );
+        default:
+            return ( FALSE );
+    }
+}
+
+//
 // find the iFromBldg type with the most of iMat, and then the
 // iToBldg type with the least of iMat, and if that to-building
 // is not in the m_plBldgsNeed, select the nearest truck from
@@ -914,6 +942,11 @@ void CAIRouter::IdleTruckTask( int iMat, int iFromBldg, int iToBldg, int iMinSrc
                      pUnit->GetTypeUnit( ) != CStructureData::repair &&
                      pUnit->GetTypeUnit( ) != CStructureData::shipyard_1 &&
                      pUnit->GetTypeUnit( ) != CStructureData::shipyard_3 )
+                    continue;
+
+                // An empty destination is taken on trust that it will use the load, so
+                // it must be one that can: copper to a light factory never leaves it.
+                if ( bAllowEmptyDest && !IdleDestUsesMaterial( pUnit->GetTypeUnit( ), iMat ) )
                     continue;
 
                 // make sure the building does not already need material

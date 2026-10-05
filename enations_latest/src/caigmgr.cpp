@@ -5119,6 +5119,23 @@ void CAIGoalMgr::UpdateStagingTasks( void )
             if ( !pSpent->GetTaskParam( CAI_LOC_X ) && !pSpent->GetTaskParam( CAI_LOC_Y ) )
                 continue;
 
+            // troops still waiting to embark hold the task, so it is not spent;
+            // an empty craft GetNavyTask sent to lift them is not a leftover
+            // (releasing it re-routes it to a new staging hex on every pass)
+            {
+                BOOL     bTroops = FALSE;
+                POSITION posT    = m_plUnits->GetHeadPosition( );
+                while ( posT != NULL && !bTroops )
+                {
+                    CAIUnit* pT = (CAIUnit*)m_plUnits->GetNext( posT );
+                    if ( pT != NULL && pT->GetOwner( ) == m_iPlayer && pT->GetTask( ) == pSpent->GetID( ) &&
+                         pT->GetGoal( ) == pSpent->GetGoalID( ) && pT->GetTypeUnit( ) != CTransportData::landing_craft )
+                        bTroops = TRUE;
+                }
+                if ( bTroops )
+                    continue;
+            }
+
             // an empty landing craft on a launched staging task is a leftover (e.g.
             // from a save): release it so bHasUnit below sees only real units
             {
@@ -10120,7 +10137,9 @@ DWORD CAIGoalMgr::GetOpForUnitScan( int const* aiHow, int const* aiKindOf, int n
                             }
                             LeaveCriticalSection( &cs );
 
-                            if ( pVehicle != NULL && iVehOwner == m_iPlayer )
+                            // skip a dying occupant like an own one, so it cannot hide
+                            // a live enemy in another subhex of this hex
+                            if ( pVehicle != NULL && ( iVehOwner == m_iPlayer || bIsDying ) )
                             {
                                 dwVehID  = 0;
                                 pVehicle = NULL;

@@ -159,5 +159,21 @@ if ($cargoArgs.Count -lt 2) { Write-Host "[ai_cargo] SKIP source lint (caitmgr/c
 $cargoExit = $LASTEXITCODE
 if ($cargoExit -eq 2) { Write-Host "[ai_cargo] SKIP (cannot open a source path)"; $cargoExit = 0 }
 
-if ($logicExit -ne 0 -or $dataExit -ne 0 -or $pathsExit -ne 0 -or $stopgapExit -ne 0 -or $claimExit -ne 0 -or $pickExit -ne 0 -or $cargoExit -ne 0) { exit 1 }
+# compile + run the extracted-source suites: run-seek-scan-test.py (SHIPPED
+# GetOpForUnitScan + SeekOpfor vs seek_scan_fixture.h) and run-staging-release-test.py
+# (UpdateStagingTasks lifecycle-completion block).
+$seekExit = 0
+$py = Get-Command python, py -ErrorAction SilentlyContinue | Select-Object -First 1
+if (-not $py) {
+    Write-Host '[ai_seek] SKIP (no python on PATH)'
+} else {
+    & $py.Source (Join-Path $here 'run-seek-scan-test.py') --vcvars $vcvars --out-dir (Join-Path $outDir 'seek-scan')
+    $seekExit = $LASTEXITCODE
+    if ($seekExit -eq 2) { exit 2 }
+    & $py.Source (Join-Path $here 'run-staging-release-test.py') --vcvars $vcvars --out-dir (Join-Path $outDir 'staging-release')
+    if ($LASTEXITCODE -eq 2) { exit 2 }
+    if ($LASTEXITCODE -ne 0) { $seekExit = $LASTEXITCODE }
+}
+
+if ($logicExit -ne 0 -or $dataExit -ne 0 -or $pathsExit -ne 0 -or $stopgapExit -ne 0 -or $claimExit -ne 0 -or $pickExit -ne 0 -or $cargoExit -ne 0 -or $seekExit -ne 0) { exit 1 }
 exit 0

@@ -23,6 +23,9 @@ constexpr int CAI_TARGETTYPE=9, CAI_SPOTTING=2, CAI_UNASSIGNED=10;
 constexpr int CAI_TASKSWITCH=1, CAI_IN_COMBAT=2;
 constexpr int BEST_TARGET=310, NEAREST_TARGET=311, THREAT_TARGET=312;
 constexpr int IDT_SEEKATSEA=1, IDT_SEEKINWAR=2, IDT_SEEKINRANGE=3, IDT_PREPAREWAR=4;
+constexpr int IDG_SEAINVADE=1033;
+constexpr int CAI_ROUTE_X=12, CAI_ROUTE_Y=13, CAI_LANDING=0x0010;
+#define MAKELPARAM(l,h) ((DWORD)(((WORD)(l))|(((DWORD)(WORD)(h))<<16)))
 constexpr int NUM_COMBINED_UNITS=32;
 inline int caTargetAttack[4096]{};
 inline int cs=0, lockCalls=0, lockDepth=0, arrivals=0;
@@ -57,7 +60,7 @@ struct CStructureData {
     int GetType()const{return type;} int GetTargetType()const{return CUnitData::hard;}
 };
 struct CTransportData {
-    enum {light_cargo=13};
+    enum {light_cargo=13,landing_craft=17};
     int type=0;
     int GetType()const{return type;} int GetTargetType()const{return CUnitData::soft;}
     int _GetRange()const{return 2;}
@@ -126,6 +129,9 @@ struct CAIUnit {
     WORD GetParam(int i)const{return params[i];} void SetParam(int i,WORD v){params[i]=v;}
     DWORD GetParamDW(int i)const{return paramsDW[i];} void SetParamDW(int i,DWORD v){paramsDW[i]=v;}
     void ClearParam(){std::memset(params,0,sizeof(params));std::memset(paramsDW,0,sizeof(paramsDW));}
+    DWORD claimHex=0,claimStill=0;
+    DWORD NoteClaimStill(DWORD h,DWORD now){if(h!=claimHex||claimStill==0){claimHex=h;claimStill=now?now:1;return 0;}return now-claimStill;}
+    void ClearClaimProgress(){claimHex=0;claimStill=0;}
     void AttackUnit(DWORD){} void AttackedBy(DWORD){} void SetDestination(CHexCoord){++arrivals;}
 };
 struct CAIUnitList {
@@ -141,6 +147,14 @@ struct CAIUnitList {
     POSITION GetHeadPosition()const{return items.empty()?0:1;}
     CAIUnit* GetNext(POSITION& p){auto q=items.at(p-1);p=p<items.size()?p+1:0;return q;}
 };
+// AI snapshot (aisnap.h): empty by default = the shipped "no entry" fallback.
+struct AiVehSnap {int iOwner=0,iHeadX=0,iHeadY=0,iDestX=0,iDestY=0,iCargoCount=0,iSpotting=0;};
+inline std::map<DWORD,AiVehSnap> theSnaps;
+namespace AiSnap {
+inline BOOL ReadVeh(DWORD id,AiVehSnap& out){auto p=theSnaps.find(id);if(p==theSnaps.end())return FALSE;out=p->second;return TRUE;}
+}
+struct Game {DWORD now=1000;DWORD GettimeGetTime()const{return now;}};
+inline Game theGame;
 struct CAIOpFor {bool ai=false,war=true;bool IsAI()const{return ai;}bool AtWar()const{return war;}};
 struct OpFors {CAIOpFor enemy; CAIOpFor* GetOpFor(int id){return id==2?&enemy:nullptr;}};
 struct MapUtil {
@@ -168,6 +182,7 @@ struct CAITask {int id=IDT_SEEKINWAR;int GetID()const{return id;}};
 struct CAITaskMgr {
     CAIGoalMgr* m_pGoalMgr=nullptr;
     bool InRange(CAIUnit*,CHexCoord)const{return true;}
+    bool InRange(CHexCoord&,int)const{return false;}
     void UnloadCargo(CAIUnit*){} void MoveToRange(CAIUnit*,CHexCoord){++arrivals;}
     void AssignPatrol(CAIUnit* u){u->SetTask(0);}
     void ClearTaskUnit(CAIUnit* u){u->ClearParam();u->SetTask(0);u->SetGoal(0);u->SetDataDW(0);u->SetStatus(0);}
