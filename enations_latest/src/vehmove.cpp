@@ -536,13 +536,18 @@ void CVehicle::ArrivedDest() {
     // for - a behaviour change that applied even with every traffic rule disabled.
     //
     // Trucks and cranes only: military units park where the player put them.
-    // Never when a human sent it here, and never when it was ORDERED to stand still
-    // (CUnit::StopUnit sets the existing `stopped` flag, unit.h:500).
+    // Never while it is under HP (auto-router) control - there is no "a human sent it
+    // here" flag, so a vehicle the player drove here IS eligible - and never when it
+    // was ORDERED to stand still (CUnit::StopUnit sets the `stopped` flag, unit.h:500).
     //
     // Being inside a building is NOT a reason to move: EnterBuilding already calls
     // ReleaseOwnership, so such a vehicle occupies no road hex and blocks nobody.
+    //
+    // Nor is arriving at a BUILD SITE: a site may be paved (FoundationCost allows road
+    // and city hexes), and the build event below sends the request from right here.
     if ((m_cMode == stop) && (!IsHpControl()) && (!IsFlag(stopped)) &&
-        (pBldgDest == NULL) && (GetData()->IsTransport() || GetData()->IsCrane()))
+        (pBldgDest == NULL) && (m_iEvent != build) &&
+        (GetData()->IsTransport() || GetData()->IsCrane()))
         if (OnPavement(m_ptHead))
             LeaveRoad();
 
@@ -3880,6 +3885,11 @@ BOOL CVehicle::LeaveRoad() {
     // A build order is not active construction while an idle/blocked crane has
     // no building attached. Preserve that order through the parking detour.
     if (m_iEvent != none && !(GetData()->IsCrane() && m_iEvent == build))
+        return (FALSE);
+    // A build or queued road request already sent (order_sent, and the event cleared on
+    // the send): the crane is AT its site waiting for the server, not idle. A queued
+    // move runs under event none too, so it is the one sent state still allowed to park.
+    if ((m_iOrderState == order_sent) && (m_iEvent == none) && (m_iOrderKind != CRoute::move))
         return (FALSE);
     if (!m_cOwn || m_pBldg != NULL || IsFlag(stopped) || IsHpControl())
         return (FALSE);

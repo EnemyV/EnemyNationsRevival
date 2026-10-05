@@ -14,6 +14,7 @@
 #include "SDL2BuildStructure.h"
 #include "SDL2BuildTransport.h"
 #include "SDL2BuildingWindow.h"
+#include "SDL2RouteWindow.h"
 #include "altoutput.h"   // Coal-Liq mode-aware power-plant status text (#43)
 #include "econprod.h"    // #13 input-starvation gate for the production bar (display only)
 #include "event.h"
@@ -5518,6 +5519,7 @@ void CVehicle::ctor( )
     m_iPathOff = 0;
     m_iPathLen = 0;
     m_pBldg    = NULL;
+    m_iBldgType = 0;   // read by EVENT_CONST_CANT's text; a never-built crane had garbage
 
     m_iBuildDone = -1;
     m_lOperMod   = 0;
@@ -6057,6 +6059,12 @@ void CVehicle::DestroyRouteWindow( )
     }
 
     m_pWndRoute = NULL;
+
+    // The SDL route window holds this vehicle and derefs it from every button, so it
+    // must not outlive us. Close() nulls m_pSdlRoute, takes an area window out of
+    // veh_route for us, and deletes the window (which leaves s_openRouteWindows).
+    if ( m_pSdlRoute != NULL )
+        m_pSdlRoute->Close( );
 }
 
 void CVehicle::DestroyBuildWindow( )

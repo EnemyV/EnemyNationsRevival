@@ -217,6 +217,9 @@ void CVehicle::Operate() {
 
     xASSERT_VALID (ASSERT_PRI_ANAL, ASSERT_VEH_MOVE, this);
 
+#if EN_TRAFFIC_PROBES
+    // Both probes below are hard-wired to one test save's bridge box (x 18-42, y 332-348),
+    // so they compile out with the other traffic probes rather than run in a shipping build.
     // Bridge census (probe only). The queue does not drain in ANY build, control
     // included, and almost nobody crosses. Before tuning mechanisms further, find
     // out what these vehicles are actually trying to do.
@@ -249,6 +252,7 @@ void CVehicle::Operate() {
                     (int) m_cMode, m_hexDest.X(), m_hexDest.Y());
         }
     }
+#endif
 
     // stuck watch + adjacent clearance request ("panic"), before the stopped test so
     // a truck making space is still ticked, but it is gated on the vehicle being ours
@@ -287,8 +291,17 @@ void CVehicle::Operate() {
             // being told, so a hold that ends with nothing to resume would leave it
             // parked, unreported and idle for the rest of the game. Clearing the
             // flag lets the stop branch below notify the router the normal way.
-            if (!ResumeJob())
+            //
+            // A hold that ends exactly on the saved job's destination sub has nowhere to
+            // resume TO (ResumeJob returns FALSE), but the arrival there never ran - the
+            // hold branch of ArrivedDest returned before its event switch. Run it now,
+            // or a crane holding on its build site sits idle with the build event set.
+            BOOL bThere = m_bResume && (m_subResume == m_ptHead);
+            if (!ResumeJob()) {
                 m_bFlags &= ~told_ai_stop;
+                if (bThere)
+                    ArrivedDest();
+            }
         }
     }
 
@@ -844,6 +857,10 @@ void CVehicle::ClearOrders() {
         SetRoutePos(m_route.GetHeadPosition());
 
     m_iOrderState = order_none;
+    // ...and forget the last dispatch's kind. A plain build's BuildBldg sets order_sent
+    // too, and a stale CRoute::move here made that request look like an idle move order
+    // (ArmedForOrder TRUE): re-driven by CheckOrderStall, parked by LeaveRoad.
+    m_iOrderKind  = CRoute::waypoint;
     m_iOrderRetry = 0;              // #114: as above
     m_dwOrderStall = 0;
 }
@@ -1093,6 +1110,19 @@ BOOL CVehicle::ArmedForOrder() const {
     return (FALSE);
 }
 
+// The warning for an order given up short of its site. CGame::Event's EVENT_CONST_CANT
+// text is the BUILDING's name, read through GetBldgType - only a build order has set that
+// (SetBuilding at dispatch), so a road, repair or move order uses the road-halted and
+// stuck events, whose text comes from the vehicle itself.
+int CVehicle::OrderGiveUpEvent() const {
+
+    switch (m_iOrderKind) {
+        case CRoute::build:      return (EVENT_CONST_CANT);
+        case CRoute::build_road: return (EVENT_ROAD_HALTED);
+    }
+    return (EVENT_GOTO_CANT);
+}
+
 // WinAstra finding 4: A GIVE-UP IS A FAILED ARRIVAL, AND IT SAYS SO AT ONCE.
 //
 // FindNextHex has two exits that stop the vehicle SHORT of its destination and report it
@@ -1128,7 +1158,7 @@ void CVehicle::OrderArrivalFailed() {
         SetEvent(none);                 // mode is already stop at both call sites
         m_iOrderState = order_done;     // the idle poll's OrderComplete consumes it
         if (GetOwner()->IsMe())
-            theGame.Event(EVENT_CONST_CANT, EVENT_WARN, this);
+            theGame.Event(OrderGiveUpEvent(), EVENT_WARN, this);
         return;
     }
 
@@ -1216,7 +1246,7 @@ void CVehicle::CheckOrderStall() {
         SetEventAndRoute(none, stop);   // drop the stale arming event
         m_iOrderState = order_done;     // the poll's OrderComplete consumes the order
         if (GetOwner()->IsMe())
-            theGame.Event(EVENT_CONST_CANT, EVENT_WARN, this);
+            theGame.Event(OrderGiveUpEvent(), EVENT_WARN, this);
         return;
     }
 

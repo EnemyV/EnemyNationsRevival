@@ -7,7 +7,7 @@ using BOOL = int;
 using DWORD = unsigned long;
 constexpr BOOL TRUE = 1, FALSE = 0;
 constexpr int PARK_SEARCH_SUBS = 16, CORRIDOR_MIN_HEXES = 3, CORRIDOR_MIN_VEHS = 3;
-constexpr int HOLD_FRAMES = 240, MAX_NUM_RETRIES = 25;
+constexpr int HOLD_FRAMES = 240, MAX_NUM_RETRIES = 25, GIVEUP_HOLD_FRAMES = 240;
 int TrafficOpts() { return 63; }
 void WaitLog(const char*, ...) {}
 // The extracted flee guard carries the probe counters (netapi.cpp, merge eighteen);
@@ -53,7 +53,8 @@ struct Owner { bool local=true; BOOL IsLocal() const { return local; } };
 struct Data {
     enum { FL1hex=1 };
     BOOL IsBoat() const { return FALSE; } BOOL IsTransport() const { return TRUE; }
-    BOOL IsCrane() const { return FALSE; } int GetType() const { return 2; }
+    bool crane=false;
+    BOOL IsCrane() const { return crane; } int GetType() const { return 2; }
     int GetWheelType() const { return 1; } int GetVehFlags() const { return 0; }
     BOOL CanEnterHex(CHexCoord,CHexCoord,BOOL,BOOL) const { return TRUE; }
     BOOL CanTravelHex(CHex* h) const { return h->type!=CHex::lake||(h->units&CHex::bridge); }
@@ -74,8 +75,15 @@ struct Game {
     int GetFramesElapsed() const { return 1; }
     void Event(int,int,void*) { ++alerts; }
 } theGame;
+// the order-queue names LeaveRoad reads (vehicle.h)
+struct CRoute { enum { waypoint,unload,load,build,build_road,repair,move }; };
 struct CVehicle {
     enum { stop=0,moving=1,blocked=4,none=0,route=1,build=2,stopped=4,dying=8,told_ai_stop=16 };
+    enum { order_none,order_sent,order_work,order_road,order_done };
+    int m_iOrderState=order_none,m_iOrderKind=CRoute::waypoint,leaveRoadCalls=0;
+    enum VEH_POS { sub,full,center };
+    int m_iResumeMode=sub,m_iBackUps=0,arrivals=0,destCalls=0;
+    bool realResume=false;   // TRUE: ResumeJob is the production body, not the hasJob stub
     CSubHex m_ptHead{100,100},m_ptTail{99,100},m_ptNext{101,100},m_ptDest{120,100};
     CSubHex m_subResume{120,100};CHexCoord m_hexDest;
     bool m_bReversing=false,m_bForwardEscape=false,m_bConfined=false,m_bResume=false;
@@ -104,7 +112,14 @@ struct CVehicle {
     BOOL AskToMove(CVehicle*);
     BOOL MustKeepLane(CSubHex&);
     BOOL ClearOfRoad(CSubHex p) { return p==m_ptHead?clearHead:clearTail; }
-    BOOL ResumeJob() { ++resumes;return hasJob; }
+    BOOL BackUp() { return FALSE; }
+    BOOL LeaveRoad() { ++leaveRoadCalls; return FALSE; }   // ArrivedDest's on-stop block calls this
+    BOOL LeaveRoadShipped();                               // the production LeaveRoad, renamed
+    void TestOnStop(void* pBldgDest);                      // ArrivedDest's on-stop block, verbatim
+    BOOL ResumeJob() { ++resumes;return realResume?ResumeJobShipped():hasJob; }
+    BOOL ResumeJobShipped();                               // the production ResumeJob, renamed
+    void ArrivedDest() { ++arrivals; }
+    void SetDestAndMode(CSubHex d,VEH_POS) { ++destCalls;m_ptDest=d;m_cMode=moving; }
     void TickHold();
     void TestArrivalRecovery();
     BOOL TestFixedBlocker(CVehicle*,BOOL);
@@ -189,5 +204,48 @@ int main() {
     b.owner=nullptr;theVehicleHex.blocker=&b;
     check(a.MustKeepLane(step),"ownerless blocker does not permit passing or dereference null");
     check(!a.TestFixedBlocker(&b,TRUE),"reverse recovery does not dereference an ownerless blocker");
+    // A crane ARRIVING AT ITS BUILD SITE stays there, even when the site is paved:
+    // ArrivedDest's on-stop LeaveRoad used to drive it off before the build event below
+    // it sent the request, and StartConst then teleported it back in.
+    theMap.hex.type=CHex::road;theMap.hex.units=0;
+    CVehicle site;site.owner=&own;site.data.crane=true;site.m_iEvent=CVehicle::build;
+    site.TestOnStop(nullptr);
+    check(site.leaveRoadCalls==0,"crane arriving at a paved build site is not sent off the road");
+    CVehicle idleCrane;idleCrane.owner=&own;idleCrane.data.crane=true;
+    idleCrane.TestOnStop(nullptr);
+    check(idleCrane.leaveRoadCalls==1,"idle crane arriving on pavement still leaves the road");
+    CVehicle idleTruck;idleTruck.owner=&own;
+    idleTruck.TestOnStop(nullptr);
+    check(idleTruck.leaveRoadCalls==1,"idle truck arriving on pavement still leaves the road");
+    // ...and a crane WAITING FOR THE SERVER at its site (request sent, event cleared) is
+    // not idle: the stop-case LeaveRoad must not park it either. m_dwLeftRoad is stamped
+    // only once every guard has passed, so it says whether LeaveRoad went looking.
+    CVehicle waiting;waiting.owner=&own;waiting.data.crane=true;
+    waiting.m_iOrderState=CVehicle::order_sent;waiting.m_iOrderKind=CRoute::build;
+    check(!waiting.LeaveRoadShipped()&&waiting.m_dwLeftRoad==0,"crane with a build request in flight keeps its site");
+    waiting.m_iOrderKind=CRoute::build_road;
+    check(!waiting.LeaveRoadShipped()&&waiting.m_dwLeftRoad==0,"crane with a queued road request in flight keeps its place");
+    CVehicle mover;mover.owner=&own;mover.data.crane=true;
+    mover.m_iOrderState=CVehicle::order_sent;mover.m_iOrderKind=CRoute::move;
+    mover.LeaveRoadShipped();
+    check(mover.m_dwLeftRoad!=0,"a queued move under event none may still park off the road");
+    CVehicle idle2;idle2.owner=&own;idle2.data.crane=true;
+    idle2.LeaveRoadShipped();
+    check(idle2.m_dwLeftRoad!=0,"an idle crane may still park off the road");
+    theMap.hex.type=CHex::plain;
+    // A hold that runs out ON the saved job's destination sub: ResumeJob has nowhere to
+    // drive to, and the hold branch of ArrivedDest had returned before its event switch,
+    // so the job's arrival never ran. It runs at hold expiry now.
+    CVehicle there;there.owner=&own;there.realResume=true;
+    there.m_bResume=TRUE;there.m_subResume=there.m_ptHead;there.m_iHoldFrames=1;
+    there.TickHold();
+    check(there.arrivals==1&&!there.m_bResume&&there.destCalls==0,"hold ending on the job's own sub runs the skipped arrival");
+    CVehicle away;away.owner=&own;away.realResume=true;
+    away.m_bResume=TRUE;away.m_iHoldFrames=1;           // m_subResume is elsewhere
+    away.TickHold();
+    check(away.arrivals==0&&away.destCalls==1&&away.m_cMode==CVehicle::moving,"hold ending elsewhere drives back to the job, no arrival");
+    CVehicle nojob;nojob.owner=&own;nojob.realResume=true;nojob.m_iHoldFrames=1;
+    nojob.TickHold();
+    check(nojob.arrivals==0&&nojob.destCalls==0&&!(nojob.m_bFlags&CVehicle::told_ai_stop),"hold with no saved job only re-enables notification");
     std::printf("%d checks, %d failures\n",checks,failures);return failures?EXIT_FAILURE:EXIT_SUCCESS;
 }

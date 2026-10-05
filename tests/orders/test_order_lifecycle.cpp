@@ -28,7 +28,7 @@ constexpr BOOL TRUE = 1, FALSE = 0;
 static int g_traps = 0;
 #define TRAP()                 (++g_traps)
 
-enum { EVENT_CONST_CANT = 11, EVENT_WARN = 2 };
+enum { EVENT_CONST_CANT = 11, EVENT_WARN = 2, EVENT_ROAD_HALTED = 18, EVENT_GOTO_CANT = 23 };
 
 // --------------------------------------------------------------------------- hex
 struct CHexCoord {
@@ -147,15 +147,25 @@ struct BridgeHex {
 struct Game {
     DWORD ms = 1000;
     int   warnings = 0;
+    int   byEvent[64] = {};            // every warning, by event id
     DWORD GettimeGetTime() const { return ms; }
-    void  Event(int ev, int, void *) { if (ev == EVENT_CONST_CANT) ++warnings; }
+    void  Event(int ev, int, void *) { if (ev == EVENT_CONST_CANT) ++warnings; ++byEvent[ev & 63]; }
+    void  ClearEvents() { warnings = 0; for (int &n : byEvent) n = 0; }
 } theGame;
 
 struct RouteWindow { int refreshes = 0; void RefreshRoute() { ++refreshes; } };
+class CVehicle;
+struct OldRouteWindow { void NewRoute(CVehicle *) {} };
 
 // --------------------------------------------------------------------------- vehicle
-// CVehicle::ResumeUnit chains to its base, so the scene supplies an inert one.
-struct CUnit { void ResumeUnit() {} };
+// CVehicle::ResumeUnit / StopUnit chain to their base, so the scene supplies the flag.
+struct CUnit {
+    enum { vehicle = 1 };
+    int  GetUnitType() const { return vehicle; }
+    bool stopped = false;
+    void ResumeUnit() { stopped = false; }
+    void StopUnit() { stopped = true; }
+};
 
 struct VehData { bool boat = false; BOOL IsBoat() const { return boat; } };
 
@@ -173,6 +183,7 @@ class CVehicle : public CUnit {
     BOOL RepairTargetLives(CHexCoord const &hex) const;
     void ReestablishOrderIdentity();
     BOOL ArmedForOrder() const;
+    int  OrderGiveUpEvent() const;
     void OrderArrivalFailed();
     void CheckOrderStall();
     BOOL NextOrder();
@@ -185,6 +196,7 @@ class CVehicle : public CUnit {
     void SetLocation(CHexCoord &hex, POSITION pos, int iType);   // unit.cpp
     BOOL HasMoveStops() const;                                   // unit.cpp
     void ResumeUnit();                                           // unit.cpp
+    void StopUnit();                                             // unit.cpp
 
     // ---- scene ----
     RouteList    m_route;
@@ -206,6 +218,7 @@ class CVehicle : public CUnit {
     CHexCoord    m_hexBldg;
     int          m_iBldgType = 0, m_iBuildDir = 0;
     RouteWindow *m_pSdlRoute = nullptr;
+    OldRouteWindow *m_pWndRoute = nullptr;
     Owner       *owner       = nullptr;
     BOOL         m_bDispatched = FALSE;    // did TickIdlePoll dispatch on this call?
     int          requests      = 0;        // BuildBldg-equivalent sends (wire traffic)
@@ -228,6 +241,8 @@ class CVehicle : public CUnit {
     }
     void     StartConst(CBuilding *b) { m_pBldg = b; m_iEvent = build; m_cMode = run; }
     CHexCoord m_ptHead;            // ArrivedDest reads the arrival square from here
+    CHexCoord GetPtNext() const { return m_ptHead; }   // StopUnit's SetDest: stand still
+    void      EndReverse() {}
 
     // ---- world events, the engine transitions the lifecycle needs ----
     void ArriveAndSend() {                 // ArrivedDest -> BuildBldg: event cleared, sent
@@ -280,8 +295,15 @@ BOOL CVehicle::ArmedForOrder() const { return FALSE; }
 #ifdef MISSING_OrderArrivalFailed
 void CVehicle::OrderArrivalFailed() {}
 #endif
+#ifdef MISSING_OrderGiveUpEvent
+// the pre-fix behaviour: every give-up raised the building warning
+int CVehicle::OrderGiveUpEvent() const { return EVENT_CONST_CANT; }
+#endif
 #ifdef MISSING_CheckOrderStall
 void CVehicle::CheckOrderStall() {}
+#endif
+#ifdef MISSING_StopUnit
+void CVehicle::StopUnit() { CUnit::StopUnit(); SetEvent(none); SetDest(GetPtNext()); }
 #endif
 #ifdef MISSING_HasMoveStops
 // the pre-fix rule: any non-empty list counted as a route
@@ -291,6 +313,19 @@ BOOL CVehicle::HasMoveStops() const { return (m_route.GetCount() > 0); }
 // BuildBldgDest picks the footprint hex closest to the crane. The scene keeps the order's
 // own hex, which is what a 1x1 site gives and what every assertion below is written for.
 static void BuildBldgDest(CVehicle *, int, int, CHexCoord &) {}
+
+// The area window, as far as OnLButtonUp's veh_route case reads it (route window
+// Waypoint/Load/Unload: the next map click inserts a stop after m_posRoute).
+struct CWndArea {
+    enum { normal, veh_route };
+    int       m_iMode      = veh_route;
+    CUnit    *m_pUnit      = nullptr;
+    POSITION  m_posRoute   = nullptr;
+    int       m_iRouteType = CRoute::waypoint;
+    int       buttons      = 0;
+    void SetButtonState() { ++buttons; }
+    void RouteClick(CHexCoord hex);      // the shipped case body, verbatim
+};
 
 #include "lifecycle_actual.inc"
 
@@ -781,6 +816,190 @@ int main() {
         Tick(v);
         check_eq(v.m_route.GetCount(), 0, "queued move: the list is empty afterwards");
         check_eq(v.m_iOrderState, CVehicle::order_none, "queued move: and nothing is running");
+    }
+
+    // ---------------------------------------------------------------- GIVE-UP WARNING
+    // EVENT_CONST_CANT's text is the BUILDING's name (CGame::Event reads GetBldgType), and
+    // only a build dispatch sets that. A road, repair or move order given up must not
+    // raise it - on a crane that never built, m_iBldgType was uninitialised and the
+    // structure lookup read out of bounds. Both give-up exits are checked.
+    {
+        CHexCoord end(14, 10);
+        CBuilding target; target.hex = CHexCoord(8, 8); target.data.type = 2;
+        struct { int kind; int want; const char *name; } const kinds[] = {
+            { CRoute::build_road, EVENT_ROAD_HALTED, "road" },
+            { CRoute::repair,     EVENT_GOTO_CANT,   "repair" },
+            { CRoute::move,       EVENT_GOTO_CANT,   "move" },
+            { CRoute::build,      EVENT_CONST_CANT,  "build" },
+        };
+        for (auto const &k : kinds) {
+            for (int exitPath = 0; exitPath < 2; ++exitPath) {
+                theBuildingHex.live.clear();
+                theBuildingHex.Add(&target);
+                theGame.ClearEvents();
+                CVehicle v; v.owner = &g_me;
+                CHexCoord at = (k.kind == CRoute::repair) ? CHexCoord(8, 8) : CHexCoord(10, 10);
+                v.AddOrder(at, k.kind, (k.kind == CRoute::build) ? 4 : 0, 0,
+                           (k.kind == CRoute::build_road) ? &end : nullptr);
+                v.AddOrder(CHexCoord(40, 40), CRoute::build, 5, 0);
+                (void)v.NextOrder();
+                for (int i = 0; (i < 20) && (v.m_route.GetCount() == 2); ++i) {
+                    if (exitPath == 0) {
+                        v.GiveUpShortOfDest();               // OrderArrivalFailed
+                        Tick(v);
+                    } else {
+                        v.m_cMode = CVehicle::stop;          // idle and armed: the watchdog
+                        Tick(v, 4000);
+                    }
+                }
+                char msg[160];
+                std::snprintf(msg, sizeof msg, "give-up warning: %s order via %s is dropped",
+                              k.name, exitPath ? "CheckOrderStall" : "OrderArrivalFailed");
+                check_eq(v.m_route.GetCount(), 1, msg);
+                std::snprintf(msg, sizeof msg, "give-up warning: %s order via %s raises its own event",
+                              k.name, exitPath ? "CheckOrderStall" : "OrderArrivalFailed");
+                check_eq(theGame.byEvent[k.want & 63], 1, msg);
+                if (k.kind != CRoute::build) {
+                    std::snprintf(msg, sizeof msg, "give-up warning: %s order via %s never raises EVENT_CONST_CANT",
+                                  k.name, exitPath ? "CheckOrderStall" : "OrderArrivalFailed");
+                    check_eq(theGame.warnings, 0, msg);
+                }
+            }
+        }
+        theBuildingHex.live.clear();
+        theGame.ClearEvents();
+    }
+
+    // ---------------------------------------------------------------- STOP, then RESUME
+    // The Stop button clears the event of whatever the crane was doing. A dispatched
+    // order must go back to the queue with it: left order_sent (event cleared, so not
+    // "armed") or order_road (its terminal branches never run now), nothing ended it and
+    // NextOrder's busy test refused for ever - the whole queue was dead. The order stays
+    // at the cursor and the idle poll re-dispatches it after Resume.
+    {
+        CHexCoord end(14, 10);
+        CBuilding target; target.hex = CHexCoord(8, 8); target.data.type = 2;
+        struct { int kind; int ev; bool laying; const char *name; } const kinds[] = {
+            { CRoute::build,      CVehicle::build,       false, "build (travelling)" },
+            { CRoute::build_road, CVehicle::build_road,  false, "road (travelling)" },
+            { CRoute::build_road, CVehicle::build_road,  true,  "road (laying)" },
+            { CRoute::repair,     CVehicle::repair_bldg, false, "repair (travelling)" },
+            { CRoute::move,       CVehicle::none,        false, "move (driving)" },
+        };
+        for (auto const &k : kinds) {
+            theBuildingHex.live.clear();
+            theBuildingHex.Add(&target);
+            CVehicle v; v.owner = &g_me;
+            CHexCoord at = (k.kind == CRoute::repair) ? CHexCoord(8, 8) : CHexCoord(10, 10);
+            v.AddOrder(at, k.kind, (k.kind == CRoute::build) ? 4 : 0, 0,
+                       (k.kind == CRoute::build_road) ? &end : nullptr);
+            v.AddOrder(CHexCoord(40, 40), CRoute::build, 5, 0);
+            (void)v.NextOrder();
+            if (k.laying)
+                v.RoadTick();                       // ConstructRoad: order_road
+            v.StopUnit();                           // the Stop button
+            v.ResumeUnit();                         // ...and Resume
+            v.ArriveMoveDest();                     // StopUnit's SetDest(ptNext) leg ends
+            for (int i = 0; i < 6; ++i)
+                Tick(v, 4000);
+            char msg[160];
+            std::snprintf(msg, sizeof msg, "stop/resume %s: the order is still queued", k.name);
+            check_eq(v.m_route.GetCount(), 2, msg);
+            std::snprintf(msg, sizeof msg, "stop/resume %s: it is the order re-dispatched", k.name);
+            check(v.m_hexOrder == at, msg);
+            std::snprintf(msg, sizeof msg, "stop/resume %s: under way again", k.name);
+            check_eq(v.m_iOrderState, CVehicle::order_sent, msg);
+            std::snprintf(msg, sizeof msg, "stop/resume %s: its event is armed again", k.name);
+            check_eq(v.m_iEvent, k.ev, msg);
+            std::snprintf(msg, sizeof msg, "stop/resume %s: and it is driving", k.name);
+            check_eq(v.m_cMode, CVehicle::moving, msg);
+        }
+        {   // a build request ALREADY SENT keeps waiting for the server's answer
+            theBuildingHex.live.clear();
+            CVehicle v; v.owner = &g_me;
+            v.AddOrder(CHexCoord(10, 10), CRoute::build, 4, 0);
+            (void)v.NextOrder();
+            v.ArriveAndSend();
+            v.StopUnit();
+            check_eq(v.m_iOrderState, CVehicle::order_sent, "stop/resume: a sent build request is left in flight");
+            v.ResumeUnit();
+            v.ArriveMoveDest();
+            Tick(v, 4000); Tick(v, 4000);
+            check_eq(v.requests, 1, "stop/resume: and is not sent twice");
+        }
+        {   // nothing dispatched: a plain job's Stop is untouched
+            CVehicle v; v.owner = &g_me;
+            v.SetEvent(CVehicle::build); v.m_cMode = CVehicle::moving;
+            v.StopUnit();
+            check_eq(v.m_iOrderState, CVehicle::order_none, "stop/resume: a plain job has no order state");
+            check_eq(v.m_iEvent, CVehicle::none, "stop/resume: and Stop still clears its event");
+        }
+        theBuildingHex.live.clear();
+    }
+
+    // ---------------------------------------------------------------- STALE ROUTE ROW
+    // Routes window: select a row, press Waypoint (m_posRoute = that row), press Delete
+    // on the same row, then click the map. The captured POSITION is no longer on the list;
+    // SetLocation's walk misses it and hits its TRAP - a Debug crash. The click appends at
+    // the tail instead (what Release did), and the TRAP stays for genuinely foreign input.
+    {
+        int trapsBefore = g_traps;
+        CVehicle v; v.owner = &g_me;
+        CHexCoord a(5, 5), b(6, 6), c(7, 7);
+        v.SetLocation(a, nullptr, CRoute::waypoint);
+        v.SetLocation(b, v.m_route.GetTailPosition(), CRoute::waypoint);
+        CWndArea area; area.m_pUnit = &v;
+        area.m_posRoute = v.m_route.GetTailPosition();        // Waypoint pressed on row 2
+        CRoute *pDel = v.m_route.GetAt(area.m_posRoute);       // ...then Delete on row 2
+        v.m_route.RemoveAt(area.m_posRoute);
+        delete pDel;
+        area.RouteClick(c);                                    // ...then the map click
+        check_eq(g_traps - trapsBefore, 0, "stale route row: no TRAP");
+        check_eq(v.m_route.GetCount(), 2, "stale route row: the stop is added");
+        check(v.m_route.GetAt(v.m_route.GetTailPosition())->GetCoord() == c,
+              "stale route row: appended at the tail");
+
+        // a LIVE row is still honoured: insert after row 1, ahead of the tail
+        area.m_posRoute = v.m_route.GetHeadPosition();
+        CHexCoord d(8, 8);
+        area.RouteClick(d);
+        POSITION p = v.m_route.GetHeadPosition();
+        v.m_route.GetNext(p);
+        check(v.m_route.GetAt(p)->GetCoord() == d, "live route row: inserted right after it");
+        // and NULL still means the head
+        area.m_posRoute = nullptr;
+        CHexCoord e(9, 9);
+        area.RouteClick(e);
+        check(v.m_route.GetAt(v.m_route.GetHeadPosition())->GetCoord() == e,
+              "no route row: inserted at the head");
+        check_eq(g_traps - trapsBefore, 0, "route rows: no TRAP at all");
+    }
+
+    // ---------------------------------------------------------------- STALE ORDER KIND
+    // A queued move finishes, then the player places a PLAIN build (area.cpp: ClearOrders,
+    // then the engine's BuildBldg sets order_sent with the event cleared). The last
+    // dispatch's kind used to survive ClearOrders, so the in-flight request looked like an
+    // idle move order: ArmedForOrder TRUE, re-driven by the stall watch after its dwell,
+    // and not protected by StopUnit's / LeaveRoad's "request in flight" guards.
+    {
+        theBuildingHex.live.clear();
+        CVehicle v; v.owner = &g_me;
+        v.AddOrder(CHexCoord(50, 50), CRoute::move, 0, 0);
+        (void)v.NextOrder();
+        v.ArriveMoveDest();
+        Tick(v);
+        check_eq(v.m_route.GetCount(), 0, "stale kind: the queued move finished");
+
+        v.ClearOrders();                     // the plain placement replaces the queue
+        v.SetEvent(CVehicle::build); v.m_cMode = CVehicle::moving;
+        v.ArriveAndSend();                   // BuildBldg: order_sent, event none, stopped
+        check(v.ArmedForOrder() == FALSE, "stale kind: a plain build in flight is not an armed order");
+        for (int i = 0; i < 4; ++i)
+            Tick(v, 4000);
+        check_eq(v.m_iOrderState, CVehicle::order_sent, "stale kind: the stall watch leaves the request in flight");
+        v.StopUnit();
+        check_eq(v.m_iOrderState, CVehicle::order_sent, "stale kind: and so does a Stop");
+        v.ResumeUnit();
     }
 
     std::printf("[orders] lifecycle: %d checks, %d failures, %d traps\n", checks, failures, g_traps);

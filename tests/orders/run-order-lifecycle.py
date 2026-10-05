@@ -108,6 +108,7 @@ for sig in ('void CVehicle::AddOrder(',
             'BOOL CVehicle::RepairTargetLives(',
             'void CVehicle::ReestablishOrderIdentity()',
             'BOOL CVehicle::ArmedForOrder() const',
+            'int CVehicle::OrderGiveUpEvent() const',
             'void CVehicle::OrderArrivalFailed()',
             'void CVehicle::CheckOrderStall()',
             'BOOL CVehicle::NextOrder()',
@@ -117,9 +118,11 @@ for sig in ('void CVehicle::AddOrder(',
     # the finding-3 and finding-4 methods do not exist on an older --baseline-ref; the
     # scene supplies an inert stand-in for whichever is missing (see MISSING_* below).
     parts.append(method(sig, optional=sig.split('::')[1].split('(')[0] in
-                        ('ReestablishOrderIdentity', 'ArmedForOrder', 'OrderArrivalFailed', 'CheckOrderStall')))
+                        ('ReestablishOrderIdentity', 'ArmedForOrder', 'OrderArrivalFailed', 'CheckOrderStall',
+                         'OrderGiveUpEvent')))
 
-missing = [n for n in ('ReestablishOrderIdentity', 'ArmedForOrder', 'OrderArrivalFailed', 'CheckOrderStall')
+missing = [n for n in ('ReestablishOrderIdentity', 'ArmedForOrder', 'OrderArrivalFailed', 'CheckOrderStall',
+                       'OrderGiveUpEvent')
            if ('CVehicle::' + n) not in source]
 
 # unit.cpp: the MOVEMENT-append entry point and the two methods that decide whether a
@@ -129,7 +132,8 @@ UNIT = 'enations_latest/src/unit.cpp'
 unit_src = read(UNIT)
 for sig, opt in (('void CVehicle::SetLocation(', False),
                  ('BOOL CVehicle::HasMoveStops(', True),
-                 ('void CVehicle::ResumeUnit(', False)):
+                 ('void CVehicle::ResumeUnit(', False),
+                 ('void CVehicle::StopUnit(', False)):
     parts.append(method(sig, src=unit_src, optional=opt))
 if 'CVehicle::HasMoveStops' not in unit_src:
     missing.append('HasMoveStops')
@@ -147,6 +151,13 @@ parts.append('void CVehicle::TickIdlePoll() {\n' +
 parts.append('void CVehicle::TestRepairArrival() {'+chr(10)+'    switch (m_iEvent) {'+chr(10)+'' +
              case_block('        case repair_bldg : {', move_src) +
              chr(10)+'        default: break;'+chr(10)+'    }'+chr(10)+'}'+chr(10))
+
+# OnLButtonUp's veh_route case (area.cpp): the route window's insert-after click. Wrapped
+# in a switch so its break / return are legal; `hex` is the clicked hex, as in the handler.
+area_src = read('enations_latest/src/area.cpp')
+parts.append('void CWndArea::RouteClick(CHexCoord hex) {\n    switch (m_iMode) {\n' +
+             case_block('    case veh_route: {', area_src) +
+             '\n    default: break;\n    }\n}\n')
 
 actual = '\n'.join(p for p in parts if p)
 out = HERE / 'lifecycle-out' / ('baseline' if args.baseline_ref else 'candidate')
@@ -176,4 +187,62 @@ batch.write_text(
     encoding='utf-8')
 if subprocess.run(['cmd', '/c', str(batch)], cwd=str(out)).returncode:
     sys.exit(2)
-sys.exit(subprocess.run([str(exe)], cwd=str(out), timeout=30).returncode)
+rc = subprocess.run([str(exe)], cwd=str(out), timeout=30).returncode
+
+# SOURCE LINTS: facts about shipped code that has no body small enough to lift into the
+# scene (a constructor, a UI handler). Read from the same revision as the bodies above.
+lint_checks = lint_fail = 0
+
+
+def lint(ok, name):
+    global lint_checks, lint_fail
+    lint_checks += 1
+    if not ok:
+        lint_fail += 1
+        print('LINT FAIL: ' + name, flush=True)
+
+
+# EVENT_CONST_CANT reads CVehicle::m_iBldgType; the shared constructor body must set it.
+ctor = method('void CVehicle::ctor( )', src=read('enations_latest/src/new_unit.cpp'))
+lint(re.search(r'\bm_iBldgType\s*=\s*0\s*;', ctor) is not None,
+     'CVehicle::ctor initialises m_iBldgType')
+
+# A PLAIN build / road / repair replaces the route as well as the queue: each ClearOrders
+# there is preceded by the same HasMoveStops -> StopRoute pair the Shift paths use. Left
+# behind, a waypoint at the cursor blocks every order appended after it (NextOrder stops
+# at a movement stop), so a later Shift-move behind the job never ran.
+area_lines = read('enations_latest/src/area.cpp').splitlines()
+for anchor, what in (('pVehBuild->ClearOrders( );', 'plain build'),
+                     ('->ClearOrders( );   // #38: a plain road REPLACES the queue', 'plain road'),
+                     ('pVehR->ClearOrders( );   // #38: a plain repair REPLACES the queue', 'plain repair')):
+    at = [i for i, l in enumerate(area_lines) if anchor in l]
+    ok = len(at) == 1
+    if ok:
+        prev = [l.strip() for l in area_lines[max(0, at[0] - 2):at[0]]]
+        ok = (len(prev) == 2 and prev[0].startswith('if ( HasMoveStops(') and
+              prev[1].startswith('StopRoute('))
+    lint(ok, '%s: StopRoute when the vehicle has movement stops, before ClearOrders' % what)
+
+# The [CENSUS] / [LANE] probes in CVehicle::Operate are hard-wired to one save's hex box;
+# every line of them (state writes included, not just the WaitLog) must compile out with
+# EN_TRAFFIC_PROBES = 0, the Release default. A tiny #if walker: is each probe line inside
+# the TRUE branch of an `#if EN_TRAFFIC_PROBES`?
+operate = method('void CVehicle::Operate()')
+stack, probe_lines, leaked = [], 0, []
+for line in operate.splitlines():
+    t = line.strip()
+    if t.startswith('#if'):
+        stack.append('probes' if t.split()[:2] == ['#if', 'EN_TRAFFIC_PROBES'] else 'other')
+    elif t.startswith('#el') and stack:
+        stack[-1] = 'other'
+    elif t.startswith('#endif') and stack:
+        stack.pop()
+    elif any(k in t for k in ('[CENSUS]', '[LANE]', 'm_dwCensus', 'm_dwLaneLog')):
+        probe_lines += 1
+        if 'probes' not in stack:
+            leaked.append(t)
+lint(probe_lines >= 4, 'Operate still carries the [CENSUS]/[LANE] probes the lint looks for')
+lint(not leaked, 'Operate [CENSUS]/[LANE] probes compile out with EN_TRAFFIC_PROBES (live: %r)' % leaked[:2])
+
+print('[orders] lifecycle lints: %d checks, %d failures' % (lint_checks, lint_fail), flush=True)
+sys.exit(rc if rc else (1 if lint_fail else 0))

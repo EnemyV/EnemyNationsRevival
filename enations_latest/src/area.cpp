@@ -4608,6 +4608,19 @@ void CWndArea::OnLButtonUp( UINT nFlags, CPoint point )
 
         ASSERT_STRICT_VALID( m_pUnit );
         ASSERT_STRICT( m_pUnit->GetUnitType( ) == CUnit::vehicle );
+        // m_posRoute was captured when the route window's Waypoint/Load/Unload button was
+        // pressed, and that row can be deleted before this click. A POSITION that is no
+        // longer on the list trips SetLocation's TRAP (a Debug crash; Release appends at
+        // the tail there), so append at the tail here. NULL still means "at the head".
+        if ( m_posRoute != NULL )
+        {
+            auto&    rl = ( (CVehicle*)m_pUnit )->GetRouteList( );
+            POSITION p = rl.GetHeadPosition( );
+            while ( ( p != NULL ) && ( p != m_posRoute ) )
+                rl.GetNext( p );
+            if ( p == NULL )
+                m_posRoute = rl.GetTailPosition( );
+        }
         ( (CVehicle*)m_pUnit )->SetLocation( hex, m_posRoute, m_iRouteType );
         if ( ( (CVehicle*)m_pUnit )->m_pWndRoute != NULL )
             ( ( (CVehicle*)m_pUnit )->m_pWndRoute )->NewRoute( (CVehicle*)m_pUnit );
@@ -4765,6 +4778,8 @@ void CWndArea::OnLButtonUp( UINT nFlags, CPoint point )
 
         // lets build here - a plain placement REPLACES the queue (the same
         // replace-versus-append split a move has) and executes now
+        if ( HasMoveStops( pVehBuild ) )
+            StopRoute( pVehBuild );   // #38: and its movement stops, as a plain move does
         pVehBuild->ClearOrders( );
         m_pUnit->ResumeUnit( );
         pVehBuild->SetBuilding( hex, m_iBuild, GetBuildDir( ) );
@@ -4978,6 +4993,8 @@ void CWndArea::OnLButtonUp( UINT nFlags, CPoint point )
         {
             CUnit* pUnit = m_lstUnits.GetNext( pos );
             ASSERT_STRICT_VALID( pUnit );
+            if ( HasMoveStops( (CVehicle*)pUnit ) )
+                StopRoute( (CVehicle*)pUnit );   // #38: and its movement stops, as a plain move does
             ( (CVehicle*)pUnit )->ClearOrders( );   // #38: a plain road REPLACES the queue
             SetDestAndSfx( (CVehicle*)pUnit, m_hexRoadStart );
             ( (CVehicle*)pUnit )->SetRoad( m_hexRoadStart, hex );
@@ -5025,6 +5042,8 @@ void CWndArea::OnLButtonUp( UINT nFlags, CPoint point )
                             pVehR->m_pSdlRoute->RefreshRoute( );
                         continue;
                     }
+                    if ( HasMoveStops( pVehR ) )
+                        StopRoute( pVehR );   // #38: and its movement stops, as a plain move does
                     pVehR->ClearOrders( );   // #38: a plain repair REPLACES the queue
                     pUnit->ResumeUnit( );
                     pVehR->SetEvent( CVehicle::repair_bldg );

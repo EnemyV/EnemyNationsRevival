@@ -4733,6 +4733,16 @@ void CVehicle::StopUnit( )
     CUnit::StopUnit( );
 
     EndReverse( );
+    // #38: a dispatched order whose job the Stop cancels - travelling with its event
+    // armed, a queued move, or a road being laid - is handed back to the queue, so
+    // ResumeUnit's idle poll re-dispatches it. Left order_sent / order_road with the
+    // event cleared below, nothing ever ends it and NextOrder refuses for ever. A
+    // build request already sent (event none) still waits for the server's answer.
+    if ( ( m_pBldg == NULL ) &&
+         ( ( m_iOrderState == order_road ) ||
+           ( ( m_iOrderState == order_sent ) &&
+             ( ( m_iEvent != CVehicle::none ) || ( m_iOrderKind == CRoute::move ) ) ) ) )
+        m_iOrderState = order_none;
     SetEvent( CVehicle::none );
     SetDest( GetPtNext( ) );
 }

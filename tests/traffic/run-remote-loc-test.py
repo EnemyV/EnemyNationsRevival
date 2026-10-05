@@ -84,6 +84,15 @@ elif args.parking:
     start = arrival.index('    // Saved recovery metadata') if '    // Saved recovery metadata' in arrival else arrival.index('    // Keep reverse geometry')
     end = arrival.index("    // we're stopped", start)
     actual += '\nvoid CVehicle::TestArrivalRecovery() {\n' + arrival[start:end] + '\n}\n'
+    # ArrivedDest's on-stop block (the LeaveRoad call made at every arrival), and LeaveRoad
+    # itself under another name so the scene can count the block's calls with a stub.
+    start = arrival.index('    // ON STOP: never come to rest')
+    end = arrival.index('LeaveRoad();', start) + len('LeaveRoad();')
+    actual += '\nvoid CVehicle::TestOnStop(void* pBldgDest) {\n' + arrival[start:end] + '\n}\n'
+    actual += '\n' + method('BOOL CVehicle::LeaveRoad()').replace(
+        'BOOL CVehicle::LeaveRoad()', 'BOOL CVehicle::LeaveRoadShipped()', 1) + '\n'
+    actual += '\n' + method('BOOL CVehicle::ResumeJob()').replace(
+        'BOOL CVehicle::ResumeJob()', 'BOOL CVehicle::ResumeJobShipped()', 1) + '\n'
     backup = source[source.index('BOOL CVehicle::BackUp()'):]
     start = backup.index('BOOL bFixed = ') + len('BOOL bFixed = ')
     end = backup.index(';', start)

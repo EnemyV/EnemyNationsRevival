@@ -559,6 +559,8 @@ public:
 		// tells the order layer at once, instead of leaving it to the watchdog's dwell.
 		void					OrderArrivalFailed ();
 		BOOL					ArmedForOrder () const;
+		// the warning a given-up order raises - EVENT_CONST_CANT only for a build order
+		int						OrderGiveUpEvent () const;
 #if EN_GAMEPLAY_PROBES
 		// one dispatch-trace line, carrying every field NextOrder's busy test reads
 		void					OrderProbe (char const * pszWhat, char const * pszWhy = NULL) const;
