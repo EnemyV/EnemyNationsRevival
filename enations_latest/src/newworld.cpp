@@ -1241,7 +1241,15 @@ void CConquerApp::LetsGo() {
         _UpdateWin(&m_wndBldgs);
     }
 
-    theGame.SetElapsedSeconds(0);
+    // A new or joined game starts its clock at 0. A LOADED one (host or load-join
+    // seat) keeps the elapsed time CGame::Serialize just read from the save, so
+    // everything keyed to game time (AI caps by hours played, the start-assign
+    // stagger, the decided-game grace, set_time) is not re-armed by every load.
+    if ((m_pCreateGame == NULL) ||
+        ((m_pCreateGame->m_iTyp != CCreateBase::load_single) &&
+         (m_pCreateGame->m_iTyp != CCreateBase::load_multi) &&
+         (m_pCreateGame->m_iTyp != CCreateBase::load_join)))
+        theGame.SetElapsedSeconds(0);
 
     // ZERO THE SIM-CLOCK DEBT (operator's "one frame holds 20-30s at game
     // start"). ShouldOperate turned on near the TOP of LetsGo, so every second

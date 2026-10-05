@@ -76,12 +76,10 @@ static int CountContenders( CList<CPlayer*, CPlayer*>& lst )
 // A game that has only ever had ONE contender (observer watching a single AI,
 // or no opponents at all) is decided before it starts. Declare it, but not on
 // the first tick - an instant cut-scene at world-create reads as a bug.
-// Sim clock, stops when paused. NOTE: it is zeroed on LOAD too, not just at
-// create (newworld.cpp:1227 SetElapsedSeconds(0), the sim-clock-debt line, runs
-// after deserialize), so this floor RE-ARMS on every load - measured 7950 -> 25
-// by MacOpus. Harmless: loading an already-decided game declares its winner 60
-// game-seconds later instead of at once. Do NOT assume "a load is past the
-// floor" anywhere else.
+// Sim clock, stops when paused. LetsGo zeroes it for a new or joined game only;
+// a loaded game keeps the clock its save restored, so this floor does NOT re-arm
+// on load: a save already past 60 s that is decided resolves on its first
+// once-a-second check, exactly as it would have had play continued.
 static const DWORD DECIDED_GRACE_SECS = 60;
 
 
