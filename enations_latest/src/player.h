@@ -15,6 +15,7 @@
 #include "research.h"
 #include "vpxfer.h"
 #include "mem_pool.h"
+#include <vector>
 
 class CNetCmd;
 class CUnit;
@@ -173,9 +174,9 @@ class CPlayer : public CObject
     void ApplySurplusEdicts( );
     void PeopleAndFood( int iNumSec );
     void Research( int iNumSec );
-    // Resonance Sweep edict: recharge, ping, and age out the lit ring. Called from the same
-    // per-player block in mainloop.cpp as Research, with the same game-seconds elapsed.
-    void ResonanceSweep( int iNumSec );
+    // Resonance Sweep edict: recharge, ping, and age out the lit ring using active real
+    // milliseconds from the unscaled frame clock in mainloop.cpp.
+    void ResonanceSweep( int iElapsedMillis );
     void SweepLight( CBuilding* pRocket );   // light the ring around a pinged rocket
     void SweepUnlight( );                    // release it (safe to call when nothing is lit)
     void CPlayer::CitizenConstruction( );
@@ -1076,22 +1077,21 @@ class CPlayer : public CObject
     float m_fEdictFuelCarry;       // runtime-only: fractional gas-surcharge carry (not serialized)
     BOOL  m_bAutoRsrchPending;     // runtime-only: AutoResearch edict posted a set_rsrch, awaiting it (not serialized)
     // Resonance Sweep edict state. Both runtime-only and deliberately NOT serialized: they carry
-    // nothing but the phase of a 10-second timer and the position of a private RNG, so a reload
+    // nothing but the phase of a real-time recharge timer and the position of a private RNG, so a reload
     // simply restarts the cycle. Nothing the sweep produces lives here -- what it reveals is
     // recorded in the buildings' own visibility, which already persists.
-    int   m_iSweepSecs;            // game-seconds banked toward the next ping
+    int   m_iSweepMillis;            // active real milliseconds banked toward the next ping
     unsigned int m_uSweepRand;     // private LCG state -- never MyRand (see ResonanceSweep)
-    // The lit ring. Stored as the RECT we incremented, not as the rocket pointer: CHex::m_bVisible
-    // is a BYTE, so an unbalanced decrement wraps to 255 and pins a hex lit for the rest of the
-    // game. Releasing the exact rect we lit is what guarantees the pairing even if the rocket is
-    // destroyed, or the edict revoked, while the ring is up. Hex visibility is NOT serialized
-    // (CHex::Serialize writes type/alt/unit/sprite only; it is rebuilt from our own units on
-    // load), so a save taken mid-ping cannot leak one.
+    // The lit ring. Store the exact coordinates incremented (some rocket footprints are skipped)
+    // so release remains balanced even if the building map changes before the ring expires.
+    // Hex visibility is NOT serialized (CHex::Serialize writes type/alt/unit/sprite only; it is
+    // rebuilt from our own units on load), so a save taken mid-ping cannot leak one.
     BOOL      m_bSweepLit;         // a ring is currently up
-    int       m_iSweepLitSecs;     // game-seconds left before it is released
+    int       m_iSweepLitMillis;     // active real milliseconds left before it is released
     CHexCoord m_hexSweepLit;       // origin of the lit rect
     int       m_iSweepLitCX;       // its extent
     int       m_iSweepLitCY;
+    std::vector<CHexCoord> m_aSweepLitHexes; // exact hexes whose visibility count this ring raised
     // Upkeep — recurring cost (sum of active edicts' pct), applied as extra per-loop demand:
     float m_fEdictEnergyUpkeepPct;     // added to m_iPwrNeed in StartLoop (pre-throttle)
 

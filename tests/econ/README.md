@@ -10,7 +10,47 @@ python tests/econ/run-scrounge-cache-test.py --baseline-ref 639610a9   # expecte
 ```
 
 Build artifacts go to `d:\tmp\scroungecache\<Od|O2>\` (`--out-dir` to move them).
+
+## Resonance Sweep timer and selection
+
+Run `python tests/econ/run-resonance-sweep-test.py` to extract the shipped reload
+calculation, elapsed-time prefix, and two-pass rocket candidate selector from
+`player.cpp`, then compile them at `/Od` and `/O2`. The fixture checks the 30-second
+full-power boundary, half-power 60-second reload, blackout and tiny-power cap,
+long-stall single-ping behavior, disabling/rearming, local-view gating, 10-second
+ring expiration, and selection among enemy rockets while excluding allies, own
+rockets, non-rockets, and entries without data. The runner also checks that the
+single `mainloop.cpp` call is inside `ShouldOperate`, receives wall-clock frame
+elapsed milliseconds, and is not made on the simulation-seconds path.
+
+The candidate-selection production region is preserved verbatim except its two
+void early returns are adapted to return null in the test wrapper. The frame-clock
+check is a source guard; the fixture does not launch a game or measure a live frame
+schedule. Build artifacts go to `local-notes/resonance-sweep-test/`.
 Exit codes: `0` all pass, `1` a check failed, `2` toolchain / compile error.
+
+### Sweep ring visibility
+
+Run `python tests/econ/run-resonance-sweep-ring-test.py` to extract the production
+`SweepLight`/`SweepUnlight` helpers and methods verbatim, then compile and run them at
+`/Od` and `/O2`. The fake map observes visibility counters and building reveal calls.
+Checks cover excluding another enemy rocket's entire footprint before lighting it,
+preserving normal vision/reveal for an ordinary building and overlapping vision,
+balanced release after the building map changes, idempotent release, tier 1 with no
+ring, tier 6's 5-hex ring across map wrap, and switching targets while a ring is active.
+The runner also guards clearing the transient coordinate list at construction, load,
+ring start, and release. This exercises the production mechanism in isolation; it does
+not launch the game or verify live presentation. Artifacts go to
+`local-notes/resonance-ring-test/`.
+
+### Sweep call holds the game lock
+
+Run `python tests/econ/run-resonance-sweep-lock-test.py` (optionally `--baseline-ref <rev>`).
+A source guard, no compile: it extracts `GraphicsEnginePump` from `mainloop.cpp` and
+requires the single `ResonanceSweep` call to sit between an `EnterCriticalSection( &cs )`
+and its matching `LeaveCriticalSection( &cs )` on the same straight-line path. The sweep
+walks `theBuildingMap` and can delete dead buildings while AI threads walk it under `cs`.
+Exit codes: `0` pass, `1` check failed.
 
 ## Scrounging terrain cache vs Slash and Burn
 

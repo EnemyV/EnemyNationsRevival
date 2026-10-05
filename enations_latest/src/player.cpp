@@ -130,10 +130,11 @@ void CPlayer::ctor( )
     m_dwEdicts            = 0;
     m_fEdictFuelCarry     = 0.0f;   // runtime-only fractional gas-surcharge carry (not reset per recompute)
     m_bAutoRsrchPending   = FALSE;  // runtime-only AutoResearch set_rsrch-in-flight guard
-    m_iSweepSecs          = 0;      // runtime-only Resonance Sweep timer phase
+    m_iSweepMillis          = 0;      // runtime-only Resonance Sweep timer phase
     m_uSweepRand          = 1;      // runtime-only Resonance Sweep private RNG (1 == the CRT seed)
     m_bSweepLit           = FALSE;  // runtime-only: no lit ring outstanding
-    m_iSweepLitSecs       = 0;
+    m_iSweepLitMillis       = 0;
+    m_aSweepLitHexes.clear( );
     m_iSweepLitCX         = 0;
     m_iSweepLitCY         = 0;
     m_fEdictConstMult     = 1.0f;
@@ -1286,7 +1287,7 @@ int CPlayer::GetSweepReloadSecs( ) const
         fPwr = 1.0f;
 
     int iSecs;
-    if ( fPwr <= 0.0f )
+    if ( fPwr <= (float)RESONANCE_SWEEP_RELOAD_SECS / RESONANCE_SWEEP_MAX_RELOAD )
         iSecs = RESONANCE_SWEEP_MAX_RELOAD;
     else
         iSecs = (int)( (float)RESONANCE_SWEEP_RELOAD_SECS / fPwr );
@@ -1298,26 +1299,46 @@ int CPlayer::GetSweepReloadSecs( ) const
     return ( iSecs );
 }
 
-// Light one hex of a sweep ring. The visibility counter is ours to drive here exactly as a
-// scouting unit drives it, and the shared reveal handler does the rest on the transition.
+struct SweepLightContext
+{
+    CPlayer* pPlayer;
+    CBuilding* pChosenRocket;
+    std::vector<CHexCoord>* pLitHexes;
+};
+
+// Light one hex of a sweep ring. Enemy rocket footprints other than the chosen rocket are
+// excluded before IncVisible, so the shared reveal handler cannot disclose them.
 static int fnSweepLight( CHex* pHex, CHexCoord hex, void* pData )
 {
+    SweepLightContext* pContext = (SweepLightContext*)pData;
+    if ( pHex->GetUnits( ) & CHex::bldg )
+    {
+        CBuilding* pBldg = theBuildingHex._GetBuilding( hex );
+        if ( ( pBldg != NULL ) && ( pBldg != pContext->pChosenRocket ) &&
+             ( pBldg->GetData( ) != NULL ) &&
+             ( pBldg->GetData( )->GetType( ) == CStructureData::rocket ) &&
+             ( pBldg->GetOwner( ) != NULL ) && ( pBldg->GetOwner( ) != pContext->pPlayer ) &&
+             ( pBldg->GetOwner( )->GetTheirRelations( ) != RELATIONS_ALLIANCE ) )
+            return ( FALSE );
+    }
+
     pHex->IncVisible( );
     if ( pHex->GetVisibility( ) == 1 )
-        EnHexBecameVisible( pHex, hex, (CPlayer*)pData );
+        EnHexBecameVisible( pHex, hex, pContext->pPlayer );
+    pContext->pLitHexes->push_back( hex );
     return ( FALSE );
 }
 
 // Release one hex of a sweep ring. Mirrors CUnit::DecrementSpotting, including re-freezing an
 // enemy building's ambients once it drops out of sight again.
-static int fnSweepUnlight( CHex* pHex, CHexCoord hex, void* pData )
+static void SweepUnlightHex( CHex* pHex, CHexCoord hex, CPlayer* pPlayer )
 {
     // m_bVisible is a BYTE: decrementing one that is already 0 wraps it to 255 and pins the hex
-    // lit for the rest of the game. SweepLight/SweepUnlight always walk the same stored rect so
-    // this cannot trip, but the cost of being wrong is permanent and invisible, so check.
+    // lit for the rest of the game. We release only recorded increments, but still guard the
+    // count because an independent map reset could have invalidated it.
     ASSERT( pHex->GetVisibility( ) );
     if ( pHex->GetVisible( ) <= 0 )
-        return ( FALSE );
+        return;
 
     pHex->DecVisible( );
     if ( !pHex->GetVisibility( ) )
@@ -1326,11 +1347,10 @@ static int fnSweepUnlight( CHex* pHex, CHexCoord hex, void* pData )
         if ( pHex->GetUnits( ) & CHex::bldg )
         {
             CBuilding* pBldg = theBuildingHex._GetBuilding( hex );
-            if ( ( pBldg != NULL ) && ( pBldg->GetOwner( ) != (CPlayer*)pData ) && !pBldg->IsLive( ) )
+            if ( ( pBldg != NULL ) && ( pBldg->GetOwner( ) != pPlayer ) && !pBldg->IsLive( ) )
                 pBldg->PauseAnimations( TRUE );
         }
     }
-    return ( FALSE );
 }
 
 // Light the ground around a rocket the sweep just found. Tier 1 lights nothing -- it is a bare
@@ -1351,33 +1371,42 @@ void CPlayer::SweepLight( CBuilding* pRocket )
     m_iSweepLitCX   = pRocket->GetCX( ) + 2 * iRing;
     m_iSweepLitCY   = pRocket->GetCY( ) + 2 * iRing;
     m_bSweepLit     = TRUE;
-    m_iSweepLitSecs = RESONANCE_SWEEP_LIT_SECS;
+    m_iSweepLitMillis = RESONANCE_SWEEP_LIT_SECS * 1000;
 
-    theMap.EnumHexes( m_hexSweepLit, m_iSweepLitCX, m_iSweepLitCY, fnSweepLight, this );
+    m_aSweepLitHexes.clear( );
+    SweepLightContext context = { this, pRocket, &m_aSweepLitHexes };
+    theMap.EnumHexes( m_hexSweepLit, m_iSweepLitCX, m_iSweepLitCY, fnSweepLight, &context );
 }
 
-// Release the lit ring. Walks the SAME rect it lit, which is what keeps the BYTE counter
-// balanced; safe to call when nothing is lit.
+// Release only the hexes whose visibility counts this ring raised; safe to call when nothing is lit.
 void CPlayer::SweepUnlight( )
 {
     if ( !m_bSweepLit )
         return;
 
     m_bSweepLit     = FALSE;          // cleared FIRST so re-entry cannot decrement twice
-    m_iSweepLitSecs = 0;
-    theMap.EnumHexes( m_hexSweepLit, m_iSweepLitCX, m_iSweepLitCY, fnSweepUnlight, this );
+    m_iSweepLitMillis = 0;
+    for ( std::vector<CHexCoord>::size_type i = 0; i < m_aSweepLitHexes.size( ); ++i )
+    {
+        CHex* pHex = theMap._GetHex( m_aSweepLitHexes[i] );
+        if ( pHex != NULL )
+            SweepUnlightHex( pHex, m_aSweepLitHexes[i], this );
+    }
+    m_aSweepLitHexes.clear( );
 }
 
-void CPlayer::ResonanceSweep( int iNumSec )
+void CPlayer::ResonanceSweep( int iElapsedMillis )
 {
     // Age out any lit ring FIRST, and release it unconditionally if the sweep is no longer
     // running -- the edict can be switched off, or revoked with our last Command Center
     // (EdictHostLost), while a ring is up, and the hexes must come back either way.
+    if ( iElapsedMillis < 0 )
+        iElapsedMillis = 0;
     BOOL bRunning = IsMe( ) && IsEdictActive( EDICT_RESONANCE_SWEEP );
     if ( m_bSweepLit )
     {
-        m_iSweepLitSecs -= iNumSec;
-        if ( ( m_iSweepLitSecs <= 0 ) || ( !bRunning ) )
+        m_iSweepLitMillis -= iElapsedMillis;
+        if ( ( m_iSweepLitMillis <= 0 ) || ( !bRunning ) )
             SweepUnlight( );
     }
 
@@ -1385,19 +1414,20 @@ void CPlayer::ResonanceSweep( int iNumSec )
     // fresh cycle rather than firing instantly on time that accrued while it was switched off.
     if ( !bRunning )
     {
-        m_iSweepSecs = 0;
+        m_iSweepMillis = 0;
         return;
     }
 
-    m_iSweepSecs += iNumSec;
-    int iReload = GetSweepReloadSecs( );
-    if ( m_iSweepSecs < iReload )
+    int iReload = GetSweepReloadSecs( ) * 1000;
+    // Compare before adding so even a very long stall cannot overflow the bank.
+    if ( iElapsedMillis < iReload - m_iSweepMillis )
+    {
+        m_iSweepMillis += iElapsedMillis;
         return;
-    // Carry the remainder rather than zeroing: m_dwOperSecElapsed is seconds-since-last-loop
-    // and can exceed 1 after a stall, so assigning 0 would quietly throw away banked time.
-    m_iSweepSecs -= iReload;
-    if ( m_iSweepSecs >= iReload )
-        m_iSweepSecs = iReload - 1;   // a long stall carries the remainder, never a free ping
+    }
+    // Start a fresh interval from this contact. A stalled frame must not bank a
+    // second contact that fires immediately after it.
+    m_iSweepMillis = 0;
 
     // Pass 1 - count the candidates. Allies are skipped: their rockets are already visible to
     // us, so pinging one would burn the sweep to learn nothing.
@@ -1996,8 +2026,9 @@ void CPlayer::Serialize( CArchive& ar )
         // rebuilt from our own units on load, so a ring recorded before the save refers to
         // counts that no longer exist -- drop it rather than releasing it (see SweepUnlight).
         m_bSweepLit     = FALSE;
-        m_iSweepLitSecs = 0;
-        m_iSweepSecs    = 0;
+        m_iSweepLitMillis = 0;
+        m_aSweepLitHexes.clear( );
+        m_iSweepMillis    = 0;
         // Read research statuses element-by-element to preserve valid object layout.
         {
             DWORD_PTR nNewSize = ar.ReadCount( );

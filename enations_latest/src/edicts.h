@@ -252,15 +252,17 @@ const int RSRCH_SUBSIDY_MAX_PCT    = 20;  // max EXTRA research pct, on top of t
 // RESONANCE_SWEEP_LIT_SECS and then released. That window is ordinary hex visibility, the same
 // counter a scouting unit drives, so enemy VEHICLES inside it appear while it is lit and vanish
 // when it goes dark, while buildings and terrain it uncovers stay remembered exactly as if we
-// had walked past them.
+// had walked past them. Other enemy rocket footprints are excluded so a sweep still reveals
+// just its one selected rocket, even when several ships are close together.
 //
-// RECHARGE SCALES WITH POWER. At full power the recharge is RESONANCE_SWEEP_RELOAD_SECS. Brown
+// RECHARGE SCALES WITH POWER. At full power the recharge is RESONANCE_SWEEP_RELOAD_SECS real
+// seconds of active play, independent of game speed. Brown
 // the colony out and it stretches in proportion: CPlayer::m_fPwrMult is the fraction of demand
 // actually met, so half power doubles the wait, quarter power quadruples it, and so on, capped
 // at RESONANCE_SWEEP_MAX_RELOAD so a total blackout stalls the sweep rather than dividing by
 // zero. The edict's own draw is part of that demand, so switching it on when the grid is
 // already tight slows the very thing you switched on. See CPlayer::GetSweepReloadSecs.
-const int RESONANCE_SWEEP_RELOAD_SECS = 30;   // game-seconds to recharge at FULL power
+const int RESONANCE_SWEEP_RELOAD_SECS = 30;   // active real seconds to recharge at FULL power
 const int RESONANCE_SWEEP_MAX_RELOAD  = 600;  // recharge cap in a deep brownout (10 minutes)
 const int RESONANCE_SWEEP_LIT_SECS    = 10;   // how long a ping's lit ring is held
 const int RESONANCE_SWEEP_POWER       = 500;  // flat power at tier 1 (EdictDef iFlatEnergyUpkeep)

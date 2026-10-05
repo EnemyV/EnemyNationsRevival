@@ -1119,6 +1119,16 @@ void CConquerApp::GraphicsEnginePump( )
         // time played
         theGame.m_dwElapsedTime += theGame.m_dwOpersElapsed;
 
+        // Local intel uses active real time, independent of the simulation speed.
+        // This frame clock also stops advancing the sweep while play is paused.
+        // Hold cs: the sweep walks theBuildingMap and can delete dead buildings, and the
+        // AI threads walk that map under cs.
+        EnterCriticalSection( &cs );
+        if ( theGame._GetMe( ) != NULL )
+            theGame._GetMe( )->ResonanceSweep(
+                theGame.m_dwFramesElapsed * ( 1000 / FRAME_RATE ) );
+        LeaveCriticalSection( &cs );
+
         // every 15 seconds we check for number of buildings
         static int iFifteen = 0;
 
@@ -1344,11 +1354,6 @@ void CConquerApp::GraphicsEnginePump( )
                 {
                     pPlr->PeopleAndFood( theGame.GetOperSecElapsed( ) );
                     pPlr->Research( theGame.GetOperSecElapsed( ) );
-                    // Resonance Sweep edict: one enemy-rocket ping per recharge, and ageing out
-                    // the lit ring a ping leaves behind.
-                    // Same cadence source as Research; the call itself no-ops unless this is
-                    // the local human and the edict is on (see CPlayer::ResonanceSweep).
-                    pPlr->ResonanceSweep( theGame.GetOperSecElapsed( ) );
                 }
 
                 // if we're the server decide if a player is dead
