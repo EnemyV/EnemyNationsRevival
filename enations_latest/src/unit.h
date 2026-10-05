@@ -620,7 +620,7 @@ class CUnit : public CUnitTile
     int   GetLastShowDamagePer( ) const;
     float GetDamageMult( ) const;
     float GetDamPerfMult( ) const;
-    void  DecDamagePoints( int iDamage, DWORD dwKiller = 0 );
+    void  DecDamagePoints( int iDamage, DWORD dwKiller = 0, BOOL bApplyMults = TRUE );
     void  UpdateDamageLevel( );
     void  MsgSetFire( CMsgShootElem* pMsg );
     void  PrepareToDie( DWORD dwIDKiller );

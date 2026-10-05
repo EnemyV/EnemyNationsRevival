@@ -267,7 +267,7 @@ class CPlayer : public CObject
     void AddPplBldg( int iAdd )
     {
         ASSERT_STRICT_VALID( this );
-        m_iPplBldg += iAdd;
+        m_iPplBldg = __max( 1, m_iPplBldg + iAdd );   // always at least 1, as PplBldgToVeh
     }
     void AddPplVeh( int iAdd )
     {
@@ -424,7 +424,9 @@ class CPlayer : public CObject
     float GetEdictFarmWorkerMult( ) const { return ( m_fEdictFarmWorkerMult ); } // BuildFarm worker-need scale
     float GetEdictMineEnergyMult( ) const { return ( m_fEdictMineEnergyMult ); }  // BuildMine power-need scale
     float GetEdictMineWorkerMult( ) const { return ( m_fEdictMineWorkerMult ); }  // BuildMine worker-need scale
-    float GetEdictBldgDmgMult( ) const { return ( m_fEdictBldgDmgMult * m_fSurplusBldgDmgMult ); }  // Meat Shield * Civil Defence: building damage-taken (projbase.cpp)
+    float GetEdictBldgDmgMult( ) const;  // Meat Shield * Civil Defence: building damage-taken (projbase.cpp)
+    void  ReportBldgDmgMult( );                       // remote owner -> server: Civil Defence value
+    void  SetRemoteBldgDmgPermille( int iPermille );  // server: store what the remote owner reported
     float GetEdictMoveMult( ) const { return ( m_fEdictMoveMult ); }       // Turbochargers (vehmove.cpp, != walk)
     float GetEdictVisionMult( ) const { return ( m_fEdictVisionMult ); }   // Total Surveillance (AssignData spotting)
     float GetEdictInfBuildMult( ) const { return ( m_fEdictInfBuildMult * m_fSurplusInfBuildMult ); } // The Draft * War Footing (infantry build speed)
@@ -1072,6 +1074,10 @@ class CPlayer : public CObject
     float m_fSurplusConstMult;     // Public Works   → GetConstProd
     float m_fSurplusFortMult;      // Civil Defence  → GetEdictFortBuildMult
     float m_fSurplusBldgDmgMult;   // Civil Defence  → GetEdictBldgDmgMult
+    // Civil Defence replication (CNetBldgDmgMult), all runtime-only (not serialized, reset by ctor):
+    int   m_iRemoteBldgDmgPermille;  // server: a REMOTE owner's reported m_fSurplusBldgDmgMult (1000 = none)
+    int   m_iSentBldgDmgPermille;    // owner client: last value sent to the server (-1 = none yet)
+    DWORD m_dwSentBldgDmgTime;       // owner client: timeGetTime( ) of that send
     float m_fSurplusInfBuildMult;  // War Footing    → GetEdictInfBuildMult
     float m_fSurplusRsrchMult;     // Research Subsidy (surplus half) → GetRsrchMult
     float m_fEdictFuelCarry;       // runtime-only: fractional gas-surcharge carry (not serialized)

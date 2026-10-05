@@ -707,7 +707,7 @@ void CExplosion::EmitFlash ( const CPoint & ptCenter, int iSprW, int iSprH )
     SDL2Sprites::CaptureFlash ( cx, cy, radius, 255, 235, 190, aCenter );
 }
 
-void CUnit::DecDamagePoints (int iDamage, DWORD dwKiller)
+void CUnit::DecDamagePoints (int iDamage, DWORD dwKiller, BOOL bApplyMults)
 {
 
     // render-side hit flash (area map): timestamp the hit for ANY unit (mine or enemy)
@@ -732,8 +732,10 @@ void CUnit::DecDamagePoints (int iDamage, DWORD dwKiller)
     if (iDamage == 0)
         return;
 
+    // bApplyMults is FALSE only for a server-sent absolute level (UnitSetDamage): the server
+    //   already applied the construction scaling and the owner's multipliers below
     // if we are under construction it hurts more based on % done
-    if ((GetUnitType () == CUnit::building) && (((CBuilding *)this)->m_iConstDone != -1))
+    if (bApplyMults && (GetUnitType () == CUnit::building) && (((CBuilding *)this)->m_iConstDone != -1))
         {
         int iTotalTime = ((CBuilding *)this)->m_iFoundTime + ((CBuilding *)this)->GetData()->GetTimeBuild ();
         int iDone = ((CBuilding *)this)->m_iConstDone;
@@ -746,11 +748,16 @@ void CUnit::DecDamagePoints (int iDamage, DWORD dwKiller)
         }
 
     // Meat Shield edict: this player's buildings take less damage (0.90 = -10%). Live/toggleable.
-    if (GetUnitType () == CUnit::building)
+    if (bApplyMults && (GetUnitType () == CUnit::building))
         {
         float fDmg = GetOwner()->GetEdictBldgDmgMult ();
         if (fDmg < 1.0f)
             iDamage = (int)(iDamage * fDmg + 0.5f);
+
+        // Blast Shielding research (bldg_armor .. bldg_armor_3): damage taken only, never repairs.
+        float fArmor = GetOwner()->GetBldgArmorMult ();
+        if ((fArmor < 1.0f) && (iDamage > 0))
+            iDamage = (int)(iDamage * fArmor + 0.5f);
         }
 
     m_iDamagePoints -= iDamage;

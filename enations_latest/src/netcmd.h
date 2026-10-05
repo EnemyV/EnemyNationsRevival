@@ -155,6 +155,7 @@ class CNetCmd : public VPMsgHdr
         research_disc,   // player has discovered research
         edict_toggle,    // player toggled a civ-wide edict (Edicts v1)
         hex_retype,      // one map hex was retyped at runtime (Slash and Burn clear-cut)
+        bldg_dmg_mult,   // remote owner -> server: its Civil Defence building damage multiplier
 
         last_message  // used for ASSERT
     };
@@ -1552,6 +1553,27 @@ class CNetHexRetype : public CNetCmd
     int m_iX;
     int m_iY;
     int m_iType;
+
+#ifdef _DEBUG
+  public:
+    void AssertValid( ) const;
+#endif
+};
+
+// Civil Defence replication. The edict's building damage reduction is priced from the OWNER's
+// surplus power (CPlayer::ApplySurplusEdicts), which only the owner's machine has, but building
+// damage is applied on the SERVER. So a remote owner sends the server its surplus building
+// damage-taken multiplier (m_fSurplusBldgDmgMult only: Meat Shield rides the replicated edict
+// bits and Blast Shielding the replicated research flags, so neither is in here) as permille,
+// no float on the wire. Sent to the server only, when the value changes (CPlayer::ReportBldgDmgMult);
+// the server accepts it only from that player's own connection (CPlayer::SetRemoteBldgDmgPermille).
+// Two ints after the 12-byte CNetCmd = 20 bytes in BOTH configs, pinned by wire_layout_assert.cpp.
+class CNetBldgDmgMult : public CNetCmd
+{
+  public:
+    CNetBldgDmgMult( CPlayer const* pPlyr, int iPermille );
+    int m_iPlyrNum;
+    int m_iPermille;   // 1000 = no reduction
 
 #ifdef _DEBUG
   public:

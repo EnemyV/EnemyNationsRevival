@@ -1008,6 +1008,12 @@ CNetEdictToggle::CNetEdictToggle( CPlayer const* pPlyr, int iEdict, bool bOn ): 
     m_bOn      = bOn ? 1 : 0;
 }
 
+CNetBldgDmgMult::CNetBldgDmgMult( CPlayer const* pPlyr, int iPermille ): CNetCmd( bldg_dmg_mult )
+{
+    m_iPlyrNum  = pPlyr->GetPlyrNum( );
+    m_iPermille = iPermille;
+}
+
 CNetHexRetype::CNetHexRetype( CHexCoord hex, int iType ): CNetCmd( hex_retype )
 {
     m_iX    = hex.X( );
@@ -1293,6 +1299,13 @@ void CNetEdictToggle::AssertValid( ) const
     ASSERT( ( m_bOn == 0 ) || ( m_bOn == 1 ) );
 }
 
+void CNetBldgDmgMult::AssertValid( ) const
+{
+
+    ASSERT( m_bMsg == bldg_dmg_mult );
+    ASSERT( ( 0 <= m_iPermille ) && ( m_iPermille <= 1000 ) );
+}
+
 void CNetHexRetype::AssertValid( ) const
 {
 
@@ -1553,6 +1566,10 @@ void CNetCmd::AssertMsgValid( ) const
         ( (CNetHexRetype*)this )->AssertValid( );
         break;
 
+    case bldg_dmg_mult:
+        ( (CNetBldgDmgMult*)this )->AssertValid( );
+        break;
+
     default:
         
        // ASSERT( FALSE );
@@ -1680,6 +1697,10 @@ BOOL CNetCmd::FitsBuffer( int cbAvail ) const
     // so a truncated 12-byte datagram would pass validation and the RX cast would read
     // m_iX/m_iY/m_iType off the end of the buffer.
     case hex_retype:           cbNeed = sizeof( CNetHexRetype ); break;
+    // MUST be listed: an unlisted type falls through to `default: cbNeed = sizeof( CNetCmd )`,
+    // so a truncated 12-byte datagram would pass validation and the RX cast would read
+    // m_iPlyrNum/m_iPermille off the end of the buffer.
+    case bldg_dmg_mult:        cbNeed = sizeof( CNetBldgDmgMult ); break;
     // MUST be listed, same reason: save_info went from 40 to 44 bytes at save release 9,
     // so a short (pre-9 peer) record must be refused, not read 4 bytes past its end.
     case need_save_info:       cbNeed = sizeof( CNetNeedSaveInfo ); break;

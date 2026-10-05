@@ -2694,7 +2694,8 @@ static void UnitSetDamage( CMsgUnitSetDamage* pMsg )
         return;
 
     // assess it here
-    pDamage->DecDamagePoints( pDamage->GetDamagePoints( ) - pMsg->m_iDamageLevel, pMsg->m_dwIDShoot );
+    // the server sent an absolute level it already scaled - apply the delta raw
+    pDamage->DecDamagePoints( pDamage->GetDamagePoints( ) - pMsg->m_iDamageLevel, pMsg->m_dwIDShoot, FALSE );
 }
 
 static void TransMat( CMsgTransMat* pMsg )
@@ -4130,6 +4131,21 @@ void CGame::ProcessMessage(CNetCmd* pCmd )
           if(el) fprintf(stderr,"[edict-mp] RX edict_toggle plyr=%d edict=%d on=%d -> %s m_dwEdicts=0x%lx\n",
                          (int)pMsg->m_iPlyrNum,(int)pMsg->m_iEdict,(int)pMsg->m_bOn,
                          pPlr->IsLocal()?"local-skip":"APPLIED",(unsigned long)pPlr->GetEdicts()); }
+        break;
+    }
+
+    // Civil Defence: a remote owner reports its building damage multiplier to the server, the
+    // only machine that applies building damage (see CPlayer::GetEdictBldgDmgMult). Accepted only
+    // on the server, only for a non-local player, and only from that player's own connection
+    // (msgFrom, the sender's net id stamped by vpSendData, as in the pause_messages host path).
+    case CNetCmd::bldg_dmg_mult: {
+        CNetBldgDmgMult* pMsg = (CNetBldgDmgMult*)pCmd;
+        if ( !theGame.AmServer( ) )
+            break;
+        CPlayer* pPlr = theGame._GetPlayerByPlyr( pMsg->m_iPlyrNum );
+        if ( ( pPlr == NULL ) || pPlr->IsLocal( ) || ( pPlr->GetNetNum( ) != pMsg->msgFrom ) )
+            break;
+        pPlr->SetRemoteBldgDmgPermille( pMsg->m_iPermille );
         break;
     }
 

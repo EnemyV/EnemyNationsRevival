@@ -684,7 +684,7 @@ class CBuilding : public CUnit
 {
 friend class CGame;
 friend class CWndOrders;
-friend void CUnit::DecDamagePoints (int iDamage, DWORD dwKiller);
+friend void CUnit::DecDamagePoints (int iDamage, DWORD dwKiller, BOOL bApplyMults);
 
 public:
 									CBuilding () { ctor (); }

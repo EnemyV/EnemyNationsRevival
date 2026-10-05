@@ -209,6 +209,21 @@ const int CIVDEF_FULL_POWER   = 150;  // surplus power drawn for the full effect
 const int CIVDEF_MAX_DMG_PCT  = 20;   // max pct of building damage TAKEN removed
 const int CIVDEF_MAX_FORT_PCT = 30;   // max +pct fortification build speed
 
+// Civil Defence on the wire (CNetBldgDmgMult): the owner's surplus building damage multiplier as
+// permille, and the range the server accepts -- no lower than the edict can produce.
+const int CIVDEF_MIN_DMG_PERMILLE   = 1000 - CIVDEF_MAX_DMG_PCT * 10;
+const int CIVDEF_REPORT_INTERVAL_MS = 1000;  // owner re-reports a changed value at most this often
+inline int BldgDmgPermille( float fMult )
+{
+    return ( (int)( fMult * 1000.0f + 0.5f ) );
+}
+inline int ClampBldgDmgPermille( int iPermille )
+{
+    if ( iPermille < CIVDEF_MIN_DMG_PERMILLE ) return ( CIVDEF_MIN_DMG_PERMILLE );
+    if ( iPermille > 1000 )                    return ( 1000 );
+    return ( iPermille );
+}
+
 // --- War Footing tuning (EDICT_WAR_FOOTING) --------------------------------------------------
 // Energy + surplus PEOPLE: the mirror image of Civil Defence -- flat power bill, effect set by
 // the workers drafted.

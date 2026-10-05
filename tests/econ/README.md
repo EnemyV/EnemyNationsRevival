@@ -112,3 +112,17 @@ including every rate-threshold check and 68 hexes of the exhaustive sweep.
 - This is a mechanism test. It does not prove a live game produces the right lumber, that
   the UI rate readout agrees, or that two MP clients converge — the netapi `hex_retype` RX
   path reaches the same `ApplySlash`, but that is read from the source, not exercised here.
+
+## Building damage multipliers and population floor
+
+Run `python tests/econ/run-damage-ppl-test.py` (add `--baseline-ref e4ea13a7` to see the
+pre-fix failures). It extracts `CUnit::DecDamagePoints`, its `unit.h` declaration, the
+`UnitDamage` / `UnitSetDamage` net handlers and the `CPlayer` inline bodies verbatim into a
+fake scene and runs at `/Od` and `/O2`. Checks: Blast Shielding tiers reduce damage taken by
+buildings only (not vehicles, not repairs) and stack after Meat Shield.
+A remote client applying the server's absolute level (`UnitSetDamage`) lands on exactly
+that level: no second construction scaling, Meat Shield or Blast Shielding multiply, no drift
+over repeated hits, and a level of 0 kills the client copy.
+`CPlayer::AddPplBldg` floors building population at 1 (a wiped colony used to go negative and
+turn the StartLoop workforce ratio, and so production, negative).
+Artifacts go to `%TEMP%/en-damage-ppl-test`.

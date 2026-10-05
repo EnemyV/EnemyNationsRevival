@@ -161,6 +161,9 @@ void CPlayer::ctor( )
     m_fSurplusBldgDmgMult  = 1.0f;
     m_fSurplusInfBuildMult = 1.0f;
     m_fSurplusRsrchMult    = 1.0f;
+    m_iRemoteBldgDmgPermille = 1000;   // runtime-only Civil Defence replication (CNetBldgDmgMult)
+    m_iSentBldgDmgPermille   = -1;     // -1: the first pump of a game (new or loaded) always reports
+    m_dwSentBldgDmgTime      = 0;
     m_fAttack         = 1.0;
     m_fDefense        = 1.0;
     m_fPopMod         = 0.0;
@@ -816,6 +819,50 @@ void CPlayer::ApplySurplusEdicts( )
         m_fSurplusInfBuildMult = 1.0f + ( WARFOOT_MAX_INF_PCT / 100.0f ) *
                                             SurplusScale( iCutPpl, WARFOOT_FULL_DRAFT );
     }
+
+    ReportBldgDmgMult( );
+}
+
+// --- Civil Defence across the network ---------------------------------------------------------
+// The edict's damage reduction (m_fSurplusBldgDmgMult) is priced above from the owner's own spare
+// power, which only the owner's machine has: buildings Operate only where their owner is local,
+// so on the server a REMOTE human's power totals are zero and its computed value is always 1.0.
+// But the server is where building damage is applied (UnitDamage -> DecDamagePoints). So the
+// owner reports its value (CNetBldgDmgMult) and the server uses that for a non-local player.
+// Meat Shield (m_fEdictBldgDmgMult) comes from the replicated edict bits and Blast Shielding from
+// the replicated research flags, so neither is reported. Local players and single player: as before.
+float CPlayer::GetEdictBldgDmgMult( ) const
+{
+    float fSurplus = m_fSurplusBldgDmgMult;
+    if ( ( !IsLocal( ) ) && theGame.IsNetGame( ) )
+        fSurplus = IsEdictActive( EDICT_CIVIL_DEFENCE ) ? ( m_iRemoteBldgDmgPermille / 1000.0f ) : 1.0f;
+    return ( m_fEdictBldgDmgMult * fSurplus );
+}
+
+// Owner side, once per pump from ApplySurplusEdicts: a client tells the server when its value
+// changes, at most every CIVDEF_REPORT_INTERVAL_MS (a later pump sends the pending value), and
+// always on the first pump of a game. The server's own players need no message.
+void CPlayer::ReportBldgDmgMult( )
+{
+    if ( ( !IsLocal( ) ) || ( !theGame.IsNetGame( ) ) || theGame.AmServer( ) )
+        return;
+    int iPermille = BldgDmgPermille( m_fSurplusBldgDmgMult );
+    if ( iPermille == m_iSentBldgDmgPermille )
+        return;
+    DWORD dwNow = timeGetTime( );
+    if ( ( m_iSentBldgDmgPermille >= 0 ) && ( dwNow - m_dwSentBldgDmgTime < (DWORD)CIVDEF_REPORT_INTERVAL_MS ) )
+        return;
+    CNetBldgDmgMult msg( this, iPermille );
+    theGame.PostToServer( &msg, sizeof( msg ) );
+    m_iSentBldgDmgPermille = iPermille;
+    m_dwSentBldgDmgTime    = dwNow;
+}
+
+// Server side (bldg_dmg_mult in netapi.cpp, already checked to come from this player's own
+// connection). Clamped to what the edict can produce, so a bad value cannot buy more.
+void CPlayer::SetRemoteBldgDmgPermille( int iPermille )
+{
+    m_iRemoteBldgDmgPermille = ClampBldgDmgPermille( iPermille );
 }
 
 // --- What ApplySurplusEdicts charged this pump -----------------------------------------------
