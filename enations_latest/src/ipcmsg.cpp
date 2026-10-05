@@ -37,7 +37,8 @@ static char BASED_CODE THIS_FILE[] = __FILE__;
 char * CMsgIPC::ToBuf (int * piLen)
 {
 
-	*piLen = sizeof (CMsgIPC) + m_sMessage.GetLength () + m_sSubject.GetLength () + 4;
+	// CMsgIPCWire, not this object: our CStrings would put compiler-specific bytes on the wire
+	*piLen = sizeof (CMsgIPCWire) + m_sMessage.GetLength () + m_sSubject.GetLength () + 4;
 	char * pRtn;
 
 	try
@@ -49,12 +50,19 @@ char * CMsgIPC::ToBuf (int * piLen)
 		return (NULL);
 		}
 
-	memcpy( pRtn, this, sizeof( CMsgIPC ) );
-		
-    // Mark this as NOT allocated from the memory pool
-    ( (CMsgIPC*)pRtn )->m_bMemPool = 0;
+	memset( pRtn, 0, *piLen );
+	memcpy( pRtn, this, sizeof( CNetCmd ) );
+	CMsgIPCWire * pWire = (CMsgIPCWire *) pRtn;
+	pWire->m_iTo = m_iTo;
+	pWire->m_iFrom = m_iFrom;
+	pWire->m_iCC = m_iCC;
+	pWire->m_iType = m_iType;
+	pWire->m_iLen = m_iLen;
 
-	char *pTmp = pRtn + sizeof (CMsgIPC);
+    // Mark this as NOT allocated from the memory pool
+    pWire->m_bMemPool = 0;
+
+	char *pTmp = pRtn + sizeof (CMsgIPCWire);
 
 	strcpy (pTmp, m_sMessage);
 	pTmp += m_sMessage.GetLength () + 1;

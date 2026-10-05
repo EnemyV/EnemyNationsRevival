@@ -780,8 +780,10 @@ static void OnMsgJoin( LPCVPPLAYERINFO pPi, BOOL bLocal, BYTE bErr )
 static void StartFile( CMsgStartFile* pMsg )
 {
 
-    theGame.m_iNumSends++;
     CPlayer* pPlyr = theGame.GetPlayer( pMsg->m_idTo );
+    if ( pPlyr == NULL )
+        return;
+    theGame.m_iNumSends++;
 
     pPlyr->SetState( CPlayer::load_file );
     pPlyr->m_pXferToClient = new CVPTransfer( theNet._GetSessionHandle( ) );
@@ -1543,10 +1545,12 @@ static void CmdSelectPlyr( CNetSelectPlyr* pMsg )
 {
 
     // the asker must still be an unassigned joiner (m_lstLoad) and the saved
-    // player must exist and be free
+    // player must exist and be free. It asks only for itself: m_iNetNum must be
+    // the sender's net id (msgFrom, as the pause and bldg_dmg_mult paths key on)
     CPlayer* pPlrWasMe = theGame._GetPlayer( pMsg->m_iNetNum );
     CPlayer* pPlr      = theGame._GetPlayerByPlyr( pMsg->m_iPlyrNum );
-    if ( ( pPlrWasMe != NULL ) && ( theGame.m_lstLoad.Find( pPlrWasMe, NULL ) != NULL ) && ( pPlr != NULL ) &&
+    if ( ( pMsg->m_iNetNum == pMsg->msgFrom ) && ( pPlrWasMe != NULL ) &&
+         ( theGame.m_lstLoad.Find( pPlrWasMe, NULL ) != NULL ) && ( pPlr != NULL ) &&
          ( pPlr->GetState( ) != CPlayer::ready ) )
     {
         theGame.LoadToPlyr( pPlrWasMe, pPlr );
@@ -1578,13 +1582,16 @@ static void CmdSelectPlyr( CNetSelectPlyr* pMsg )
     }
 
     // m_iNetNum is a net number; PostToClient( int ) takes a PLAYER number.
+    // The refusal goes to whoever asked, which is m_iNetNum unless it lied.
     pMsg->ToNotOk( );
-    theNet.Send( pMsg->m_iNetNum, pMsg, sizeof( CNetSelectPlyr ) );
+    theNet.Send( pMsg->msgFrom, pMsg, sizeof( CNetSelectPlyr ) );
 }
 
 static void CmdSelectOk( CNetSelectPlyr* )
 {
 
+    if ( theApp.m_pCreateGame == NULL )
+        return;
     if ( theApp.m_pCreateGame->m_iTyp == CCreateBase::load_join )
         ( (CJoinMulti*)theApp.m_pCreateGame )->m_iPickReply = 1;
 
@@ -1600,7 +1607,7 @@ static void CmdSelectOk( CNetSelectPlyr* )
 
 static void CmdSelectNotOk( CNetSelectPlyr* )
 {
-    if ( theApp.m_pCreateGame->m_iTyp != CCreateBase::load_join )
+    if ( ( theApp.m_pCreateGame == NULL ) || ( theApp.m_pCreateGame->m_iTyp != CCreateBase::load_join ) )
         return;
 
     // SDL2PickPlayerDialog re-enables its list when it sees this
@@ -1621,6 +1628,9 @@ static void CmdPlayerTaken( CNetSelectPlyr* pMsg )
 // sending the game file to this player
 static void CmdGetFile( CNetGetFile* pCmd )
 {
+    // only a load-join joiner is waiting for a game file
+    if ( ( theApp.m_pCreateGame == NULL ) || ( theApp.m_pCreateGame->m_iTyp != CCreateBase::load_join ) )
+        return;
 
     // update the player numbers
     theGame.GetMe( )->SetPlyrNum( pCmd->m_iPlyrNum );
@@ -1986,7 +1996,8 @@ static void PlaceBldg( CMsgPlaceBldg* pMsg )
 static void ErrPlaceBldg( CMsgPlaceBldg* pMsg )
 {
 
-    if ( !theGame.GetPlayer( pMsg->m_iPlyrNum )->IsMe( ) )
+    CPlayer* pPlr = theGame.GetPlayer( pMsg->m_iPlyrNum );
+    if ( ( pPlr == NULL ) || !pPlr->IsMe( ) )
         return;
     ASSERT_CMD( pMsg );
 
@@ -3563,6 +3574,8 @@ void CGame::ProcessMessage(CNetCmd* pCmd )
         TRAP( );
         CNetToHp* pMsg = (CNetToHp*)pCmd;
         CPlayer*  pPlr = theGame.GetPlayer( pMsg->m_iPlyrNum );
+        if ( pPlr == NULL )
+            break;
         pPlr->SetAI( FALSE );
         pPlr->SetNetNum( pMsg->m_iNetNum );
         pPlr->SetName( pMsg->m_sName );
@@ -3771,6 +3784,8 @@ void CGame::ProcessMessage(CNetCmd* pCmd )
         // remove from list of players & then post again
         CMsgPlyrDying* pMsg = (CMsgPlyrDying*)pCmd;
         CPlayer*       pPlr = theGame.GetPlayerByPlyr( pMsg->m_iPlyrNum );
+        if ( pPlr == NULL )
+            break;
 
         // ok - remove it
         theGame.RemovePlayer( pPlr );
@@ -3861,6 +3876,8 @@ void CGame::ProcessMessage(CNetCmd* pCmd )
     case CNetCmd::ai_msg: {
         CMsgAiMsg* pMsg = (CMsgAiMsg*)pCmd;
         CPlayer*   pPlr = theGame.GetPlayerByPlyr( pMsg->m_iPlyrNum );
+        if ( pPlr == NULL )
+            break;
         AiMessage( pPlr->GetAiHdl( ), pMsg + 1, pMsg->m_iLen );
         break;
     }
@@ -4031,6 +4048,8 @@ void CGame::ProcessMessage(CNetCmd* pCmd )
         TRAP( );
         CNetAiGpf* pMsg = (CNetAiGpf*)pCmd;
         CPlayer*   pPlr = theGame.GetPlayerByPlyr( pMsg->m_iPlyrNum );
+        if ( pPlr == NULL )
+            break;
         theGame.AiTakeOverPlayer( pPlr, TRUE, FALSE );
         break;
     }

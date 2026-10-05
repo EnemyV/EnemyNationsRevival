@@ -14,6 +14,8 @@
 #   test_data_expl_operate  the shipped CExplosion::Operate body against mocks
 #   test_projmap_capacity  the shipped CProjMap projectile occupancy query
 #   test_sprite_fallback  the shipped CSpriteCollection::GetSprite lookup
+#   test_net_plyrjoin  the shipped FitsBuffer size checks and their senders
+#   test_net_xfer     the shipped load-join save transfer (dxfer.cpp, vpxfer.cpp)
 #
 # Every suite is compiled and run TWICE, /Od and /O2, because the walker and the
 # explosion arithmetic are both inline-heavy.
@@ -186,7 +188,9 @@ $suites = @(
     @{ name = 'test_data_expl';   extra = '' },
     @{ name = 'test_data_expl_operate'; extra = "/I`"$here`"" },
     @{ name = 'test_projmap_capacity'; extra = "/I`"$here`"" },
-    @{ name = 'test_sprite_fallback'; extra = "/I`"$here`"" }
+    @{ name = 'test_sprite_fallback'; extra = "/I`"$here`"" },
+    @{ name = 'test_net_plyrjoin'; extra = "/I`"$here`"" },
+    @{ name = 'test_net_xfer'; extra = "/I`"$here`"" }
 )
 
 # Compile the actual shipped CExplosion::Operate body against the tiny mock
@@ -262,6 +266,148 @@ $spriteGeneratedText = '#include "test_sprite_fallback_prefix.h"' + "`r`n`r`n" +
 Set-Content -Encoding ascii -NoNewline -LiteralPath $spriteGenerated -Value $spriteGeneratedText
 $spriteSuite = $suites | Where-Object { $_.name -eq 'test_sprite_fallback' }
 $spriteSuite.source = $spriteGenerated
+
+# Compile the shipped receive-side size checks: CNetCmd::FitsBuffer, both
+# CNetPlyrJoin::Alloc overloads and the senders of the other variable-length
+# records (netcmd.cpp, ipcmsg.cpp), against the shipped record classes
+# (netcmd.h, ipcmsg.hpp) and CMaterialTypes (base.h), plus the mail receiver
+# SDL2Mail_HandleIncoming (SDL2GameDialogs.cpp). Brace-matched, verbatim,
+# every run. Every other type FitsBuffer names gets a stand-in class of the size
+# wire_layout_assert.cpp pins for it (Release = the wire layout), so a fixed-size
+# case is tested against the real number.
+function Get-BraceBlock([string[]]$Lines, [string]$Pattern, [string]$Label, [switch]$Optional, [switch]$DropPreproc) {
+    $start = -1
+    for ($i = 0; $i -lt $Lines.Count; $i++) { if ($Lines[$i] -match $Pattern) { $start = $i; break } }
+    if ($start -lt 0) {
+        if ($Optional) { return '' }
+        throw "extraction failed ($Label): not found"
+    }
+    $depth = 0; $started = $false
+    $out = New-Object System.Collections.Generic.List[string]
+    for ($i = $start; $i -lt $Lines.Count; $i++) {
+        # -DropPreproc: ipcmsg's #if USE_FAKE_NET alternatives; the match is already
+        # the branch the game builds.
+        if (-not $DropPreproc -or $Lines[$i] -notmatch '^\s*#') { $out.Add($Lines[$i]) }
+        foreach ($ch in $Lines[$i].ToCharArray()) {
+            if ($ch -eq '{') { $depth++; $started = $true } elseif ($ch -eq '}') { $depth-- }
+        }
+        if ($started -and $depth -eq 0) { break }
+    }
+    if (-not $started -or $depth -ne 0) { throw "extraction failed ($Label): unbalanced braces" }
+    return ($out -join "`r`n")
+}
+$netSrc = Join-Path $here '..\..\enations_latest\src'
+$netcmdCpp = Get-Content -LiteralPath (Join-Path $netSrc 'netcmd.cpp')
+$netcmdH   = Get-Content -LiteralPath (Join-Path $netSrc 'netcmd.h')
+$baseH     = Get-Content -LiteralPath (Join-Path $netSrc 'base.h')
+$ipcHpp    = Get-Content -LiteralPath (Join-Path $netSrc 'ipcmsg.hpp')
+$ipcCpp    = Get-Content -LiteralPath (Join-Path $netSrc 'ipcmsg.cpp')
+$mailCpp   = Get-Content -LiteralPath (Join-Path $netSrc 'SDL2GameDialogs.cpp')
+$wireText  = Get-Content -Raw -LiteralPath (Join-Path $netSrc 'wire_layout_assert.cpp')
+try {
+    $fitsBody   = Get-BraceBlock $netcmdCpp '^BOOL CNetCmd::FitsBuffer\( int cbAvail \) const' 'FitsBuffer'
+    $textHelper = Get-BraceBlock $netcmdCpp '^static BOOL TextEndsBefore\(' 'TextEndsBefore' -Optional
+    $allocCopy  = Get-BraceBlock $netcmdCpp '^CNetPlyrJoin\* CNetPlyrJoin::Alloc\( const CNetPlyrJoin\* pData \)' 'Alloc(pData)'
+    $allocPlyr  = Get-BraceBlock $netcmdCpp '^CNetPlyrJoin\* CNetPlyrJoin::Alloc\( const CPlayer\* pPlyr \)' 'Alloc(pPlyr)'
+    $allocNetP  = Get-BraceBlock $netcmdCpp '^CNetPlayer\* CNetCmd::AllocPlayer\(' 'AllocPlayer'
+    $allocChat  = Get-BraceBlock $netcmdCpp '^CNetChat\* CNetChat::Alloc\(' 'CNetChat::Alloc'
+    $allocAi    = Get-BraceBlock $netcmdCpp '^CMsgAiMsg\* CMsgAiMsg::Alloc\(' 'CMsgAiMsg::Alloc'
+    $ctorFile   = Get-BraceBlock $netcmdCpp '^CNetGetFile::CNetGetFile\(' 'CNetGetFile ctor'
+    $clsCmd     = Get-BraceBlock $netcmdH '^class CNetCmd : public VPMsgHdr' 'class CNetCmd'
+    $clsJoin    = Get-BraceBlock $netcmdH '^class CNetPlyrJoin : public CNetCmd' 'class CNetPlyrJoin'
+    $clsEnum    = Get-BraceBlock $netcmdH '^class CNetEnumPlyrs : public CNetCmd' 'class CNetEnumPlyrs'
+    $clsSelect  = Get-BraceBlock $netcmdH '^class CNetSelectPlyr : public CNetCmd' 'class CNetSelectPlyr'
+    $clsPlayer  = Get-BraceBlock $netcmdH '^class CNetPlayer : public CNetCmd' 'class CNetPlayer'
+    $clsChat    = Get-BraceBlock $netcmdH '^class CNetChat : public CNetCmd' 'class CNetChat'
+    $clsToHp    = Get-BraceBlock $netcmdH '^class CNetToHp : public CNetCmd' 'class CNetToHp'
+    $clsFile    = Get-BraceBlock $netcmdH '^class CNetGetFile : public CNetCmd' 'class CNetGetFile'
+    $clsAi      = Get-BraceBlock $netcmdH '^class CMsgAiMsg : public CNetCmd' 'class CMsgAiMsg'
+    # Optional: a tree from before the mail wire header has none (and its suite fails at run time).
+    $clsIpcWire = Get-BraceBlock $netcmdH '^class CMsgIPCWire : public CNetCmd' 'class CMsgIPCWire' -Optional
+    $clsIpc     = Get-BraceBlock $ipcHpp '^class CMsgIPC : public CNetCmd' 'class CMsgIPC' -DropPreproc
+    $ctorIpc    = Get-BraceBlock $ipcCpp '^CMsgIPC::CMsgIPC\( int iType \) : CNetCmd' 'CMsgIPC ctor' -DropPreproc
+    $dtorIpc    = Get-BraceBlock $ipcCpp '^CMsgIPC::~CMsgIPC\(' 'CMsgIPC dtor'
+    $toBufIpc   = Get-BraceBlock $ipcCpp '^char \* CMsgIPC::ToBuf' 'CMsgIPC::ToBuf'
+    $mailStruct = Get-BraceBlock $mailCpp '^struct SDL2MailMsg \{' 'struct SDL2MailMsg'
+    $mailRecv   = Get-BraceBlock $mailCpp '^void SDL2Mail_HandleIncoming\(CMsgIPC\* pMsg\)' 'SDL2Mail_HandleIncoming'
+    $clsMat     = Get-BraceBlock $baseH '^class CMaterialTypes' 'class CMaterialTypes'
+} catch { Write-Error $_; exit 2 }
+$mailInbox = $mailCpp | Where-Object { $_ -match '^static std::vector<SDL2MailMsg> g_mailInbox;' } | Select-Object -First 1
+if (-not $mailInbox) { Write-Error 'extraction failed: g_mailInbox not found in SDL2GameDialogs.cpp'; exit 2 }
+$maxFileLine = $netcmdH | Where-Object { $_ -match '^const int MAX_NET_GAME_FILE\s*=' } | Select-Object -First 1
+if (-not $maxFileLine) { $maxFileLine = 'const int MAX_NET_GAME_FILE = 256 * 1024 * 1024;   // not in this source; the bound the fix uses' }
+# Release pins: the section after #else in wire_layout_assert.cpp.
+$pins = @{}
+$relText = $wireText.Substring($wireText.IndexOf('#else'))
+foreach ($m in [regex]::Matches($relText, 'static_assert\(\s*sizeof\(\s*(\w+)\s*\)\s*==\s*(\d+)')) { $pins[$m.Groups[1].Value] = [int]$m.Groups[2].Value }
+if ($pins.Count -lt 50) { Write-Error "extraction failed: only $($pins.Count) wire pins found"; exit 2 }
+$pinLines = ($pins.GetEnumerator() | Sort-Object Name | ForEach-Object { '    { "' + $_.Name + '", ' + $_.Value + ' },' }) -join "`r`n"
+$mirrored = @('CNetCmd', 'CNetPlyrJoin', 'CNetEnumPlyrs', 'CNetSelectPlyr', 'CNetPlayer', 'CNetChat', 'CNetToHp',
+              'CNetGetFile', 'CMsgAiMsg', 'CMsgIPC', 'CMsgIPCWire', 'int', 'char')
+$standIns = New-Object System.Collections.Generic.List[string]
+$seen = @{}
+foreach ($m in [regex]::Matches($fitsBody, 'sizeof\(\s*(\w+)\s*\)|\(\s*const\s+(\w+)\s*\*\s*\)\s*this')) {
+    $t = if ($m.Groups[1].Success) { $m.Groups[1].Value } else { $m.Groups[2].Value }
+    if ($mirrored -contains $t -or $seen.ContainsKey($t)) { continue }
+    $seen[$t] = $true
+    if (-not $pins.ContainsKey($t))  { $standIns.Add("class $t : public CNetCmd { public: int m_iNumMsgs; };") }
+    elseif ($pins[$t] -gt 16)        { $standIns.Add("class $t : public CNetCmd { public: int m_iNumMsgs; char m_pad[$($pins[$t]) - 16]; };") }
+    elseif ($pins[$t] -eq 16)        { $standIns.Add("class $t : public CNetCmd { public: int m_iNumMsgs; };") }
+    elseif ($pins[$t] -gt 12)        { $standIns.Add("class $t : public CNetCmd { public: char m_pad[$($pins[$t]) - 12]; };") }
+    else                             { $standIns.Add("class $t : public CNetCmd { };") }
+}
+# ...and every other pinned type, so a test can name a type the source under
+# test does not list yet.
+foreach ($k in ($pins.Keys | Sort-Object)) {
+    if ($mirrored -contains $k -or $seen.ContainsKey($k)) { continue }
+    $seen[$k] = $true
+    if ($pins[$k] -gt 16)     { $standIns.Add("class $k : public CNetCmd { public: int m_iNumMsgs; char m_pad[$($pins[$k]) - 16]; };") }
+    elseif ($pins[$k] -eq 16) { $standIns.Add("class $k : public CNetCmd { public: int m_iNumMsgs; };") }
+    elseif ($pins[$k] -gt 12) { $standIns.Add("class $k : public CNetCmd { public: char m_pad[$($pins[$k]) - 12]; };") }
+    else                      { $standIns.Add("class $k : public CNetCmd { };") }
+}
+foreach ($m in [regex]::Matches($fitsBody, '\bNUM_\w+_ELEM\b')) {
+    if ($seen.ContainsKey($m.Value)) { continue }
+    $seen[$m.Value] = $true
+    $standIns.Add("const int $($m.Value) = 1;")
+}
+$plyrJoinText = @(
+    '#include "test_net_plyrjoin_prefix.h"', '',
+    $clsMat, '',
+    '#pragma pack( push, cnetcmd, 1 )',
+    $clsCmd, $clsJoin, $clsEnum, $clsSelect, $clsPlayer, $clsChat, $clsToHp, $maxFileLine, $clsFile, $clsAi, $clsIpcWire,
+    ($standIns -join "`r`n"),
+    '#pragma pack( pop, cnetcmd )', '',
+    $clsIpc, '',
+    'struct WirePin { const char* m_pName; int m_iSize; };',
+    'static const WirePin s_aWirePin[] = {', $pinLines, '};', '',
+    $textHelper, '',
+    $fitsBody, '', $allocCopy, '', $allocPlyr, '', $allocNetP, '', $allocChat, '', $allocAi, '', $ctorFile, '',
+    $ctorIpc, '', $dtorIpc, '', $toBufIpc, '',
+    $mailStruct, $mailInbox, '', $mailRecv, '',
+    '#include "test_net_plyrjoin_suffix.h"', ''
+) -join "`r`n"
+$plyrJoinGenerated = Join-Path $OutDir 'test_net_plyrjoin_generated.cpp'
+Set-Content -Encoding ascii -NoNewline -LiteralPath $plyrJoinGenerated -Value $plyrJoinText
+$plyrJoinSuite = $suites | Where-Object { $_.name -eq 'test_net_plyrjoin' }
+$plyrJoinSuite.source = $plyrJoinGenerated
+
+# Compile the shipped load-join save transfer (dxfer.cpp + vpxfer.cpp, whole
+# files) with only their stdafx.h include pointed at test_net_xfer_prefix.h.
+# Copied fresh every run so the suite cannot test a stale transfer.
+$xferDir = Join-Path $OutDir 'xfer'
+New-Item -ItemType Directory -Force -Path $xferDir | Out-Null
+foreach ($f in @('dxfer.h', 'vpxfer.h', 'dxfer.cpp', 'vpxfer.cpp')) {
+    $src = Join-Path $netSrc $f
+    if (-not (Test-Path -LiteralPath $src)) { Write-Error "missing source: $src"; exit 2 }
+    $text = (Get-Content -Raw -LiteralPath $src).Replace('#include "stdafx.h"', '#include "test_net_xfer_prefix.h"')
+    Set-Content -Encoding ascii -NoNewline -LiteralPath (Join-Path $xferDir $f) -Value $text
+}
+$xferGenerated = Join-Path $xferDir 'test_net_xfer_generated.cpp'
+Set-Content -Encoding ascii -LiteralPath $xferGenerated -Value (@(
+    '#include "dxfer.cpp"', '#include "vpxfer.cpp"', '#include "test_net_xfer_suffix.h"') -join "`r`n")
+$xferSuite = $suites | Where-Object { $_.name -eq 'test_net_xfer' }
+$xferSuite.source = $xferGenerated
 
 if ($RealDataDir) {
     $resolvedData = (Resolve-Path $RealDataDir).Path

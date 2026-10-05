@@ -386,6 +386,9 @@ class CNetToHp : public CNetCmd
     char m_sName[1];  // actually all of it
 };
 
+// Largest save a load-join joiner will accept from the host (real saves are a few MB).
+const int MAX_NET_GAME_FILE = 256 * 1024 * 1024;
+
 class CNetGetFile : public CNetCmd
 {
   public:
@@ -1246,6 +1249,19 @@ class CMsgAiMsg : public CNetCmd
 
     int m_iAllocLen;
     int m_iPlyrNum;
+    int m_iLen;
+};
+
+// ipc_msg (mail) on the wire: CMsgIPC::ToBuf writes this header, then the message and the
+// subject, each NUL-terminated. CMsgIPC itself is never sent: its two CStrings are std::strings
+// (24 to 40 bytes each by library and config), so its size differs from peer to peer.
+class CMsgIPCWire : public CNetCmd
+{
+  public:
+    int m_iTo;
+    int m_iFrom;
+    int m_iCC;
+    int m_iType;
     int m_iLen;
 };
 

@@ -83,6 +83,7 @@ static_assert(sizeof(CMsgScenarioAtk)==32, "CMsgScenarioAtk");
 static_assert(sizeof(CMsgLoaded)==20, "CMsgLoaded");
 static_assert(sizeof(CMsgRepaired)==20, "CMsgRepaired");
 static_assert(sizeof(CMsgAiMsg)==24, "CMsgAiMsg");
+static_assert(sizeof(CMsgIPCWire)==32, "CMsgIPCWire");   // mail header (CNetCmd 12 + 5 ints); the text follows it
 static_assert(sizeof(CMsgOutOfLos)==28, "CMsgOutOfLos");
 static_assert(sizeof(CMsgMatChange)==20, "CMsgMatChange");
 static_assert(sizeof(CMsgSetRelations)==24, "CMsgSetRelations");
@@ -169,6 +170,7 @@ static_assert(sizeof(CMsgScenarioAtk)==32, "CMsgScenarioAtk");
 static_assert(sizeof(CMsgLoaded)==20, "CMsgLoaded");
 static_assert(sizeof(CMsgRepaired)==20, "CMsgRepaired");
 static_assert(sizeof(CMsgAiMsg)==24, "CMsgAiMsg");
+static_assert(sizeof(CMsgIPCWire)==32, "CMsgIPCWire");   // mail header (CNetCmd 12 + 5 ints); the text follows it
 static_assert(sizeof(CMsgOutOfLos)==28, "CMsgOutOfLos");
 static_assert(sizeof(CMsgMatChange)==20, "CMsgMatChange");
 static_assert(sizeof(CMsgSetRelations)==24, "CMsgSetRelations");

@@ -47,7 +47,10 @@ BOOL CVPTransfer::ProcessNotification(UINT nCode, LPVPMESSAGE msg)
 	switch(nCode)
 	{
 		case VP_READDATA: {
-			// is it us?
+			// is it us? A transfer packet is the MSG_FILE_XFER tag and then its data; a
+			// shorter one is a game message (a bare 12-byte CNetCmd has 2 data bytes).
+			if ( msg->dataLen < sizeof( DWORD ) )
+				return FALSE;
 			DWORD * pId = (LPDWORD) msg->u.data;
 			if ( *pId != MSG_FILE_XFER )
 				return FALSE;
@@ -57,7 +60,12 @@ BOOL CVPTransfer::ProcessNotification(UINT nCode, LPVPMESSAGE msg)
 				if (msg->toId == m_localPlayer && 
 					msg->senderId == m_peerPlayer)
 				{
-					// this is an ACK message
+					// this is an ACK message: the tag, then the count
+					if ( msg->dataLen < 2 * sizeof( DWORD ) )
+					{
+						SetError( ERR_BADDATA );
+						return TRUE;
+					}
 					DWORD amount = * ( pId + 1 );
 
 					TRACE("Got ack: %u", amount);
@@ -73,6 +81,12 @@ BOOL CVPTransfer::ProcessNotification(UINT nCode, LPVPMESSAGE msg)
 			// we're receiveing data
 			if (msg->toId == m_localPlayer && msg->senderId == m_peerPlayer)
 			{
+				// never more than the buffer the joiner allocated for the announced size
+				if ( msg->dataLen - sizeof (DWORD) > UntransferredDataAmount( ) )
+				{
+					SetError( ERR_BADDATA );
+					return TRUE;
+				}
 				OnIncomingData ( pId + 1, msg->dataLen - sizeof (DWORD) );
 
 				m_lastPacketTime = GetCurrentTime();

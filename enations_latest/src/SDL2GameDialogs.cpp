@@ -93,15 +93,15 @@ void SDL2Mail_HandleIncoming(CMsgIPC* pMsg) {
     if (!pMsg) return;
 
     // The wire buffer is laid out by CMsgIPC::ToBuf as:
-    //   [ sizeof(CMsgIPC) bytes of the struct ][ message\0 ][ subject\0 ]
-    // The scalar header fields (m_iType/m_iFrom/m_iTo) are valid in place; the
-    // CString members in the header are garbage pointers and must NOT be touched
-    // ??? the actual text lives in the appended tail.
-    int type = pMsg->m_iType;
-    int from = pMsg->m_iFrom;
-    int to   = pMsg->m_iTo;
+    //   [ CMsgIPCWire header ][ message\0 ][ subject\0 ]
+    // It is not a CMsgIPC: that class holds CStrings, whose size depends on the
+    // peer's compiler and config, so read only the fixed-width wire header.
+    const CMsgIPCWire* pWire = reinterpret_cast<const CMsgIPCWire*>(pMsg);
+    int type = pWire->m_iType;
+    int from = pWire->m_iFrom;
+    int to   = pWire->m_iTo;
 
-    const char* tail   = reinterpret_cast<const char*>(pMsg) + sizeof(CMsgIPC);
+    const char* tail   = reinterpret_cast<const char*>(pWire + 1);
     std::string message = tail;
     std::string subject = tail + message.size() + 1;
 
