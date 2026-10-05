@@ -745,6 +745,7 @@ class CMaterialTypes
     };  // goods + 1
 
     static void ctor( );
+    static void InitDesc( );
     static void dtor( );
 
     static int            GetNumTypes( ) { return ( num_types ); }

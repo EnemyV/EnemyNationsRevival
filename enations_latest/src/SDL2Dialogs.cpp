@@ -872,7 +872,10 @@ void SDL2PickPlayerDialog::AddPlayerInfo(const CNetPlyrJoin* pData, int raceIdx)
     pi.raceIdx = raceIdx;
     pi.name = pData->m_sName;
     // Resources the player holds (only non-zero), matching the original
-    // CDlgPickPlayer::OnSelchangeRaceList material loop.
+    // CDlgPickPlayer::OnSelchangeRaceList material loop. A fresh joiner has
+    // loaded no world yet, so the names are still empty: read them now.
+    if (CMaterialTypes::GetDesc(0).empty())
+        CMaterialTypes::InitDesc();
     for (int iMat = 0; iMat < CMaterialTypes::GetNumTypes(); iMat++)
         if (pData->m_iMat[iMat] > 0)
             pi.resources.push_back({ CMaterialTypes::GetDesc(iMat), pData->m_iMat[iMat] });

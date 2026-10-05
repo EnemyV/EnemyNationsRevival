@@ -1167,9 +1167,10 @@ void InitColors( )
 /////////////////////////////////////////////////////////////////////////////
 // CMaterial - a food, steel, etc.
 
-void CMaterialTypes::ctor( )
+// The material names (LANG/MTRL). Split out of ctor so a dialog shown before any
+// world is loaded (the Load Network Game joiner's Pick Your Player) can read them.
+void CMaterialTypes::InitDesc( )
 {
-
     CMmio* pMmio = theDataFile.OpenAsMMIO( NULL, "LANG" );
 
     pMmio->DescendRiff( 'L', 'A', 'N', 'G' );
@@ -1184,6 +1185,11 @@ void CMaterialTypes::ctor( )
     }
     pMmio->AscendList( );
     delete pMmio;
+}
+
+void CMaterialTypes::ctor( )
+{
+    InitDesc( );
 
     CWindowDC dc( (CWnd*)NULL );
     m_rgb[0]  = dc.GetNearestColor( PALETTERGB( 230, 154, 108 ) );
