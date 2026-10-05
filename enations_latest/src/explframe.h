@@ -30,9 +30,10 @@ namespace enexpl {
 
 //  Frames a dying unit's corpse is held before the cleanup runs.
 //
-//  MEASURED off the shipped art, so this is what the stock game already did -
-//  it is not a new timing, it is the old one written down where a mod cannot
-//  move it.
+//  MEASURED from the half-way animation-frame index of the shipped art. This
+//  index is now counted in Operate calls independently of visual animation.
+//  Animation frame holds and rendering cadence can differ from that count;
+//  the measurement pins the stock index, not identical wall-clock timing.
 //
 //  units.rif's EXPL list names four explosion sprites (entries 2, 3 and 4 are
 //  what CExplosion picks at random for a dying unit, entry 5 is the one the

@@ -954,7 +954,13 @@ void CTransport::InitSprites() {
         theApp.BaseYield();
 
         CTransportData *pTd = _GetData(i);
-        if (CSpriteStore<CVehicleSprite>::GetSprite(i, 0, TRUE) != NULL)
+        // Vehicle availability also comes from units.rif. PlyrIsDiscovered
+        // checks this flag for both structures and transports, so a missing
+        // vehicle sprite must use the non-strict fallback without removing
+        // the vehicle from build menus or research discovery. The retired
+        // marines type is unsupported by CVehicle::Create and has no stock
+        // sprite; keep it unavailable through this explicit gameplay rule.
+        if (i != CTransportData::marines)
             pTd->m_udFlags = (CUnitData::UNIT_DATA_FLAGS) (pTd->m_udFlags | CUnitData::FLhaveArt);
 
         if (pTd->GetUnitFlags() & (CUnitData::FLflash1 | CUnitData::FLflash2)) {

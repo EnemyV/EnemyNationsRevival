@@ -343,6 +343,31 @@ void TestProjbaseCallSites( )
     CHECK( s.find( "m_iKillFrame = enexpl::EXPL_KILLFRAME;", at + 1 ) != std::string::npos );
     // A missing sprite no longer deletes the explosion before the cleanup.
     CHECK( s.find( "No sprite attached - remove and destroy" ) == std::string::npos );
+
+    // The firing-capacity query must ignore visual explosions. Its implementation
+    // is separately compiled against a mock map in test_projmap_capacity.
+    const size_t capacityStart = s.find( "int CProjMap::GetProjectileHexCount" );
+    const size_t capacityEnd = ( capacityStart == std::string::npos ) ? std::string::npos :
+        s.find( "void CProjMap::Add", capacityStart );
+    CHECK( capacityStart != std::string::npos && capacityEnd != std::string::npos );
+    if ( capacityStart != std::string::npos && capacityEnd != std::string::npos )
+    {
+        const std::string capacity = s.substr( capacityStart, capacityEnd - capacityStart );
+        CHECK( capacity.find( "CProjBase::projectile" ) != std::string::npos );
+        CHECK( capacity.find( "pOn->m_pNext" ) != std::string::npos );
+        CHECK( capacity.find( "CProjBase::explosion" ) == std::string::npos );
+    }
+
+    const size_t fireStart = s.find( "void CUnit::MsgSetFire" );
+    const size_t fireEnd = ( fireStart == std::string::npos ) ? std::string::npos :
+        s.find( "static int fnEnumBlowUpBldg", fireStart );
+    CHECK( fireStart != std::string::npos && fireEnd != std::string::npos );
+    if ( fireStart != std::string::npos && fireEnd != std::string::npos )
+    {
+        const std::string fire = s.substr( fireStart, fireEnd - fireStart );
+        CHECK( fire.find( "GetProjectileHexCount" ) != std::string::npos );
+        CHECK( fire.find( "theProjMap.GetCount" ) == std::string::npos );
+    }
 }
 
 void TestFLhaveArtIsNotGatedOnASprite( )
@@ -358,6 +383,50 @@ void TestFLhaveArtIsNotGatedOnASprite( )
     CHECK( s.find( "if (GetSprite(i, 0, TRUE) != NULL)\r\n            pSd->m_udFlags" ) == std::string::npos );
     CHECK( s.find( "pSd->m_udFlags = (CUnitData::UNIT_DATA_FLAGS) (pSd->m_udFlags | CUnitData::FLhaveArt);" ) !=
            std::string::npos );
+    CHECK( s.find( "if (CSpriteStore<CVehicleSprite>::GetSprite(i, 0, TRUE) != NULL)" ) == std::string::npos );
+    CHECK( s.find( "pTd->m_udFlags = (CUnitData::UNIT_DATA_FLAGS) (pTd->m_udFlags | CUnitData::FLhaveArt);" ) !=
+           std::string::npos );
+    CHECK( s.find( "if (i != CTransportData::marines)" ) != std::string::npos );
+}
+
+void TestMissingSpriteLookupFallsBackSafely( )
+{
+    std::string header;
+    if ( !ReadSource( "enations_latest/src/sprite.h", header ) )
+    {
+        std::printf( "[data_expl] SKIP sprite.h lint (not found from this cwd)\n" );
+        return;
+    }
+    const size_t viewsStart = header.find( "GetNumViews()" );
+    const size_t viewsEnd = ( viewsStart == std::string::npos ) ? std::string::npos :
+        header.find( "GetNumSuperviews()", viewsStart );
+    CHECK( viewsStart != std::string::npos && viewsEnd != std::string::npos );
+    if ( viewsStart != std::string::npos && viewsEnd != std::string::npos )
+    {
+        const std::string views = header.substr( viewsStart, viewsEnd - viewsStart );
+        CHECK( views.find( "m_ptrspritehdr.Value()" ) != std::string::npos );
+        CHECK( views.find( ": 0" ) != std::string::npos );
+    }
+
+    std::string source;
+    if ( !ReadSource( "enations_latest/src/sprite.cpp", source ) )
+    {
+        std::printf( "[data_expl] SKIP sprite.cpp lint (not found from this cwd)\n" );
+        return;
+    }
+    const size_t lookupStart = source.find( "CSpriteCollection::GetSprite(",
+        source.find( "CSpriteCollection::GetSprite(" ) + 1 );
+    const size_t lookupEnd = ( lookupStart == std::string::npos ) ? std::string::npos :
+        source.find( "// CSpriteCollection::GetCount", lookupStart );
+    CHECK( lookupStart != std::string::npos && lookupEnd != std::string::npos );
+    if ( lookupStart != std::string::npos && lookupEnd != std::string::npos )
+    {
+        const std::string lookup = source.substr( lookupStart, lookupEnd - lookupStart );
+        CHECK( lookup.find( "pSprite->GetNumViews()" ) != std::string::npos );
+        CHECK( lookup.find( "if (bStrict)" ) != std::string::npos );
+        CHECK( lookup.find( "i < m_nSprite" ) != std::string::npos );
+        CHECK( lookup.find( "m_pptrsprite[i].Value()" ) != std::string::npos );
+    }
 }
 
 }  // namespace
@@ -372,5 +441,6 @@ int main( )
     TestConstantMatchesTheShippedArt( );
     TestProjbaseCallSites( );
     TestFLhaveArtIsNotGatedOnASprite( );
+    TestMissingSpriteLookupFallsBackSafely( );
     return microtest::Summary( );
 }

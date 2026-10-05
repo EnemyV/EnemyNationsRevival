@@ -11,6 +11,9 @@
 #                     against tests/data/shim and driven over a real temp tree
 #   test_data_net     the CNetJoin / CNetPublish header layout and length rule
 #   test_data_expl    the explosion cleanup frame (EXPL_KILLFRAME)
+#   test_data_expl_operate  the shipped CExplosion::Operate body against mocks
+#   test_projmap_capacity  the shipped CProjMap projectile occupancy query
+#   test_sprite_fallback  the shipped CSpriteCollection::GetSprite lookup
 #
 # Every suite is compiled and run TWICE, /Od and /O2, because the walker and the
 # explosion arithmetic are both inline-heavy.
@@ -30,6 +33,65 @@ param(
 
 $ErrorActionPreference = 'Stop'
 $here = Split-Path -Parent $MyInvocation.MyCommand.Path
+
+function Get-NormalizedPath([string]$Path) {
+    if (Test-Path -LiteralPath $Path) {
+        $full = [IO.Path]::GetFullPath((Resolve-Path -LiteralPath $Path).Path)
+    } else {
+        $full = [IO.Path]::GetFullPath($Path)
+    }
+    $root = [IO.Path]::GetPathRoot($full)
+    if ($full.Length -gt $root.Length) { $full = $full.TrimEnd('\', '/') }
+    return $full
+}
+
+function Test-PathOverlap([string]$PathA, [string]$PathB) {
+    $a = Get-NormalizedPath $PathA
+    $b = Get-NormalizedPath $PathB
+    $sep = [IO.Path]::DirectorySeparatorChar
+    $aPrefix = if ($a.EndsWith([string]$sep)) { $a } else { $a + $sep }
+    $bPrefix = if ($b.EndsWith([string]$sep)) { $b } else { $b + $sep }
+    return [string]::Equals($a, $b, [StringComparison]::OrdinalIgnoreCase) -or
+        $a.StartsWith($bPrefix, [StringComparison]::OrdinalIgnoreCase) -or
+        $b.StartsWith($aPrefix, [StringComparison]::OrdinalIgnoreCase)
+}
+
+function Test-PathHasReparseAncestor([string]$Path) {
+    $current = Get-NormalizedPath $Path
+    while ($current) {
+        if (Test-Path -LiteralPath $current) {
+            $item = Get-Item -Force -LiteralPath $current
+            if (($item.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0) { return $true }
+        }
+        $parent = Split-Path -Parent $current
+        if (-not $parent -or $parent -eq $current) { break }
+        $current = $parent
+    }
+    return $false
+}
+
+# The test runner copies RealDataDir and then edits the private copy. Reject any
+# source/output overlap before creating OutDir: otherwise a repeated run could
+# treat its own scratch copy as source, or recurse while copying into itself.
+if ($RealDataDir) {
+    if (-not (Test-Path -LiteralPath $RealDataDir -PathType Container)) {
+        Write-Error "RealDataDir does not exist: $RealDataDir"
+        exit 2
+    }
+    if ((Test-PathHasReparseAncestor $RealDataDir) -or (Test-PathHasReparseAncestor $OutDir)) {
+        Write-Error 'RealDataDir and OutDir must not pass through symlinks, junctions, or other reparse points.'
+        exit 2
+    }
+    if (Test-PathOverlap $RealDataDir $OutDir) {
+        Write-Error "RealDataDir and OutDir overlap; choose disjoint paths. Source='$((Get-NormalizedPath $RealDataDir))' OutDir='$((Get-NormalizedPath $OutDir))'"
+        exit 2
+    }
+}
+
+# Tests change their working directory while checking the profile pin. Pass an
+# absolute scratch path to the test processes so a relative OutDir cannot become
+# invalid halfway through a test.
+$OutDir = Get-NormalizedPath $OutDir
 
 # Same VS 2022 roots build.ps1 keys off of.
 $roots = @()
@@ -121,8 +183,85 @@ $suites = @(
     @{ name = 'test_data_hash';   extra = '' },
     @{ name = 'test_data_loader'; extra = "/I`"$here\shim`" /I`"$OutDir`" /I`"$here\..\..\windward\wind22\include`" shlwapi.lib" },
     @{ name = 'test_data_net';    extra = '' },
-    @{ name = 'test_data_expl';   extra = '' }
+    @{ name = 'test_data_expl';   extra = '' },
+    @{ name = 'test_data_expl_operate'; extra = "/I`"$here`"" },
+    @{ name = 'test_projmap_capacity'; extra = "/I`"$here`"" },
+    @{ name = 'test_sprite_fallback'; extra = "/I`"$here`"" }
 )
+
+# Compile the actual shipped CExplosion::Operate body against the tiny mock
+# world in tests/data. Regenerate it every run so the fixture cannot silently
+# drift into a hand-maintained copy of the production lifecycle.
+$projbasePath = Join-Path $here '..\..\enations_latest\src\projbase.cpp'
+$projbaseText = Get-Content -Raw -LiteralPath $projbasePath
+$operateStart = $projbaseText.IndexOf('void CExplosion::Operate ()', [StringComparison]::Ordinal)
+$operateEnd = if ($operateStart -ge 0) {
+    $projbaseText.IndexOf('void CVehicle::HandleCombat ()', $operateStart, [StringComparison]::Ordinal)
+} else { -1 }
+if ($operateStart -lt 0 -or $operateEnd -le $operateStart) {
+    Write-Error 'Could not locate CExplosion::Operate boundaries in projbase.cpp.'
+    exit 2
+}
+$operateGenerated = Join-Path $OutDir 'test_data_expl_operate_generated.cpp'
+$operateText = '#include "test_data_expl_operate_prefix.h"' + "`r`n`r`n" +
+    $projbaseText.Substring($operateStart, $operateEnd - $operateStart) +
+    "`r`n#include `"test_data_expl_operate_suffix.h`"`r`n"
+Set-Content -Encoding ascii -NoNewline -LiteralPath $operateGenerated -Value $operateText
+$operateSuite = $suites | Where-Object { $_.name -eq 'test_data_expl_operate' }
+$operateSuite.source = $operateGenerated
+
+# Compile the actual shipped CProjMap capacity query against a minimal map/list
+# model. Regenerate it every run so the test exercises production code.
+$capacityStart = $projbaseText.IndexOf('int CProjMap::GetProjectileHexCount', [StringComparison]::Ordinal)
+$capacityEnd = if ($capacityStart -ge 0) {
+    $projbaseText.IndexOf('void CProjMap::Add', $capacityStart, [StringComparison]::Ordinal)
+} else { -1 }
+if ($capacityStart -lt 0 -or $capacityEnd -le $capacityStart) {
+    Write-Error 'Could not locate CProjMap::GetProjectileHexCount boundaries in projbase.cpp.'
+    exit 2
+}
+$capacityGenerated = Join-Path $OutDir 'test_projmap_capacity_generated.cpp'
+$capacityText = '#include "test_projmap_capacity_prefix.h"' + "`r`n`r`n" +
+    $projbaseText.Substring($capacityStart, $capacityEnd - $capacityStart) +
+    "`r`n#include `"test_projmap_capacity_suffix.h`"`r`n"
+Set-Content -Encoding ascii -NoNewline -LiteralPath $capacityGenerated -Value $capacityText
+$capacitySuite = $suites | Where-Object { $_.name -eq 'test_projmap_capacity' }
+$capacitySuite.source = $capacityGenerated
+
+# Compile the mutable production GetSprite overload against a compact mock
+# collection. The fallback behavior must track the shipped method on each run.
+$spritePath = Join-Path $here '..\..\enations_latest\src\sprite.cpp'
+$spriteText = Get-Content -Raw -LiteralPath $spritePath
+$spriteFirst = $spriteText.IndexOf('CSpriteCollection::GetSprite(', [StringComparison]::Ordinal)
+$spriteSecond = if ($spriteFirst -ge 0) {
+    $spriteText.IndexOf('CSpriteCollection::GetSprite(', $spriteFirst + 1, [StringComparison]::Ordinal)
+} else { -1 }
+$spriteStart = if ($spriteSecond -ge 0) {
+    $spriteText.LastIndexOf('CSprite *', $spriteSecond, [StringComparison]::Ordinal)
+} else { -1 }
+$spriteEnd = if ($spriteSecond -ge 0) {
+    $spriteText.IndexOf('// CSpriteCollection::GetCount', $spriteSecond, [StringComparison]::Ordinal)
+} else { -1 }
+if ($spriteStart -lt 0 -or $spriteEnd -le $spriteStart) {
+    Write-Error 'Could not locate mutable CSpriteCollection::GetSprite boundaries in sprite.cpp.'
+    exit 2
+}
+$spriteGenerated = Join-Path $OutDir 'test_sprite_fallback_generated.cpp'
+$spriteHeaderPath = Join-Path $here '..\..\enations_latest\src\sprite.h'
+$spriteHeaderText = Get-Content -Raw -LiteralPath $spriteHeaderPath
+$getNumViewsMatch = [regex]::Match($spriteHeaderText, 'int\s+GetNumViews\(\)\s+const\s*\{[^}]*\}', [Text.RegularExpressions.RegexOptions]::Singleline)
+if (-not $getNumViewsMatch.Success) {
+    Write-Error 'Could not locate CSprite::GetNumViews in sprite.h.'
+    exit 2
+}
+$getNumViewsGenerated = Join-Path $OutDir 'test_sprite_getnumviews_generated.h'
+Set-Content -Encoding ascii -NoNewline -LiteralPath $getNumViewsGenerated -Value $getNumViewsMatch.Value
+$spriteGeneratedText = '#include "test_sprite_fallback_prefix.h"' + "`r`n`r`n" +
+    $spriteText.Substring($spriteStart, $spriteEnd - $spriteStart) +
+    "`r`n#include `"test_sprite_fallback_suffix.h`"`r`n"
+Set-Content -Encoding ascii -NoNewline -LiteralPath $spriteGenerated -Value $spriteGeneratedText
+$spriteSuite = $suites | Where-Object { $_.name -eq 'test_sprite_fallback' }
+$spriteSuite.source = $spriteGenerated
 
 if ($RealDataDir) {
     $resolvedData = (Resolve-Path $RealDataDir).Path
@@ -158,7 +297,7 @@ if ($RealDataDir) {
 $failed = 0
 foreach ($opt in @('/Od', '/O2')) {
     foreach ($s in $suites) {
-        $src = Join-Path $here "$($s.name).cpp"
+        $src = if ($s.source) { $s.source } else { Join-Path $here "$($s.name).cpp" }
         if (-not (Test-Path $src)) { Write-Host "[$($s.name)] SKIP (no source)"; continue }
 
         $tag = "$($s.name)$($opt.Replace('/',''))"

@@ -3190,11 +3190,35 @@ SkipPixel1:
         if (-1 == iSpriteIndex)
             return NULL;
 
+        CSprite * pSprite = m_pptrsprite[iSpriteIndex].Value();
+        if (pSprite && 0 < pSprite->GetNumViews())
+        {
 #ifdef _DEBUG
-        m_pptrsprite[ iSpriteIndex ]->CheckValid();
+            pSprite->CheckValid();
 #endif
+            return pSprite;
+        }
 
-        return m_pptrsprite[iSpriteIndex].Value();
+        // Len=-1 art can leave a registered dummy sprite with no header/views.
+        // Strict lookups preserve their null result; ordinary lookups use the
+        // first drawable sprite already loaded in this collection.
+        if (bStrict)
+            return NULL;
+
+        for (int i = 0; i < m_nSprite; ++i)
+        {
+            pSprite = m_pptrsprite[i].Value();
+            if (pSprite && 0 < pSprite->GetNumViews())
+            {
+#ifdef _DEBUG
+                pSprite->CheckValid();
+#endif
+                return pSprite;
+            }
+        }
+
+        return NULL;
+
     }
 
 //-------------------------------------------------------------------------

@@ -967,6 +967,9 @@ class CProjMap : public CMap<DWORD, DWORD, CProjBase*, CProjBase*>
 
     CProjBase*        GetFirst( CHexCoord _hex ) const;
     static CProjBase* GetNext( CProjBase* pOn );
+    // Count occupied hex buckets containing at least one in-flight projectile.
+    // Visual explosion lifetimes are deliberately excluded from the firing cap.
+    int GetProjectileHexCount( ) const;
 
   protected:
     DWORD ToArg( CMapLoc const& ml ) const;

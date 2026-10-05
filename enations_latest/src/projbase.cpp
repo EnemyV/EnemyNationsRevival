@@ -1022,7 +1022,14 @@ void CExplosion::Operate ()
     //  alive, and it cannot end it early either (see MayDelete).
     BOOL bFinished = TRUE;
     if ( ( pSprite != NULL ) && ( pView != NULL ) )
+        {
+        // Operate must advance visual animation even when the explosion is
+        // offscreen and Draw never runs. IsOneShotFinished only reads state;
+        // without this update valid art could keep the object alive forever.
+        // Corpse cleanup still uses the independent count below.
+        GetFrame( CSpriteView::ANIM_FRONT_1 );
         bFinished = GetAmbient( CSpriteView::ANIM_FRONT_1 )->IsOneShotFinished( GetView() );
+        }
 
     // step 1 - release the corpse on OUR frame, whatever the animation is doing
     if ( enexpl::ShouldRelease( m_iFrames, m_iKillFrame ) )
@@ -1653,7 +1660,8 @@ void CUnit::MsgSetFire (CMsgShootElem * pMsg)
         if ( GetTurret() )
             GetTurret()->DoMuzzleFlash();
 
-        if ( ( GetData()->GetProjectile () != 0 ) && ( theProjMap.GetCount () < MAX_NUM_PROJECTILES ) )
+        if ( ( GetData()->GetProjectile () != 0 ) &&
+             ( theProjMap.GetProjectileHexCount( ) < MAX_NUM_PROJECTILES ) )
             {
             // start the projectile
             CProjectile * pProj = new CProjectile (this, mlDest, pMsg->m_dwIDTarget, pMsg->m_wNumShots);
@@ -1792,6 +1800,31 @@ void CUnit::PrepareToDie (DWORD dwIDKiller)
 
 /////////////////////////////////////////////////////////////////////////////
 // we keep a map (based on CHex) of lists (all proj in a hex)
+
+// Projectile capacity is a simulation decision. Count each occupied hex once
+// when it contains an in-flight projectile; explosion sprites may remain for
+// different lengths (or be missing), but must not switch a later shot between
+// flight/delayed damage and the immediate-damage fallback. Explosion-only hexes
+// therefore no longer consume the firing cap, even when stock art outlives a
+// projectile; saturated fights can keep more shots in flight than before.
+int CProjMap::GetProjectileHexCount( ) const
+{
+    int iCount = 0;
+    POSITION pos = GetStartPosition( );
+    while ( pos != NULL )
+    {
+        DWORD dwHex;
+        CProjBase* pHead = NULL;
+        GetNextAssoc( pos, dwHex, pHead );
+        for ( CProjBase* pOn = pHead; pOn != NULL; pOn = pOn->m_pNext )
+            if ( pOn->GetType( ) == CProjBase::projectile )
+            {
+                ++iCount;
+                break;
+            }
+    }
+    return iCount;
+}
 
 void CProjMap::Add (CProjBase * pProj)
 {
