@@ -20,6 +20,7 @@
 #endif
 #include "mfc_compat_text.h"  // Phase 6 Stage 5 Phase C: SDL_ttf text helpers
 #include "en_gdi_audit.h"     // Phase 6 Stage 5a: TEMP GDI liveness instrumentation
+#include "en_hangmodal.h"     // EnHangModalScope - CWnd::MessageBox below is a native modal box
 #include <algorithm>
 #include <cctype>
 #include <cstdarg>
@@ -1856,7 +1857,7 @@ public:
     BOOL   UpdateWindow()                       { return ::UpdateWindow( m_hWnd ); }
     BOOL   SetDlgItemText( int nID, LPCSTR ps ) { return ::SetDlgItemTextA( m_hWnd, nID, ps ); }
     UINT   GetDlgItemText( int nID, LPSTR ps, int nMax ) const { return ::GetDlgItemTextA( m_hWnd, nID, ps, nMax ); }
-    int    MessageBox( LPCSTR psz, LPCSTR pTitle = NULL, UINT uType = MB_OK ) { return ::MessageBoxA( m_hWnd, psz, pTitle, uType ); }
+    int    MessageBox( LPCSTR psz, LPCSTR pTitle = NULL, UINT uType = MB_OK ) { EnHangModalScope modal; return ::MessageBoxA( m_hWnd, psz, pTitle, uType ); }
     void   SetRedraw( BOOL bRedraw = TRUE )                     { ::SendMessageA( m_hWnd, WM_SETREDRAW, (WPARAM)bRedraw, 0 ); }
     BOOL   MoveWindow( int x, int y, int w, int h, BOOL bRepaint = TRUE ) { return ::MoveWindow( m_hWnd, x, y, w, h, bRepaint ); }
     BOOL   MoveWindow( LPCRECT pr, BOOL bRepaint = TRUE )       { return ::MoveWindow( m_hWnd, pr->left, pr->top, pr->right - pr->left, pr->bottom - pr->top, bRepaint ); }

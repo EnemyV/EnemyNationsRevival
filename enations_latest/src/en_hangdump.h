@@ -23,7 +23,9 @@
 // — a world load has been measured as a single 25s frame, so nothing under
 // 40s may fire. A dump is never written while IsDebuggerPresent() (a debugger
 // suspending the process is not a hang), never before the first heartbeat,
-// and at most ONCE per process lifetime.
+// and at most ONCE per process lifetime. Nor while a native modal box is up
+// (EnHangModalScope, en_hangmodal.h): MessageBoxA/SDL_ShowSimpleMessageBox run
+// their own loop, so a box left open is a user, not a hang.
 //
 // Non-Windows builds have no dbghelp: the heartbeat is a no-op and the
 // watchdog never starts, so the calls stay unconditional at the call sites.
@@ -31,6 +33,8 @@
 
 #ifndef EN_HANGDUMP_H
 #define EN_HANGDUMP_H
+
+#include "en_hangmodal.h"   // EnHangModalScope - hold it around every native modal box
 
 void EnHangHeartbeat( void );
 void EnHangWatchdogStart( void );

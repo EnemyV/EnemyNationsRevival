@@ -136,7 +136,8 @@ static void EnHangWatchdogBody( unsigned nSecs )
         if ( ullStamp == 0 ) { ullStamp = ullTick; continue; }
         if ( bFired )
             continue;
-        if ( IsDebuggerPresent() )                   // a debugger halting us is not a hang
+        if ( IsDebuggerPresent()                     // a debugger halting us is not a hang,
+             || EnHangModalActive() )                // nor a native modal box awaiting the user
         {
             ullStamp = ullTick;
             continue;

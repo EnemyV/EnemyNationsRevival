@@ -8,6 +8,7 @@
 
 #include "stdafx.h"
 #include "en_logpath.h"   // EnLogPath - logs to the launch dir, not the exe dir
+#include "en_hangmodal.h"  // EnHangModalScope - a box left open is not a hang
 #include "_windwrd.h"
 #include "io.h"
 #include "w22_settings.h"
@@ -169,6 +170,7 @@ static BOOL GetFileName(CString &strFileName) {
         CString sMsg;
         sMsg.LoadString(IDS_BAD_DATA_FILE);
         csPrintf(&sMsg, (char const *) strFileName);
+        EnHangModalScope modal;
         if (::MessageBoxA(NULL, sMsg, "Enemy Nations", MB_YESNO | MB_ICONSTOP) != IDYES)
             return (FALSE);
 
@@ -566,6 +568,7 @@ CMmio *CDataFile::OpenAsMMIO(const char *pFilename, const char *pRif) {
                                 "It is from an older or different version of the game. "
                                 "Use the ENations.dat shipped with this release.",
                                 (const char*)m_sFileName, (const char*)path);
+                    EnHangModalScope modal;
                     ::MessageBoxA(NULL, sBox, "Enemy Nations", MB_OK | MB_ICONERROR);
                 }
             }
@@ -636,6 +639,7 @@ CMmio *CDataFile::OpenAsMMIO(const char *pFilename, const char *pRif) {
                         "Entry: %s\n\nLooked under: %s\n\nIn: %s\n\n"
                         "Re-extract the game data set, or put ENations.dat next to "
                         "enations.exe.", (const char*)path, (const char*)sPatch, cwd);
+            EnHangModalScope modal;
             ::MessageBoxA(NULL, sBox, "Enemy Nations", MB_OK | MB_ICONERROR);
         }
     }

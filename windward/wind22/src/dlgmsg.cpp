@@ -6,6 +6,7 @@
 #include "stdafx.h"
 #include "_windwrd.h"
 #include "dlgmsg.h"
+#include "en_hangmodal.h"  // EnHangModalScope - a box left open is not a hang
 #include "w22_settings.h"
 
 #ifdef _DEBUG
@@ -53,7 +54,11 @@ int CDlgMsg::MsgBox (char const * psPrompt, UINT nType, char const * psEntry, ch
 
  HWND hParent = w22::GetMainHWND();
 
- int iRtn = ::MessageBoxA( hParent, psPrompt ? psPrompt : "", "Enemy Nations", uType );
+ int iRtn;
+ {
+  EnHangModalScope modal;
+  iRtn = ::MessageBoxA( hParent, psPrompt ? psPrompt : "", "Enemy Nations", uType );
+ }
 
  // Map OK->YES for callers that expect IDYES (original mapped IDOK->IDYES)
  if ( iRtn == IDOK )

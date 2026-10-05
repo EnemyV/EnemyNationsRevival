@@ -4,6 +4,7 @@
 
 #include "stdafx.h"
 #include "EnSettings.h"
+#include "en_hangmodal.h"   // EnHangModalScope - a box left open is not a hang
 
 #include <windows.h>
 #include <stdio.h>
@@ -102,12 +103,14 @@ static constexpr unsigned int kEnMsgBoxBaseFlags = MB_TOPMOST | MB_SETFOREGROUND
 
 int EnMessageBox( const char* text, unsigned int type, unsigned int /*helpId*/ )
 {
+    EnHangModalScope modal;
     return ::MessageBoxA( NULL, text ? text : "", "Second Chance", type | kEnMsgBoxBaseFlags );
 }
 
 int EnMessageBox( unsigned int idText, unsigned int type, unsigned int /*helpId*/ )
 {
     std::string s = EnLoadStdString( idText );
+    EnHangModalScope modal;
     return ::MessageBoxA( NULL, s.c_str(), "Second Chance", type | kEnMsgBoxBaseFlags );
 }
 
@@ -135,7 +138,11 @@ int EnMessageBoxOnce( const char* text, unsigned int type, const char* section, 
     else if ( type & MB_ICONINFORMATION )
         uType |= MB_ICONINFORMATION;
 
-    int iRtn = ::MessageBoxA( NULL, text ? text : "", "Second Chance", uType );
+    int iRtn;
+    {
+        EnHangModalScope modal;
+        iRtn = ::MessageBoxA( NULL, text ? text : "", "Second Chance", uType );
+    }
 
     // Map OK -> YES for callers that expect IDYES (matches original CDlgMsg behavior)
     if ( iRtn == IDOK )

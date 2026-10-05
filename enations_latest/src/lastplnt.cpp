@@ -16,6 +16,7 @@
 #endif
 #include "GameWindow.h"
 #include "en_harness.h"   // in-process LLM-driving harness (all platforms; EN_HARNESS-gated)
+#include "en_hangdump.h"   // EnHangWatchdogStop (exit) + EnHangModalScope (native boxes)
 #include "SDL2Compositor.h"
 #include "SDL2Video.h"
 #include "SDL2MainMenu.h"
@@ -207,7 +208,10 @@ void CatchSE( SE_Exception e )
     for ( int iOn = 0; iOn < 5; iOn++ ) itoa( e.m_stack[iOn], sNumS[iOn], 16 );
     sDumpText = strPrintf( sDumpText.c_str(), VER_STRING, sNum1, sNum2,
                            sNumS[0], sNumS[1], sNumS[2], sNumS[3], sNumS[4] );
-    ::MessageBoxA( NULL, sDumpText.c_str(), "Enemy Nations - Exception", MB_OK | MB_ICONSTOP );
+    {
+        EnHangModalScope modal;
+        ::MessageBoxA( NULL, sDumpText.c_str(), "Enemy Nations - Exception", MB_OK | MB_ICONSTOP );
+    }
 
     bDoSubclass = TRUE;
 }
@@ -497,6 +501,7 @@ BOOL CConquerApp::InitInstance( )
     SetLocateDataFileHandler( []( const char* pszWanted, char* pszOut, int cbOut ) -> bool
     {
 #ifdef _WIN32
+        EnHangModalScope modal;   // the box + OS picker below run their own loops
         // Ask first: an unattended/harness run must not block on a modal dialog.
         CString sMsg;
         sMsg.Format( "ENations.dat could not be found.\n\nLooked for:\n%s\n\n"
@@ -2035,6 +2040,11 @@ void CConquerApp::CloseDlgChat( )
 
 int CConquerApp::ExitInstance( )
 {
+    // Teardown is not a hang: the WM_QUIT path runs this from INSIDE Run(), before
+    // WinMain's own EnHangWatchdogStop(), so a long teardown wrote a hang dump.
+    // Stop is a one-way atomic store - idempotent, and harmless if never started.
+    EnHangWatchdogStop( );
+
     // Idempotent: ExitInstance is reached from TWO paths on quit — the message
     // loop calls it on WM_QUIT (mainloop.cpp `return ExitInstance()`), then WinMain
     // calls it again unconditionally after Run() returns. Running the full teardown

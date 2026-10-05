@@ -20,6 +20,7 @@ static char BASED_CODE THIS_FILE[] = __FILE__;
 #define new DEBUG_NEW
 
 #include "init.h"
+#include "en_hangmodal.h"  // EnHangModalScope - a box left open is not a hang
 
 int iWinType = WNT; // the default
 CWinAppStub* ptheApp = NULL;
@@ -30,6 +31,7 @@ int __iAssertSection = -1;
 
 void PureFunc() {
 
+    EnHangModalScope modal;
     ::MessageBoxA( NULL, "Pure Virtual Function - report the addresses in the next MessageBox",
                    "Enemy Nations", MB_OK | MB_ICONSTOP | MB_TASKMODAL );
     // force a GPF

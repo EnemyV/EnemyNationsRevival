@@ -1,6 +1,6 @@
 #include "stdafx.h"
 #include "SDL2Dialogs.h"
-#include "en_hangdump.h"   // EnHangHeartbeat() - hang-watchdog liveness beat
+#include "en_hangdump.h"   // EnHangHeartbeat() + EnHangModalScope - hang watchdog
 #include <sstream>   // locale-grouped number formatting for the load-game stats
 #include <locale>
 #include "RenderBackend.h"   // RenderBackendOpenGLAvailable() — grey out OpenGL until done
@@ -25,6 +25,14 @@
 
 #undef min
 #undef max
+
+// SDL_ShowSimpleMessageBox runs its own native loop - no SDL pump, no heartbeat -
+// so hold the hang watchdog off while the box waits on the user.
+static int EnModalMessageBox( Uint32 flags, const char* title, const char* message, SDL_Window* window )
+{
+    EnHangModalScope modal;
+    return SDL_ShowSimpleMessageBox( flags, title, message, window );
+}
 
 #ifndef _WIN32
 // vpPumpNet (vp_netpump_posix.cpp) declared at FILE scope. An `extern "C"` linkage spec
@@ -271,7 +279,7 @@ void SDL2AdvOptionsDialog::OnOK() {
     // after changing an Advanced setting). Transient-for the dialog window stacks it
     // ABOVE the fullscreen game (same as the panels' transient-above-fullscreen) so
     // it's visible and dismissable.
-    if (bWarn) SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_INFORMATION, "Second Chance",
+    if (bWarn) EnModalMessageBox(SDL_MESSAGEBOX_INFORMATION, "Second Chance",
         "You need to exit and restart Second Chance for these changes to take effect",
         m_gameWindow ? m_gameWindow->GetWindow() : nullptr);
     EndDialog(1);
@@ -1954,7 +1962,7 @@ bool SDL2_RunCreateNetworkFlow(GameWindow* gameWindow) {
                                   (LPCSTR)pPub, NULL, NULL);
     delete[] pPub;
     if (bErr) {
-        SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, "Network Error",
+        EnModalMessageBox(SDL_MESSAGEBOX_ERROR, "Network Error",
             "Failed to open TCP/IP server.", nullptr);
         theGame.Close(); delete theApp.m_pCreateGame; theApp.m_pCreateGame = NULL;
         return false;
@@ -2113,7 +2121,7 @@ bool SDL2_RunJoinNetworkFlow(GameWindow* gameWindow) {
         // the SDL2AdvOptionsDialog comment above, ~line 265) and the game
         // looks hung.
         if (!vpValidateAddressString(joinDlg.m_serverAddr.c_str())) {
-            SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, "Network Error",
+            EnModalMessageBox(SDL_MESSAGEBOX_ERROR, "Network Error",
                 "That server address is not valid.",
                 gameWindow ? gameWindow->GetWindow() : nullptr);
             continue;   // back to the join dialog to correct it
@@ -2143,7 +2151,7 @@ bool SDL2_RunJoinNetworkFlow(GameWindow* gameWindow) {
     //         OpenClient blocks (vpStartup -> gethostbyname); show a status frame.
     ShowConnectingMessage(gameWindow, "Searching for games...");
     if (theNet.OpenClient(VPT_TCP, theApp.m_wndMain.m_hWnd, NULL)) {
-        SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, "Network Error",
+        EnModalMessageBox(SDL_MESSAGEBOX_ERROR, "Network Error",
             "Failed to open TCP/IP client.", nullptr);
         delete theApp.m_pCreateGame;
         theApp.m_pCreateGame = NULL;
@@ -2166,7 +2174,7 @@ bool SDL2_RunJoinNetworkFlow(GameWindow* gameWindow) {
             // ServerAddress in vdmplay.ini. Re-show the browser rather than
             // aborting the whole join, since the existing session is still valid.
             if (!vpValidateAddressString(browseDlg.m_searchAddr.c_str())) {
-                SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, "Network Error",
+                EnModalMessageBox(SDL_MESSAGEBOX_ERROR, "Network Error",
                     "That server address is not valid.",
                     gameWindow ? gameWindow->GetWindow() : nullptr);
                 continue;
@@ -2181,7 +2189,7 @@ bool SDL2_RunJoinNetworkFlow(GameWindow* gameWindow) {
                 ("Searching " + browseDlg.m_searchAddr + ":" +
                  std::to_string(browseDlg.m_searchPort) + " ...").c_str());
             if (theNet.OpenClient(VPT_TCP, theApp.m_wndMain.m_hWnd, NULL)) {
-                SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, "Network Error",
+                EnModalMessageBox(SDL_MESSAGEBOX_ERROR, "Network Error",
                     "Failed to open TCP/IP client for that address/port.", nullptr);
                 delete theApp.m_pCreateGame; theApp.m_pCreateGame = NULL;
                 return false;
@@ -2226,7 +2234,7 @@ bool SDL2_RunJoinNetworkFlow(GameWindow* gameWindow) {
                 OutputDebugStringA( "\n" );
                 theApp.Log( szLog );
 
-                SDL_ShowSimpleMessageBox( SDL_MESSAGEBOX_ERROR, "Enemy Nations", sMsg.c_str(),
+                EnModalMessageBox( SDL_MESSAGEBOX_ERROR, "Enemy Nations", sMsg.c_str(),
                                           gameWindow ? gameWindow->GetWindow() : nullptr );
                 chosenIdx = -1;
                 continue;   // back to the browser
@@ -2252,7 +2260,7 @@ bool SDL2_RunJoinNetworkFlow(GameWindow* gameWindow) {
                 // undecorated and unfocusable BEHIND the fullscreen window on
                 // Linux/XWayland/Mutter and the game looks hung (see the same fix
                 // in SDL2OptionsDialog above).
-                SDL_ShowSimpleMessageBox( SDL_MESSAGEBOX_ERROR, "Enemy Nations", sMsg.c_str(),
+                EnModalMessageBox( SDL_MESSAGEBOX_ERROR, "Enemy Nations", sMsg.c_str(),
                                           gameWindow ? gameWindow->GetWindow() : nullptr );
                 chosenIdx = -1;
                 continue;   // back to the browser
@@ -2303,7 +2311,7 @@ bool SDL2_RunJoinNetworkFlow(GameWindow* gameWindow) {
     BOOL bJoinErr = theNet.Join(&pJoin->m_ID, pJn);
     delete[] pJn;
     if (bJoinErr) {
-        SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, "Network Error",
+        EnModalMessageBox(SDL_MESSAGEBOX_ERROR, "Network Error",
             "Failed to join the selected game.", nullptr);
         theNet.Close(FALSE);
         theGame.Close();
@@ -2348,7 +2356,7 @@ bool SDL2_RunJoinNetworkFlow(GameWindow* gameWindow) {
         if (theGame.GetMyNetNum() == 0) {
             { extern void EnMpDiagLog(const char*, ...);
               EnMpDiagLog("JOIN-VERIFY timeout: netnum still 0 after %ums - refusing to open a dead lobby", kJoinVerifyMs); }
-            SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, "Network Error",
+            EnModalMessageBox(SDL_MESSAGEBOX_ERROR, "Network Error",
                 "Joined the game list entry, but the host never answered.\n"
                 "The game may have ended, or the host may be unreachable.", nullptr);
             theNet.Close(FALSE);
@@ -2562,7 +2570,7 @@ bool SDL2_RunLoadNetworkFlow(GameWindow* gameWindow) {
                                   (LPCSTR)pPub, NULL, NULL);
     delete[] pPub;
     if (bErr) {
-        SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, "Network Error",
+        EnModalMessageBox(SDL_MESSAGEBOX_ERROR, "Network Error",
             "Failed to open TCP/IP server.", nullptr);
         EnableAllWindows(NULL, TRUE);
         theGame.Close();
