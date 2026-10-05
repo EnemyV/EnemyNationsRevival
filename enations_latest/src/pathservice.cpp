@@ -291,6 +291,18 @@ void PathService::Quiesce( void )
     }
 }
 
+int PathService::DropQueued( void )
+{
+    std::lock_guard<std::mutex> lk( m_mtx );
+    const int nDropped = (int)m_qReq.size( );
+#if EN_PATH_PROBES
+    if ( nDropped > 0 )
+        Perf::CounterInc( "pq.dropped", nDropped );
+#endif
+    m_qReq.clear( );   // releases the snapshots these requests pinned
+    return ( nDropped );
+}
+
 void PathService::Resume( void )
 {
     {
@@ -440,12 +452,20 @@ void EnPathWorkerQuiesce( void )
 {
     if ( !thePathService.IsRunning( ) )
         return;
+
+    // Async: the CancelAll below makes the drain reject every answer still queued, so
+    // the save must not wait for those searches to run - drop them, and Quiesce waits
+    // only for the ones already on a worker. The step-C comparison (async off) keeps
+    // the full wait: its queued answers are compared against references it still holds.
+    const BOOL bAsync = PathService::AsyncEnabled( );
+    if ( bAsync )
+        thePathService.DropQueued( );
     thePathService.Quiesce( );
 
     // Quiesce leaves the queue empty and every worker idle, so this is the last
     // moment at which the set of outstanding ids can change. Clearing them is what
     // makes "nothing pending is serialized" true rather than merely intended.
-    if ( PathService::AsyncEnabled( ) )
+    if ( bAsync )
         EnPathAsyncCancelAll( "stop" );
 }
 

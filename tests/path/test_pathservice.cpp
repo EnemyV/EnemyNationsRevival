@@ -177,6 +177,8 @@ static std::atomic<long> g_mgrDtor( 0 );
 static std::atomic<long> g_mgrWrongThread( 0 );
 static std::atomic<int>  g_searchDelayMs( 0 );
 static std::atomic<long> g_searchesRunning( 0 );
+static std::atomic<long> g_searchesStarted( 0 );
+static std::atomic<int>  g_searchGate( 0 );   // non-zero: a search holds its worker until cleared
 
 static std::thread::id g_mainThreadId;
 
@@ -227,6 +229,9 @@ void CPathMgr::SearchSnapshot( PathWorld const& pw, CHexCoord hexFrom, CHexCoord
         return;
 
     ++g_searchesRunning;
+    ++g_searchesStarted;
+    while ( g_searchGate.load( ) )
+        std::this_thread::sleep_for( std::chrono::milliseconds( 1 ) );
     const int iDelay = g_searchDelayMs.load( );
     if ( iDelay > 0 )
         std::this_thread::sleep_for( std::chrono::milliseconds( iDelay ) );
@@ -293,6 +298,19 @@ static int s_iWorkerOn = -1;   // resolved once by Enabled(), as in production
 static int s_iAsyncReq = -1;   // resolved once by AsyncRequested(), as in production
 
 #include "ps_bodies.inc"   // every PathService method body, verbatim
+
+// The save seam (CGame::SaveGame's EnPathWorkerQuiesceScope) runs against the game's
+// global service. The step-D cancel is the one call it makes outside the service: it
+// clears every vehicle's outstanding id, which the fixture only has to count.
+static PathService thePathService;
+static int         g_cancelAllCalls = 0;
+void EnPathAsyncCancelAll( char const* pszReason )
+{
+    ++g_cancelAllCalls;
+    CHECK( pszReason != NULL && std::strcmp( pszReason, "stop" ) == 0, "the save seam cancels with reason \"stop\"" );
+}
+
+#include "ps_seam.inc"     // EnPathWorkerQuiesce / EnPathWorkerResume, verbatim
 
 // -------------------------------------------------------------------- helpers
 
@@ -549,6 +567,85 @@ static void Test3b_Quiesce( )
         PathService::FreeResult( res );
 }
 
+// The save seam, both arms. Every worker is held inside a search and the rest of the
+// requests sit in the queue; the gate opens 50 ms into the save.
+//   async (step D): CancelAll rejects every answer the save leaves behind, so the save
+//                   must wait for the held searches only and search NONE of the queue.
+//   async off (the step-C comparison): queued answers are still compared against the
+//                   references the comparison holds, so the full wait stays.
+static void Test3c_SaveSeam( bool bAsync )
+{
+    char szWhat[160];
+    Perf::Reset( );
+    g_cancelAllCalls = 0;
+    s_iAsyncReq      = bAsync ? 1 : 0;
+    s_iWorkerOn      = 1;
+    const char* pszArm = bAsync ? "async" : "async off";
+
+    const long new0  = g_arrayNew.load( );
+    const long del0  = g_arrayDelete.load( );
+    const int  kN    = 50;
+    const int  kBusy = 2;
+
+    std::shared_ptr<const PathWorld> pw = MakeWorld( 23 );
+    CHECK( thePathService.Start( PathWorld::side, PathWorld::side, kBusy ) == TRUE, "Start (save seam)" );
+    g_searchGate.store( 1 );
+
+    int nSubmitted = ( SubmitAfterStartup( thePathService, MakeRequest( pw, 0 ) ) != 0 ) ? 1 : 0;
+    for ( int i = 1; i < kN; ++i )
+        if ( thePathService.Submit( MakeRequest( pw, i ) ) != 0 )
+            ++nSubmitted;
+    for ( int iSpin = 0; iSpin < 5000 && g_searchesRunning.load( ) < kBusy; ++iSpin )
+        std::this_thread::sleep_for( std::chrono::milliseconds( 1 ) );
+
+    sprintf( szWhat, "%s: all %d requests accepted", pszArm, kN );
+    CHECK( nSubmitted == kN, szWhat );
+    sprintf( szWhat, "%s: both workers are held inside a search", pszArm );
+    CHECK( g_searchesRunning.load( ) == kBusy, szWhat );
+    const long nStarted0 = g_searchesStarted.load( );
+
+    std::thread opener( [] {
+        std::this_thread::sleep_for( std::chrono::milliseconds( 50 ) );
+        g_searchGate.store( 0 );
+    } );
+    EnPathWorkerQuiesce( );
+    const long nSearchedBySave = g_searchesStarted.load( ) - nStarted0;
+    opener.join( );
+
+    CHECK( thePathService.QueueDepth( ) == 0, "the save seam leaves nothing queued and nothing in flight" );
+    CHECK( g_searchesRunning.load( ) == 0, "the save seam leaves no search running" );
+    CHECK( thePathService.Submit( MakeRequest( pw, 999 ) ) == 0, "Submit refuses inside the save" );
+    if ( bAsync )
+    {
+        sprintf( szWhat, "async: the save searched %ld of the %d queued requests whose answers it discards (want 0)",
+                 nSearchedBySave, kN - kBusy );
+        CHECK( nSearchedBySave == 0, szWhat );
+        CHECK( g_cancelAllCalls == 1, "async: the save cancels every outstanding id once" );
+#if EN_PATH_PROBES
+        CHECK( Perf::Get( "pq.dropped" ) == kN - kBusy, "async: pq.dropped counts the requests the save dropped" );
+#else
+        CHECK( Perf::Get( "pq.dropped" ) == 0, "async: pq.dropped is compiled out with EN_PATH_PROBES=0" );
+#endif
+    }
+    else
+    {
+        sprintf( szWhat, "async off: the save still searched all %d queued requests (got %ld)", kN - kBusy,
+                 nSearchedBySave );
+        CHECK( nSearchedBySave == kN - kBusy, szWhat );
+        CHECK( g_cancelAllCalls == 0, "async off: the save cancels nothing" );
+    }
+
+    EnPathWorkerResume( );
+    CHECK( thePathService.Submit( MakeRequest( pw, 998 ) ) != 0, "Submit works again after the save" );
+
+    thePathService.Stop( );
+    PathResult res;
+    while ( thePathService.PopResult( res ) )
+        PathService::FreeResult( res );
+    CHECK( g_arrayNew.load( ) - new0 == g_arrayDelete.load( ) - del0, "save seam: every route allocated was freed" );
+    CHECK( pw.use_count( ) == 1, "save seam: every snapshot the queue pinned was released" );
+}
+
 // ------------------------------------------------- test 4: the iVehType proof
 
 class CTransportData
@@ -649,6 +746,8 @@ int main( )
     Test2_StopUnderLoad( );
     Test3_StartStopCycles( );
     Test3b_Quiesce( );
+    Test3c_SaveSeam( true );
+    Test3c_SaveSeam( false );
     Test4_VehTypeRoundTrip( );
 
     std::printf( "%d checks, %d failures\n", g_checks, g_failures );

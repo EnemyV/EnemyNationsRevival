@@ -11,6 +11,7 @@
 
 #include "chproute.hpp"
 #include "Perf.h"      // pq.* path-request burst counters
+#include "enprobes.h"  // EN_PATH_PROBES gates them
 
 #include "building.inl"
 #include "cpathmap.h"
@@ -1930,7 +1931,9 @@ void CHPRouter::SecondaryStocking( int iMat, int iFromBldg, int iToBldg )
     // truck can't get from hex -> to hex
     BOOL       bGotPath = FALSE;
     int        iPathLen = 0;
+#if EN_PATH_PROBES
     Perf::CounterInc( "pq.hprtr" );   // BURST PROBE: HP material router
+#endif
     CHexCoord* pPath    = thePathMgr.GetPath( NULL, hexFrom, hexTo, iPathLen, pTruck->GetTypeUnit( ), FALSE, TRUE );
     if ( pPath != NULL )
     {
@@ -2422,7 +2425,9 @@ BOOL CHPRouter::NeedsTransport( CAIUnit* pTruck, CHexCoord& hex )
     //	int& iPathLen, int iVehType = 0,
     //	BOOL bVehBlock = FALSE, BOOL bDirectPath = FALSE );
 
+#if EN_PATH_PROBES
     Perf::CounterInc( "pq.hprtr" );   // BURST PROBE: HP material router
+#endif
     CHexCoord* pPath = thePathMgr.GetPath( NULL, hexVeh, hex, iPathLen, pTruck->GetTypeUnit( ), FALSE, TRUE );
     if ( pPath != NULL )
     {
@@ -2629,7 +2634,9 @@ void CHPRouter::ConsiderLandWater( CAIUnit* pTruck, CHexCoord& hex )
                     bCanGetThere = FALSE;
 
                     iPathLen = 0;
+#if EN_PATH_PROBES
                     Perf::CounterInc( "pq.hprtr" );   // BURST PROBE: HP material router
+#endif
                     pPath = thePathMgr.GetPath( NULL, hexVeh, hexBldg, iPathLen, pTruck->GetTypeUnit( ), FALSE, TRUE );
                     if ( pPath != NULL )
                     {
@@ -3024,7 +3031,9 @@ BOOL CHPRouter::ConsiderLandWater( CAIUnit* pUnit, CAIHex* pHex )
                 GetBldgExit( paiBldg->GetID( ), hexBldg );
                 bCanGetThere = FALSE;
                 iPathLen     = 0;
+#if EN_PATH_PROBES
                 Perf::CounterInc( "pq.hprtr" );   // BURST PROBE: HP material router
+#endif
                 pPath = thePathMgr.GetPath( NULL, hexBldg, hexDest, iPathLen, pTruck->GetTypeUnit( ), FALSE, TRUE );
                 if ( pPath != NULL )
                 {
@@ -6683,7 +6692,9 @@ BOOL CHPRouter::GetStagingHex( CAIUnit* paiTruck, CAIUnit* paiBldg, CHexCoord& h
     BOOL bCanGetThere = FALSE;
     // run a path out to the candidate seaport from this seaport
     // using the ship as a vehicle
+#if EN_PATH_PROBES
     Perf::CounterInc( "pq.hprtr" );   // BURST PROBE: HP material router
+#endif
     pPath = thePathMgr.GetPath( NULL, hexVeh, hexNearBy, iPathLen, paiTruck->GetTypeUnit( ), FALSE, TRUE );
     if ( pPath != NULL )
     {

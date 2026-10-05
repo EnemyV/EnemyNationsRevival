@@ -29,9 +29,11 @@ parser = argparse.ArgumentParser(description=__doc__)
 parser.add_argument('--baseline-ref', help='Read production bodies from this Git revision')
 parser.add_argument('--perturb', choices=['result', 'noqueuedfree', 'vehtype'],
                     help='Corrupt one thing, to run the test in its failing direction')
+parser.add_argument('--probes', action='store_true',
+                    help='Compile the bodies with EN_PATH_PROBES=1 (default: 0, the shipped setting)')
 args = parser.parse_args()
 
-out = HERE / 'pathservice-out' / (args.perturb or 'candidate')
+out = HERE / 'pathservice-out' / ((args.perturb or 'candidate') + ('-probes' if args.probes else ''))
 out.mkdir(parents=True, exist_ok=True)
 
 
@@ -91,6 +93,7 @@ bodies = '\n\n'.join(body(svc_cpp, s) for s in (
     'static int ResolveDefaultOn( const char* pszEnv )',
     'BOOL PathService::AsyncRequested( void )',
     'BOOL PathService::Enabled( void )',
+    'BOOL PathService::AsyncEnabled( void )',
     'int PathService::ConfiguredWorkers( void )',
     'PathService::PathService( )',
     'PathService::~PathService( )',
@@ -103,13 +106,20 @@ bodies = '\n\n'.join(body(svc_cpp, s) for s in (
     'void PathService::Quiesce( void )',
     'void PathService::Resume( void )',
     'void PathService::WorkerMain( void )',
-))
+) + (('int PathService::DropQueued( void )',) if 'int PathService::DropQueued( void )' in svc_cpp else ()))
 
 if args.perturb == 'noqueuedfree':
     # Stop stops freeing the results nobody popped. The leak counters must see it.
     assert 'FreeResult( m_qRes.front( ) );' in bodies
     bodies = bodies.replace('FreeResult( m_qRes.front( ) );', '/* leaked on purpose */', 1)
 (out / 'ps_bodies.inc').write_text(bodies, encoding='utf-8')
+
+# --- the save seam the game calls (CGame::SaveGame's EnPathWorkerQuiesceScope), verbatim
+seam = '\n\n'.join(body(svc_cpp, s) for s in (
+    'void EnPathWorkerQuiesce( void )',
+    'void EnPathWorkerResume( void )',
+))
+(out / 'ps_seam.inc').write_text(seam, encoding='utf-8')
 
 # --- the iVehType proof: the two production accessors, verbatim ----------------
 # A worker gets no CVehicle, so the request must carry the integer that makes
@@ -123,7 +133,7 @@ if args.perturb == 'vehtype':
     veh = veh.replace('            return ( iInd );', '            return ( ( m_pData + iInd )->m_iType );')
 (out / 'ps_vehtype.inc').write_text(veh, encoding='utf-8')
 
-digest = hashlib.sha256((shared + decls + bodies + veh).encode()).hexdigest()
+digest = hashlib.sha256((shared + decls + bodies + seam + veh).encode()).hexdigest()
 print('Production bodies SHA256:', digest, flush=True)
 if args.perturb:
     print('PERTURBED:', args.perturb, '- this run is EXPECTED to fail', flush=True)
@@ -132,6 +142,7 @@ vs = Path('C:/Program Files/Microsoft Visual Studio/2022/Community/VC/Auxiliary/
 batch = out / 'compile.cmd'
 exe = out / 'pathservice_test.exe'
 extra = ' /DPS_PERTURB_RESULT' if args.perturb == 'result' else ''
+extra += ' /DEN_PATH_PROBES=' + ('1' if args.probes else '0')
 # C4100: several production bodies take arguments the scaffold's search ignores.
 # C4459/C4456: production locals named like the fixture's globals.
 batch.write_text(f'@echo off\ncall "{vs}" >nul 2>&1\nif errorlevel 1 exit /b 2\n'

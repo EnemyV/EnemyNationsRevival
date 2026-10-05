@@ -123,6 +123,11 @@ class PathService
     void Quiesce( void );
     void Resume( void );
 
+    // Main thread. Throws away every request no worker has started (a request owns
+    // nothing but its snapshot reference) and returns how many. Searches already on a
+    // worker are untouched. For callers about to discard the answers anyway.
+    int DropQueued( void );
+
     static void FreeResult( PathResult& r );
 
     // EN_PATH_WORKER, when SET, must carry a VALUE: 1 / true / on / yes (any case)

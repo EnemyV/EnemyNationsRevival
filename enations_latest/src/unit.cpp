@@ -3859,6 +3859,7 @@ void CVehicle::ClearPathPending( char const* pszReason )
     m_uPathReqTick = 0;
     m_iPathRetries = 0;
 
+#if EN_PATH_PROBES
     if ( pszReason != NULL )
     {
         // One counter per reason, built here rather than at the call sites so the
@@ -3867,6 +3868,9 @@ void CVehicle::ClearPathPending( char const* pszReason )
         snprintf( szName, sizeof( szName ), "pa.cancel.%s", pszReason );
         Perf::CounterInc( szName );
     }
+#else
+    (void)pszReason;   // names the counter only
+#endif
 }
 
 void CVehicle::GetPath( BOOL bNoOcc, BOOL bAllowAsync )
@@ -3955,7 +3959,9 @@ void CVehicle::GetPath( BOOL bNoOcc, BOOL bAllowAsync )
         // allocated its 3-element array, then this overwrote the pointer - a leak on
         // every short move and a full A* on every one-hex step. Every measurement taken
         // between 03:05Z and this fix was on a build that manufactured searches.
+#if EN_PATH_PROBES
         Perf::CounterInc( "pq.veh" );   // BURST PROBE: CVehicle::GetPath, ordinary movement route
+#endif
         phexNew = thePathMgr.GetPath( this, _hexSrc, _hexDest, iLenNew, 0, bNoOcc );
     }
 

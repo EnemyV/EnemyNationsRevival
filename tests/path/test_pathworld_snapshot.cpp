@@ -391,7 +391,9 @@ static void ApplyOcc( std::vector<PathWorld::Hex>& p, int iPhase, std::vector<ui
     aOcc.swap( a );
 }
 
-static void TestIncrementalRebuild( )
+// bOccPass FALSE is the shipped build (EN_PATH_PROBES 0): _Build runs no occupancy
+// pass, so nothing is ever written to bOcc and nothing is handed back to clear.
+static void TestIncrementalRebuild( bool bOccPass )
 {
     for ( int y = 0; y < PathWorld::kSide; ++y )
         for ( int x = 0; x < PathWorld::kSide; ++x )
@@ -414,7 +416,8 @@ static void TestIncrementalRebuild( )
 
     // first publish: no previous snapshot, so both arms are full builds
     PwFillHexes( *pCur, NULL, NULL, 0, PathWorld::kSide, PathWorld::kSide, PathWorld::kSideShift, dirtyAll );
-    ApplyOcc( *pCur, 0, aIncOcc );
+    if ( bOccPass )
+        ApplyOcc( *pCur, 0, aIncOcc );
     dirty.Reset( PathWorld::kSide );
 
     // Several publishes, a few hexes each, of every kind the epoch counts - and at the
@@ -452,12 +455,21 @@ static void TestIncrementalRebuild( )
 
         // the reference: a full rebuild of the live map as it stands now
         PwFillHexes( g_aFull, NULL, NULL, 0, PathWorld::kSide, PathWorld::kSide, PathWorld::kSideShift, dirtyAll );
-        ApplyOcc( g_aFull, iRound + 1, aFullOcc );
+        if ( bOccPass )
+            ApplyOcc( g_aFull, iRound + 1, aFullOcc );
 
         // the incremental arm, chained on the previous publish's array
         const int iRows = PwFillHexes( *pNext, pCur, aIncOcc.empty( ) ? NULL : &aIncOcc[0], aIncOcc.size( ),
                                        PathWorld::kSide, PathWorld::kSide, PathWorld::kSideShift, dirty );
-        ApplyOcc( *pNext, iRound + 1, aIncOcc );
+        if ( bOccPass )
+            ApplyOcc( *pNext, iRound + 1, aIncOcc );
+        else
+        {
+            bool bAllNone = true;
+            for ( int i = 0; i < kHexes; ++i )
+                bAllNone = bAllNone && ( *pNext )[i].bOcc == PathWorld::occ_none;
+            check( bAllNone, "without the occupancy pass every snapshot hex is occ_none" );
+        }
 
         // a hex the PREVIOUS publish had occupied and this one does not - the case a
         // copied array gets wrong unless the old occupancy is cleared
@@ -495,9 +507,10 @@ static void TestIncrementalRebuild( )
         dirty.Reset( PathWorld::kSide );
     }
 
-    printf( "incremental publishes compared: %d  (rows re-encoded < map height in %d, exactly one row in %d, "
+    printf( "%s: incremental publishes compared: %d  (rows re-encoded < map height in %d, exactly one row in %d, "
             "stale-occupancy hexes cleared %d)\n",
-            iRounds, iSmallRounds, iSingleRow, iOccCleared );
+            bOccPass ? "occupancy pass (probes)" : "no occupancy pass (shipped)", iRounds, iSmallRounds, iSingleRow,
+            iOccCleared );
 
     check( iRounds > 5, "several publishes were compared" );
     // A run that fell back to a full rebuild every time would pass the memcmp and prove
@@ -505,7 +518,7 @@ static void TestIncrementalRebuild( )
     check( iSmallRounds == iRounds, "every publish really was incremental" );
     check( iSingleRow > 0, "a one-hex mutation re-encoded exactly one row" );
     // Likewise a run where occupancy never moved would never exercise the reset.
-    check( iOccCleared > 0, "occupancy carried by the copy actually had to be cleared" );
+    check( !bOccPass || iOccCleared > 0, "occupancy carried by the copy actually had to be cleared" );
 
     // And the overflow valve: once every row is dirty the tracker says so, and the build
     // is a full one again.
@@ -680,7 +693,8 @@ int main( )
 
     TestSeamIndexing( );
     TestIndexCoverage( );
-    TestIncrementalRebuild( );
+    TestIncrementalRebuild( true );
+    TestIncrementalRebuild( false );
 
     printf( "%d checks, %d failures\n", g_iChecks, g_iFailures );
     return ( g_iFailures ? 1 : 0 );

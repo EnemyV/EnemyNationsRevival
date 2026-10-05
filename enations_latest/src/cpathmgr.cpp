@@ -134,17 +134,24 @@ CHexCoord* CPathMgr::EN_PM_PROD_ENTRY( CVehicle* pVehicle, CHexCoord& hexFrom, C
     // mpath.us includes lock wait, so contention shows up here too.
     Perf::ScopeCounter _t( "mpath.us" );
 #endif
+#if EN_PATH_PROBES
     // CONTENTION SPLIT (see the same block in cpathmap.cpp): mpath.us above lumps
     // wait and work together, which is exactly the ambiguity being resolved - a
     // MAIN-thread wait on m_cs is a frame stall, an AI-worker wait is not.
     const uint64_t _qWait = Perf::NowIfEnabled( );
+#endif
     // audit (4): short-circuit so nothing runs with EN_PERF unset.
     const bool     _qMain = Perf::IsEnabled( ) && Perf::IsMainThread( );
+#if EN_PATH_PROBES
     Perf::CounterInc( _qMain ? "mpath.calls.main" : "mpath.calls.ai" );
+#endif
     EnterCriticalSection( &m_cs );
+#if EN_PATH_PROBES
     Perf::CounterAddElapsedUs( _qMain ? "mpath.wait.main.us" : "mpath.wait.ai.us", _qWait );
-    const uint64_t _qWork = Perf::NowIfEnabled( );
+#endif
+    const uint64_t _qWork = Perf::NowIfEnabled( );   // also the [SLOWFRAME] search tally below
 
+#if EN_PATH_PROBES
     // CACHE-FEASIBILITY PROBE, counting only - no behaviour change, nothing is
     // reused. Type 58 is closed: the fix is main-thread search COST, and the three
     // candidates are budget-per-frame, cache/reuse paths, or move off-thread.
@@ -177,7 +184,6 @@ CHexCoord* CPathMgr::EN_PM_PROD_ENTRY( CVehicle* pVehicle, CHexCoord& hexFrom, C
         s_ring[s_next] = key;
         s_next = ( s_next + 1 ) % 512;
     }
-#if EN_PATH_PROBES
     m_iNextSlot = 0;  // trivial rejects skip the in-search reset; don't re-count
 #endif
     const CEnLiveNavView _view;   // one live view for this whole search
@@ -187,8 +193,9 @@ CHexCoord* CPathMgr::EN_PM_PROD_ENTRY( CVehicle* pVehicle, CHexCoord& hexFrom, C
     Perf::CounterAdd( "mpath.nodes", m_iNextSlot );  // cells created this search
 #endif
     if ( _qMain ) Perf::NoteFrameSearch( Perf::ElapsedUs( _qWork ) );
-    Perf::CounterAddElapsedUs( _qMain ? "mpath.work.main.us" : "mpath.work.ai.us", _qWork );
 #if EN_PATH_PROBES
+    Perf::CounterAddElapsedUs( _qMain ? "mpath.work.main.us" : "mpath.work.ai.us", _qWork );
+
     // Hand the verdict over while the lock is still held. m_iProbeOutcome and the cap
     // flags are per-instance scratch: an AI worker waiting on m_cs overwrites them as
     // soon as this Leave returns, so reading them afterwards is a race. t_pPathVerdict

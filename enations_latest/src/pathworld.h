@@ -137,12 +137,6 @@ class PathWorld
         BOOL   bParentBuilt;
     };
 
-    // Main thread. Reads the live globals through the same calls the live view
-    // makes. Returns NULL if there is no world. This is the FULL build - every hex
-    // re-encoded, both fact tables rebuilt - and it is what the incremental build
-    // must come out byte-identical to.
-    static std::shared_ptr<const PathWorld> Build( void );
-
     // The currently published snapshot, or NULL.
     static std::shared_ptr<const PathWorld> Current( void );
     static void                             Publish( std::shared_ptr<const PathWorld> const& ptr );

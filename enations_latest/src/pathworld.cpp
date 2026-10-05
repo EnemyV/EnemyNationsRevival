@@ -86,14 +86,19 @@ static PwDirty s_dirty;
 // snapshot, which still carries that snapshot's occupancy, so these have to be cleared
 // back to occ_none before the occupancy pass runs or a vehicle that has left a hex
 // keeps blocking it. The list is one entry per OCCUPIED hex, so it is vehicle-sized.
+// Probes only, with the occupancy pass that fills it (see _Build).
+#if EN_PATH_PROBES
 static std::vector<uint32_t> s_aPrevOcc;
+#endif
 
 void EnNavNewGame( void )
 {
     g_enNavEpoch = 0;
     ++s_uGameGeneration;
     s_dirty.All( );
+#if EN_PATH_PROBES
     s_aPrevOcc.clear( );
+#endif
     PathWorld::Clear( );
 }
 
@@ -270,12 +275,6 @@ static int PwFillHexes( std::vector<PathWorld::Hex>& aOut, std::vector<PathWorld
     return ( iRows );
 }
 
-std::shared_ptr<const PathWorld> PathWorld::Build( void )
-{
-    PwDirty dirtyAll;   // default-constructed is IsAll()
-    return ( _Build( NULL, dirtyAll, NULL ) );
-}
-
 std::shared_ptr<const PathWorld> PathWorld::_Build( PathWorld const* pPrev, PwDirty const& dirty, int* piRows )
 {
     if ( !theMap.HaveHexes( ) )
@@ -310,9 +309,14 @@ std::shared_ptr<const PathWorld> PathWorld::_Build( PathWorld const* pPrev, PwDi
     // in the live array too: PwEncodeRow takes the row base once and walks it, instead
     // of paying _GetHex's per-hex index arithmetic (and, in a Debug build, its two range
     // asserts and the strict-valid check) a million times. Same reads, same values.
-    const int iRows = PwFillHexes( pw.m_aHex, ( pPrev != NULL ) ? &pPrev->m_aHex : NULL,
-                                   s_aPrevOcc.empty( ) ? NULL : &s_aPrevOcc[0], s_aPrevOcc.size( ), pw.m_iHeight,
-                                   pw.m_iWidth, pw.m_iSideShift, dirty );
+    uint32_t const* pPrevOcc = NULL;   // without the occupancy pass no hex is ever left non-occ_none
+    size_t          nPrevOcc = 0;
+#if EN_PATH_PROBES
+    pPrevOcc = s_aPrevOcc.empty( ) ? NULL : &s_aPrevOcc[0];
+    nPrevOcc = s_aPrevOcc.size( );
+#endif
+    const int iRows = PwFillHexes( pw.m_aHex, ( pPrev != NULL ) ? &pPrev->m_aHex : NULL, pPrevOcc, nPrevOcc,
+                                   pw.m_iHeight, pw.m_iWidth, pw.m_iSideShift, dirty );
     if ( piRows != NULL )
         *piRows = iRows;
 
@@ -404,8 +408,16 @@ std::shared_ptr<const PathWorld> PathWorld::_Build( PathWorld const* pPrev, PwDi
     }   // ---- end of the fact-table rebuild ----
 
     Perf::CounterAddElapsedUs( "pw.build.tbl.us", _qTbl );
+
+#if EN_PATH_PROBES
     const uint64_t _qOcc = Perf::NowIfEnabled( );
 
+    // Probes only. The one reader of bOcc is the bVehBlock branch of the search
+    // (cpathmgr.cpp, IsHexMovingVehicle), and no snapshot search is ever a bVehBlock
+    // one: the async submit (unit.cpp PathAsyncEligible), the step-C submit and the
+    // shadow all refuse it. Without this pass every hex keeps the occ_none PwEncodeRow
+    // writes, so a copied array needs nothing put back.
+    //
     // Occupancy, derived hex by hex through exactly the loop
     // CEnNavView::IsHexMovingVehicle runs - the same four _GetVehicle lookups, the
     // same stopped / !IsOnTheMove test. Only hexes theVehicleHex actually has an
@@ -453,6 +465,7 @@ std::shared_ptr<const PathWorld> PathWorld::_Build( PathWorld const* pPrev, PwDi
     }
 
     Perf::CounterAddElapsedUs( "pw.build.occ.us", _qOcc );
+#endif
 
     return ( ptr );
 }
