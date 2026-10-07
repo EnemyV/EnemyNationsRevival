@@ -1,5 +1,4 @@
 #include "stdafx.h"
-#include "en_harness.h"
 #include "en_hangdump.h"   // EnHangHeartbeat() - hang-watchdog liveness beat
 #include "SDL2UI.h"
 #include "GameWindow.h"
@@ -2390,7 +2389,6 @@ int SDL2Dialog::DoModal() {
     SDL_Event event;
     while (m_running) {
         EnHangHeartbeat();     // modal dialogs run their own pump and never reach PollEvents
-        EnHarness_Service();   // service harness requests during modal dialogs too (all platforms)
 #ifndef _WIN32
         vpPumpNet( 0 );        // service the MP network (accept joins, read data) while modal
         EnPumpNetMessages();   // deliver the resulting WM_VPNOTIFY -> OnNetMsg (found sessions / joined players)

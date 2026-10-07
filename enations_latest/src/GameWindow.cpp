@@ -3,7 +3,6 @@
 #include "en_hangdump.h"   // EnHangHeartbeat() - hang-watchdog liveness beat
 #include "GameWindow.h"
 #include "framecap.h"   // #45 frame-capture debug mode
-#include "en_harness.h"   // EnHarness_Service() — services harness requests on the render thread
 #include "SDL2UI.h"
 #include "lastplnt.h"
 #include "resource.h"
@@ -798,15 +797,9 @@ bool GameWindow::EnsureBackBuffer() {
 SDL_Surface* GameWindow::GetPresentSurface() {
     if (m_useRenderer) {
         EnsureBackBuffer();
-        // Expose the CPU back-buffer to the harness so `shot` can dump the real
-        // composited frame even when GPU read-back is blank / there is no display.
-        // Early-outs to a single atomic load when EN_HARNESS is not set.
-        EnHarness_SetMainSurface(m_backBuffer);
         return m_backBuffer;
     }
-    SDL_Surface* ws = m_window ? SDL_GetWindowSurface(m_window) : nullptr;
-    EnHarness_SetMainSurface(ws);
-    return ws;
+    return m_window ? SDL_GetWindowSurface(m_window) : nullptr;
 }
 
 void GameWindow::PresentSurface(const SDL_Rect* dirty) {
@@ -985,7 +978,6 @@ bool GameWindow::PollEvents() {
     // inside SEC_PUMP (92% of spikes) and pump.poll owns 743 of 778ms of that. This
     // splits PollEvents into its three parts so the spike names a LINE:
     //   poll.capture = the per-frame SDL_GetGlobalMouseState OS round trip
-    //   poll.harness = EnHarness_Service
     //   poll.drain   = the SDL_PollEvent dispatch loop, with poll.events counting how
     //                  many events one frame drains (a burst is the obvious suspect)
     {
@@ -993,11 +985,6 @@ bool GameWindow::PollEvents() {
         Uint32 mouseButtons = SDL_GetGlobalMouseState(nullptr, nullptr);
         if (!(mouseButtons & (SDL_BUTTON_LMASK | SDL_BUTTON_MMASK | SDL_BUTTON_RMASK)))
             SDL_CaptureMouse(SDL_FALSE);
-    }
-
-    {
-        Perf::ScopeNamed _ph( "poll.harness.us" );
-        EnHarness_Service();   // service any pending harness request on this (render) thread
     }
 
     Perf::ScopeNamed _pd( "poll.drain.us" );

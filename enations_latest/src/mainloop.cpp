@@ -21,7 +21,6 @@
 #include "pathservice.h"
 #include "cpathmap.h"
 #include "cutscene.h"
-#include "en_harness.h"   // EnHarness_ServiceMainLoop() — main-loop-safe harness ops (save)
 #include "event.h"
 #include "GameWindow.h"
 #include <typeinfo>   // typeid: per-window r.draw attribution
@@ -150,12 +149,6 @@ int CConquerApp::Run( )
         for ( ;; )
         {
             BOOL bQuitReceived = FALSE;
-
-            // Service main-loop-only harness ops (e.g. `save`) here at the loop
-            // top, before event-pumping/render — SaveGame re-pumps the event loop,
-            // so it must not run from the render-path EnHarness_Service. All
-            // platforms; returns immediately unless EN_HARNESS armed the server.
-            EnHarness_ServiceMainLoop();
 
             // Profiling: one "frame" == one outer loop iteration. Cheap no-op
             // unless EN_PERF is set; flushes a perf.log line each interval.

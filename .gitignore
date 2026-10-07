@@ -59,17 +59,3 @@ __pycache__/
 # macOS port build + run dirs (local)
 /build-mac/
 /run-mac/
-
-# Track committed macOS crash-debug artifacts (shared with the team)
-!debug/
-!debug/macos/
-!debug/macos/**
-
-# Native fixture build output (tests/traffic, tests/orders)
-/tests/traffic/remote-loc-out/
-/tests/path/pathmgr-out/
-/tests/path/pathworld-out/
-/tests/path/pathservice-out/
-/tests/orders/lifecycle-out/
-/tests/orders/dragplace-out/
-/tests/orders/roadghost-out/

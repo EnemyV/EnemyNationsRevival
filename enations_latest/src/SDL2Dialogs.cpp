@@ -7,7 +7,6 @@
 #include "SDL2MainMenu.h"
 #include "GameWindow.h"
 #include "SDL2CreateStatus.h"   // GetCreateStatus()->Hide() before the pick-player dialog
-#include "en_harness.h"   // HarnessPendingLoadPath (headless load skips the pick-player modal)
 #include "lastplnt.h"
 #include "sfx.h"
 #include "player.h"
@@ -609,72 +608,6 @@ bool SDL2_RunCreateSinglePlayerFlow(GameWindow* gameWindow) {
     return true;
 }
 
-// Headless single-player new-game (backs the harness `newgame` verb). Mirrors
-// SDL2_RunCreateSinglePlayerFlow's non-UI steps but takes the create + pick-race
-// choices as params, so an autonomous driver can start e.g. a HARD, Full-Military
-// game with no dialogs. Runs on the main loop (theApp.ReadyToCreate -> CreateNewWorld
-// re-pumps events during world-gen). Returns true once the game reaches play state.
-bool HarnessNewGame(int ai, int pos, int size, int numai, int worldType, int ocean, int rivers) {
-    // Only from the menu — no create/load flow in flight, no game running (same guard
-    // as HarnessLoadGame; a self-check so an in-game `newgame` can't tear down mid-play).
-    if (theApp.m_pCreateGame != NULL || theApp.AmInGame())
-        return false;
-
-    // Clamp to the create-dialog radio-group bounds.
-    ai        = ai    < 0 ? 0 : (ai    > 3 ? 3 : ai);
-    pos       = pos   < 0 ? 0 : (pos   > 3 ? 3 : pos);
-    size      = size  < 0 ? 0 : (size  > 2 ? 2 : size);
-    numai     = numai < 1 ? 1 : (numai > 20 ? 20 : numai);
-    // worldType = EWorldType 0..7 (0=DEFAULT, 4=ISLANDS); ocean = 0..100 slider. These feed
-    // world-gen so a headless newgame can reproduce the cross-platform ocean-gen RAND MISMATCH.
-    worldType = worldType < 0 ? 0 : (worldType > 7 ? 7 : worldType);
-    ocean     = ocean < 0 ? 0 : (ocean > 100 ? 100 : ocean);
-    rivers    = rivers < 0 ? 0 : (rivers > 100 ? 100 : rivers);
-
-    CCreateSingle* pCreate = new CCreateSingle();
-    theApp.m_pCreateGame = pCreate;
-
-    theGame.ctor();
-    theGame.SetServer(TRUE);
-    theGame._SetIsNetGame(FALSE);
-    theGame.Open(TRUE);
-
-    // Same assignments as SDL2_RunCreateSinglePlayerFlow step 3 (params, not dialogs).
-    theGame.m_iAi        = pCreate->m_iAi        = ai;
-    theGame.m_iSize      = pCreate->m_iSize      = size;
-    theGame.m_iPos       = pCreate->m_iPos       = pos;
-    theGame.m_iWorldType = pCreate->m_iWorldType = worldType;
-    theGame.m_iRivers    = pCreate->m_iRivers    = rivers;
-    theGame.m_iOcean     = pCreate->m_iOcean     = ocean;
-    pCreate->m_iNumAi = numai;
-    pCreate->m_iNet   = -1;
-
-    // Race 0, fixed name (same as step 4 minus the pick-race modal).
-    CRaceDef* pRace = &ptheRaces[0];
-    pCreate->m_sName = "mac2";
-    pCreate->m_sRace = pRace->GetLine();
-    theGame.GetMe()->SetName("mac2");
-    theGame.GetMe()->m_InitData.Set(pRace, pos);
-    pCreate->GetNew()->m_InitData.Set(pRace, pos);
-
-    bool bOk = false;
-    try {
-        theGame.IncTry();
-        theApp.ReadyToCreate();   // SP: creates AI players + CreateNewWorld (lands in play)
-        theGame.DecTry();
-        bOk = theApp.AmInGame();
-    } catch (int iNum) {
-        CatchNum(iNum);
-        theApp.CloseWorld();
-        bOk = false;
-    } catch (...) {
-        CatchOther( WorldGenContext() );
-        theApp.CloseWorld();
-        bOk = false;
-    }
-    return bOk;
-}
-
 bool SDL2_RunCreateScenarioFlow(GameWindow* gameWindow) {
     ASSERT(theApp.m_pCreateGame == NULL);
     CCreateScenario* pCreate = new CCreateScenario();
@@ -1200,32 +1133,23 @@ bool SDL2_RunLoadSinglePlayerFlow(GameWindow* gameWindow) {
     if (gameWindow->GetCreateStatus())
         gameWindow->GetCreateStatus()->Hide();
 
-    // Headless harness load (HarnessLoadGame): skip the modal pick-player dialog and
-    // auto-select the human — theGame._GetMe(), which the dialog itself defaults its
-    // selection to. nullptr for any normal menu load, so the dialog runs as before.
     CPlayer* pPlr = NULL;
     std::string sPickName;
-    if (HarnessPendingLoadPath()) {
-        pPlr = theGame._GetMe();
-        if (!pPlr) { theGame.Close(); delete theApp.m_pCreateGame; theApp.m_pCreateGame = NULL; return false; }
-        sPickName = pPlr->GetName() ? pPlr->GetName() : "";   // keep the loaded name
-    } else {
-        ShowWallpaperBackground(gameWindow);
-        SDL2PickPlayerDialog pickDlg(gameWindow);
-        if (pickDlg.DoModal() != 1) {
-            // LoadGame() disabled all windows; only StartGame (OK path) re-enables. A
-            // pick-cancel returns to the menu without StartGame, so re-enable or the menu
-            // is left input-dead. (Mirrors LoadGame's failure catches.)
-            EnableAllWindows(NULL, TRUE);
-            theGame.Close();
-            delete theApp.m_pCreateGame;
-            theApp.m_pCreateGame = NULL;
-            return false;
-        }
-        pPlr = theGame.GetPlayerByPlyr(pickDlg.m_iSelectedPlyrNum);
-        if (!pPlr) { EnableAllWindows(NULL, TRUE); theGame.Close(); delete theApp.m_pCreateGame; theApp.m_pCreateGame = NULL; return false; }
-        sPickName = pickDlg.m_playerName;
+    ShowWallpaperBackground(gameWindow);
+    SDL2PickPlayerDialog pickDlg(gameWindow);
+    if (pickDlg.DoModal() != 1) {
+        // LoadGame() disabled all windows; only StartGame (OK path) re-enables. A
+        // pick-cancel returns to the menu without StartGame, so re-enable or the menu
+        // is left input-dead. (Mirrors LoadGame's failure catches.)
+        EnableAllWindows(NULL, TRUE);
+        theGame.Close();
+        delete theApp.m_pCreateGame;
+        theApp.m_pCreateGame = NULL;
+        return false;
     }
+    pPlr = theGame.GetPlayerByPlyr(pickDlg.m_iSelectedPlyrNum);
+    if (!pPlr) { EnableAllWindows(NULL, TRUE); theGame.Close(); delete theApp.m_pCreateGame; theApp.m_pCreateGame = NULL; return false; }
+    sPickName = pickDlg.m_playerName;
 
     theGame.SetHP(TRUE); theGame.SetScenario(-1);
     if (pPlr != theGame._GetMe()) {

@@ -15,7 +15,6 @@
 #include <string.h>    // strerror
 #endif
 #include "GameWindow.h"
-#include "en_harness.h"   // in-process LLM-driving harness (all platforms; EN_HARNESS-gated)
 #include "en_hangdump.h"   // EnHangWatchdogStop (exit) + EnHangModalScope (native boxes)
 #include "SDL2Compositor.h"
 #include "SDL2Video.h"
@@ -1603,12 +1602,6 @@ BOOL CConquerApp::InitInstance( )
         } catch (...) {
             // Non-fatal: fall back to MFC rendering
         }
-
-        // Start the in-process LLM-driving harness (screenshot/click/keys/state
-        // queries) once the SDL window exists. All platforms. No-op unless
-        // EN_HARNESS is set in the env — no socket, no thread, no cost.
-        if ( m_gameWindow )
-            EnHarness_Start( m_gameWindow->GetWindow(), m_gameWindow->GetRenderer() );
 
         // Load the compositor's WL tile wallpaper NOW that the window exists. The
         // earlier attempt (right after theBitmaps.Init above) is guarded by

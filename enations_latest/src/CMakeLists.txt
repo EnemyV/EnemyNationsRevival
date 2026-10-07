@@ -1,6 +1,5 @@
 message("Current CMAKE_SOURCE_DIR: ${CMAKE_SOURCE_DIR}")
 
-option(EN_BUILD_HARNESS "Compile the control socket and game-side harness" ON)
 # Traffic event probes (runtime EN_WAIT_LOG still required). AUTO = compiled in for the
 # Debug config only; ON/OFF force it for every config. A build dir that already caches the
 # old BOOL (EN_TRAFFIC_PROBES=ON) keeps it - pass -DEN_TRAFFIC_PROBES=AUTO to switch.
@@ -154,14 +153,7 @@ set(enations_sources
         ../../input/UIButtonListener.cpp
         network/davenet.cpp
         network/sockets.cpp
-        # In-process LLM-driving harness (TCP control server). All three platforms —
-        # it is the only way to query live game state headlessly, and Windows had no
-        # equivalent. Completely inert unless EN_HARNESS is set in the environment.
 )
-
-if (EN_BUILD_HARNESS)
-    list(APPEND enations_sources ../../harness/control_socket.cpp)
-endif ()
 
 # ---------------------------------------------------------------------------
 # Linux source-list adjustments:
@@ -289,17 +281,13 @@ endif ()
 # harmless to leave for the Linux build.
 add_executable(enations WIN32 ${enations_sources})
 target_compile_definitions(enations PRIVATE
-    EN_BUILD_HARNESS=$<BOOL:${EN_BUILD_HARNESS}>
     EN_TRAFFIC_PROBES=${_EN_TRAFFIC_DEF})
 
 # network/ TUs do winsock2-before-windows.h ordering themselves; skip the
 # force-included PCH (stdafx.h->windows.h pulls winsock1 and breaks ws2tcpip.h).
-# The harness control socket is the same case, and it deliberately includes no
-# game headers at all (SDL + en_harness.h only), so it needs nothing from the PCH.
 set_source_files_properties(
     network/davenet.cpp
     network/sockets.cpp
-    ../../harness/control_socket.cpp
     PROPERTIES SKIP_PRECOMPILE_HEADERS ON)
 
 # according to enations.mak this should be MT
@@ -378,7 +366,7 @@ if (MSVC)
     # The PCH was built with the target's /fp:fast, so using it from these two
     # /fp:precise TUs warned C4651/C4652/C4653 every build (flag mismatch). Both
     # files #include "stdafx.h" directly, so skipping the PCH is behavior-neutral —
-    # they just compile the headers normally (same pattern as the harness TU above).
+    # they just compile the headers normally (same pattern as the network TUs above).
     set_source_files_properties(
         wrldinit.cpp
         wrldgen.cpp
@@ -474,7 +462,6 @@ target_include_directories(enations PUBLIC
        ../../windward/wind22/include
        ../../rendering/
        ../rendering/
-       ../../harness/
 )
 
 if (MSVC)
