@@ -33,7 +33,16 @@ public:
 		virtual void	Serialize (CArchive & ar);
 
 	BYTE			m_bDiscovered;					// TRUE if has been discovered
-	LONG			m_iPtsDiscovered;				// points researched so far
+	// 64-bit (save release 9). LONG is int32_t on EVERY platform here (win32_compat.h pins it,
+	// "NOT long (LP64!)"), so this used to cap research progress at ~2^31 no matter how dear the
+	// topic -- and the in-code tier ladders now price their top tiers in the hundreds of
+	// millions, where the guaranteed-completion test (m_iPtsDiscovered > m_iPtsRequired * 2)
+	// needs headroom above 2^31 to ever fire. Declared LONGLONG rather than `long long` on
+	// purpose: CArchive's operators are generated for LONGLONG, which is `long` on LP64, and a
+	// `long long&` will not bind to that `operator>>( LONGLONG& )`.
+	// SERIALIZED and ON THE WIRE -- see CRsrchStatus::Serialize (version-gated read) and
+	// CNetSaveInfo. Do not change this width again without bumping VER_RELEASE.
+	LONGLONG		m_iPtsDiscovered;				// points researched so far
 
 };
 
@@ -47,7 +56,13 @@ public:
 		CRsrchItem ();
 		virtual ~CRsrchItem ();
 
-	int				m_iPtsRequired;					// points required to discover
+	// 64-bit: the in-code tier ladders multiply up fast, and CPlayer::Research evaluates
+	// m_iPtsRequired * 2, so a 32-bit field overflowed that product to NEGATIVE and completed
+	// the topic on its first tick. NOT serialized (rebuilt from the DAT + the in-code setup on
+	// every load), so widening it is save- and wire-safe. The PRACTICAL ceiling is still ~2^31
+	// though: m_iPtsDiscovered, the accumulator that has to climb to this, is a 32-bit LONG and
+	// is both serialized and on the wire. See RSRCH_PTS_CEILING in research.cpp.
+	long long		m_iPtsRequired;					// points required to discover
 	int *			m_piRsrchRequired;			// other items that must be researched first
 	int				m_iNumRsrchRequired;
 	int *			m_piBldgsRequired;			// buildings that must be built first
@@ -63,6 +78,15 @@ public:
 	virtual void AssertValid() const;
 #endif
 };
+
+// Research Speed level 1 is gated on research EXPERIENCE rather than on a precursor
+// topic: the colony must have completed this many PAID topics before it can start
+// making research itself faster. Free topics (m_iPtsRequired <= 0) are the "killed"
+// DAT entries -- the disabled aircraft line -- which load pre-discovered, so they are
+// NOT counted; counting them would hand out 5 for free and gut the gate. The prereq
+// array is AND-only and cannot express "any N of them", so the check lives in
+// CPlayer::CanRsrch beside the Pontoon Bridges one-of gate.
+const int RSRCH_SPEED_MIN_TOPICS = 10;
 
 class CRsrchArray : public CArray <CRsrchItem, CRsrchItem *>
 {
@@ -139,13 +163,14 @@ public:
 					cargo_handling_3,
 					cargo_handling_4,
 					// Fuel Efficiency 1-10 (in-code, unlocked after gas_turbine): the first ten
-					// levels of a 16-level line; cost doubles per level up to 32*B at level 6 then
-					// goes flat +16*B per level (L7=48B..L16=192B, B=gas_turbine cost), while
+					// levels of a 23-level line; cost doubles per level up to 32*B at level 6 then
+					// goes flat +16*B per level (L7=48B..L23=304B, B=gas_turbine cost), while
 					// cutting gas consumption on a diminishing curve to a 30% total saving at
-					// level 10 (increments 5/4/4/3/3/3/2/2/2/2), then +1% per level to 36% at 16.
-					// Levels 11-12 and 13-16 (+1% each) are appended at the END of the enum for
-					// save parity. Named in research.cpp. Appended last so all the earlier
-					// indices (incl. bridge_2 / RDPATH_SAVE_COUNT==53) stay put.
+					// level 10 (increments 5/4/4/3/3/3/2/2/2/2), then +1% per level to 38% at 18,
+					// then +2% per level to 48% at 23. Levels 11-12, 13-16, 17-18 and 19-23 are all
+					// appended at the END of the enum for save parity. Named in research.cpp.
+					// Appended last so all the earlier indices (incl. bridge_2 /
+					// RDPATH_SAVE_COUNT==53) stay put.
 					fuel_efficiency_1,
 					fuel_efficiency_2,
 					fuel_efficiency_3,
@@ -213,21 +238,21 @@ public:
 					biofuel_4,
 					biofuel_5,
 					biofuel_6,
-					// Coal Liquefaction (in-code) -- 1 tier. A coal POWER PLANT, when its
-					// alt-output toggle is ON, also converts 2 coal -> 1 oil (the AltOutput
-					// system, eRatioConsume mode). Gated on this single tech; cost ~ a few x
-					// the gas_turbine tech, chained off gas_turbine. Appended LAST so all
-					// earlier indices (incl. bridge_2 / RDPATH_SAVE_COUNT==53) stay put.
+					// Coal Liquefaction (in-code) -- 1 tier. An OIL POWER PLANT, when its
+					// alt-output toggle is ON, STOPS generating power and cracks DELIVERED coal
+					// into oil at 3:1 (the AltOutput system, eRatioConsume + eTimeDriven; the
+					// per-tier ratio is CPlayer::GetCoalLiqRatio). Gated on this single tech;
+					// cost ~ a few x the gas_turbine tech, chained off manf_3. Appended LAST so
+					// all earlier indices (incl. bridge_2 / RDPATH_SAVE_COUNT==53) stay put.
 					coal_liquefaction,
-					// Charcoal (in-code) -- 4 tiers. A lumber MILL (UTfarm whose GetTypeFarm()
-					// == lumber, i.e. the sawmill), once charcoal_1 is researched and its
-					// alt-output toggle is ON, runs a kiln: harvested lumber is converted into
-					// coal ("Charcoal" label only) at a fixed 2 lumber -> 1 coal (AltOutput
-					// eRatioConsume), MODE-SWITCH (lumber output stops while the kiln runs). The
-					// THROUGHPUT is tier-scaled: T1 enables it at a VERY LOW rate; T2-4 raise it
-					// (CPlayer::GetCharcoalPct). T1 chained off gas_turbine; T2-4 chain the prior
-					// tier. No energy cost. Appended LAST so all earlier indices (incl. bridge_2 /
-					// RDPATH_SAVE_COUNT==53) stay put.
+					// Charcoal (in-code) -- 4 tiers here + charcoal_5 at the enum end. A COAL
+					// POWER PLANT, once charcoal_1 is researched and its alt-output toggle is ON,
+					// STOPS generating power and runs as a KILN: DELIVERED lumber is charred into
+					// coal (AltOutput eRatioConsume + eTimeDriven). The tier ladder scales the
+					// RECIPE, not throughput -- CPlayer::GetCharcoalRatio, 4/3/3/2/2 lumber per
+					// coal (only T2 and T4 actually move it). Draws +2 workers. T1 chained off
+					// gas_turbine; T2-4 chain the prior tier. Appended LAST so all earlier
+					// indices (incl. bridge_2 / RDPATH_SAVE_COUNT==53) stay put.
 					charcoal_1,
 					charcoal_2,
 					charcoal_3,
@@ -275,14 +300,146 @@ public:
 					// (15 oil/min; CPlayer::GetFrackOilPerMin). Chains off fracking_5 + a Fuel
 					// Efficiency level. Appended LAST (save-parity, as above).
 					fracking_6,
-					// Coal Liquefaction tier 2 (in-code): improves the coal power plant's
+					// Coal Liquefaction tier 2 (in-code): improves the OIL power plant's
 					// coal->oil conversion from 3:1 to 2:1 (CPlayer::GetCoalLiqRatio, wired into
 					// AltOutput via the def's m_pfnRatioIn). Chains off coal_liquefaction.
 					// Appended LAST (save-parity, as above).
 					coal_liquefaction_2,
-					// Charcoal tier 5 (in-code): one more sawmill kiln throughput level
-					// (CPlayer::GetCharcoalPct). Chains off charcoal_4. Appended LAST (save-parity).
+					// Charcoal tier 5 (in-code): the last rung of the coal-plant kiln ladder.
+					// It does NOT improve the recipe -- CPlayer::GetCharcoalRatio holds at 2
+					// lumber per coal from tier 4. Chains off charcoal_4. Appended LAST (save-parity).
 					charcoal_5,
+					// Slash and Burn (in-code) -- 1 tier. A lumber MILL, once this is researched
+					// and its alt-output toggle is ON, harvests at 250% (AltOutput::SLASH_BURN_MULT,
+					// applied in CFarmBuilding::BuildFarm) -- and permanently destroys the forest
+					// around it as it cuts. eModifier: the def produces no secondary material, it
+					// only carries the per-building toggle. Chained off farm_1 but a DEDICATED
+					// topic: gating on farm_1 itself would make every old save with a stale
+					// alt_oil bit on a mill start clear-cutting the moment it loads. Appended LAST
+					// (save-parity: bridge_2 / RDPATH_SAVE_COUNT==53 stays put).
+					slash_and_burn,
+					// Fuel Efficiency 19-23 (in-code): five more tiers, each +2% gas saving (vs the
+					// +1% of levels 11-18), taking the line from 38% to 48% total (see
+					// CPlayer::GetFuelPct). Cost continues the flat +16*B ramp (L19=240B .. L23=304B).
+					// Appended LAST so no earlier enum index shifts (old saves store discovered-flags
+					// positionally; RDPATH_SAVE_COUNT==53 stays put).
+					fuel_efficiency_19,
+					fuel_efficiency_20,
+					fuel_efficiency_21,
+					fuel_efficiency_22,
+					fuel_efficiency_23,
+					// Research Speed 1-5 (in-code): each level makes RESEARCH ITSELF 10% faster
+					// (100% -> 150% of base points per tick; see CPlayer::GetRsrchSpeedPct, applied
+					// in CPlayer::Research). Costs are absolute, not multiples of a DAT topic:
+					// 100k / 200k / 400k / 800k / 1.6M. T1 unlocks on RSRCH_SPEED_MIN_TOPICS paid
+					// topics completed (see CPlayer::CanRsrch); T2-5 chain off the previous tier.
+					// Appended LAST so no earlier enum index shifts (old saves store discovered-flags
+					// positionally; RDPATH_SAVE_COUNT==53 stays put).
+					rsrch_speed_1,
+					rsrch_speed_2,
+					rsrch_speed_3,
+					rsrch_speed_4,
+					rsrch_speed_5,
+					// Fracking tier 7 (in-code): one more oil-trickle level for exhausted wells
+					// (17 oil/min; CPlayer::GetFrackOilPerMin). Continues the doubling cost ladder
+					// (2x fracking_6) and chains off fracking_6 + a Fuel Efficiency level. Appended
+					// LAST (save-parity, as above).
+					fracking_7,
+					// Moho Mining upgrade line (in-code), the IRON twin of Fracking. The BASE
+					// capability (10 iron/min from an exhausted iron mine) is still granted free by
+					// the DAT mine_2 topic -- that is conceptually "tier 1" and is NOT repriced here,
+					// so nobody loses a capability they already paid for. moho_2..moho_6 are the paid
+					// upgrades: +1 iron/min each to 15 at the top, cost doubling from mine_2 as the
+					// basis (296k .. 4.736M). See CPlayer::GetMohoIronPerMin. Appended LAST and kept
+					// CONTIGUOUS so the tier arithmetic in that getter stays a simple subtraction.
+					moho_2,
+					moho_3,
+					moho_4,
+					moho_5,
+					moho_6,
+					// Late-game combat/structure tier (in-code), one topic each, all priced at 8x
+					// their 248,000-point DAT parent (1,984,000) and gated behind top-of-line DAT
+					// techs -- these are end-game purchases, not part of the normal ladder:
+					//   range_4     <- range_3 + acc_3               (Base-Bleed Shells)
+					//   atk_4       <- atk_3 + manf_3 + nuclear      (Tandem Warheads)
+					//   bldg_armor  <- fortification + const_3 + advanced_facilities (Blast Shielding)
+					// range_4/atk_4 extend the DAT range_1..3 / atk_1..3 lines, so they raise
+					// CPlayer::m_bRange / m_bAttack to 4 (CPlayer::SetRsrch). The bonus formula in
+					// CUnit::AssignData is `base >> (4 - level)`, which at level 4 would shift by 0
+					// (a doubling) and at level 5+ is UB, so AssignData branches to a diminishing
+					// step (+62.5% vs +50% at tier 3) exactly as the spot_4..7 tiers already do.
+					// bldg_armor has NO m_b* level: it is read straight off the research flag by
+					// CPlayer::GetBldgArmorMult and applied at damage time in CUnit::DecDamagePoints,
+					// so unlike the unit techs (which bake into a unit at AssignData time) it also
+					// protects buildings that already exist.
+					// Appended LAST so no earlier enum index shifts (old saves store discovered-flags
+					// positionally; RDPATH_SAVE_COUNT==53 stays put).
+					range_4,
+					atk_4,
+					bldg_armor,
+					// Nuclear Uprate 1-5 (in-code): each level adds 10 percent to the output of this
+					// player's NUCLEAR power plants (CStructureData::power_3) -- 100 percent at none to
+					// 150 at level 5, see CPlayer::GetNukePowerPct, consumed in CPowerBuilding::BuildPower.
+					// Coal plants, oil plants and the rocket are untouched. Cost starts at 2x the DAT
+					// nuclear topic (296,000) and DOUBLES per level to 4,736,000. T1 chains nuclear;
+					// T2-5 chain the previous tier, each with one cross-line manufacturing/construction
+					// gate. Kept CONTIGUOUS so the level count in that getter stays a simple loop.
+					nuke_power_1,
+					nuke_power_2,
+					nuke_power_3,
+					nuke_power_4,
+					nuke_power_5,
+					// Attack tiers 5-8 (in-code) � four MORE levels beyond atk_4, deliberately LATE:
+					// each carries three prerequisites reaching across the accuracy, range, defense,
+					// construction, spotting and Nuclear Uprate lines, so the whole tree has to be well
+					// along before any of them opens. Each tier adds a FLAT +2 percentage points of base:
+					// the ladder runs +62.5 / 64.5 / 66.5 / 68.5 / 70.5 percent at levels 4-8, so the four
+					// new tiers together are worth about +5 percent more damage. These are TOTALS, not
+					// additions -- the level is one lookup and a higher tier replaces the lower one. The
+					// STOCK levels 1-3 (+12.5 / 25 / 50) are NOT repriced or rescaled. Table in
+					// CUnit::AssignData; level lookup in CPlayer::SetRsrch. Cost stops doubling and goes
+					// FLAT (+8x the 248,000 atk_3 basis per tier, 3.968M .. 9.92M) because the benefit is
+					// shrinking -- the same shape the Fuel Efficiency line uses past its cap.
+					atk_5,
+					atk_6,
+					atk_7,
+					atk_8,
+					// Building Armor tiers 2-3 (in-code) � two more Blast Shielding levels. Damage taken
+					// by our buildings goes 80 -> 78 -> 76 percent of base (a 20 / 22 / 24 percent
+					// reduction, or 1.25x / 1.28x / 1.32x effective hit points -- tiers 2-3 add a flat 2
+					// points each, matching the attack line's floor). Same late gating
+					// idea as the attack tiers and the same FLAT cost ramp. See CPlayer::GetBldgArmorMult.
+					bldg_armor_2,
+					bldg_armor_3,
+					// Drive-Core Resonance (in-code) -- ONE topic, no tiers, and the only research
+					// whose entire payload is an EDICT. It unlocks Resonance Sweep at the Command
+					// Center (EDICT_RESONANCE_SWEEP): while that edict is on, the colony pings for
+					// enemy ROCKETS and resolves a random one each recharge -- revealing it,
+					// refreshing what we know of it, or clearing it if it has since been destroyed
+					// (CPlayer::ResonanceSweep). The recharge is RESONANCE_SWEEP_RELOAD_SECS at full
+					// power and stretches when the grid is short. Costs 6x the 248,000-point
+					// spot_3 topic (1,488,000: dearer than every DAT topic, well under the deep
+					// combat tiers) and is gated on spot_3 + nuclear + advanced_facilities -- the
+					// sensor line to hear the return, the reactor physics to know what a drive core
+					// sounds like, and the plant to drive the emitter. Appended LAST so no earlier
+					// enum index shifts (old saves store discovered-flags positionally;
+					// RDPATH_SAVE_COUNT==53 stays put).
+					drive_core_resonance,
+					// Drive-Core Resonance 2-6 (in-code). Each tier widens the Resonance Sweep's
+					// ping from a bare contact into REAL VISION: tier 2 lights a 1-hex ring of
+					// ground around the rocket it finds, up to a 5-hex ring at tier 6
+					// (CPlayer::GetSweepRings), for RESONANCE_SWEEP_LIT_SECS before it goes dark
+					// again. Each tier also costs 3x the previous in points and adds
+					// RESONANCE_SWEEP_POWER_TIER to the edict's flat power draw. Kept CONTIGUOUS
+					// with tier 1 above so the tier arithmetic stays a subtraction, and appended
+					// LAST so no earlier enum index shifts (RDPATH_SAVE_COUNT==53 stays put).
+					// NOTE the multiplier is capped by what an int can hold -- see RSRCH_PTS_CEILING
+					// in research.cpp before raising it.
+					drive_core_resonance_2,
+					drive_core_resonance_3,
+					drive_core_resonance_4,
+					drive_core_resonance_5,
+					drive_core_resonance_6,
 					num_types	};
 
 	CRsrchArray () {}

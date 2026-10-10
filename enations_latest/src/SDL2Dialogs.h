@@ -7,6 +7,7 @@ class GameWindow;
 class CRaceDef;
 class CPlayer;
 class CJoinMulti;
+class CNetPlyrJoin;
 
 // ============================================================================
 // SDL2 Version Dialog (replaces CDlgVer)
@@ -138,10 +139,14 @@ public:
 // ============================================================================
 class SDL2PickPlayerDialog : public SDL2Dialog {
 public:
-    SDL2PickPlayerDialog(GameWindow* gameWindow);
+    // pJoin != nullptr: joining a saved network game (load_join). The saved
+    // players come from the host (CJoinMulti::m_loadPlyrs) and OK asks the host
+    // for the player (CNetSelectPlyr); the dialog closes on cmd_select_ok.
+    SDL2PickPlayerDialog(GameWindow* gameWindow, CJoinMulti* pJoin = nullptr);
     ~SDL2PickPlayerDialog();
 protected:
     void OnInit() override;
+    void OnFrame() override;
     void OnOK() override;
 private:
     SDL2Listbox* m_lstPlayers = nullptr;
@@ -169,6 +174,12 @@ private:
 
     void OnPlayerSelected(int index);
     void UpdateOKButton();
+    void AddPlayerInfo(const CNetPlyrJoin* pData, int raceIdx);
+    void SyncHostPlayers();
+
+    CJoinMulti* m_pJoin = nullptr;
+    bool        m_bAsked = false;     // CNetSelectPlyr sent, waiting for the host's answer
+    std::string m_hostSig;            // plyrNum/avail signature of m_pJoin->m_loadPlyrs shown
 
 public:
     int m_iSelectedPlyrNum = -1;
@@ -272,6 +283,7 @@ private:
     int          m_lastCount  = -1;
     int          m_chatCount  = -1;
     std::string  m_lastSig;   // name|race signature, rebuild list only when it changes
+    bool         m_bStartWithoutPickers = false;   // load game: Start clicked once with joiners still picking
 };
 
 // ============================================================================
@@ -302,7 +314,7 @@ private:
     // of sitting on "Waiting for the host..." forever (a joined-but-hostless game).
     Uint32       m_startTicks  = 0;
     bool         m_sawHost     = false;
-    int          m_statusState = 0;   // 0=waiting, 1=no-response-yet, 2=host-left
+    int          m_statusState = 0;   // 0=waiting, 1=no-response-yet, 2=host-left, 3=receiving the save
 };
 
 // ============================================================================

@@ -68,6 +68,10 @@ static int slotRowH(int iconIdx) {
 }
 static int matRowH()       { return slotRowH( ICON_MATERIALS ); }
 static int storageHeight() { return BOX_PAD + HDR_H + SDL2BuildingWindow::kNumStoreMats * matRowH() + BOX_PAD; }
+// Auto-Routing: the master switch, plus one veto checkbox per stored material on
+// warehouse-class hosts. Plain ROW_H rows (no material icon strip).
+static int nAutoStockRows(CBuilding* b);
+static int autoStockHeight(CBuilding* b) { return BOX_PAD + HDR_H + nAutoStockRows(b) * ROW_H + BOX_PAD; }
 // graph + the tiny time-range button row underneath it
 static const int RANGE_ROW_H  = 24;   // height of the 10s/10m/1h/10h button row — was 18, which
                                       // downscaled the labels to ~12pt mush ("difficult to read",
@@ -162,47 +166,60 @@ static const char* const kStoreNames[SDL2BuildingWindow::kNumStoreMats] = {
 static bool secStorage(CBuilding* b) {
     return ( b->GetData()->GetUnionType() == CStructureData::UTwarehouse );   // warehouse + rocket
 }
-static bool secCoalLiqActive(CBuilding* b);   // fwd (defined below; used to gate secPower for C6)
+// Auto-Routing: the "Enable Autorouting" master switch for this building, plus (on
+// warehouse-class buildings only) the per-material "don't haul this here" vetoes and
+// the ceiling readout. Shown on any routing participant we own -- there is nothing to
+// configure on somebody else's building.
+static bool secAutoStock(CBuilding* b) {
+    return b->CanAutoRoute() && b->GetOwner() && b->GetOwner()->IsMe();
+}
+// How many rows the section needs: the master switch, plus a material row each when
+// this building supports the per-material vetoes.
+static int nAutoStockRows(CBuilding* b) {
+    return 1 + ( b->CanBlockMaterials() ? SDL2BuildingWindow::kNumStoreMats : 0 );
+}
+static bool secAltPowerActive(CBuilding* b);   // fwd (defined below; used to gate secPower for C6)
 static bool secPower(CBuilding* b) {
-    // C6: a coal plant in Coal-Liquefaction mode is shown as a PRODUCER (Production/Inputs/Outputs),
-    // not as a Power section — so suppress Power when liq is active. (The rocket always has Power.)
-    if ( ( b->GetData()->GetUnionType() == CStructureData::UTpower ) && secCoalLiqActive( b ) )
+    // C6: a plant in a power-stopping alt mode is shown as a PRODUCER (Production/Inputs/Outputs),
+    // not as a Power section — so suppress Power while it is active. (The rocket always has Power.)
+    if ( ( b->GetData()->GetUnionType() == CStructureData::UTpower ) && secAltPowerActive( b ) )
         return false;
     return ( b->GetData()->GetType() == CStructureData::rocket ) ||
            ( b->GetData()->GetUnionType() == CStructureData::UTpower );
 }
-// #43: is this building actively in Coal Liquefaction mode? i.e. its AltOutput toggle is ON,
-// the def is available (researched), AND it's the coal-liq def (oil output via consuming coal).
-// In this mode the plant stops generating power and converts coal->oil, so the Power section
-// switches to an oil readout. (Returns false for BioFuel/Charcoal/Fracking — those don't host
-// a Power section — and for any plant with the toggle OFF.)
-// C6 (operator): the coal-liq window must render the SAME Production/Inputs/Outputs sections as a
-// refinery (not the repurposed Power section). Because the section SET differs between liq-on and
-// liq-off, computeLayout must be able to size the window for BOTH modes without mutating the real
-// game flag. This override lets the layout math force "coal-liq on/off" for height calc only:
+// #43: is this plant actively in a POWER-STOPPING alt-output mode? i.e. its AltOutput toggle is
+// ON, the def is available (researched), and the def suppresses power generation — which is
+// exactly AltOutput::StopsPower (a UTpower host running a store-consuming conversion). Derived,
+// not a materials literal: the old in==coal && out==oil test matched ONLY the coal plant's
+// liquefaction and would silently miss the Charcoal kiln (lumber -> coal on a coal plant) and
+// the relocated liquefaction (coal -> oil on an OIL plant), leaving both rendering the Power
+// section. Note this keys on StopsPower, NOT m_eDrive: the window must flip its section set for
+// any plant that has stopped generating, however its conversion happens to be driven.
+// (Returns false for BioFuel/Fracking/Scrounging — those don't host a Power section — and for
+// any plant with the toggle OFF.)
+// C6 (operator): such a window must render the SAME Production/Inputs/Outputs sections as a
+// refinery (not the repurposed Power section). Because the section SET differs between on and
+// off, computeLayout must be able to size the window for BOTH modes without mutating the real
+// game flag. This override lets the layout math force "alt on/off" for height calc only:
 //   -1 = read the live alt_oil flag (normal);  0/1 = force off/on (set+restored synchronously).
 static int s_coalLiqLayoutOverride = -1;
 
-static bool secCoalLiqActive(CBuilding* b) {
+static bool secAltPowerActive(CBuilding* b) {
     bool altOn = ( s_coalLiqLayoutOverride >= 0 ) ? ( s_coalLiqLayoutOverride != 0 )
                                                   : b->IsFlag( CUnit::alt_oil );
     if ( !altOn ) return false;
-    const AltOutput::AltOutputDef* pDef = AltOutput::Available( b );
-    return ( pDef != nullptr ) && ( pDef->m_eMode == AltOutput::eRatioConsume )
-           && ( pDef->m_iInputMat == CMaterialTypes::coal )
-           && ( pDef->m_iOutputMat == CMaterialTypes::oil );
+    return AltOutput::StopsPower( b, AltOutput::Available( b ) );
 }
-// C6: can this plant do coal-liq AT ALL (regardless of the current toggle)? Such a plant's window
-// flips its section SET on toggle, so it gets the max-of-both-modes frame + the relayout-on-toggle.
-static bool coalLiqCapable(CBuilding* b) {
+// C6: can this plant run a power-stopping alt mode AT ALL (regardless of the current toggle)?
+// Such a plant's window flips its section SET on toggle, so it gets the max-of-both-modes frame
+// + the relayout-on-toggle. (The UTpower test short-circuits the research read for everything else;
+// StopsPower re-checks it anyway.)
+static bool altPowerCapable(CBuilding* b) {
     if ( b->GetData()->GetUnionType() != CStructureData::UTpower ) return false;
-    const AltOutput::AltOutputDef* pDef = AltOutput::Available( b );
-    return ( pDef != nullptr ) && ( pDef->m_eMode == AltOutput::eRatioConsume )
-           && ( pDef->m_iInputMat == CMaterialTypes::coal )
-           && ( pDef->m_iOutputMat == CMaterialTypes::oil );
+    return AltOutput::StopsPower( b, AltOutput::Available( b ) );
 }
 // Desperate Measures (rocket EDICT) / Scrounging (warehouse AltOutput toggle): is the scrounge ON?
-// Its Production section shows only while ON, so the section SET flips on toggle — same as coal-liq.
+// Its Production section shows only while ON, so the section SET flips on toggle — same as an alt power plant.
 // The override lets computeLayout size for both on/off modes without touching game state.
 static int s_scroungeLayoutOverride = -1;   // -1 = live; 0/1 = force off/on (height calc only)
 static bool scroungeActive(CBuilding* b) {
@@ -214,7 +231,7 @@ static bool scroungeActive(CBuilding* b) {
     return ( pDef != nullptr ) && ( pDef->m_eMode == AltOutput::eMultiTrickle );
 }
 // Can this building scrounge at all (rocket, or a warehouse with the Scrounging def)? Gets the
-// max-of-both-modes frame + relayout-on-toggle, like coalLiqCapable.
+// max-of-both-modes frame + relayout-on-toggle, like altPowerCapable.
 static bool scroungeCapable(CBuilding* b) {
     if ( b->GetData()->GetType() == CStructureData::rocket ) return true;
     const AltOutput::AltOutputDef* pDef = AltOutput::Available( b );
@@ -244,7 +261,10 @@ static int primaryRatePerMin(CBuilding* b) {
         CBuildFarm* pf = b->GetData()->GetBldFarm();
         if ( !pf || pf->GetTimeToFarm() <= 0 ) return -1;
         if ( productionHalted( b ) ) return 0;
-        float fRate = b->GetOwner()->GetFarmProd() * (float)( (CFarmBuilding*)b )->GetTerMult()
+        // Slash and Burn multiplies the harvest in CFarmBuilding::BuildFarm -- same multiplier,
+        // same predicate, or this readout under-reports a slashing mill by 2.5x.
+        float fSlash = ( (CFarmBuilding*)b )->SlashBurnActive() ? AltOutput::SLASH_BURN_MULT : 1.0f;
+        float fRate = b->GetOwner()->GetFarmProd() * (float)( (CFarmBuilding*)b )->GetTerMult() * fSlash
                       * float( 24 * 60 * pf->GetQuantity() ) / float( pf->GetTimeToFarm() );
         return (int)b->GetFrameProd( fRate );
     }
@@ -291,25 +311,34 @@ static std::string AltProductionStatus(CBuilding* b, const AltOutput::AltOutputD
     }
     if ( pDef->m_eMode == AltOutput::eMultiTrickle ) {
         // Desperate Measures / Scrounging: list each scrounged line, e.g. "+10 lumber +5 iron…/min".
-        std::string s = "Producing:";
-        for ( int i = 0; i < pDef->m_nMulti; i++ )
-            s += " +" + std::to_string( pDef->m_aMulti[i].m_iPerMin ) + " " +
-                 std::string( CMaterialTypes::GetDesc( pDef->m_aMulti[i].m_iMat ).c_str() );
+        // Scrounging is terrain-scaled, so quote what THIS site yields (MultiLinesFor), not the
+        // def's perfect-site table lines, and drop the resources this site has nothing of.
+        AltOutput::AltMat aLines[AltOutput::kMaxMulti];
+        int               nLines = AltOutput::MultiLinesFor( b, pDef, aLines );
+        std::string       s      = "Producing:";
+        bool              bAny   = false;
+        for ( int i = 0; i < nLines; i++ ) {
+            if ( aLines[i].m_iPerMin <= 0 ) continue;
+            bAny = true;
+            s += " +" + std::to_string( aLines[i].m_iPerMin ) + " " +
+                 std::string( CMaterialTypes::GetDesc( aLines[i].m_iMat ).c_str() );
+        }
+        if ( !bAny ) return "Nothing here to scrounge";
         return s + " / min";
     }
     // eRatioConsume / eGlobalConsume: a conversion. Show the OUTPUT RATE (units/min) using the
     // rebranded display label, computed from the building's primary throughput exactly as the
     // production hook (mainloop.cpp) feeds Convert():
-    //   Charcoal (lumber mill): a GetCharcoalPct% slice of the lumber harvest -> coal at ratio:1.
-    //   Bio Oil  (refinery)   : each production batch -> 1/ratio oil (food burned at ratio:1).
-    std::string label = pDef->m_szLabel;   // "Charcoal" / "Bio Oil" (UI label, not the raw mat)
+    //   Bio Oil (refinery): each production batch -> 1/ratio oil (food burned at ratio:1).
+    // The old UTfarm branch (Charcoal on a lumber mill, rate derived from GetCharcoalPct) is gone
+    // with the def: no UTfarm host runs a conversion any more. A power-plant host does NOT come
+    // through here -- it is handled by the alt-power block in RefreshDynamic.
+    // eModifier (Slash and Burn) never reaches here: Refresh excludes it from bAlt precisely so a
+    // slashing mill takes the NORMAL production-status path, whose rate already carries the 2.5x.
+    std::string label = pDef->m_szLabel;   // "Bio Oil" (UI label, not the raw mat)
     int rate = -1;
     int ut   = b->GetData()->GetUnionType();
-    if ( ut == CStructureData::UTfarm ) {
-        int lumber = primaryRatePerMin( b );   // lumber/min the mill harvests (then diverts to kiln)
-        if ( pDef->m_iRatioIn > 0 )
-            rate = ( lumber > 0 ) ? ( lumber * p->GetCharcoalPct() ) / ( 100 * pDef->m_iRatioIn ) : 0;
-    } else if ( ut == CStructureData::UTmaterials ) {
+    if ( ut == CStructureData::UTmaterials ) {
         CBuildMaterials const* pm = b->GetData()->GetBldMaterials();
         if ( pm && pm->GetTime() > 0 && pDef->m_iRatioIn > 0 ) {
             // Operator: the rate must reflect ACTUAL output. BioFuel (eGlobalConsume) runs even
@@ -350,7 +379,7 @@ static int nCivEdictsFor(CBuilding* b) {
         CStructureData::BLDG_TYPE host = g_aEdicts[id].hostBuilding;
         if ( host != bt && host != gt ) continue;
         // Research-gate (#2, §10): edict hidden until its topic is discovered.
-        if ( o && !o->GetRsrch( g_aEdicts[id].researchTopic ).m_bDiscovered ) continue;
+        if ( o && !o->HasRsrch( g_aEdicts[id].researchTopic ) ) continue;
         ++n;
     }
     return n;
@@ -358,7 +387,7 @@ static int nCivEdictsFor(CBuilding* b) {
 // The UNGATED host count (research ignored): how many civ-wide edicts COULD this building
 // type ever host. computeLayout/BuildEdicts reserve section height for this maximum so a
 // topic discovered while the window is open can add its row live (Refresh → Rebuild)
-// without an SDL window resize — the same size-for-the-max trick the coal-liq relayout uses.
+// without an SDL window resize — the same size-for-the-max trick the alt-power relayout uses.
 static int nCivEdictsHostMax(CBuilding* b) {
     CStructureData::BLDG_TYPE bt = b->GetData()->GetBldgType();
     CStructureData::BLDG_TYPE gt = b->GetData()->GetType();
@@ -369,6 +398,13 @@ static int nCivEdictsHostMax(CBuilding* b) {
         if ( host == bt || host == gt ) ++n;
     }
     return n;
+}
+// The Edicts section's height: exactly one ROW_H per hosted edict. A surplus edict's live
+// draft numbers ride in its checkbox label (and its effect clause in the (i) tooltip), so no
+// row reserves a second line. Used by BOTH computeLayout (the reservation) and BuildEdicts
+// (the box) — they must not drift, or the box outline and the section slot disagree.
+static int edictsSecH(CBuilding* b) {
+    return BOX_PAD + HDR_H + nCivEdictsHostMax(b) * ROW_H + BOX_PAD;
 }
 // Show the Edicts section only on an edict-host building that I own.
 static bool secEdicts(CBuilding* b) {
@@ -392,9 +428,9 @@ static bool secTurret(CBuilding* b) {
 }
 static bool secProduction(CBuilding* b) {
     int ut = b->GetData()->GetUnionType();
-    // C6: a coal-liq-active power plant is a producer (coal -> oil), so it gets the Production
+    // C6: an alt-active power plant is a producer (it converts instead of generating), so it gets the Production
     // section + bar like a refinery instead of the Power section.
-    if ( ( ut == CStructureData::UTpower ) && secCoalLiqActive( b ) ) return true;
+    if ( ( ut == CStructureData::UTpower ) && secAltPowerActive( b ) ) return true;
     // Desperate Measures (rocket edict) / Scrounging (warehouse): Production section shown ONLY
     // while the scrounge is ON (section set flips -> relayout on toggle; sized for max-of-both).
     if ( scroungeCapable( b ) ) return scroungeActive( b );
@@ -414,10 +450,9 @@ static bool secRepair(CBuilding* b) {
 // Collect the material types this building consumes (GetInputs > 0), e.g. oil for a
 // refinery, iron + coal for a smelter. Returns how many were written to outMats.
 static int collectInputMats(CBuilding* b, int* outMats, int maxOut) {
-    // C6: a coal-liq-active power plant consumes coal (the def's input mat) -> oil. Its GetInputs()
-    // doesn't list a material (power "input" is fuel, tracked on CBuildPower), so name coal directly
-    // from the def so the Inputs section shows "Coal" like a refinery's "Oil".
-    if ( ( b->GetData()->GetUnionType() == CStructureData::UTpower ) && secCoalLiqActive( b ) ) {
+    // C6: an alt-active power plant consumes the def's input mat. Name it directly from the def so
+    // the Inputs section shows "Coal" (liquefaction) / "Lumber" (charcoal kiln) like a refinery's "Oil".
+    if ( ( b->GetData()->GetUnionType() == CStructureData::UTpower ) && secAltPowerActive( b ) ) {
         if ( const AltOutput::AltOutputDef* pDef = AltOutput::Available( b ) ) {
             if ( maxOut > 0 ) { outMats[0] = pDef->m_iInputMat; return 1; }
         }
@@ -463,7 +498,7 @@ static int collectOutputMats(CBuilding* b, int* outMats, int maxOut) {
     int ut = b->GetData()->GetUnionType();
     // C6: a coal-liq-active power plant outputs oil (the def's output mat) — show it as the Output
     // section like a refinery, so the window reads coal IN / oil OUT.
-    if ( ( ut == CStructureData::UTpower ) && secCoalLiqActive( b ) ) {
+    if ( ( ut == CStructureData::UTpower ) && secAltPowerActive( b ) ) {
         if ( const AltOutput::AltOutputDef* pDef = AltOutput::Available( b ) )
             if ( maxOut > 0 ) { outMats[0] = pDef->m_iOutputMat; return 1; }
         return 0;
@@ -561,7 +596,8 @@ static bool secBuilding(CBuilding* b) {
 enum {
     SEC_STORAGE, SEC_PRODUCTION, SEC_BUILDING, SEC_FERTILITY, SEC_INPUTS,
     SEC_OUTPUTS, SEC_UNITS, SEC_REPAIR, SEC_MILITARY, SEC_POWER, SEC_OFFICE,
-    SEC_WORKFORCE, SEC_APT, SEC_TURRET, SEC_EDICTS, SEC_ALTOUTPUT
+    SEC_WORKFORCE, SEC_APT, SEC_TURRET, SEC_EDICTS, SEC_ALTOUTPUT, SEC_AUTOSTOCK,
+    SEC_COUNT   // sentinel — keep last; sizes the layout arrays
 };
 
 // AltOutput "Production Mode" section: one outlined box with a checkbox row (+ scope (i)
@@ -571,10 +607,16 @@ static const int ALTOUTPUT_H = BOX_PAD + HDR_H + ROW_H + BOX_PAD;
 
 struct SecRec { int id; int h; };
 
+// One slot per section id, so the arrays below cannot overflow no matter how many
+// sections a single building qualifies for. (The richest real case is the rocket at
+// ~12; the previous fixed 16 happened to fit but left no margin for a new section --
+// computeLayout appends with an unchecked secs[n++].)
+static const int MAX_SECS = SEC_COUNT;
+
 struct BldgLayout {
-    SecRec secs[16];
+    SecRec secs[MAX_SECS];
     int    n         = 0;
-    int    colOf[16] = {};     // column index this section lands in, 0-based
+    int    colOf[MAX_SECS] = {};     // column index this section lands in, 0-based
     int    nCols     = 1;      // 1..3; 3 is what the Rocket Ship needs to fit a short screen
     bool   twoCol    = false;  // kept as (nCols > 1) for readability at the use sites
     int    bodyH     = 0;      // height of the tallest column (incl. SEC_PAD)
@@ -587,6 +629,7 @@ static BldgLayout computeLayout(CBuilding* b) {
     int& n = L.n;
     // Order here is the display order; must match BuildSection's dispatch.
     if ( secStorage(b)    ) L.secs[n++] = { SEC_STORAGE,    storageHeight() };
+    if ( secAutoStock(b)  ) L.secs[n++] = { SEC_AUTOSTOCK,  autoStockHeight(b) };
     if ( secProduction(b) ) L.secs[n++] = { SEC_PRODUCTION, PRODUCTION_H };
     if ( secBuilding(b)   ) L.secs[n++] = { SEC_BUILDING,   BUILDING_H };
     if ( secFertility(b)  ) L.secs[n++] = { SEC_FERTILITY,  fertilityHeight(b) };
@@ -604,7 +647,7 @@ static BldgLayout computeLayout(CBuilding* b) {
     if ( secTurret(b)     ) L.secs[n++] = { SEC_TURRET,     TURRET_H };
     // Height reserved for the UNGATED host maximum (not just the discovered rows) so a
     // research discovery while the window is open can add its row via Rebuild in place.
-    if ( secEdicts(b)     ) L.secs[n++] = { SEC_EDICTS,     BOX_PAD + HDR_H + nCivEdictsHostMax(b) * ROW_H + BOX_PAD };
+    if ( secEdicts(b)     ) L.secs[n++] = { SEC_EDICTS,     edictsSecH(b) };
     if ( secAltOutput(b)  ) L.secs[n++] = { SEC_ALTOUTPUT,  ALTOUTPUT_H };
 
     int total = 0;
@@ -802,6 +845,7 @@ void SDL2BuildingWindow::RecomputeSections() {
     m_bWorkforce  = secOfc(m_pBldg);   // workforce section rides with the office sections
     m_bApt        = secApt(m_pBldg);
     m_bTurret     = secTurret(m_pBldg);
+    m_bAutoStock  = secAutoStock(m_pBldg);
 }
 
 // C6: after ClearWidgets() frees every widget, null ALL cached raw widget pointers so a stale one
@@ -811,6 +855,8 @@ void SDL2BuildingWindow::NullSectionWidgets() {
     m_imgFertility = nullptr; m_lblFertility = nullptr;
     m_imgStorage = nullptr;
     for ( int i = 0; i < kNumStoreMats; i++ ) { m_lblStoreName[i] = nullptr; m_lblStoreCount[i] = nullptr; }
+    m_chkAutoRoute = nullptr;
+    for ( int i = 0; i < kNumStoreMats; i++ ) { m_chkAutoStock[i] = nullptr; m_lblAutoStock[i] = nullptr; }
     m_lblPowerHdr = nullptr; m_imgPowerHdrIcon = nullptr; m_lblPowerBldg = nullptr;
     m_lblPowerColony = nullptr; m_imgPowerGraph = nullptr;
     m_lblPowerOilHdr = nullptr; m_lblPowerOil = nullptr; m_lblPowerOilCol = nullptr;
@@ -822,7 +868,7 @@ void SDL2BuildingWindow::NullSectionWidgets() {
     m_lblTurretRange = nullptr; m_lblTurretDmg = nullptr; m_lblTurretReload = nullptr;
     m_lblTurretDps = nullptr; m_btnShowRange = nullptr;
     m_chkAltOut = nullptr;
-    for ( int i = 0; i < kMaxEdictRows; i++ ) { m_chkEdict[i] = nullptr; m_edictIds[i] = 0; }
+    for ( int i = 0; i < kMaxEdictRows; i++ ) { m_chkEdict[i] = nullptr; m_edictIds[i] = 0; m_icoEdict[i] = nullptr; }
     m_nEdictRows = 0;
     m_lblProduction = nullptr; m_progProduction = nullptr;
     m_lblMilStrength = nullptr; m_lblInfantry = nullptr; m_lblVehicles = nullptr; m_lblMilEnergy = nullptr;
@@ -1000,14 +1046,15 @@ int SDL2BuildingWindow::BuildAltOutput(int x, int y, int w) {
     // so it needs a window relayout — but NOT here (clearing widgets mid-callback frees this very
     // checkbox). Just request it; OnFrame does the rebuild next frame. Other alt hosts (charcoal/
     // bio-oil/fracking) keep the same sections, so they only need the existing live-Refresh swap.
-    bool bRelayout = coalLiqCapable( m_pBldg ) || scroungeCapable( m_pBldg );  // Scrounging: Production appears on toggle
+    bool bRelayout = altPowerCapable( m_pBldg ) || scroungeCapable( m_pBldg );  // Scrounging: Production appears on toggle
     m_chkAltOut = AddWidget<SDL2Checkbox>(
         cbX, yh, cbW, ROW_H, pDef->m_szLabel, checked,
         [this, pBldg, bRelayout]( bool on ) {
-            // Flip the runtime-only alt_oil flag; the production hooks (BioFuel/Coal-Liq/
-            // Charcoal/Fracking, all in mainloop.cpp) read it via IsFlag(alt_oil).
-            if ( on ) pBldg->SetFlag( CUnit::alt_oil );
-            else      pBldg->ClrFlag( CUnit::alt_oil );
+            // Shared mode-change op: flips alt_oil (the production hooks read it via
+            // IsFlag(alt_oil)) AND, for an input-CONSUMING def, tells the router the building's
+            // role changed -- otherwise a stocked plant switched into a mode whose input store
+            // is 0 never asks for its first load. Same call as the QA harness path.
+            AltOutput::SetToggle( pBldg, on );
             if ( bRelayout ) m_bNeedRelayout = true;
         } );
 
@@ -1019,10 +1066,73 @@ int SDL2BuildingWindow::BuildAltOutput(int x, int y, int w) {
     AddWidget<SDL2InfoIcon>( cbX + cbW + 4, yh + ( ROW_H - kInfoSz ) / 2,
                              kInfoSz, kInfoSz, tip );
 
-    // Mode-aware OUTPUT readout (#43-audit item 2). The coal-liq host shows its conversion in
-    // the Power section; the BioFuel / Charcoal / Fracking hosts have no Power section, so mirror
-    // that readout here: a status row + this-building store + colony have/made for the def's
+    // (#43-audit item 2, then #51 half-b: there is deliberately NO output readout in this box --
+    // it is checkbox + (i) only. Every host, power plants included, shows its conversion in the
+    // Production/Inputs/Outputs sections; a power-stopping alt mode has no Power section at all,
+    // because secPower() is suppressed by secAltPowerActive.)
 
+    return y + H + SEC_PAD;
+}
+
+// Auto-Stock — per-material control over what the AUTO-ROUTER is allowed to bring here,
+// plus the ceiling it stops at. Hosted on warehouses and the rocket (CanBlockMaterials).
+//
+// A TICKED box means "haul this here", which is the default for every material and for
+// every building loaded out of an older save: the underlying flag bit is stored with the
+// opposite sense (set == blocked) precisely so that a zeroed flags word reads as
+// "everything allowed" and nothing changes for existing games.
+//
+// Unticking is what builds a single-material depot: untick all but Iron and idle trucks
+// will only ever bring iron here. It governs AUTOMATIC hauling only -- a hand-loaded truck
+// or a player-drawn route still delivers whatever the player tells it to.
+int SDL2BuildingWindow::BuildAutoStock(int x, int y, int w) {
+    int H = autoStockHeight(m_pBldg);
+    AddOutline(x, y, w, H);
+    int yh = Header(x + BOX_PAD, y + BOX_PAD, w - 2 * BOX_PAD, "Auto-Routing", kAccentGold,
+                    ICON_MATERIALS, CMaterialTypes::lumber);
+
+    // checkbox (name) on the left, "held / cap" right-aligned like the Storage counts
+    const int capW    = 96;
+    const int kInfoSz = 14;
+    int       cbX     = x + BOX_PAD + 4;
+    int       cbW     = ( x + w - BOX_PAD - capW - 4 ) - cbX;
+
+    CBuilding* pBldg = m_pBldg;          // capture by value: the callback outlives this frame
+
+    // Master switch. Unticking it stops the automatic trucks stocking this building
+    // and collecting from it, and stops its surplus counting toward what warehouses
+    // are asked to absorb -- but construction and repair materials keep arriving, so
+    // turning it off can never silently strand a half-built or damaged structure.
+    // Hand-loading and player-drawn routes are unaffected, which is the point: this
+    // is how you take one building under manual control without stopping it.
+    m_chkAutoRoute = AddWidget<SDL2Checkbox>(
+        cbX, yh, cbW - ( kInfoSz + 4 ), ROW_H, "Enable Autorouting", pBldg->IsAutoRouteEnabled() != FALSE,
+        [pBldg]( bool on ) { pBldg->SetAutoRouteEnabled( on ? TRUE : FALSE ); } );
+    AddWidget<SDL2InfoIcon>( cbX + cbW - kInfoSz, yh + ( ROW_H - kInfoSz ) / 2, kInfoSz, kInfoSz,
+                             "This building only\n"
+                             "Off: automatic trucks stop stocking this building and stop\n"
+                             "collecting from it. Materials for CONSTRUCTION and REPAIR are\n"
+                             "still delivered. Hand-loading and your own routes always work." );
+
+    if ( !pBldg->CanBlockMaterials() )
+        return y + H + SEC_PAD;
+
+    // Per-material vetoes (warehouse / rocket / seaport). Ticked == this material may
+    // be auto-hauled here; the underlying flag bit is stored with the opposite sense
+    // (set == blocked) so a zeroed flags word -- every older save -- reads as "allow
+    // everything" and nothing changes for existing games. Unticking all but Iron is
+    // what makes an iron-only warehouse.
+    for ( int i = 0; i < kNumStoreMats; i++ ) {
+        int mat = kStoreMats[i];
+        int ry  = yh + ( i + 1 ) * ROW_H;
+
+        m_chkAutoStock[i] = AddWidget<SDL2Checkbox>(
+            cbX, ry, cbW, ROW_H, kStoreNames[i], !pBldg->IsMatBlocked( mat ),
+            [pBldg, mat]( bool on ) { pBldg->SetMatBlocked( mat, on ? FALSE : TRUE ); } );
+
+        m_lblAutoStock[i] = AddWidget<SDL2Label>(x + w - BOX_PAD - capW, ry, capW, ROW_H, "");
+        m_lblAutoStock[i]->SetRightAligned(true);
+    }
     return y + H + SEC_PAD;
 }
 
@@ -1031,10 +1141,20 @@ int SDL2BuildingWindow::BuildAltOutput(int x, int y, int w) {
 // One SDL2Checkbox per edict; toggling calls CPlayer::ToggleEdictNet, which applies the
 // bonus+upkeep locally (RecomputeEdictMults) and, in a net game, broadcasts CNetEdictToggle
 // so every client converges deterministically.
+// The STATIC part of an edict's (i) tooltip: its scope, then its effect text. Shared by
+// BuildEdicts (which creates the icon) and Refresh (which appends the live effect clause for
+// an active surplus edict) so the two cannot drift.
+static std::string edictTip(const EdictDef& e) {
+    std::string tip = ( e.scope == EDICT_CIVWIDE ) ? "Civilization-wide"
+                                                   : "This building only";
+    if ( e.desc && e.desc[0] ) { tip += "\n"; tip += e.desc; }
+    return tip;
+}
+
 int SDL2BuildingWindow::BuildEdicts(int x, int y, int w) {
     // Box + returned height use the UNGATED host maximum (matches computeLayout's
     // reservation) so a row a later research discovery adds always fits in place.
-    int H = BOX_PAD + HDR_H + nCivEdictsHostMax(m_pBldg) * ROW_H + BOX_PAD;
+    int H = edictsSecH(m_pBldg);
     AddOutline(x, y, w, H);
     int yh = Header(x + BOX_PAD, y + BOX_PAD, w - 2 * BOX_PAD, "Edicts", kAccentGold);
     CStructureData::BLDG_TYPE bt = m_pBldg->GetData()->GetBldgType();
@@ -1047,7 +1167,7 @@ int SDL2BuildingWindow::BuildEdicts(int x, int y, int w) {
         if ( e.scope != EDICT_CIVWIDE || ( e.hostBuilding != bt && e.hostBuilding != gt ) )
             continue;
         // Research-gate (#2, §10): hide the edict until its topic is discovered (matches nCivEdictsFor).
-        if ( me && !me->GetRsrch( e.researchTopic ).m_bDiscovered )
+        if ( me && !me->HasRsrch( e.researchTopic ) )
             continue;
         bool checked = me->IsEdictActive(id);
         int  eid     = id;   // capture by value for the callback
@@ -1064,20 +1184,20 @@ int SDL2BuildingWindow::BuildEdicts(int x, int y, int w) {
                                      // defer the relayout to OnFrame (don't free this checkbox mid-callback).
                                      if ( eid == EDICT_DESPERATE_MEASURES ) m_bNeedRelayout = true;
                                  } );
+        // (i) info icon — hover reveals the edict's scope (#36) then its effect
+        // text (EdictDef::desc), one per line. For a surplus edict Refresh() appends the live
+        // effect clause the current draft is buying.
+        SDL2InfoIcon* ico = AddWidget<SDL2InfoIcon>( cbX + cbW + 4, cy + ( ROW_H - kInfoSz ) / 2,
+                                                     kInfoSz, kInfoSz, edictTip( e ) );
         // Track the row so Refresh() can re-sync the checkbox from the player bitmask
-        // (external toggles: harness setedict, last-host auto-revoke §29).
+        // (external toggles: harness setedict, last-host auto-revoke §29) and refresh the
+        // live draft numbers in the label / the effect clause in the tooltip.
         if ( m_nEdictRows < kMaxEdictRows ) {
-            m_chkEdict[m_nEdictRows]  = chk;
+            m_chkEdict[m_nEdictRows] = chk;
             m_edictIds[m_nEdictRows] = id;
+            m_icoEdict[m_nEdictRows] = ico;
             m_nEdictRows++;
         }
-        // (i) info icon — hover reveals the edict's scope (#36) then its effect
-        // text (EdictDef::desc), one per line.
-        std::string tip = ( e.scope == EDICT_CIVWIDE ) ? "Civilization-wide"
-                                                        : "This building only";
-        if ( e.desc && e.desc[0] ) { tip += "\n"; tip += e.desc; }
-        AddWidget<SDL2InfoIcon>( cbX + cbW + 4, cy + ( ROW_H - kInfoSz ) / 2,
-                                 kInfoSz, kInfoSz, tip );
         cy += ROW_H;
     }
     return y + H + SEC_PAD;
@@ -1101,6 +1221,7 @@ int SDL2BuildingWindow::BuildSection(int id, int x, int y, int w) {
         case SEC_TURRET:     return BuildTurret    (x, y, w);
         case SEC_EDICTS:     return BuildEdicts    (x, y, w);
         case SEC_ALTOUTPUT:  return BuildAltOutput (x, y, w);
+        case SEC_AUTOSTOCK:  return BuildAutoStock (x, y, w);
     }
     return y;
 }
@@ -1332,7 +1453,7 @@ int SDL2BuildingWindow::BuildPower(int x, int y, int w) {
     // #43/#6: header reflects the live mode — "Oil" when this coal plant is liquefying coal,
     // else "Power". Captured into m_lblPowerHdr so Refresh() swaps the header text in lockstep
     // with the body rows when coal-liq is toggled while the window is open (was build-time-only).
-    bool bOil = secCoalLiqActive( m_pBldg );
+    bool bOil = secAltPowerActive( m_pBldg );
     // operator C1/C3 (2026-06-28): in oil (coal-liq) mode show the OIL material icon, NOT the power
     // bulb — the plant produces oil, not power. (Header icon is build-time = correct when the window
     // opens with coal-liq already ON, the operator's case.)
@@ -2082,9 +2203,40 @@ void SDL2BuildingWindow::Refresh() {
     // request the deferred Rebuild — the frame was sized for the ungated host maximum,
     // so the new row fits without a window resize. (Same OnFrame relayout path as C6.)
     if ( m_nEdictRows > 0 ) {
-        for ( int i = 0; i < m_nEdictRows; i++ )
+        for ( int i = 0; i < m_nEdictRows; i++ ) {
+            const int       id = m_edictIds[i];
+            const EdictDef& e  = g_aEdicts[id];
+            const bool      on = p->IsEdictActive( id );
             if ( m_chkEdict[i] )
-                m_chkEdict[i]->SetChecked( p->IsEdictActive( m_edictIds[i] ) );
+                m_chkEdict[i]->SetChecked( on );
+            // A SURPLUS edict carries its live draft numbers IN the checkbox label
+            // ("Public Works (1,231 workers)") — the cached per-pump numbers the sim itself
+            // used, never a second copy of the formula. Off, or drafting nothing, and the
+            // label is just the plain name; either way the row is one ROW_H.
+            std::string label = e.name;
+            if ( EdictIsSurplus( id ) && on ) {
+                int ppl = p->GetEdictDraftPpl( id );
+                int pwr = p->GetEdictDraftPwr( id );
+                if ( ( ppl > 0 ) && ( pwr > 0 ) )
+                    label += " (" + FmtNum( ppl ) + " workers, " + FmtNum( pwr ) + " power)";
+                else if ( ppl > 0 )
+                    label += " (" + FmtNum( ppl ) + " workers)";
+                else if ( pwr > 0 )
+                    label += " (" + FmtNum( pwr ) + " power)";
+            }
+            if ( m_chkEdict[i] )
+                m_chkEdict[i]->SetText( label );
+            // The (i) tooltip: the same static scope+description BuildEdicts made, plus — for an
+            // active surplus edict — what the current draft is buying right now.
+            if ( m_icoEdict[i] ) {
+                std::string tip = edictTip( e );
+                if ( EdictIsSurplus( id ) && on ) {
+                    std::string effect = p->GetEdictEffectText( id );
+                    if ( !effect.empty( ) ) { tip += "\n"; tip += effect; }
+                }
+                m_icoEdict[i]->SetTip( tip );
+            }
+        }
         if ( nCivEdictsFor( m_pBldg ) != m_nEdictRows )
             m_bNeedRelayout = true;
     }
@@ -2150,17 +2302,21 @@ void SDL2BuildingWindow::Refresh() {
                      && ( m_pBldg->GetData()->GetUnionType() == CStructureData::UTmine )
                      && ( AltOutput::Available( m_pBldg ) != nullptr );
         if ( altmine && m_pBldg->GetData()->GetType() == CStructureData::iron ) {
-            // Moho Mining revives an exhausted IRON mine at a flat 16 power (matches FrackTick).
-            curPwr = 16; curPpl = basePpl; mode = "  (Moho Mining)";
+            // Moho Mining revives an exhausted IRON mine at a flat draw (matches FrackTick --
+            // both read MOHO_POWER_DRAW so the quoted cost cannot drift from the sim's).
+            curPwr = MOHO_POWER_DRAW; curPpl = basePpl; mode = "  (Moho Mining)";
         } else if ( altmine ) {
-            // Fracking revives an exhausted OIL well at 2x power (matches the fracking branch).
-            curPwr = basePwr * 2; curPpl = basePpl * 2; mode = "  (fracking)";
+            // Fracking revives an exhausted OIL well. Both numbers now come from the same
+            // place the sim uses: FrackPowerDraw for power, and the well's BASE workforce --
+            // FrackTick adds GetPeople() unmultiplied, so the old basePpl*2 here overstated
+            // the worker cost just as the flat 2x understated the power.
+            curPwr = FrackPowerDraw( basePwr ); curPpl = basePpl; mode = "  (fracking)";
         } else if ( m_pBldg->IsFlag( CUnit::abandoned ) ) {
             curPwr = 0; curPpl = 0; mode = "  (exhausted)";
         } else if ( m_pBldg->IsFlag( CUnit::stopped ) ) {
             curPwr = basePwr / 2; curPpl = basePpl / 2; mode = "  (stopped)";
         }
-        // AltOutput surcharge (Scrounging: +2x power +25 workers; charcoal/bio kilns: +workers).
+        // AltOutput surcharge (Scrounging: +2x power +30 workers; charcoal/bio kilns: +workers).
         // Mirror the central alt-mode cost block (mainloop.cpp) so the panel shows the ACTUAL
         // draw, not just the base spec. Absolute add on top of the mode adjustment above.
         if ( m_pBldg->IsFlag( CUnit::alt_oil ) ) {
@@ -2170,6 +2326,12 @@ void SDL2BuildingWindow::Refresh() {
                 if ( pSur->m_iPowerMultAdd > 0 ) curPwr += basePwr * pSur->m_iPowerMultAdd;
             }
         }
+        // Desperate Measures is an EDICT, not an AltOutput def, so the block above never saw it:
+        // the rocket's worker line read the base spec while the sim was drafting a hundred-plus
+        // on top. Mirror the rocket branch of CBuilding::Operate.
+        if ( ( m_pBldg->GetData()->GetType() == CStructureData::rocket )
+             && m_pBldg->GetOwner() && m_pBldg->GetOwner()->IsEdictActive( EDICT_DESPERATE_MEASURES ) )
+            curPpl += m_pBldg->GetOwner()->GetDesperateDraft();
         m_lblOperCost->SetText( ( "Power required: " + std::to_string( curPwr )
                               + "     Workers: "     + std::to_string( curPpl ) + mode ).c_str() );
     }
@@ -2183,6 +2345,38 @@ void SDL2BuildingWindow::Refresh() {
                 m_lblStoreCount[i]->SetText( FmtNum( m_pBldg->GetStore( kStoreMats[i] ) ) );
     }
 
+    if ( m_bAutoStock ) {
+        // Re-sync the ticks from the live flags: the harness can set them, and the same
+        // building may be open in more than one window.
+        bool bRouting = ( m_pBldg->IsAutoRouteEnabled() != FALSE );
+        if ( m_chkAutoRoute && m_chkAutoRoute->IsChecked() != bRouting )
+            m_chkAutoRoute->SetChecked( bRouting );
+
+        for ( int i = 0; i < kNumStoreMats; i++ ) {
+            int mat     = kStoreMats[i];
+            bool bAllow = !m_pBldg->IsMatBlocked( mat );
+            if ( m_chkAutoStock[i] ) {
+                if ( m_chkAutoStock[i]->IsChecked() != bAllow )
+                    m_chkAutoStock[i]->SetChecked( bAllow );
+                // With the master switch off the per-material vetoes decide nothing --
+                // grey them rather than leave live-looking controls that do nothing.
+                m_chkAutoStock[i]->SetEnabled( bRouting );
+            }
+            if ( m_lblAutoStock[i] ) {
+                if ( !bRouting )
+                    m_lblAutoStock[i]->SetText( FmtNum( m_pBldg->GetStore( mat ) ) + " (manual)" );
+                else if ( !bAllow )
+                    m_lblAutoStock[i]->SetText( "blocked" );
+                else {
+                    int iCap = m_pBldg->GetAutoStockCap( mat );
+                    m_lblAutoStock[i]->SetText(
+                        iCap < 0 ? FmtNum( m_pBldg->GetStore( mat ) )
+                                 : FmtNum( m_pBldg->GetStore( mat ) ) + " / " + FmtNum( iCap ) );
+                }
+            }
+        }
+    }
+
     if ( m_bProduction && m_lblProduction ) {
         // #51: when an AltOutput mode is ON (charcoal/bio-oil/fracking), the Production widget
         // must show the ALT resource, not the primary output — the operator's #1 blocker was a
@@ -2193,35 +2387,66 @@ void SDL2BuildingWindow::Refresh() {
         const AltOutput::AltOutputDef* pAlt = AltOutput::Available( m_pBldg );
         // C6: a coal-liq-active power plant is now rendered HERE as a producer (coal -> oil), so it
         // gets a real Production status + bar instead of the old repurposed Power section.
-        bool bCoalLiq = secCoalLiqActive( m_pBldg );
-        bool bAlt = ( pAlt != nullptr ) && m_pBldg->IsFlag( CUnit::alt_oil ) && !bCoalLiq;
+        bool bAltPower = secAltPowerActive( m_pBldg );
+        // eModifier (Slash and Burn) is excluded: it produces NOTHING, it only multiplies the
+        // host's own harvest. Sending it down the alt path would print a bare "Producing Slash
+        // and Burn" label with no rate. Excluded here, it falls through to the building's normal
+        // ShowStatusText (which already applies the 2.5x) and the normal GetProductionPer() bar.
+        bool bAlt = ( pAlt != nullptr ) && m_pBldg->IsFlag( CUnit::alt_oil ) && !bAltPower
+                    && ( pAlt->m_eMode != AltOutput::eModifier );
         // Desperate Measures (rocket edict): not an AltOutput def, so show its fixed scrounge rate here.
         bool bScroungeRocket = ( m_pBldg->GetData()->GetType() == CStructureData::rocket )
                                && m_pBldg->GetOwner() && m_pBldg->GetOwner()->IsEdictActive( EDICT_DESPERATE_MEASURES );
         std::string str;
         if ( bScroungeRocket ) {
-            str = "Producing: +10 lumber +5 iron +5 food +5 coal / min";
-        } else if ( bCoalLiq ) {
-            // Name the oil product and show its per-minute rate so it matches every other producer
-            // widget ("Producing Oil: N / min"), per the operator. The coal plant burns coal at
-            // GetRate() build-units per coal (BuildPower) and Convert credits 1 oil per m_iRatioIn
-            // coal (eRatioConsume). Effective oil/min = GetFrameProd(framesPerMin / GetRate()) /
-            // ratioIn — the SAME GetFrameProd(speed * 24*60 * out / batchTime) form the materials
-            // status uses (new_unit.cpp:167), with power's prod basis of 1.
-            int oilMat = pAlt ? pAlt->m_iOutputMat : CMaterialTypes::oil;
-            str = std::string( "Producing " ) + CMaterialTypes::GetDesc( oilMat ).c_str();
-            CBuildPower* pBp     = m_pBldg->GetData()->GetBldPower();
-            int          ratioIn = pAlt ? pAlt->m_iRatioIn : 3;
-            if ( pBp && pBp->GetRate() > 0 && ratioIn > 0 ) {
-                // Reflect ACTUAL production, like the other producers: an empty coal store means the
-                // plant converts NOTHING -> show 0/min, not the theoretical max. Mirrors the I1 fix
-                // in primaryRatePerMin (empty input -> 0) and the runtime BuildPower gate
-                // (mainloop.cpp:2476: GetStore(input)<=0 -> no burn, no oil).
-                int inMat     = pAlt ? pAlt->m_iInputMat : CMaterialTypes::coal;
-                int oilPerMin = ( productionHalted( m_pBldg ) || m_pBldg->GetStore( inMat ) <= 0 ) ? 0
+            // Desperate Measures scales with the draft, so scale the quoted rate the same way the
+            // sim credits it (CBuilding::Operate) off the one shared table in edicts.cpp.
+            // The draft count lives HERE now (the edict's checkbox row is one line, like every
+            // other edict) — this is the only place Desperate Measures' headcount is shown.
+            int iDraft = m_pBldg->GetOwner()->GetDesperateDraft();
+            str = "Drafting " + FmtNum( iDraft ) + " workers: ";
+            bool bFirst = true;
+            for ( int i = 0; i < DESPERATE_RATE_LINES; i++ ) {
+                int rate = ( DESPERATE_BASE_RATES[i].m_iPerMin * iDraft ) / DESPERATE_RATE_PER;
+                if ( rate <= 0 ) continue;
+                if ( !bFirst ) str += ", ";
+                bFirst = false;
+                str += "+" + std::to_string( rate ) + " " +
+                       std::string( CMaterialTypes::GetDesc( DESPERATE_BASE_RATES[i].m_iMat ).c_str() );
+            }
+            str += " / min";
+        } else if ( bAltPower ) {
+            // Name the product and show its per-minute rate so it matches every other producer
+            // widget ("Producing Oil: N / min" / "Producing Coal: N / min"), per the operator.
+            // pAlt is never null here: secAltPowerActive requires AltOutput::Available.
+            str = std::string( "Producing " ) + CMaterialTypes::GetDesc( pAlt->m_iOutputMat ).c_str();
+            CBuildPower* pBp = m_pBldg->GetData()->GetBldPower();
+            if ( pBp && pBp->GetRate() > 0 ) {
+                // Reflect ACTUAL production, like the other producers: an input store that cannot
+                // fund a batch means the plant converts NOTHING -> show 0/min, not the theoretical
+                // max. Same starvation rule as the sim's own gate in BuildPower.
+                int outPerMin = -1;
+                if ( pAlt->m_eDrive == AltOutput::EDrive::eTimeDriven ) {
+                    // TIME-DRIVEN: one whole batch converts every GetRate() production units, and a
+                    // batch emits exactly ONE output unit. Do NOT divide by the ratio — the ratio
+                    // scales the INPUT draw, and BuildPower has already applied it by handing
+                    // Convert( ) iDo * iRatio. Dividing again under-reports by exactly the ratio.
+                    int iRatio = AltOutput::InputRatio( m_pBldg, pAlt );
+                    if ( iRatio > 0 )
+                        outPerMin = ( productionHalted( m_pBldg )
+                                      || m_pBldg->GetStore( pAlt->m_iInputMat ) < iRatio ) ? 0
+                                    : (int)m_pBldg->GetFrameProd( float( 24 * 60 ) / (float)pBp->GetRate() );
+                } else if ( pAlt->m_iRatioIn > 0 ) {
+                    // FUEL-DRIVEN: the legacy shape, kept verbatim for a def whose conversion is
+                    // still scaled by the fuel burned per batch (Convert gets the batch count, so
+                    // output IS batches / ratio here).
+                    outPerMin = ( productionHalted( m_pBldg )
+                                  || m_pBldg->GetStore( pAlt->m_iInputMat ) <= 0 ) ? 0
                                 : (int)( m_pBldg->GetFrameProd( float( 24 * 60 ) / (float)pBp->GetRate() )
-                                         / (float)ratioIn );
-                str += ": " + FmtNum( oilPerMin ) + " / min";
+                                         / (float)pAlt->m_iRatioIn );
+                }
+                if ( outPerMin >= 0 )
+                    str += ": " + FmtNum( outPerMin ) + " / min";
             }
         } else if ( bAlt ) {
             str = AltProductionStatus( m_pBldg, pAlt );
@@ -2239,11 +2464,14 @@ void SDL2BuildingWindow::Refresh() {
             // Operator (H2): the Production widget must ALWAYS keep its progress bar — hiding it
             // for a flat-trickle alt mode (Fracking) was a regression. Keep the bar visible; show
             // the real cycle progress when there is one, else 0 (the bar stays present).
-            // C6: the coal-liq plant has no GetProductionPer cycle, so drive it from the conversion
+            // C6: an alt-power plant's bar. A TIME-DRIVEN conversion has a real batch cycle
+            // (CPowerBuilding::GetProductionPer) and its m_fAltAccum is always exactly 0, so the
+            // accumulator bar would sit frozen; a fuel-driven one has no cycle and must use the
             // accumulator (GetAltProgressPer, the same source as the old C4 power-section bar).
             int per;
-            if ( bCoalLiq )
-                per = m_pBldg->GetAltProgressPer();
+            if ( bAltPower )
+                per = ( pAlt->m_eDrive == AltOutput::EDrive::eTimeDriven ) ? m_pBldg->GetProductionPer()
+                                                                   : m_pBldg->GetAltProgressPer();
             else if ( bScroungeRocket || ( bAlt && pAlt && ( pAlt->m_eMode == AltOutput::eMultiTrickle ) ) )
                 per = m_pBldg->GetAltProgressPerMulti();   // rocket edict / warehouse scrounge trickle
             else
@@ -2259,7 +2487,10 @@ void SDL2BuildingWindow::Refresh() {
     // alt input/output is a single material each, so we swap slot 0; other slots (multi-input smelter,
     // which isn't alt-capable) are untouched. Coal-liq is excluded (shows in the Power section).
     const AltOutput::AltOutputDef* pIO = AltOutput::Available( m_pBldg );
-    bool bAltIO = ( pIO != nullptr ) && m_pBldg->IsFlag( CUnit::alt_oil ) && !secCoalLiqActive( m_pBldg );
+    // eModifier excluded: a modifier changes no materials, so nothing may be swapped in the
+    // Inputs/Outputs slots (a slashing mill still takes nothing in and still puts lumber out).
+    bool bAltIO = ( pIO != nullptr ) && m_pBldg->IsFlag( CUnit::alt_oil ) && !secAltPowerActive( m_pBldg )
+                  && ( pIO->m_eMode != AltOutput::eModifier );
     int altInMat  = ( bAltIO && ( pIO->m_eMode == AltOutput::eRatioConsume ||
                                   pIO->m_eMode == AltOutput::eGlobalConsume ) ) ? pIO->m_iInputMat : -1;
     int altOutMat = bAltIO ? pIO->m_iOutputMat : -1;
@@ -2354,7 +2585,7 @@ void SDL2BuildingWindow::Refresh() {
         // (status + this-building store + colony have/made). Otherwise: the normal power
         // readout, oil rows hidden. (Both row sets exist from BuildPower; we just toggle
         // visibility so a live checkbox toggle needs no window rebuild.)
-        bool bOil = secCoalLiqActive( m_pBldg );
+        bool bOil = secAltPowerActive( m_pBldg );
 
         // #6: swap the section HEADER text live too (was fixed at build → showed the open-time
         // mode even after toggling). Mirrors the row-visibility swap below.

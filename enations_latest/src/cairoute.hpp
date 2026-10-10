@@ -58,7 +58,10 @@ public:
     void FillPriorities( void );
 	BOOL NeedTransports( void );
     BOOL FindTransport( CAIUnit *pCAIBldg );
-	void IdleTruckTask( int iMat, int iFromBldg, int iToBldg );
+	// iMinSrc: spare a source must hold before a proactive haul moves any.
+	// bAllowEmptyDest: the destination may hold none of the material yet.
+	void IdleTruckTask( int iMat, int iFromBldg, int iToBldg, int iMinSrc = EXCESS_IDLE_MATERIALS,
+	                    BOOL bAllowEmptyDest = FALSE );
 
 	void GetTrucksAvailable( void );
 	CAIUnit *GetNearestTruck( CAIUnit *pCAIBldg );
@@ -85,6 +88,11 @@ public:
 	void RemovePlayerUnitsFromLists( int iPlayer );
 
 	BOOL TrucksAreEnroute( CAIUnit *pBldg );
+	// #69: the ONE place the enroute test and the ghost-claim reaper both ask
+	// "is this truck's claim on this building a delivery that is happening?",
+	// and the release that unbinds a claim that is not.
+	BOOL ClaimIsLive( CAIUnit *pTruck, CAIUnit *pBldg );
+	void DropClaim( CAIUnit *pBldg, DWORD dwTruckID );
 	void UnassignTruck( DWORD dwTruckID );
 	void UnassignTrucks( DWORD dwTruckID );
 	void UnassignTrucks( CAIUnit *pBldg );

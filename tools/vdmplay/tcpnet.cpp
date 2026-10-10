@@ -35,7 +35,6 @@ static int JoinAddrLogOn() {
 
 static int netCount = 0;
 static int gSimulateFrags = FALSE;
-static int gMaxSends = 5;
 static int gSimulateFlow = FALSE;
 static int gLogSocketFull = FALSE;
 
@@ -236,7 +235,6 @@ CTcpNet::CTcpNet(CTDLogger* log, u_short streamPort, u_short dgPort, u_short wel
 
     m_sockBufSize = vpFetchInt("TCP", "OBUFSIZE", 8)* 1024;
  gSimulateFrags = vpFetchInt("TCP", "SimFrag", 0);
- gMaxSends = vpFetchInt("TCP", "MaxSends", 10);
  gSimulateFlow = vpFetchInt("TCP", "SimFlow", 0);
  gLogSocketFull = vpFetchInt("TCP", "LogSocketFull", 0);
  m_lastKeekTime = 0;
@@ -483,7 +481,7 @@ BOOL CTcpNet::TCPAddress::extractHostPart(LPSTR hostPart, size_t len, LPCSTR add
   if (len >= (sLen+1))
   {
    strncpy(hostPart, addrString, sLen);
-   hostPart[len] = 0;
+   hostPart[sLen] = 0;
   }
   else
    return FALSE;
@@ -553,6 +551,13 @@ BOOL CTcpNet::TCPAddress::TranslateAddressString(tcpaddress_s &addr, LPCSTR addr
  if (validLen == strlen(addrString))
  {
   addr.m_stationAddress.s_addr = inet_addr(hostpart);
+  if (addr.m_stationAddress.s_addr == INADDR_NONE)
+   // Malformed dotted address (e.g. "54.219.190."): inet_addr's failure value is
+   // bit-identical to INADDR_BROADCAST, so an unchecked assignment here silently
+   // turned a typo into a LAN broadcast instead of a rejected address. A genuinely
+   // empty addrString still ends up broadcasting, via the caller's own "no server
+   // address configured" fallback -- unaffected by this check.
+   return FALSE;
  }
  else if (lstrcmpi(hostpart, "localhost") == 0)
  {
@@ -590,6 +595,16 @@ CNetAddress* CTcpNet::MakeAddressFromString(LPCSTR addrString)
   return NULL;
 
 
+}
+
+// Exported parse-only check (see vdmplay.h) — same TranslateAddressString the
+// TCP transport itself uses, exposed so a caller can validate a typed address
+// before persisting it, without needing an open session/handle. extern "C"
+// here to match the linkage of the vdmplay.h declaration (its extern "C" block).
+extern "C" BOOL VPAPI vpValidateAddressString(LPCSTR addrString)
+{
+ tcpaddress_s addr;
+ return addrString && CTcpNet::TCPAddress::TranslateAddressString(addr, addrString);
 }
 
 void CTcpNet::SetRegistrationAddress(LPCSTR addr)
@@ -1234,12 +1249,16 @@ void CTcpNet::CheckFlow()
 void CTcpNet::CTCPLink::SendWaitingData()
 {
  char logBuf[128];
- int  maxSends = gMaxSends;
 
  if (m_socket == INVALID_SOCKET)
   return;
 
  m_queue.Lock();
+ // Drain the queued batch while the nonblocking socket accepts it. An
+ // arbitrary packet cap can leave a writable socket with an ever-growing
+ // backlog and no new FD_WRITE edge. The snapshot bounds this call; partial
+ // writes and WSAEWOULDBLOCK below retain the remainder for the next callback.
+ unsigned maxSends = m_queue.Count();
  
  Datagram* d;
 
@@ -1271,9 +1290,9 @@ void CTcpNet::CTCPLink::SendWaitingData()
   
   if (d->GetSeq() != m_nextDgramToSend)
   {
-   wsprintf(logBuf, 
+   wsprintf(logBuf,
     "CtcpLink::SendWaitingData(%d): Seq error: d->seq = %lu, expected=%lu",
-    d->GetSeq(), m_nextDgramToSend);
+    m_socket, d->GetSeq(), m_nextDgramToSend);
    Log(logBuf);
    closesocket(m_socket);
    m_socket = INVALID_SOCKET;
@@ -1282,7 +1301,9 @@ void CTcpNet::CTCPLink::SendWaitingData()
    break;
   }
 
-  WORD chksum = calcsum(data, size);
+  // The checksum covers the stored packet, not just the unsent suffix. A
+  // successful partial write advances m_offset without changing that packet.
+  WORD chksum = calcsum(d->m_data, d->m_size);
   if (d->GetSum() != chksum)
   {
    wsprintf(logBuf, 

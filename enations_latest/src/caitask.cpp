@@ -683,7 +683,15 @@ CAITask *CAITaskList::GetNavyTask( int iUnitType )
         {
         	ASSERT_VALID( pTask );
 
-			if( pTask->GetStatus() != UNASSIGNED_TASK )
+			// A landing craft may also join an IN-PROGRESS sea-invasion staging
+			// task: troops waiting to embark keep it INPROCESS, so otherwise troops
+			// and craft wait on each other forever.
+			BOOL bAmphibStaging = ( bAmphib && pTask->GetType() == COMBAT_TASK &&
+									pTask->GetGoalID() == IDG_SEAINVADE &&
+									pTask->GetID() == IDT_PREPAREWAR );
+
+			if( pTask->GetStatus() != UNASSIGNED_TASK &&
+				!( bAmphibStaging && pTask->GetStatus() == INPROCESS_TASK ) )
 				continue;
 			if( pTask->GetType() != COMBAT_TASK )
 				continue;
@@ -711,10 +719,16 @@ CAITask *CAITaskList::GetNavyTask( int iUnitType )
 			//	wGoal == IDG_REPELL) )
 			//	continue;
 
-			if( (int)pTask->GetPriority() > iPriority )
+			// UpdateTaskPriorities zeroes a non-UNASSIGNED staging task and the
+			// test below is strictly > 0: floor it so the admission above works
+			int iTaskPri = (int)pTask->GetPriority();
+			if( bAmphibStaging && iTaskPri <= 0 )
+				iTaskPri = 1;
+
+			if( iTaskPri > iPriority )
 			{
 				pPickedTask = pTask;
-				iPriority = (int)pTask->GetPriority();
+				iPriority = iTaskPri;
 			}
 		}
 	}

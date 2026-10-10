@@ -57,6 +57,8 @@ CAIUnit::CAIUnit( DWORD dwID, int iOwner, int iType, int iTypeUnit )
     m_dwErrHex         = 0;
     m_wErrCnt          = 0;
     m_dwRoadStopSeen   = 0;
+    m_dwClaimHex       = 0;  // #69 router claim liveness (transient)
+    m_dwClaimStill     = 0;
 
     ASSERT_VALID( this );
 
@@ -1011,9 +1013,20 @@ void CAIUnit::SetDestination( CAIUnit* pCAIBldg )
         // pathfind (8.3k path calls/s) = the sustained game-start grind.
         // parked INSIDE a building, the next-leg order is a correction, not
         // spam (trucks sat 12 min inside sources waiting for the sweep nudge)
+        // vsd.bypass.bldg counts orders the REPAIRED form (the CHexCoord overload
+        // at the bottom of this file, which gives an in-building repeat a 5s
+        // cooldown) would have suppressed, and this one lets through because
+        // !bInBldgB short-circuits the whole conjunction. That is the leak under
+        // test; it is a count, it changes nothing.
+        if ( Perf::IsEnabled( ) && bInBldgB && hex == m_hexLastDest &&
+             theGame.GettimeGetTime( ) < m_timeLastDest + 30 * 1000 )
+            Perf::CounterInc( "vsd.bypass.bldg" );
         if ( !bInBldgB && hex == m_hexLastDest &&
              theGame.GettimeGetTime( ) < m_timeLastDest + 30 * 1000 )
+        {
+            Perf::CounterInc( "vsd.dedup.bldg" );
             return;
+        }
         m_hexLastDest  = hex;
         m_timeLastDest = theGame.GettimeGetTime( );
 
@@ -1022,6 +1035,7 @@ void CAIUnit::SetDestination( CAIUnit* pCAIBldg )
         logPrintf( LOG_PRI_ALWAYS, LOG_AI_MISC, "\nCAIUnit::SetDestination() player %d unit %ld going to %d,%d \n",
                    m_iOwner, m_dwID, hex.X( ), hex.Y( ) );
 #endif
+        Perf::CounterInc( "vsd.src.bldg" );
         theGame.PostToServer( (CNetCmd*)&msg, sizeof( CMsgVehSetDest ) );
         return;
     }
@@ -1065,9 +1079,16 @@ void CAIUnit::SetDestination( CSubHex& subHexDest )
     {
         CHexCoord hexDest( ( subHexDest.x / 2 ), ( subHexDest.y / 2 ) );
         // parked INSIDE a building: next-leg order is a correction, not spam
+        // same bypass measurement as the building overload above
+        if ( Perf::IsEnabled( ) && bInBldgS && hexDest == m_hexLastDest &&
+             theGame.GettimeGetTime( ) < m_timeLastDest + 30 * 1000 )
+            Perf::CounterInc( "vsd.bypass.sub" );
         if ( !bInBldgS && hexDest == m_hexLastDest &&
              theGame.GettimeGetTime( ) < m_timeLastDest + 30 * 1000 )
+        {
+            Perf::CounterInc( "vsd.dedup.sub" );
             return;
+        }
         m_hexLastDest  = hexDest;
         m_timeLastDest = theGame.GettimeGetTime( );
     }
@@ -1092,6 +1113,7 @@ void CAIUnit::SetDestination( CSubHex& subHexDest )
     msg.m_sub = subHexDest;
 
     // CMsgVehSetDest msg( m_dwID, subHexDest, CVehicle::moving );
+    Perf::CounterInc( "vsd.src.sub" );
     theGame.PostToServer( (CNetCmd*)&msg, sizeof( CMsgVehSetDest ) );
 }
 
@@ -1129,6 +1151,7 @@ void CAIUnit::SetDestination( CHexCoord& m_hex )
             if ( pGameData->IsTruck( m_dwID ) )
             { char szZ[80]; sprintf( szZ, "[SETDEST] truck %lu DEDUPED\n", (unsigned long)m_dwID ); OutputDebugStringA( szZ ); }
 #endif
+            Perf::CounterInc( bInBldg ? "vsd.dedup.hex.inbldg" : "vsd.dedup.hex" );
             return;
         }
     m_hexLastDest  = m_hex;
@@ -1160,6 +1183,7 @@ void CAIUnit::SetDestination( CHexCoord& m_hex )
 
     // CMsgVehSetDest (DWORD dwID, CHexCoord const & hex, int iMode);
     CMsgVehSetDest msg( m_dwID, m_hex, CVehicle::moving );
+    Perf::CounterInc( "vsd.src.hex" );
     theGame.PostToServer( (CNetCmd*)&msg, sizeof( CMsgVehSetDest ) );
 }
 
@@ -1202,6 +1226,37 @@ void CAIUnit::AttackUnit( DWORD dwTarget )
     // re-issue this same order again until the cooldown elapses (per-hit
     // unit_damage alerts were re-commanding the same target ~2x/sec forever)
     m_dwTimeLastAtkCmd = theGame.GettimeGetTime( );
+
+    // Don't re-order a vehicle onto the target it is already engaging (every
+    // AssignUnits pass re-runs SeekOpfor). Only when attacking and stopped or
+    // moving: in other route modes _SetTarget also restarts a blocked unit.
+    if ( GetType( ) == CUnit::vehicle )
+    {
+        BOOL bEngaged = FALSE;
+        EnterCriticalSection( &cs );
+        CVehicle* pVeh = theVehicleMap.GetVehicle( m_dwID );
+        if ( pVeh != NULL && pVeh->GetTarget( ) != NULL )
+        {
+            CUnit* pTgt = theVehicleMap.GetVehicle( dwTarget );
+            // resolve the target as the engine's Attack() does: a vehicle
+            // not owning its hex is hit via its building, else its carrier
+            if ( pTgt != NULL && !( (CVehicle*)pTgt )->GetHexOwnership( ) )
+            {
+                CUnit* pCover = theBuildingHex._GetBuilding( ( (CVehicle*)pTgt )->GetPtHead( ) );
+                if ( pCover != NULL )
+                    pTgt = pCover;
+                else if ( ( (CVehicle*)pTgt )->GetTransport( ) != NULL )
+                    pTgt = ( (CVehicle*)pTgt )->GetTransport( );
+            }
+            if ( pTgt == NULL )
+                pTgt = theBuildingMap.GetBldg( dwTarget );
+            bEngaged = pTgt != NULL && pVeh->GetTarget( ) == pTgt && pVeh->GetEvent( ) == CVehicle::attack &&
+                       ( pVeh->GetRouteMode( ) == CVehicle::stop || pVeh->GetRouteMode( ) == CVehicle::moving );
+        }
+        LeaveCriticalSection( &cs );
+        if ( bEngaged )
+            return;
+    }
 
     CMsgAttack msg( m_dwID, dwTarget );
     theGame.PostToServer( (CNetCmd*)&msg, sizeof( CMsgAttack ) );

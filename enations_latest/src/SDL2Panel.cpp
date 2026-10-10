@@ -6,7 +6,6 @@
 #include "SDL2Panel.h"
 #include "framecap.h"   // #45 frame-capture debug mode
 #include "GameWindow.h"
-#include "en_harness.h"   // EnHarness_RegisterWindowSurface — harness capture of detached panels
 #include "SDL2CreateStatus.h"  // GetCreateStatus()->IsVisible() — defer panel show during load
 #include "SDL2MainMenu.h"  // CreateSurfaceFromDIB
 #include "bmbutton.h"      // must precede bitmaps.h (provides CBmBtnData)
@@ -1300,6 +1299,13 @@ void SDL2Panel::DestroyOwnWindow() {
     }
 }
 
+// The condition under which RenderDetached composites from the sprite layer and
+// never reads m_surface. Single source of truth for that gate, so callers outside
+// this file (CWndArea::Draw) can skip work whose only consumer is m_surface.
+bool SDL2Panel::PresentsGpuTerrain() const {
+    return HasGpuTerrain() && SDL2Terrain::IsLoaded();
+}
+
 void SDL2Panel::RenderDetached() {
     if (!m_ownWindow || !m_visible || !m_surface)
         return;
@@ -1337,7 +1343,7 @@ void SDL2Panel::RenderDetached() {
     // OVERLAY — only the color-keyed sprite layer + chrome are opaque; the
     // content area stays transparent so the GPU terrain mesh (drawn in
     // PresentOwn, underneath) shows through.
-    bool bGpuTerrain = m_ownRenderer && m_terrainAA && SDL2Terrain::IsLoaded();
+    bool bGpuTerrain = PresentsGpuTerrain();
 
     SDL_Rect dstRect = { 0, tbH, m_width, m_height };
     if (bGpuTerrain) {
@@ -1385,13 +1391,6 @@ void SDL2Panel::RenderDetached() {
         DrawGoldFrame(winSurf, 0, 0, W, H);
     else
         DrawRaisedBorder(winSurf, 0, 0, W, H, 4);
-
-    // Reliable harness capture: register this panel's CPU back-surface (full
-    // window content incl. chrome) by window id. Terrain panels composite the GPU
-    // mesh UNDER this overlay in PresentOwn, so their complete image lives only on
-    // the renderer — leave those to RenderReadPixels and register the rest.
-    // All platforms; the call early-outs to one atomic load unless EN_HARNESS is set.
-    if (!bGpuTerrain) EnHarness_RegisterWindowSurface(m_ownWindowID, winSurf);
 
     if (m_ownRenderer)
         PresentOwn();                       // T0b: upload back-buffer + present via GPU

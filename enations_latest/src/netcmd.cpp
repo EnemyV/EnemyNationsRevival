@@ -11,6 +11,8 @@
 
 #include "netcmd.h"
 
+#include "edicts.h"
+#include "ipcmsg.hpp"
 #include "building.inl"
 #include "lastplnt.h"
 #include "player.h"
@@ -50,14 +52,22 @@ CNetYouAre::CNetYouAre( int iPlyr ): CNetCmd( cmd_you_are )
     ASSERT_CMD( this );
 }
 
+// pData is a received record. FitsBuffer has already checked m_iLen and the name against
+// the datagram, but the copy is still sized and filled so it cannot overrun: a peer's
+// m_iLen of 12 was a heap overflow here, and a negative one an uncaught bad_alloc.
 CNetPlyrJoin* CNetPlyrJoin::Alloc( const CNetPlyrJoin* pData )
 {
 
-    CNetPlyrJoin* pRtn = (CNetPlyrJoin*)new char[pData->m_iLen];
+    int iLen = pData->m_iLen;
+    if ( iLen < (int)sizeof( CNetPlyrJoin ) )
+        iLen = sizeof( CNetPlyrJoin );
+    if ( iLen > (int)VP_MAXSENDDATA )
+        iLen = VP_MAXSENDDATA;
+    CNetPlyrJoin* pRtn = (CNetPlyrJoin*)new char[iLen];
 
     pRtn->m_bMsg = CNetCmd::cmd_plyr_join;
 
-    pRtn->m_iLen     = pData->m_iLen;
+    pRtn->m_iLen     = iLen;
     pRtn->m_iPlyrNum = pData->m_iPlyrNum;
     pRtn->m_iPwrHave = pData->m_iPwrHave;
     pRtn->m_iPwrNeed = pData->m_iPwrNeed;
@@ -68,7 +78,11 @@ CNetPlyrJoin* CNetPlyrJoin::Alloc( const CNetPlyrJoin* pData )
     pRtn->m_iNumBldgs   = pData->m_iNumBldgs;
     pRtn->m_iNumVeh     = pData->m_iNumVeh;
     pRtn->m_bAvail      = pData->m_bAvail;
-    strcpy( pRtn->m_sName, pData->m_sName );
+
+    const int cbName = iLen - (int)( pRtn->m_sName - (char*)pRtn );
+    int       iCh    = 0;
+    for ( ; ( iCh < cbName - 1 ) && ( pData->m_sName[iCh] != 0 ); iCh++ ) pRtn->m_sName[iCh] = pData->m_sName[iCh];
+    pRtn->m_sName[iCh] = 0;
 
     return ( pRtn );
 }
@@ -857,8 +871,9 @@ CMsgVehLoc::CMsgVehLoc( CMsgVehCompLocElem const* pElem ): _CMsgVehGo( veh_loc )
     m_ptNext     = CSubHex( pElem->m_wNextX, pElem->m_wNextY );
     m_ptHead     = CSubHex( pElem->m_wHeadX, pElem->m_wHeadY );
     m_ptTail     = CSubHex( pElem->m_wTailX, pElem->m_wTailY );
-    m_hexNext    = CSubHex( pElem->m_wHexNextX, pElem->m_wHexNextY );
-    m_hexDest    = CSubHex( pElem->m_wHexDestX, pElem->m_wHexDestY );
+    // These fields were encoded in hex coordinates, not subhex coordinates.
+    m_hexNext    = CHexCoord( pElem->m_wHexNextX, pElem->m_wHexNextY );
+    m_hexDest    = CHexCoord( pElem->m_wHexDestX, pElem->m_wHexDestY );
     m_dwID       = pElem->m_dwID;
     m_iPlyrNum   = 0;
     m_iDir       = pElem->m_bDir;
@@ -991,6 +1006,20 @@ CNetEdictToggle::CNetEdictToggle( CPlayer const* pPlyr, int iEdict, bool bOn ): 
     m_iPlyrNum = pPlyr->GetPlyrNum( );
     m_iEdict   = iEdict;
     m_bOn      = bOn ? 1 : 0;
+}
+
+CNetBldgDmgMult::CNetBldgDmgMult( CPlayer const* pPlyr, int iPermille ): CNetCmd( bldg_dmg_mult )
+{
+    m_iPlyrNum  = pPlyr->GetPlyrNum( );
+    m_iPermille = iPermille;
+}
+
+CNetHexRetype::CNetHexRetype( CHexCoord hex, int iType ): CNetCmd( hex_retype )
+{
+    m_iX    = hex.X( );
+    m_iY    = hex.Y( );
+    m_iType = iType;
+    ASSERT_CMD( this );
 }
 
 CNetNeedSaveInfo::CNetNeedSaveInfo( CPlayer const* pPlyr ): CNetCmd( need_save_info )
@@ -1262,6 +1291,33 @@ void CMsgVehDest::AssertValid( ) const
     ASSERT_HEX_COORD( &m_hexDest );
 }
 
+void CNetEdictToggle::AssertValid( ) const
+{
+
+    ASSERT( m_bMsg == edict_toggle );
+    ASSERT( ( 0 <= m_iEdict ) && ( m_iEdict < EDICT_COUNT ) );
+    ASSERT( ( m_bOn == 0 ) || ( m_bOn == 1 ) );
+}
+
+void CNetBldgDmgMult::AssertValid( ) const
+{
+
+    ASSERT( m_bMsg == bldg_dmg_mult );
+    ASSERT( ( 0 <= m_iPermille ) && ( m_iPermille <= 1000 ) );
+}
+
+void CNetHexRetype::AssertValid( ) const
+{
+
+    ASSERT( m_bMsg == hex_retype );
+    // Only ever a clear-cut today; the RX side whitelists the same value.
+    ASSERT( m_iType == CHex::plain );
+    // netcmd.cpp already includes terrain.inl, so the live map dimensions are reachable here.
+    // m_eX / m_eY are EXCLUSIVE (CGameMap::_GetHex asserts x < m_eX), so use <, not <=.
+    ASSERT( ( 0 <= m_iX ) && ( m_iX < theMap.GetSize( ).cx ) );
+    ASSERT( ( 0 <= m_iY ) && ( m_iY < theMap.GetSize( ).cy ) );
+}
+
 void CMsgRoadNew::AssertValid( ) const
 {
 
@@ -1502,6 +1558,18 @@ void CNetCmd::AssertMsgValid( ) const
     case research_disc:
         break;
 
+    case edict_toggle:
+        ( (CNetEdictToggle*)this )->AssertValid( );
+        break;
+
+    case hex_retype:
+        ( (CNetHexRetype*)this )->AssertValid( );
+        break;
+
+    case bldg_dmg_mult:
+        ( (CNetBldgDmgMult*)this )->AssertValid( );
+        break;
+
     default:
         
        // ASSERT( FALSE );
@@ -1519,6 +1587,12 @@ void CNetCmd::AssertMsgValid( ) const
 }
 
 #endif
+
+// TRUE if a NUL ends the text at psz before pEnd (the end of what arrived).
+static BOOL TextEndsBefore( const char* psz, const char* pEnd )
+{
+    return ( pEnd > psz ) && ( memchr( psz, 0, pEnd - psz ) != NULL );
+}
 
 // TRUE if a cbAvail-byte buffer is big enough to be read as this message type.
 // Per-type minimum = sizeof of the concrete struct (variable-tail messages like
@@ -1539,9 +1613,59 @@ BOOL CNetCmd::FitsBuffer( int cbAvail ) const
     {
     case cmd_ready:            cbNeed = sizeof( CNetReady ); break;
     case cmd_you_are:          cbNeed = sizeof( CNetYouAre ); break;
-    case cmd_player:           cbNeed = sizeof( CNetPlayer ); break;
     case cmd_start:            cbNeed = sizeof( CNetStart ); break;
-    case cmd_chat:             cbNeed = sizeof( CNetChat ); break;
+
+    // Variable length, same rule as cmd_plyr_join below: the fixed fields fit, the sender's
+    // m_iLen is no less than them and no more than arrived, and the text ends inside m_iLen.
+    // AllocPlayer sends sizeof + strlen( name ) + 1; CNetChat::Alloc sends sizeof +
+    // strlen( text ) + 1, and the VP_READDATA chat path reads it too.
+    case cmd_player: {
+        if ( cbAvail < (int)sizeof( CNetPlayer ) ) return FALSE;
+        const CNetPlayer* pPlr = (const CNetPlayer*)this;
+        if ( pPlr->m_iLen < (int)sizeof( CNetPlayer ) || pPlr->m_iLen > cbAvail ) return FALSE;
+        if ( !TextEndsBefore( pPlr->m_sName, (const char*)pPlr + pPlr->m_iLen ) ) return FALSE;
+        cbNeed = pPlr->m_iLen;
+        break;
+    }
+    case cmd_chat: {
+        if ( cbAvail < (int)sizeof( CNetChat ) ) return FALSE;
+        const CNetChat* pChat = (const CNetChat*)this;
+        if ( pChat->m_iLen < (int)sizeof( CNetChat ) || pChat->m_iLen > cbAvail ) return FALSE;
+        if ( !TextEndsBefore( pChat->m_sMsg, (const char*)pChat + pChat->m_iLen ) ) return FALSE;
+        cbNeed = pChat->m_iLen;
+        break;
+    }
+    // cmd_to_hp has no sender and no m_iLen; its handler still reads m_sName.
+    case cmd_to_hp: {
+        if ( cbAvail < (int)sizeof( CNetToHp ) ) return FALSE;
+        const CNetToHp* pHp = (const CNetToHp*)this;
+        if ( !TextEndsBefore( pHp->m_sName, (const char*)pHp + cbAvail ) ) return FALSE;
+        cbNeed = sizeof( CNetToHp );
+        break;
+    }
+    // CMsgIPC::ToBuf sends sizeof( CMsgIPCWire ) + message + NUL + subject + NUL + 2, and
+    // SDL2Mail_HandleIncoming reads both strings from the tail.
+    case ipc_msg: {
+        if ( cbAvail < (int)sizeof( CMsgIPCWire ) ) return FALSE;
+        const char* pEnd     = (const char*)this + cbAvail;
+        const char* pMessage = (const char*)this + sizeof( CMsgIPCWire );
+        if ( !TextEndsBefore( pMessage, pEnd ) ) return FALSE;
+        if ( !TextEndsBefore( pMessage + strlen( pMessage ) + 1, pEnd ) ) return FALSE;
+        cbNeed = sizeof( CMsgIPCWire );
+        break;
+    }
+    // ai_msg wraps another record for an AI on the host: PostClientToClient sends
+    // m_iAllocLen = sizeof( CMsgAiMsg ) + m_iLen, and the host hands the m_iLen inner
+    // bytes to the AI, which casts them by their own type. So the inner record must fit
+    // as itself.
+    case ai_msg: {
+        if ( cbAvail < (int)sizeof( CMsgAiMsg ) ) return FALSE;
+        const CMsgAiMsg* pAi = (const CMsgAiMsg*)this;
+        if ( pAi->m_iLen < (int)sizeof( CNetCmd ) || pAi->m_iLen > cbAvail - (int)sizeof( CMsgAiMsg ) ) return FALSE;
+        if ( !( (const CNetCmd*)( pAi + 1 ) )->FitsBuffer( pAi->m_iLen ) ) return FALSE;
+        cbNeed = (int)sizeof( CMsgAiMsg ) + pAi->m_iLen;
+        break;
+    }
 
     case place_veh:            cbNeed = sizeof( CMsgPlaceVeh ); break;
     case veh_new:              cbNeed = sizeof( CMsgVehNew ); break;
@@ -1565,6 +1689,44 @@ BOOL CNetCmd::FitsBuffer( int cbAvail ) const
     case err_build_road:       cbNeed = sizeof( CMsgBuildRoad ); break;
     case road_new:             cbNeed = sizeof( CMsgRoadNew ); break;
     case road_done:            cbNeed = sizeof( CMsgRoadDone ); break;
+    // MUST be listed: an unlisted type falls through to `default: cbNeed = sizeof( CNetCmd )`,
+    // so a truncated 12-byte datagram would pass validation and the RX cast would read
+    // m_iPlyrNum/m_iEdict/m_bOn off the end of the buffer (BUGS #98).
+    case edict_toggle:         cbNeed = sizeof( CNetEdictToggle ); break;
+    // MUST be listed: an unlisted type falls through to `default: cbNeed = sizeof( CNetCmd )`,
+    // so a truncated 12-byte datagram would pass validation and the RX cast would read
+    // m_iX/m_iY/m_iType off the end of the buffer.
+    case hex_retype:           cbNeed = sizeof( CNetHexRetype ); break;
+    // MUST be listed: an unlisted type falls through to `default: cbNeed = sizeof( CNetCmd )`,
+    // so a truncated 12-byte datagram would pass validation and the RX cast would read
+    // m_iPlyrNum/m_iPermille off the end of the buffer.
+    case bldg_dmg_mult:        cbNeed = sizeof( CNetBldgDmgMult ); break;
+    // MUST be listed, same reason: save_info went from 40 to 44 bytes at save release 9,
+    // so a short (pre-9 peer) record must be refused, not read 4 bytes past its end.
+    case need_save_info:       cbNeed = sizeof( CNetNeedSaveInfo ); break;
+    case save_info:            cbNeed = sizeof( CNetSaveInfo ); break;
+    // MUST be listed: CNetPlyrJoin is variable length. CmdEnumPlyrs sends m_iLen bytes
+    // (sizeof + strlen( name ) + 2, from Alloc( CPlayer* )), and CmdPlyrJoin's Alloc( pData )
+    // copies m_iLen bytes and the name. Unlisted, a 12-byte datagram passed with any m_iLen.
+    // So: the fixed fields fit, m_iLen is no less than them and no more than arrived, and
+    // the name ends inside m_iLen.
+    case cmd_plyr_join: {
+        if ( cbAvail < (int)sizeof( CNetPlyrJoin ) ) return FALSE;
+        const CNetPlyrJoin* pJoin = (const CNetPlyrJoin*)this;
+        if ( pJoin->m_iLen < (int)sizeof( CNetPlyrJoin ) || pJoin->m_iLen > cbAvail ) return FALSE;
+        int cbName = pJoin->m_iLen - (int)( pJoin->m_sName - (const char*)pJoin );
+        if ( memchr( pJoin->m_sName, 0, cbName ) == NULL ) return FALSE;
+        cbNeed = pJoin->m_iLen;
+        break;
+    }
+    // MUST be listed, same reason: every sender posts the whole struct (OnMsgJoin's
+    // CNetEnumPlyrs; SDL2PickPlayerDialog's CNetSelectPlyr, which CmdSelectPlyr turns into
+    // ok/not_ok/taken and sends back at sizeof), and the handlers read m_iNetNum/m_iPlyrNum.
+    case cmd_enum_plyrs:       cbNeed = sizeof( CNetEnumPlyrs ); break;
+    case cmd_select_plyr:
+    case cmd_select_ok:
+    case cmd_select_not_ok:
+    case cmd_plyr_taken:       cbNeed = sizeof( CNetSelectPlyr ); break;
     case unit_damage:          cbNeed = sizeof( CMsgUnitDamage ); break;
     case unit_set_damage:      cbNeed = sizeof( CMsgUnitSetDamage ); break;
     case destroy_unit:
@@ -1575,6 +1737,53 @@ BOOL CNetCmd::FitsBuffer( int cbAvail ) const
     case attack:               cbNeed = sizeof( CMsgAttack ); break;
     case unit_attacked:        cbNeed = sizeof( CMsgUnitAttacked ); break;
     case see_unit:             cbNeed = sizeof( CMsgSeeUnit ); break;
+    // MUST be listed, same reason: every other fixed-size type that ProcessMessage casts, or
+    // that the AI casts (CAIMsg reads the record an ai_msg wraps), and reads past the header.
+    // Every sender posts sizeof( its struct ); wire_layout_assert.cpp pins each size.
+    // deploy_it has no sender.
+    case cmd_plyr_status:      cbNeed = sizeof( CNetPlyrStatus ); break;
+    case cmd_init_done:        cbNeed = sizeof( CNetInitDone ); break;
+    case cmd_play:             cbNeed = sizeof( CNetPlay ); break;
+    case cmd_to_ai:            cbNeed = sizeof( CNetToAi ); break;
+    case build_bridge:
+    case err_build_bridge:     cbNeed = sizeof( CMsgBuildBridge ); break;
+    case bridge_new:           cbNeed = sizeof( CMsgBridgeNew ); break;
+    case bridge_done:          cbNeed = sizeof( CMsgBridgeDone ); break;
+    case unit_repair:
+    case unit_set_repair:      cbNeed = sizeof( CMsgUnitRepair ); break;
+    case deploy_it:            cbNeed = sizeof( CMsgDeployIt ); break;
+    case plyr_dying:           cbNeed = sizeof( CMsgPlyrDying ); break;
+    case set_rsrch:            cbNeed = sizeof( CMsgRsrch ); break;
+    case repair_veh:           cbNeed = sizeof( CMsgRepairVeh ); break;
+    case repair_bldg:          cbNeed = sizeof( CMsgRepairBldg ); break;
+    case load_carrier:         cbNeed = sizeof( CMsgLoadCarrier ); break;
+    case unload_carrier:       cbNeed = sizeof( CMsgUnloadCarrier ); break;
+    case unit_control:         cbNeed = sizeof( CMsgUnitControl ); break;
+    case set_relations:        cbNeed = sizeof( CMsgSetRelations ); break;
+    case game_speed:           cbNeed = sizeof( CMsgGameSpeed ); break;
+    case bldg_materials:       cbNeed = sizeof( CMsgBldgMat ); break;
+    case give_unit:            cbNeed = sizeof( CMsgGiveUnit ); break;
+    case set_time:             cbNeed = sizeof( CMsgSetTime ); break;
+    case start_file:           cbNeed = sizeof( CMsgStartFile ); break;
+    case cancel_load:          cbNeed = sizeof( CMsgCancelLoad ); break;
+    case pause_messages:       cbNeed = sizeof( CMsgPauseMsg ); break;
+    case ai_gpf_takeover:      cbNeed = sizeof( CNetAiGpf ); break;
+    case research_disc:        cbNeed = sizeof( CNetRsrchDisc ); break;
+    case unit_loaded:          cbNeed = sizeof( CMsgLoaded ); break;
+    case unit_repaired:        cbNeed = sizeof( CMsgRepaired ); break;
+    case build_civ:            cbNeed = sizeof( CMsgBuildCiv ); break;
+    case scenario:             cbNeed = sizeof( CMsgScenario ); break;
+    case scenario_atk:         cbNeed = sizeof( CMsgScenarioAtk ); break;
+    case out_of_LOS:           cbNeed = sizeof( CMsgOutOfLos ); break;
+    // MUST be listed, and m_iBufLen is checked too: CmdGetFile allocates m_iBufLen bytes and
+    // receives the save into them. The host sends its save file's length (a few MB).
+    case cmd_get_file: {
+        if ( cbAvail < (int)sizeof( CNetGetFile ) ) return FALSE;
+        int iBufLen = ( (const CNetGetFile*)this )->m_iBufLen;
+        if ( iBufLen <= 0 || iBufLen > MAX_NET_GAME_FILE ) return FALSE;
+        cbNeed = sizeof( CNetGetFile );
+        break;
+    }
 
     // Compound (variable-length) messages are sent at SendSize() = header +
     // m_iNumMsgs*elem, NOT the full struct. Checking against sizeof(the whole

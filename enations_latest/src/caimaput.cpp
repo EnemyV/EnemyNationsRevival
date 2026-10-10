@@ -7289,11 +7289,13 @@ void CAIMapUtil::FindLandingHex( CHexCoord& hexHead )
                    hcStartArea.Y( ), hcEndArea.X( ), hcEndArea.Y( ), iDeltaX, iDeltaY );
 #endif
 
-        for ( iY = 0; iY < iDeltaY; ++iY )
+        // <= : the ring spans start..start+delta inclusive; with < its east
+        // and south edges were never searched
+        for ( iY = 0; iY <= iDeltaY; ++iY )
         {
             hex.Y( hex.Wrap( hcStartArea.Y( ) + iY ) );
 
-            for ( iX = 0; iX < iDeltaX; ++iX )
+            for ( iX = 0; iX <= iDeltaX; ++iX )
             {
                 hex.X( hex.Wrap( hcStartArea.X( ) + iX ) );
 

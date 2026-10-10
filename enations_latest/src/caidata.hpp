@@ -112,6 +112,7 @@ public:
 
 	BOOL IsArtillery( int iVehType );
 	BOOL IsCombatVehicle( int iVehType );
+	BOOL IsCombatShip( int iVehType );
 	BOOL IsTruck( DWORD dwID );
 	BOOL IsLoaded( DWORD dwID );
 	BOOL IsHexOfUnit( CAIHex *pHex );
@@ -135,6 +136,7 @@ public:
 
 	// specific location from the map
 	int GetCHexData( CAIHex *pHex );
+	int GetCHexDataRun( CAIHex *aHex, int n );	// n hexes, one cs hold
 	int GetCHexTerrain( CAIHex *pHex );
 
 	// get range in distance between locations

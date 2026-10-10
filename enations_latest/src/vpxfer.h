@@ -48,7 +48,8 @@ public:
 		ERR_PEERDEAD, 		 // Peer played dead deleted 
 		ERR_PLAYERDEAD,		 // local player removed
 		ERR_NOMEMORY,
-		ERR_SENDINGDATA		 // Error while sending data
+		ERR_SENDINGDATA,		 // Error while sending data
+		ERR_BADDATA		 // peer sent a short packet or more data than announced
 	};
 
 	CVPTransfer(VPSESSIONHANDLE h);

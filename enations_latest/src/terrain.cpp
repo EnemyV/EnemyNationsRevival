@@ -42,6 +42,7 @@ CGameMap         theMap;                   // the world (only one instance)
 CTerrain         theTerrain( "terrain" );  // data about the terrain types
 
 unsigned         g_enFogVisGen = 0;        // fog-of-war change counter (see terrain.h)
+uint64_t         g_enNavEpoch  = 0;        // navigation-state write counter (see terrain.h)
 CTerrainShowStat tShowStat;
 
 
@@ -183,6 +184,10 @@ void TerrainShowStatus( void* pData, CDC* pDc, CRect const& rDraw, CDIB* pDibBac
 const CHex& CHex::operator=( CHex const& src )
 {
 
+    // The destination need not be a hex of the live map (temporaries and the world
+    // generator both assign through here), so there is no row to name: the extent is
+    // unknown and the next snapshot is a full one (terrain.h g_enNavEpoch).
+    EnNavTouchAll( );
     m_bType    = src.m_bType;
     m_bAlt     = src.m_bAlt;
     m_bUnit    = src.m_bUnit;
@@ -1027,6 +1032,17 @@ CAnimAtr::MoveCenterHexes( int iDelX, int iDelY )
 //---------------------------------------------------------------------------
 void CAnimAtr::Scroll( int iDelX, int iDelY )
 {
+    // THE pan entry point. I spent a tick trying three input methods to move the
+    // view and could not tell whether any of them worked: reb.base/rb.dirchg/
+    // rebuild.cnt are rebuild/zoom/rotation counters, not pan, and t.incpan never
+    // emits at all (0 lines in a 3000-second log). This is unambiguous - if the
+    // view pans, this runs. Inert unless EN_PERF is set.
+    if ( Perf::IsEnabled( ) )   // the abs arithmetic below is argument work (class-B 7)
+    {
+        Perf::CounterInc( "view.scroll" );
+        Perf::CounterAdd( "view.scroll.px", (int64_t)( ( iDelX < 0 ? -iDelX : iDelX ) +
+                                                       ( iDelY < 0 ? -iDelY : iDelY ) ) );
+    }
     CRect rectDst = m_dibwnd.GetDIB( )->Scroll( iDelX, iDelY );
 
     if ( !rectDst.IsRectEmpty( ) )
@@ -2675,6 +2691,12 @@ void CHex::ChangeToRoad( CHexCoord& hex, BOOL bCallNext, BOOL bForce )
     // Captured BEFORE m_bType is overwritten, so the GPU sprite layer can be told to
     // drop the now-removed static tree (see g_enStaticDirty at the end).
     BOOL bWasForest = ( GetType( ) == CHex::forest );
+
+    // Before the raw m_bType write below, which bypasses SetType and can return
+    // early while the stored type has already changed (terrain.h g_enNavEpoch). The
+    // neighbours this call goes on to re-face come back through here and record
+    // themselves; the only hex written below is this one.
+    EnNavTouchHexAt( this );
 
     // if we don't see it yet, just mark it
     m_bType = CHex::road;
@@ -5050,6 +5072,9 @@ void CHex::Serialize( CArchive& ar )
     }
     else
     {
+        // A load rewrites the whole map hex by hex; naming a row per hex would just
+        // dirty every row (terrain.h g_enNavEpoch).
+        EnNavTouchAll( );
         ar >> m_bType >> m_bAlt >> m_bUnit;
         WORD iID;
         ar >> iID;

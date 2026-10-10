@@ -40,11 +40,48 @@ const char GameLogFile[] = "ENations.log";
 // (was runtime-only + backfilled flat on load, so the workforce graph didn't restore).
 // Release 7: CVehicleBuilding::m_iNum (the vehicle-build queue count) is now serialized,
 // so a factory's remaining build queue survives save/load (was lost -> queue truncated).
-#define         VER_RELEASE     7
+// Release 8: the vehicle route cursor's NO-CURSOR case now writes an out-of-range
+// SENTINEL (0xFFFF in the WORD index field) instead of the shipped N-1 (BUGS #99), and
+// it is read back as a NULL cursor only when the loaded save's release is >= 8. Older
+// saves keep the shipped N-1 rule exactly - a release-7 save storing N-1 still restores
+// the last route entry as the cursor.
+// Release 8 carries three more things besides that sentinel, all gated the same way and
+// all written only once the counter reached 8 (they were authored against a 7 counter, so
+// the WRITER is gated too - see the comments at each site in new_unit.cpp):
+//   - CVehicle::Serialize: the nine traffic detour/recovery fields (m_bResume,
+//     m_subResume, m_iResumeMode, m_bReversing, m_bForwardEscape, m_iHoldFrames,
+//     m_iBackUps, m_iJamClear, m_iJamCool), so a vehicle mid-detour or mid-hold resumes
+//     its saved job instead of coming back parked; plus m_bRouteLoop, the one-shot/loop
+//     flag (BUGS #95) - a pre-8 save never wrote it, so such a route loads LOOPING.
+//   - CRoute::Serialize: the order-queue payload (m_iBldgType, m_iDir, m_hexEnd) for
+//     BUGS #38, so a queued build/road order survives save/load as an order rather than
+//     decaying into a bare movement stop (pre-8 entries are movement stops only).
+// Release 9: CRsrchStatus::m_iPtsDiscovered widened from a 32-bit LONG to a 64-bit
+// LONGLONG, so research-points-so-far can climb past 2^31. This is a WIDTH change to an
+// existing field, not a new one, so the read is gated both ways: a save at release >= 9
+// carries 8 bytes, anything older carries 4 and is widened on load (see
+// CRsrchStatus::Serialize). The WRITER always writes 64-bit. The matching wire field,
+// CNetSaveInfo::m_iPtsDiscovered, widened with it, taking that message from 40 to 44 bytes
+// -- a PROTOCOL change, so release-9 clients cannot play against older ones. The gameplay
+// data hash covers the DAT tables, not code, so the JOINER compares the host's published
+// m_cVerRelease with its own and refuses a mismatch (SDL2Dialogs.cpp, beside the hash
+// check). The HOST cannot check: CNetJoin carries no release field, so an older joiner is
+// not refused there (its short save_info is dropped by FitsBuffer instead). Every seat
+// must run this build. Why: the in-code research ladders now price
+// their top tiers in the hundreds of millions, and m_iPtsRequired went 64-bit first; a
+// 32-bit accumulator could not climb to meet them, capping any topic at ~2^31 and wrapping
+// negative on the way (which trips the RandNum assert in CPlayer::Research).
+#define         VER_RELEASE     9
 
-// 3.00.014: bug-fix lane. No save-format change.
-#define         VER_STRING                              "3.00.014"
-#define         RES_VER_STRING                          "3.00.014\0"
+// 3.00.015: display version only. No HEADER change - VER_MAJOR/VER_MINOR stay 3/0, so
+// every 3.00.x save still passes the major/minor check and loads. (VER_RELEASE is
+// bumped to 9 above: 8 by BUGS #99, 9 by the 64-bit research points. The release
+// counter is NOT part of that major/minor header check - but it is not ignored either:
+// a save whose counter is ABOVE this build's is refused outright (BUGS #102), and a
+// counter BELOW it is read with its own layout, which is what the m_dwVer >= N field
+// gates exist to do.) Bumping VER_MINOR would refuse them all (CGame::Serialize).
+#define         VER_STRING                              "3.00.015"
+#define         RES_VER_STRING                          "3.00.015\0"
 
 #ifdef _DEBUG
 	#define         VER_FLAGS         VS_FF_DEBUG | VS_FF_PRIVATEBUILD | VS_FF_PRERELEASE

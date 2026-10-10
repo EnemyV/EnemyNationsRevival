@@ -11,6 +11,8 @@
 
 #include "caigmgr.hpp"
 
+#include "aicargo.h"  // carrier capacity by cargo weight
+#include "aipick.h"  // #73 clamped tie-break pick (RandNum is INCLUSIVE of its bound)
 #include "aisnap.h"  // Tier-B world snapshot (lock-free AI reads) — depleted-mine flag
 #include "altoutput.h"  // Fracking/Moho revival toggles (ConsiderAltOutputs)
 #include "caidata.hpp"
@@ -372,6 +374,9 @@ CAIGoalMgr::CAIGoalMgr( BOOL bRestart, int iPlayer, CAIMap* pMap, CAIUnitList* p
     m_iBldgLostRecent = 0;
     m_dwDefenseUntil  = 0;
     m_dwGunsUntil     = 0;
+    for ( int iBl = 0; iBl < 3; ++iBl )
+        m_adwBldgLostAt[iBl] = 0;
+    m_iBldgLostSlot = 0;
 
     m_pwaRatios    = NULL;
     m_pwaUnits     = NULL;
@@ -1069,16 +1074,18 @@ void CAIGoalMgr::ConsiderThreats( CAIMsg* pMsg )
                 ASSERT_VALID( pTask );
 
                 // that produce something
+                // UTshipyard too, so an enemy fleet is answered with ships
                 if ( pTask->GetTaskParam( ORDER_TYPE ) == PRODUCTION_ORDER &&
-                     pTask->GetTaskParam( PRODUCTION_TYPE ) == CStructureData::UTvehicle )
+                     ( pTask->GetTaskParam( PRODUCTION_TYPE ) == CStructureData::UTvehicle ||
+                       pTask->GetTaskParam( PRODUCTION_TYPE ) == CStructureData::UTshipyard ) )
                 {
                     // get id of the vehicle being produced
                     int iVeh = pTask->GetTaskParam( PRODUCTION_ITEM );
                     if ( iVeh >= m_iNumUnits )
                         continue;
 
-                    // BUGBUG does land combat vehicles only
-                    if ( !pGameData->IsCombatVehicle( iVeh ) )
+                    // land combat vehicles and combat ships (see CAIData::IsCombatShip)
+                    if ( !pGameData->IsCombatVehicle( iVeh ) && !pGameData->IsCombatShip( iVeh ) )
                         continue;
 
 #if THREADS_ENABLED
@@ -1173,7 +1180,10 @@ void CAIGoalMgr::AttackPlayer( int iOpforID )
             }
         }
         // add IDG_SEAINVADE if at war and known Opfor seaport
-        if ( pOpFor->GetBuilding( CStructureData::seaport ) || pOpFor->GetBuilding( CStructureData::shipyard ) )
+        // (CStructureData::shipyard is shipyard_1 only)
+        if ( pOpFor->GetBuilding( CStructureData::seaport ) ||
+             pOpFor->GetBuilding( CStructureData::shipyard_1 ) ||
+             pOpFor->GetBuilding( CStructureData::shipyard_3 ) )
         {
             pGoal = m_plGoalList->GetGoal( IDG_SEAINVADE );
             if ( pGoal == NULL )
@@ -2049,6 +2059,31 @@ void CAIGoalMgr::CheckResearch( void )
 //
 // return the topic to be researched
 //
+//
+// Nearest undiscovered prerequisite of iTopic researchable now (CanRsrch
+// needs every precursor). Depth-bounded against data cycles; 0 = none.
+//
+static int NavPickPrereq( CPlayer* pPlayer, int iTopic, int iDepth )
+{
+    if ( iDepth <= 0 || iTopic <= 0 || iTopic >= CRsrchArray::num_types )
+        return ( 0 );
+    if ( pPlayer->GetRsrch( iTopic ).m_bDiscovered )
+        return ( 0 );
+    if ( pPlayer->CanRsrch( iTopic ) )
+        return ( iTopic );
+
+    CRsrchItem* pRi = &theRsrch.ElementAt( iTopic );
+    for ( int iNum = 0, *piNum = pRi->m_piRsrchRequired; iNum < pRi->m_iNumRsrchRequired; iNum++, piNum++ )
+    {
+        if ( pPlayer->GetRsrch( *piNum ).m_bDiscovered )
+            continue;
+        int iPick = NavPickPrereq( pPlayer, *piNum, iDepth - 1 );
+        if ( iPick )
+            return ( iPick );
+    }
+    return ( 0 );
+}
+
 int CAIGoalMgr::NextResearchTopic( CPlayer* pPlayer )
 {
 #ifdef _LOGOUT
@@ -2106,6 +2141,28 @@ int CAIGoalMgr::NextResearchTopic( CPlayer* pPlayer )
     if ( pPlayer->CanRsrch( CRsrchArray::bridge_short ) )
         return ( CRsrchArray::bridge_short );
 
+    // tier-3 shipyard interrupt, like the ones above: the only yard that builds
+    // destroyers/cruisers, and the authored R&D paths reach it too late for a
+    // naval war. Water maps with a naval war goal only.
+    if ( ( m_bOceanWorld || m_bLakeWorld ) && m_plGoalList != NULL &&
+         ( m_plGoalList->GetGoal( IDG_SEAINVADE ) != NULL || m_plGoalList->GetGoal( IDG_PIRATE ) != NULL ) )
+    {
+        CStructureData const* pYard3 = pGameData->GetStructureData( CStructureData::shipyard_3 );
+        if ( pYard3 != NULL && !pYard3->PlyrIsDiscovered( pPlayer ) )
+        {
+            for ( int iOn = 0; iOn < 4; ++iOn )
+            {
+                int iReq = pYard3->GetRsrchReq( iOn );
+                if ( !iReq || pPlayer->GetRsrch( iReq ).m_bDiscovered )
+                    continue;
+
+                int iPick = NavPickPrereq( pPlayer, iReq, 8 );
+                if ( iPick )
+                    return ( iPick );
+            }
+        }
+    }
+
     // just go through the path assigned this AI
     for ( int i = 0; i < CRsrchArray::num_types; ++i )
     {
@@ -2139,12 +2196,12 @@ int CAIGoalMgr::NextResearchTopic( CPlayer* pPlayer )
     // Prioritize the CHEAPEST available topic (not uniform-random), so the AI grabs the
     // cheap early tiers of the in-code lines first. Two passes: min cost, then random
     // tie-break among topics sharing it. GetRandom keeps it multiplayer-deterministic.
-    int iMinCost = 0x7FFFFFFF;
+    long long iMinCost = 0x7FFFFFFFFFFFFFFFLL;   // 64-bit: m_iPtsRequired is
     for ( int i = 1; i < CRsrchArray::num_types; ++i )
         if ( pPlayer->CanRsrch( i ) && theRsrch[i].m_iPtsRequired < iMinCost )
             iMinCost = theRsrch[i].m_iPtsRequired;
 
-    if ( iMinCost != 0x7FFFFFFF )
+    if ( iMinCost != 0x7FFFFFFFFFFFFFFFLL )
     {
         int aiCheapest[CRsrchArray::num_types];
         int nCheapest = 0;
@@ -2152,7 +2209,19 @@ int CAIGoalMgr::NextResearchTopic( CPlayer* pPlayer )
             if ( pPlayer->CanRsrch( i ) && theRsrch[i].m_iPtsRequired == iMinCost )
                 aiCheapest[nCheapest++] = i;
 
-        int iTopic = aiCheapest[ pGameData->GetRandom( nCheapest ) ];
+        // #73: GetRandom( ) is a passthrough to RandNum( ), which returns 0..iMax
+        // INCLUSIVE (rand.cpp:55-68) -- so a raw GetRandom( nCheapest ) can return
+        // nCheapest and index one PAST the last slot written just above, an
+        // uninitialised stack read that hands the server a garbage topic id. Draw
+        // over nCheapest - 1 (the idiom already at area.cpp:4211) and clamp into the
+        // filled prefix: any draw that was already in range picks exactly the element
+        // it picked before. The empty test is unreachable today (iMinCost came from
+        // this same CanRsrch scan) but keeps GetRandom( -1 ) away from RandNum( )s
+        // ASSERT( iMax >= 0 ) if that ever stops holding.
+        if ( nCheapest <= 0 )
+            return ( 0 );
+        int iPick  = enaipick::PickFilled( nCheapest, pGameData->GetRandom( nCheapest - 1 ) );
+        int iTopic = aiCheapest[iPick];
 #ifdef _LOGOUT
         logPrintf( LOG_PRI_ALWAYS, LOG_AI_MISC,
                    "CAIGoalMgr::NextResearchTopic() for %d cheapest-fallback %d (cost %d) \n",
@@ -2170,6 +2239,15 @@ int CAIGoalMgr::NextResearchTopic( CPlayer* pPlayer )
 // current goals cover the player's needs, considering too
 // this will get called alot, so make changes subltly
 //
+
+// Caps on naval infrastructure goals (cranes are shared with the economy).
+// The yard-3 bonus exceeds the stdgta priority gap between landing craft (36)
+// and destroyers (24), so a tier-3-only hull wins its own yard.
+#define NAV_YARD3_EXCLUSIVE_BONUS 16
+#define NAV_MAX_YARD1 4   // tier-1 yards: motorboats, landing craft, cargo
+#define NAV_MAX_YARD3 3   // tier-3 yards: destroyers, cruisers
+#define NAV_MAX_PORTS 3   // seaports: cargo docks, build nothing
+
 void CAIGoalMgr::CheckPlayer( void )
 {
     EnterCriticalSection( &cs );
@@ -2299,12 +2377,55 @@ void CAIGoalMgr::CheckPlayer( void )
 
     // a naval goal needs a shipyard, but goal 1033/1034 data has NO shipyard
     // build task and nothing else ever raises the goal - ships were unbuildable
-    if ( m_bOceanWorld && hasCommandCenter &&
+    // Lake worlds too: shipyards may be built on any water map.
+    if ( ( m_bOceanWorld || m_bLakeWorld ) && hasCommandCenter &&
          ( m_plGoalList->GetGoal( IDG_SEAINVADE ) != NULL || m_plGoalList->GetGoal( IDG_PIRATE ) != NULL ) )
     {
-        WORD wYards = (WORD)( 1 + ( m_iWealthLevel > 1 ? 1 : 0 ) );
+        // Building goals scale with the hull shortfall (goal minus owned, WORD so
+        // clamped at 0): the construction prioritiser never builds past a goal.
+        auto NavShortfall = [this]( int iVeh ) -> int
+        {
+            return ( m_pwaVehGoals[iVeh] > m_pwaUnits[iVeh] )
+                       ? (int)( m_pwaVehGoals[iVeh] - m_pwaUnits[iVeh] )
+                       : 0;
+        };
+
+        const int iShortGun = NavShortfall( CTransportData::gun_boat );
+        const int iShortLC  = NavShortfall( CTransportData::landing_craft );
+        const int iShortCgo = NavShortfall( CTransportData::light_cargo );
+        const int iShortDD  = NavShortfall( CTransportData::destroyer );
+        const int iShortCA  = NavShortfall( CTransportData::cruiser );
+
+        // ---- tier-1 yards: motorboats, landing craft, cargo ----------------
+        WORD wYards = (WORD)( 1 + ( m_iWealthLevel > 1 ? 1 : 0 ) +
+                              ( ( iShortGun + iShortLC + iShortCgo ) / 6 ) );
+        if ( wYards > NAV_MAX_YARD1 )
+            wYards = NAV_MAX_YARD1;
         if ( m_pwaBldgGoals[CStructureData::shipyard_1] < wYards )
             m_pwaBldgGoals[CStructureData::shipyard_1] = wYards;
+
+        // ---- tier-3 yards: the only place destroyers and cruisers build ----
+        // Gated on research so a crane is not spent on a yard with nothing to make.
+        if ( CanBuildVehType( CTransportData::destroyer ) ||
+             CanBuildVehType( CTransportData::cruiser ) )
+        {
+            WORD wYards3 = (WORD)( 1 + ( ( iShortDD + iShortCA ) / 6 ) );
+            if ( wYards3 > NAV_MAX_YARD3 )
+                wYards3 = NAV_MAX_YARD3;
+            if ( m_pwaBldgGoals[CStructureData::shipyard_3] < wYards3 )
+                m_pwaBldgGoals[CStructureData::shipyard_3] = wYards3;
+        }
+
+        // ---- seaports: cargo docks, demand tracks the cargo fleet ----------
+        // Ocean only: seaports are never built on a lake-only map.
+        if ( m_bOceanWorld )
+        {
+            WORD wPorts = (WORD)( 1 + ( ( iShortCgo + m_pwaUnits[CTransportData::light_cargo] ) / 4 ) );
+            if ( wPorts > NAV_MAX_PORTS )
+                wPorts = NAV_MAX_PORTS;
+            if ( m_pwaBldgGoals[CStructureData::seaport] < wPorts )
+                m_pwaBldgGoals[CStructureData::seaport] = wPorts;
+        }
     }
 
     // on difficult levels, if the command_center exists
@@ -3190,8 +3311,11 @@ void CAIGoalMgr::UpdateVehGoals( void )
 
             // if production is ordered
             // then update m_pwaVehGoals
+            // UTshipyard too: ship tasks are UTshipyard, and with no goal a ship
+            // task drops to priority 0 once one hull exists
             if ( pTask->GetTaskParam( ORDER_TYPE ) == PRODUCTION_ORDER &&
-                 pTask->GetTaskParam( PRODUCTION_TYPE ) == CStructureData::UTvehicle )
+                 ( pTask->GetTaskParam( PRODUCTION_TYPE ) == CStructureData::UTvehicle ||
+                   pTask->GetTaskParam( PRODUCTION_TYPE ) == CStructureData::UTshipyard ) )
             {
                 int iVeh = (int)pTask->GetTaskParam( PRODUCTION_ITEM );
                 if ( iVeh < m_iNumUnits )
@@ -4708,7 +4832,13 @@ void CAIGoalMgr::SetAssaultStagingVehicle( WORD* awTypes )
                 {
                     if ( pTask->GetTaskParam( CAI_TF_SHIPS ) )
                     {
+                        // the escort bucket is all three hulls (CAI_TF_SHIPS);
+                        // GetProductionTask rejects unmarked types
                         awTypes[CTransportData::gun_boat] = 1;
+                        if ( CanBuildVehType( CTransportData::destroyer ) )
+                            awTypes[CTransportData::destroyer] = 1;
+                        if ( CanBuildVehType( CTransportData::cruiser ) )
+                            awTypes[CTransportData::cruiser] = 1;
                     }
                     if ( pTask->GetTaskParam( CAI_TF_MARINES ) )
                     {
@@ -4716,9 +4846,9 @@ void CAIGoalMgr::SetAssaultStagingVehicle( WORD* awTypes )
                     }
                     if ( pTask->GetTaskParam( CAI_TF_ARMOR ) )
                     {
-                        awTypes[CTransportData::light_tank] = 1;
-                        awTypes[CTransportData::med_tank]   = 1;
-                        awTypes[CTransportData::light_art]  = 1;
+                        // med_tank only: the one armor type LoadCargo embarks
+                        // and IsStagingCompete counts for IDG_SEAINVADE
+                        awTypes[CTransportData::med_tank] = 1;
                     }
                     if ( pTask->GetTaskParam( CAI_TF_LANDING ) )
                     {
@@ -4750,6 +4880,20 @@ void CAIGoalMgr::NoteBuildingLost( void )
 {
     m_iBldgLostRecent++;
     m_dwDefenseUntil = theGame.GettimeGetTime( ) + 600000;
+    m_adwBldgLostAt[m_iBldgLostSlot] = theGame.GettimeGetTime( );
+    m_iBldgLostSlot                  = ( m_iBldgLostSlot + 1 ) % 3;
+}
+
+// Bunker mode holds offensive launches only while being overrun (3 buildings
+// lost within 10 minutes), so it can lift during a sustained war. Any single
+// loss still raises war pressure for 10 minutes (m_dwDefenseUntil).
+BOOL CAIGoalMgr::IsBunkered( void )
+{
+    DWORD dwNow = theGame.GettimeGetTime( );
+    for ( int i = 0; i < 3; ++i )
+        if ( m_adwBldgLostAt[i] == 0 || dwNow - m_adwBldgLostAt[i] >= 600000 )
+            return FALSE;   // fewer than 3 losses inside the window
+    return TRUE;
 }
 
 // war pressure = at war with anyone, or attacked recently. Guns-or-butter is
@@ -4974,6 +5118,48 @@ void CAIGoalMgr::UpdateStagingTasks( void )
             // unanchored tasks have nothing to release
             if ( !pSpent->GetTaskParam( CAI_LOC_X ) && !pSpent->GetTaskParam( CAI_LOC_Y ) )
                 continue;
+
+            // troops still waiting to embark hold the task, so it is not spent;
+            // an empty craft GetNavyTask sent to lift them is not a leftover
+            // (releasing it re-routes it to a new staging hex on every pass)
+            {
+                BOOL     bTroops = FALSE;
+                POSITION posT    = m_plUnits->GetHeadPosition( );
+                while ( posT != NULL && !bTroops )
+                {
+                    CAIUnit* pT = (CAIUnit*)m_plUnits->GetNext( posT );
+                    if ( pT != NULL && pT->GetOwner( ) == m_iPlayer && pT->GetTask( ) == pSpent->GetID( ) &&
+                         pT->GetGoal( ) == pSpent->GetGoalID( ) && pT->GetTypeUnit( ) != CTransportData::landing_craft )
+                        bTroops = TRUE;
+                }
+                if ( bTroops )
+                    continue;
+            }
+
+            // an empty landing craft on a launched staging task is a leftover (e.g.
+            // from a save): release it so bHasUnit below sees only real units
+            {
+                POSITION posC = m_plUnits->GetHeadPosition( );
+                while ( posC != NULL )
+                {
+                    CAIUnit* pC = (CAIUnit*)m_plUnits->GetNext( posC );
+                    if ( pC == NULL || pC->GetOwner( ) != m_iPlayer )
+                        continue;
+                    if ( pC->GetTask( ) != pSpent->GetID( ) || pC->GetGoal( ) != pSpent->GetGoalID( ) )
+                        continue;
+                    if ( pC->GetTypeUnit( ) != CTransportData::landing_craft )
+                        continue;
+
+                    AiVehSnap snapStale;
+                    if ( AiSnap::ReadVeh( pC->GetID( ), snapStale ) && snapStale.iCargoCount <= 0 )
+                    {
+                        pC->SetTask( 0 );
+                        pC->SetGoal( 0 );
+                        pC->ClearParam( );
+                        pC->SetDataDW( 0 );
+                    }
+                }
+            }
 
             BOOL     bHasUnit = FALSE;
             POSITION posW     = m_plUnits->GetHeadPosition( );
@@ -6934,9 +7120,20 @@ CAITask* CAIGoalMgr::GetProductionTask( CAIUnit* pUnit )
                     if ( !CanBuildVehType( iVeh ) )
                         continue;
 
-                    if ( pTask->GetPriority( ) > iBest )
+                    // at a tier-3 yard, prefer hulls no tier-1 yard can build.
+                    // Local only: the task priority is shared state.
+                    int iEff = (int)pTask->GetPriority( );
+                    if ( pUnit->GetTypeUnit( ) == CStructureData::shipyard_3 &&
+                         m_pwaBldgs[CStructureData::shipyard_1] > 0 &&
+                         pTask->GetTaskParam( PRODUCTION_ID1 ) != CStructureData::shipyard_1 &&
+                         pTask->GetTaskParam( PRODUCTION_ID2 ) != CStructureData::shipyard_1 )
                     {
-                        iBest       = pTask->GetPriority( );
+                        iEff += NAV_YARD3_EXCLUSIVE_BONUS;
+                    }
+
+                    if ( iEff > iBest )
+                    {
+                        iBest       = iEff;
                         pPickedTask = pTask;
                     }
                 }
@@ -6967,7 +7164,7 @@ void CAIGoalMgr::LaunchAssault( CAITask* pTask )
 #endif
     // bunker mode: while losing buildings, OFFENSIVE launches wait at home
     // (ADVDEFENSE staging and all reactive combat are unaffected)
-    if ( theGame.GettimeGetTime( ) < m_dwDefenseUntil &&
+    if ( IsBunkered( ) &&
          ( pTask->GetGoalID( ) == IDG_LANDWAR || pTask->GetGoalID( ) == IDG_SEAINVADE ) )
     {
 #if EN_AI_PROBES_WAR && defined(_WIN32)
@@ -7706,6 +7903,22 @@ void CAIGoalMgr::UpdateTaskForce( CAITask* pTask, CHexCoord& hcStart, CHexCoord&
                 if ( pVehData == NULL )
                     continue;
 
+                // on launch, release an empty landing craft as CancelAssault does:
+                // left on IDT_PREPAREWAR it blocks the REARM reset, which needs zero
+                // holders. A wave still filling keeps its craft.
+                if ( wNewTask && pUnit->GetTypeUnit( ) == CTransportData::landing_craft )
+                {
+                    AiVehSnap snapEmpty;
+                    if ( AiSnap::ReadVeh( pUnit->GetID( ), snapEmpty ) && snapEmpty.iCargoCount <= 0 )
+                    {
+                        pUnit->SetTask( 0 );
+                        pUnit->SetGoal( 0 );
+                        pUnit->ClearParam( );
+                        pUnit->SetDataDW( 0 );
+                        continue;
+                    }
+                }
+
                 // consider that this unit may be onboard another unit
                 // and if so, then don't give it a destination yet
                 bIsOnBoard = FALSE;
@@ -7754,7 +7967,14 @@ void CAIGoalMgr::UpdateTaskForce( CAITask* pTask, CHexCoord& hcStart, CHexCoord&
                     {
                         AiVehSnap snapLC;
                         if ( AiSnap::ReadVeh( pUnit->GetID( ), snapLC ) && snapLC.iCargoCount > 0 )
+                        {
                             pUnit->SetTask( IDT_SEEKATSEA );
+                            // remember the wave's hex: SeekOpfor holds the craft on
+                            // it until it gets there (CAI_ROUTE_X/Y are truck-only)
+                            pUnit->SetParam( CAI_ROUTE_X, hex.X( ) );
+                            pUnit->SetParam( CAI_ROUTE_Y, hex.Y( ) );
+                            pUnit->ClearClaimProgress( );
+                        }
                     }
                     // ships only
                     else if ( pVehData->GetBaseType( ) == CTransportData::ship )
@@ -8597,6 +8817,26 @@ void CAIGoalMgr::GetNewStagingArea( CAITask* pTask )
 //
 // determine if this vehicle type can be built by this player
 //
+//
+// CVehicle::GetEffPeopleCarry for a carrier TYPE of this player, so a lift
+// can be planned before any craft exists. 0 = unknown type.
+//
+int CAIGoalMgr::GetCarrierCapacity( int iVehType )
+{
+    CTransportData const* pVehData = pGameData->GetTransportData( iVehType );
+    if ( pVehData == NULL )
+        return ( 0 );
+
+    int iCap = pVehData->GetPeopleCarry( );
+    if ( pVehData->IsBoat( ) && pVehData->IsCarrier( ) )
+    {
+        CPlayer* pPlayer = pGameData->GetPlayerData( m_iPlayer );
+        if ( pPlayer != NULL )
+            iCap += pPlayer->GetLandingCraftBonus( ) * MAX_CARGO;
+    }
+    return ( iCap );
+}
+
 BOOL CAIGoalMgr::CanBuildVehType( int iVehType )
 {
     BOOL                  bCanBuild = FALSE;
@@ -8738,15 +8978,39 @@ void CAIGoalMgr::GetStagingArea( CAITask* pTask )
 
             if ( iTotalUnits > 0 )
             {
-                i = pTask->GetTaskParam( CAI_TF_MARINES ) + pTask->GetTaskParam( CAI_TF_ARMOR );
-                if ( i > iTotalUnits )
-                    i = iTotalUnits;
+                // landing craft needed, packed by weight (a tank is MAX_CARGO
+                // slots, a ranger one)
+                int iArmor   = pTask->GetTaskParam( CAI_TF_ARMOR );
+                int iMarines = pTask->GetTaskParam( CAI_TF_MARINES );
+                int iCap     = GetCarrierCapacity( CTransportData::landing_craft );
+                int iNeeded  = enaicargo::CarriersNeeded( iArmor, iMarines, iCap );
 
-                // reduce to a minimum number of carriers + 1
-                i /= MAX_CARGO;
-                i++;
+                if ( iNeeded < 0 )
+                {
+                    // no craft can lift armor: drop it rather than round up to
+                    // one craft, or the wave would stage forever
+#ifdef _LOGOUT
+                    logPrintf( LOG_PRI_ALWAYS, LOG_AI_MISC,
+                               "\nUpdateTaskForce() player %d landing craft capacity %d cannot lift "
+                               "armor, marines only \n",
+                               m_iPlayer, iCap );
+#endif
+                    pTask->SetTaskParam( CAI_TF_ARMOR, 0 );
+                    iTotalUnits += iArmor;
+                    iArmor  = 0;
+                    iNeeded = enaicargo::CarriersNeeded( 0, iMarines, iCap );
+                    if ( iNeeded < 0 )
+                        iNeeded = 0;
+                }
+
+                // one spare craft so a single loss does not strand the wave
+                if ( iNeeded > 0 )
+                    iNeeded++;
+                if ( iNeeded > iTotalUnits )
+                    iNeeded = iTotalUnits;
+
                 // need as many landers to cary
-                pTask->SetTaskParam( CAI_TF_LANDING, i );
+                pTask->SetTaskParam( CAI_TF_LANDING, iNeeded );
                 // apply to running total
                 iTotalUnits -= pTask->GetTaskParam( CAI_TF_LANDING );
             }
@@ -8754,17 +9018,25 @@ void CAIGoalMgr::GetStagingArea( CAITask* pTask )
 
         if ( iTotalUnits > 0 )
         {
+            // size the escort screen off all three escort hulls
             i = 0;
             if ( CanBuildVehType( CTransportData::gun_boat ) )
                 i = m_pwaVehGoals[CTransportData::gun_boat];
+            if ( CanBuildVehType( CTransportData::destroyer ) )
+                i += m_pwaVehGoals[CTransportData::destroyer];
+            if ( CanBuildVehType( CTransportData::cruiser ) )
+                i += m_pwaVehGoals[CTransportData::cruiser];
 
             i /= 2;
             if ( i > iTotalUnits )
                 i = iTotalUnits;
             pTask->SetTaskParam( CAI_TF_SHIPS, pGameData->GetRandom( i ) );
             // min-1 fallback like PIRATE's cruiser/destroyer buckets - without
-            // it low gun_boat goals starve the SHIPS bucket to 0 forever
-            if ( !pTask->GetTaskParam( CAI_TF_SHIPS ) && CanBuildVehType( CTransportData::gun_boat ) )
+            // it low escort goals starve the SHIPS bucket to 0 forever
+            if ( !pTask->GetTaskParam( CAI_TF_SHIPS ) &&
+                 ( CanBuildVehType( CTransportData::gun_boat ) ||
+                   CanBuildVehType( CTransportData::destroyer ) ||
+                   CanBuildVehType( CTransportData::cruiser ) ) )
                 pTask->SetTaskParam( CAI_TF_SHIPS, 1 );
         }
 
@@ -8879,8 +9151,12 @@ void CAIGoalMgr::GetStagingArea( CAITask* pTask )
         //
         if ( CanBuildVehType( CTransportData::infantry_carrier ) )
         {
-            // only as many IFVs as necessary to carry infantry
-            i = pTask->GetTaskParam( CAI_TF_INFANTRY ) / MAX_CARGO;
+            // only as many IFVs as necessary to carry infantry (one slot
+            // each, against the IFV's own capacity)
+            i = enaicargo::CarriersNeeded( 0, pTask->GetTaskParam( CAI_TF_INFANTRY ),
+                                           GetCarrierCapacity( CTransportData::infantry_carrier ) );
+            if ( i < 0 )
+                i = 0;
             i++;
             pTask->SetTaskParam( CAI_TF_IFVS, i );
             // BUGBUG force no IFVs in assaults
@@ -9837,10 +10113,12 @@ DWORD CAIGoalMgr::GetOpForUnitScan( int const* aiHow, int const* aiKindOf, int n
                 DWORD dwBldgID   = 0;
                 int   iBldgOwner = 0;
 
-                // first non-own, non-cargo vehicle in the hex (vanilla subhex order)
+                // Spatial maps retain dying occupants until removal. They must
+                // not become targets: the ID lookup in SeekOpfor rejects them.
                 if ( !( bUnits & CHex::bldg ) && ( bUnits & ( CHex::ul | CHex::ur | CHex::ll | CHex::lr ) ) )
                 {
                     BOOL bIsCargo = FALSE;
+                    BOOL bIsDying = FALSE;
                     CVehicle* pVehicle = NULL;
                     for ( int iy = 0; iy < 2 && pVehicle == NULL; ++iy )
                     {
@@ -9855,10 +10133,13 @@ DWORD CAIGoalMgr::GetOpForUnitScan( int const* aiHow, int const* aiKindOf, int n
                                 iVehOwner = pVehicle->GetOwner( )->GetPlyrNum( );
                                 dwVehID   = pVehicle->GetID( );
                                 bIsCargo  = ( pVehicle->GetTransport( ) != NULL );
+                                bIsDying  = pVehicle->IsFlag( CUnit::dying );
                             }
                             LeaveCriticalSection( &cs );
 
-                            if ( pVehicle != NULL && iVehOwner == m_iPlayer )
+                            // skip a dying occupant like an own one, so it cannot hide
+                            // a live enemy in another subhex of this hex
+                            if ( pVehicle != NULL && ( iVehOwner == m_iPlayer || bIsDying ) )
                             {
                                 dwVehID  = 0;
                                 pVehicle = NULL;
@@ -9867,7 +10148,7 @@ DWORD CAIGoalMgr::GetOpForUnitScan( int const* aiHow, int const* aiKindOf, int n
                             break;
                         }
                     }
-                    if ( dwVehID && ( iVehOwner == m_iPlayer || bIsCargo ) )
+                    if ( dwVehID && ( iVehOwner == m_iPlayer || bIsCargo || bIsDying ) )
                         dwVehID = 0;
                 }
 
@@ -9875,6 +10156,7 @@ DWORD CAIGoalMgr::GetOpForUnitScan( int const* aiHow, int const* aiKindOf, int n
                 {
                     int  iType       = -1;
                     BOOL bIsAbandoned = FALSE;
+                    BOOL bIsDying     = FALSE;
                     EnterCriticalSection( &cs );
                     CBuilding* pBuilding = theBuildingHex.GetBuilding( hcAt );
                     if ( pBuilding != NULL )
@@ -9883,10 +10165,11 @@ DWORD CAIGoalMgr::GetOpForUnitScan( int const* aiHow, int const* aiKindOf, int n
                         iType        = pBuilding->GetData( )->GetType( );
                         dwBldgID     = pBuilding->GetID( );
                         bIsAbandoned = pBuilding->IsFlag( CUnit::abandoned );
+                        bIsDying     = pBuilding->IsFlag( CUnit::dying );
                     }
                     LeaveCriticalSection( &cs );
 
-                    if ( dwBldgID && ( iBldgOwner == m_iPlayer || bIsAbandoned || iType == CStructureData::city ) )
+                    if ( dwBldgID && ( iBldgOwner == m_iPlayer || bIsAbandoned || bIsDying || iType == CStructureData::city ) )
                         dwBldgID = 0;
                 }
 

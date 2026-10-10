@@ -10,14 +10,17 @@
 //
 
 #include "netapi.h"
+#include "datahashguard.h"   // the host-side data-hash predicate (015 phase 3)
 
 #include "SDL2GameDialogs.h"
 #include "enprobes.h"
+#include "Perf.h"           // flee.* spike counters (main-thread A* in a message handler)
 #include "ai.h"
 #include "area.h"
 #include "bridge.h"
 #include "building.inl"
 #include "chproute.hpp"
+#include "cpathmgr.h"
 #include "creatmul.inl"
 // CDlgMsg calls replaced by EnMessageBoxOnce (Phase 2a).
 // Keep this include for CDlgModelessMsg which is still used.
@@ -421,6 +424,9 @@ void EnMpDiagLog( const char* fmt, ... )
 static void OnMsgLeave( VPPLAYERID id )
 {
 
+    // the connection is gone - so is any pause it asked the host for
+    theGame.NetPauseDrop( id );
+
     // will be NULL if we deleted it
     CPlayer* pPlr = theGame._GetPlayer( id );
     if ( pPlr == NULL )
@@ -680,6 +686,54 @@ static void OnMsgJoin( LPCVPPLAYERINFO pPi, BOOL bLocal, BYTE bErr )
 
         // if we're not the server & this is the server then it already exists
         CNetJoin* pJn = (CNetJoin*)pPi->playerName;
+
+        // 015 phase 3: the host is the authority on the gameplay data set. A
+        // joiner whose units/research/version/stdgta/race/text tables differ is
+        // refused HERE, before it becomes a player, because from this point on
+        // the two machines would simulate different games. Art, sound, fonts and
+        // videos are not in the hash, so a player with replaced sprites or music
+        // passes. The length check is a sanity bound on the record we are about
+        // to read out of a fixed-size wire buffer; the hash compare is the guard.
+        if ( theGame.AmServer( ) )
+        {
+            const BOOL bTooShort = ( pJn->m_iLen < CNetJoin::MinLen( ) );
+            if ( !endataguard::AcceptJoin( pJn->m_iLen, CNetJoin::MinLen( ), pJn->m_dwDataHash,
+                                           theGame.m_dwDataHash ) )
+            {
+                // strPrintf is POSITIONAL (%1/%2/%3), not printf, so the two hex
+                // numbers are formatted first.
+                char szTheirs[16] = "?";
+                char szMine[16]   = { 0 };
+                if ( !bTooShort ) snprintf( szTheirs, sizeof( szTheirs ), "%08lx", (unsigned long)pJn->m_dwDataHash );
+                snprintf( szMine, sizeof( szMine ), "%08lx", (unsigned long)theGame.m_dwDataHash );
+
+                const std::string sName = bTooShort ? EnLoadStdString( IDS_UNKNOWN ) : std::string( pJn->m_sName );
+                const std::string sMsg =
+                    strPrintf( EnLoadStdString( IDS_DATA_MISMATCH ).c_str( ), sName.c_str( ), szTheirs, szMine );
+
+                // The refusal is the authority; the joiner does its own check
+                // first, but a modified or older client cannot be relied on to.
+                theNet.DeletePlayer( pPi->playerId );
+
+                // NOT a modal box. This runs on the host inside the lobby's
+                // message pump, and EnMessageBox would stop it dead until
+                // somebody clicked (and on POSIX draws nothing at all - the
+                // MessageBoxA stub is stderr). CDlgModelessMsg is the same
+                // non-modal notification the other MP player events use, and it
+                // is SDL-rendered, so it shows on every platform.
+                char szLog[256];
+                snprintf( szLog, sizeof( szLog ), "[DATAHASH] refused '%s': joiner %s, this game %s",
+                          sName.c_str( ), szTheirs, szMine );
+                OutputDebugStringA( szLog );
+                OutputDebugStringA( "\n" );
+                theApp.Log( szLog );
+
+                CDlgModelessMsg* pDlg = new CDlgModelessMsg( );
+                pDlg->Create( sMsg.c_str( ) );
+                return;
+            }
+        }
+
         if ( ( !theGame.AmServer( ) ) && ( pJn->m_bServer ) && ( theGame.GetServer( ) != NULL ) )
         {
             pPlyr = theGame.GetServer( );
@@ -726,8 +780,10 @@ static void OnMsgJoin( LPCVPPLAYERINFO pPi, BOOL bLocal, BYTE bErr )
 static void StartFile( CMsgStartFile* pMsg )
 {
 
-    theGame.m_iNumSends++;
     CPlayer* pPlyr = theGame.GetPlayer( pMsg->m_idTo );
+    if ( pPlyr == NULL )
+        return;
+    theGame.m_iNumSends++;
 
     pPlyr->SetState( CPlayer::load_file );
     pPlyr->m_pXferToClient = new CVPTransfer( theNet._GetSessionHandle( ) );
@@ -1462,28 +1518,44 @@ static void CmdEnumPlyrs( int iNetNum )
     }
 }
 
-static void CmdPlyrJoin( CNetPlyrJoin* /*pMsg*/ )
+static void CmdPlyrJoin( CNetPlyrJoin* pMsg )
 {
-    // CDlgPickPlayer removed (Phase 2d). The MFC load-join path that received
-    // these messages is dead; the SDL2 SDL2PickPlayerDialog populates its own
-    // listbox from theGame state via CNetPlyrJoin sent earlier in the handshake.
+    // A saved player the host offers us (reply to our CNetEnumPlyrs). The 1996
+    // handler added it to CDlgPickPlayer's listbox; SDL2PickPlayerDialog reads
+    // the same data from CJoinMulti::m_loadPlyrs.
     if ( ( theApp.m_pCreateGame == NULL ) || ( theGame.AmServer( ) ) ||
          ( theApp.m_pCreateGame->m_iTyp != CCreateBase::load_join ) )
     {
         TRAP( );
         return;
     }
+
+    std::vector<CNetPlyrJoin*>& lst = ( (CJoinMulti*)theApp.m_pCreateGame )->m_loadPlyrs;
+    for ( CNetPlyrJoin*& pOld : lst )
+        if ( pOld->m_iPlyrNum == pMsg->m_iPlyrNum )
+        {
+            delete[] (char*)pOld;
+            pOld = CNetPlyrJoin::Alloc( pMsg );
+            return;
+        }
+    lst.push_back( CNetPlyrJoin::Alloc( pMsg ) );
 }
 
 static void CmdSelectPlyr( CNetSelectPlyr* pMsg )
 {
 
-    CPlayer* pPlrWasMe = theGame.GetPlayer( pMsg->m_iNetNum );
-    CPlayer* pPlr      = theGame.GetPlayerByPlyr( pMsg->m_iPlyrNum );
-    if ( pPlr->GetState( ) != CPlayer::ready )
+    // the asker must still be an unassigned joiner (m_lstLoad) and the saved
+    // player must exist and be free. It asks only for itself: m_iNetNum must be
+    // the sender's net id (msgFrom, as the pause and bldg_dmg_mult paths key on)
+    CPlayer* pPlrWasMe = theGame._GetPlayer( pMsg->m_iNetNum );
+    CPlayer* pPlr      = theGame._GetPlayerByPlyr( pMsg->m_iPlyrNum );
+    if ( ( pMsg->m_iNetNum == pMsg->msgFrom ) && ( pPlrWasMe != NULL ) &&
+         ( theGame.m_lstLoad.Find( pPlrWasMe, NULL ) != NULL ) && ( pPlr != NULL ) &&
+         ( pPlr->GetState( ) != CPlayer::ready ) )
     {
         theGame.LoadToPlyr( pPlrWasMe, pPlr );
         pPlr->SetState( CPlayer::ready );
+        pPlr->m_iPerInit = 0;   // claimed; CmdInitDone sets 100 once the save is loaded there
         theApp.m_pCreateGame->UpdateBtns( );
 
         pMsg->ToOk( );
@@ -1509,13 +1581,19 @@ static void CmdSelectPlyr( CNetSelectPlyr* pMsg )
         return;
     }
 
-    TRAP( );
+    // m_iNetNum is a net number; PostToClient( int ) takes a PLAYER number.
+    // The refusal goes to whoever asked, which is m_iNetNum unless it lied.
     pMsg->ToNotOk( );
-    theGame.PostToClient( pMsg->m_iNetNum, pMsg, sizeof( CNetSelectPlyr ) );
+    theNet.Send( pMsg->msgFrom, pMsg, sizeof( CNetSelectPlyr ) );
 }
 
 static void CmdSelectOk( CNetSelectPlyr* )
 {
+
+    if ( theApp.m_pCreateGame == NULL )
+        return;
+    if ( theApp.m_pCreateGame->m_iTyp == CCreateBase::load_join )
+        ( (CJoinMulti*)theApp.m_pCreateGame )->m_iPickReply = 1;
 
     theApp.m_pCreateGame->ClosePick( );
     SDL2CreateStatus* pDlg = theApp.m_pCreateGame->GetDlgStatus( );
@@ -1529,28 +1607,30 @@ static void CmdSelectOk( CNetSelectPlyr* )
 
 static void CmdSelectNotOk( CNetSelectPlyr* )
 {
-    TRAP( );
-
-    if ( theApp.m_pCreateGame->m_iTyp != CCreateBase::load_join )
+    if ( ( theApp.m_pCreateGame == NULL ) || ( theApp.m_pCreateGame->m_iTyp != CCreateBase::load_join ) )
         return;
 
-    // CDlgPickPlayer removed (Phase 2d) — the MFC m_dlgWait
-    // (CDlgPickWait) modal that gated re-entry is gone; SDL2 join
-    // flow re-enables itself when its DoModal loop resumes.
+    // SDL2PickPlayerDialog re-enables its list when it sees this
+    ( (CJoinMulti*)theApp.m_pCreateGame )->m_iPickReply = -1;
 }
 
-static void CmdPlayerTaken( CNetSelectPlyr* /*pMsg*/ )
+static void CmdPlayerTaken( CNetSelectPlyr* pMsg )
 {
-    // CDlgPickPlayer removed (Phase 2d). The MFC handler walked the dialog's
-    // listbox to mark the taken player and refresh button state; the SDL2
-    // join flow re-queries theGame state from its own DoModal loop.
-    if ( theApp.m_pCreateGame == NULL ) return;
-    TRAP( );
+    // someone claimed a saved player - grey it out in our pick list
+    if ( ( theApp.m_pCreateGame == NULL ) || ( theApp.m_pCreateGame->m_iTyp != CCreateBase::load_join ) )
+        return;
+
+    for ( CNetPlyrJoin* pData : ( (CJoinMulti*)theApp.m_pCreateGame )->m_loadPlyrs )
+        if ( pData->m_iPlyrNum == pMsg->m_iPlyrNum )
+            pData->m_bAvail = FALSE;
 }
 
 // sending the game file to this player
 static void CmdGetFile( CNetGetFile* pCmd )
 {
+    // only a load-join joiner is waiting for a game file
+    if ( ( theApp.m_pCreateGame == NULL ) || ( theApp.m_pCreateGame->m_iTyp != CCreateBase::load_join ) )
+        return;
 
     // update the player numbers
     theGame.GetMe( )->SetPlyrNum( pCmd->m_iPlyrNum );
@@ -1648,6 +1728,10 @@ static void CmdPlayer( CNetPlayer* pNp )
     {
         POSITION pos = theGame.GetAll( ).Find( pPlr );
         theGame.GetAll( ).RemoveAt( pos );
+        // and out of the AI list too (a saved AI a human claimed is still in it);
+        // it goes back below only if this message says it is AI
+        if ( ( pos = theGame.GetAi( ).Find( pPlr ) ) != NULL )
+            theGame.GetAi( ).RemoveAt( pos );
     }
     else
     {
@@ -1819,7 +1903,10 @@ static void CmdInitDone( CNetInitDone* pMsg )
     if ( theApp.m_pCreateGame->m_iTyp != CCreateBase::load_multi )
         pPlyr->SetState( CPlayer::wait );
     else
+    {
         pPlyr->SetState( CPlayer::ready );
+        pPlyr->m_iPerInit = 100;   // the save is loaded there - the host lobby may start
+    }
 
     POSITION pos;
     for ( pos = theGame.GetAll( ).GetTailPosition( ); pos != NULL; )
@@ -1909,7 +1996,8 @@ static void PlaceBldg( CMsgPlaceBldg* pMsg )
 static void ErrPlaceBldg( CMsgPlaceBldg* pMsg )
 {
 
-    if ( !theGame.GetPlayer( pMsg->m_iPlyrNum )->IsMe( ) )
+    CPlayer* pPlr = theGame.GetPlayer( pMsg->m_iPlyrNum );
+    if ( ( pPlr == NULL ) || !pPlr->IsMe( ) )
         return;
     ASSERT_CMD( pMsg );
 
@@ -1986,6 +2074,10 @@ static void ErrBuildBldg( CMsgBuildBldg* pMsg )
     }
     else
         theGame.Event( EVENT_CONST_CANT, EVENT_WARN, pVeh );
+
+    // #38: the request is answered. Drop the queued order this rejection is FOR (if the
+    // crane had one) so the rest of its queue carries on; the warning above is unchanged.
+    pVeh->OrderFailed( pMsg->m_hexBldg, pMsg->m_iType );
 }
 
 #if EN_GAMEPLAY_PROBES
@@ -2525,6 +2617,34 @@ static void SetVehDest( CMsgVehSetDest* pMsg )
         OutputDebugStringA( szE );
     }
 #endif
+    // REDUNDANCY PROBE (@WinAstra: "distinguish redundant reissues from necessary new
+    // orders before choosing a fix"). veh_set_dest is 94% of message-handling time and
+    // its handler pathfinds synchronously, but that only makes DEDUP the fix shape if a
+    // large share of these orders re-state a destination the vehicle already holds.
+    // Sampled BEFORE SetEvent/SetDest mutate the vehicle. Inert unless EN_PERF is set.
+    if ( Perf::IsEnabled( ) )
+    {
+        // public accessor, not the protected member: this function is declared static
+        // but befriended, so touching m_hexDest compiled here and would be the first
+        // unguarded protected access from it (WinFable re-audit fix 3).
+        const BOOL bSameHex = ( pVeh->GetHexDest( ) == pMsg->m_hex );
+        Perf::CounterInc( bSameHex ? "vsd.samedest" : "vsd.newdest" );
+        Perf::CounterInc( pVeh->GetOwner( )->IsAI( ) ? "vsd.ai" : "vsd.human" );
+        // the .stopped split is DROPPED rather than kept: m_cMode is protected and has
+        // no public equivalent (IsOnTheMove() is not "== stop"), so keeping it would
+        // mean adding a production accessor for a probe. The finding it produced -
+        // 63% of new destinations go to vehicles in stop mode - is already on the board.
+        // discriminates the suspected LEAK in the AI dedupe: CAIUnit::SetDestination's
+        // building and sub-hex overloads (caiunit.cpp:1016, 1070) short-circuit the whole
+        // 30s guard on !bInBldg, so a vehicle parked INSIDE a building is deduped not at
+        // all - while the CHexCoord overload (:1127) gives that case a 5s cooldown. If the
+        // leak is real, samedest is dominated by in-building vehicles. Sampled at handler
+        // time, which can differ from producer time for a vehicle in motion; for a parked
+        // truck - the population this is about - it is stable.
+        if ( pVeh->IsInBuilding( ) )
+            Perf::CounterInc( bSameHex ? "vsd.samedest.inbldg" : "vsd.newdest.inbldg" );
+    }
+
     pVeh->SetEvent( CVehicle::none );
     if ( pMsg->m_iSub == CVehicle::sub )
         pVeh->SetDest( pMsg->m_sub );
@@ -2574,7 +2694,8 @@ static void UnitSetDamage( CMsgUnitSetDamage* pMsg )
         return;
 
     // assess it here
-    pDamage->DecDamagePoints( pDamage->GetDamagePoints( ) - pMsg->m_iDamageLevel, pMsg->m_dwIDShoot );
+    // the server sent an absolute level it already scaled - apply the delta raw
+    pDamage->DecDamagePoints( pDamage->GetDamagePoints( ) - pMsg->m_iDamageLevel, pMsg->m_dwIDShoot, FALSE );
 }
 
 static void TransMat( CMsgTransMat* pMsg )
@@ -2603,6 +2724,16 @@ static void TransMat( CMsgTransMat* pMsg )
 
         pSrc->AddToStore( iOn, -pMsg->m_aiMat[iOn] );
         pDest->AddToStore( iOn, pMsg->m_aiMat[iOn] );
+
+        // Measure applied deliveries, not merely a router request or REJOIN.
+        // WaitLog is inert unless EN_WAIT_LOG is set; no routing state changes.
+        if ( pMsg->m_aiMat[iOn] > 0 && pSrc->GetUnitType( ) == CUnit::vehicle &&
+             pDest->GetUnitType( ) == CUnit::building && pSrc->GetOwner( )->IsMe( ) &&
+             ((CVehicle*)pSrc)->GetData( )->IsTransport( ) &&
+             !((CVehicle*)pSrc)->GetData( )->IsBoat( ) )
+            WaitLog( "[DELIVERED] veh %lu building %lu material %d amount %d truck_store %d building_store %d",
+                     (unsigned long)pSrc->GetID( ), (unsigned long)pDest->GetID( ), iOn,
+                     pMsg->m_aiMat[iOn], pSrc->GetStore( iOn ), pDest->GetStore( iOn ) );
     }
 
     // turn back on if paused
@@ -2669,6 +2800,16 @@ static void DeleteUnit( CMsgDeleteUnit* pCmd )
         return;
     ASSERT_CMD( pCmd );
     ASSERT( pUnit->GetFlags( ) & CUnit::dying );
+
+    // Diagnostic only: disappearing traffic must not count as successful recovery.
+    if ( pUnit->GetUnitType( ) == CUnit::vehicle )
+    {
+        CVehicle* v = (CVehicle*)pUnit;
+        WaitLog( "[VEH-DELETE] veh %lu health %d dying %d owner %d killer %d head %d,%d tail %d,%d",
+                 (unsigned long)v->GetID(), v->GetDamagePoints(), (int) !!v->IsFlag(CUnit::dying),
+                 v->GetOwner() ? v->GetOwner()->GetPlyrNum() : -1, pCmd->m_iPlyrKiller,
+                 v->GetPtHead().x, v->GetPtHead().y, v->GetPtTail().x, v->GetPtTail().y );
+    }
 
     CPlayer* pPlr;
     if ( pCmd->m_iPlyrKiller >= 0 )
@@ -2968,6 +3109,45 @@ static void UnitAttacked( CMsgUnitAttacked* pMsg )
                         _dest.Wrap( );
                         iNum--;
                     }
+
+                    // A random flee point is a proposal, not a drivable route.
+                    // Pavement is a valid emergency waypoint. Once safe/stopped,
+                    // LeaveRoad handles parking; reject only unusable destinations.
+                    if ( !pVeh->GetData()->IsBoat() ) {
+                        CHexCoord from(pVeh->GetPtHead()), to(_dest);
+                        CHex *hex = theMap._GetHex(to);
+                        BOOL usable = _dest != pVeh->GetPtHead() &&
+                            !(hex->GetUnits() & CHex::bldg) &&
+                            pVeh->GetData()->CanTravelHex(hex) &&
+                            theMap.GetTerrainCost(to, to, 0, pVeh->GetData()->GetWheelType()) != 0;
+                        if ( usable ) {
+                            // SPIKE PROBE: this is a FULL synchronous A* on the MAIN thread,
+                            // inside a message handler, to validate a RANDOMLY jittered flee
+                            // point. Added by traffic(015) 2/7 (e081a6e7) and ungated - no
+                            // TrafficOpts bit reaches it, which is why the EN_TRAFFIC=0 arm
+                            // could never have exonerated it. flee.reject counts searches
+                            // whose entire cost is thrown away.
+                            Perf::CounterInc( "flee.calls" );
+                            const uint64_t _qFlee = Perf::NowIfEnabled( );
+                            int length = 0;
+                            CHexCoord *path = thePathMgr.GetPath(NULL, from, to, length,
+                                pVeh->GetData()->GetType(), FALSE, TRUE);
+                            usable = from == to || (path != NULL && length > 0 && path[length-1] == to);
+                            delete[] path;
+                            Perf::CounterAddElapsedUs( "flee.us", _qFlee );
+                            if ( !usable )
+                                Perf::CounterInc( "flee.reject" );
+                        }
+                        if ( !usable ) {
+                            WaitLog("[FLEE-REJECT] veh %d attacker %d from %d,%d proposed %d,%d terrain %d",
+                                pVeh->GetID(), pAttacker->GetID(), pVeh->GetPtHead().x, pVeh->GetPtHead().y,
+                                _dest.x, _dest.y, hex->GetType());
+                            theGame.Event( EVENT_CONST_UNDER_ATK, EVENT_WARN, pTarget );
+                            return;
+                        }
+                    }
+                    WaitLog("[FLEE-ORDER] veh %d attacker %d from %d,%d to %d,%d",
+                        pVeh->GetID(), pAttacker->GetID(), pVeh->GetPtHead().x, pVeh->GetPtHead().y, _dest.x, _dest.y);
 
                     // RUN AWAY!!
                     ( (CVehicle*)pTarget )->SetDest( _dest );
@@ -3395,6 +3575,8 @@ void CGame::ProcessMessage(CNetCmd* pCmd )
         TRAP( );
         CNetToHp* pMsg = (CNetToHp*)pCmd;
         CPlayer*  pPlr = theGame.GetPlayer( pMsg->m_iPlyrNum );
+        if ( pPlr == NULL )
+            break;
         pPlr->SetAI( FALSE );
         pPlr->SetNetNum( pMsg->m_iNetNum );
         pPlr->SetName( pMsg->m_sName );
@@ -3603,6 +3785,8 @@ void CGame::ProcessMessage(CNetCmd* pCmd )
         // remove from list of players & then post again
         CMsgPlyrDying* pMsg = (CMsgPlyrDying*)pCmd;
         CPlayer*       pPlr = theGame.GetPlayerByPlyr( pMsg->m_iPlyrNum );
+        if ( pPlr == NULL )
+            break;
 
         // ok - remove it
         theGame.RemovePlayer( pPlr );
@@ -3693,6 +3877,8 @@ void CGame::ProcessMessage(CNetCmd* pCmd )
     case CNetCmd::ai_msg: {
         CMsgAiMsg* pMsg = (CMsgAiMsg*)pCmd;
         CPlayer*   pPlr = theGame.GetPlayerByPlyr( pMsg->m_iPlyrNum );
+        if ( pPlr == NULL )
+            break;
         AiMessage( pPlr->GetAiHdl( ), pMsg + 1, pMsg->m_iLen );
         break;
     }
@@ -3759,6 +3945,13 @@ void CGame::ProcessMessage(CNetCmd* pCmd )
         break;
 
     case CNetCmd::start_loaded_game:
+        // Same deferral as CmdStart: a joiner in its waiting room starts the
+        // loaded game from the join flow, after the modal lobby has closed.
+        if ( g_bClientLobbyWaiting )
+        {
+            g_bClientStartReceived = true;
+            break;
+        }
         theGame.StartGame( FALSE );
         break;
 
@@ -3834,54 +4027,21 @@ void CGame::ProcessMessage(CNetCmd* pCmd )
             break;
         }
 
-        CPlayer* pPlr = theGame.GetPlayerByPlyr( pMsg->m_iPlyrNum );
-        // if pausing us, set that player to paused and pause
-        if ( pMsg->m_bPause )
-        {
-            if ( theApp.m_pLogFile != NULL )
-            {
-                SYSTEMTIME st;
-                char       sBuf[200];
-                GetLocalTime( &st );
-                sprintf( sBuf, "Pause: On at %d:%d", st.wMinute, st.wSecond );
-                theApp.Log( sBuf );
-            }
-            pPlr->m_bPauseMsgs = TRUE;
-            SetMessagesPaused(TRUE);
-            break;
-        }
-
-        // mark that player as un-paused and then check all to see if can restart
-        pPlr->m_bPauseMsgs = FALSE;
-        POSITION pos;
-        for ( pos = theGame.GetAll( ).GetHeadPosition( ); pos != NULL; )
-        {
-            CPlayer* pPlr = theGame.GetAll( ).GetNext( pos );
-            // if any player says pause - we pause
-            if ( pPlr->m_bPauseMsgs )
-            {
-                // NOT a fault (was TRAP): with several clients, pause windows overlap
-                // routinely — e.g. game start, where every joiner pauses while it builds
-                // the world and unpauses as it finishes. First unpause arriving while a
-                // slower client is still paused lands here by design: stay paused and
-                // wait for the rest. (The TRAP froze the host in the debugger mid-start
-                // of the first 3-client MP game, 2026-07-01.)
-                if ( theApp.m_pLogFile != NULL )
-                    theApp.Log( "Pause: staying paused, another player still paused" );
-                return;
-            }
-        }
-
-        // everyone says ok
-        if ( theApp.m_pLogFile != NULL )
+        // Host: the request belongs to the CONNECTION it came in on - msgFrom, the
+        // sender's vdmplay net id stamped by vpSendData. m_iPlyrNum is not usable
+        // as the key: a Load Network Game joiner sends it first as its lobby
+        // number (or 0 -> GetPlayerByPlyr(0) = the host itself) and later as the
+        // saved player it claimed, so a pause and its unpause named different
+        // players and the host stayed paused for the rest of the game.
+        if ( pMsg->m_bPause && ( theApp.m_pLogFile != NULL ) )
         {
             SYSTEMTIME st;
             char       sBuf[200];
             GetLocalTime( &st );
-            sprintf( sBuf, "Pause: Off at %d:%d", st.wMinute, st.wSecond );
+            sprintf( sBuf, "Pause: On at %d:%d", st.wMinute, st.wSecond );
             theApp.Log( sBuf );
         }
-        SetMessagesPaused(FALSE);
+        theGame.NetPauseRequest( pMsg->msgFrom, pMsg->m_bPause );
         break;
     }
 
@@ -3889,6 +4049,8 @@ void CGame::ProcessMessage(CNetCmd* pCmd )
         TRAP( );
         CNetAiGpf* pMsg = (CNetAiGpf*)pCmd;
         CPlayer*   pPlr = theGame.GetPlayerByPlyr( pMsg->m_iPlyrNum );
+        if ( pPlr == NULL )
+            break;
         theGame.AiTakeOverPlayer( pPlr, TRUE, FALSE );
         break;
     }
@@ -3923,7 +4085,9 @@ void CGame::ProcessMessage(CNetCmd* pCmd )
         }
         if ( !pPlr->IsLocal( ) )
         {
-            TRAP( );
+            // Was a 1996 TRAP: this is the normal path whenever a player on another seat
+            // finishes a topic, so it crashed every Debug host in multiplayer.
+            EN_TRAP_REMOVED( "research_disc: a remote player discovered a topic" );
             pPlr->UpdateRacialAttributes( pMsg->m_iRsrch );
             ( pPlr->GetRsrch( pMsg->m_iRsrch ) ).m_bDiscovered = TRUE;
         }
@@ -3936,7 +4100,15 @@ void CGame::ProcessMessage(CNetCmd* pCmd )
                 if ( !pRs->m_bDiscovered )
                 {
                     CRsrchItem* pRi = &theRsrch.ElementAt( pMsg->m_iRsrch );
-                    pRs->m_iPtsDiscovered += ( pRi->m_iPtsRequired * theGame.m_iAi ) / 2;
+                    // Both sides are 64-bit now (save release 9), so this no longer has to be
+                    // squeezed back into 32 bits; keep the negative guard only, since a wrapped
+                    // or corrupt value here reaches RandNum( ) in CPlayer::Research, which
+                    // asserts on a negative argument.
+                    LONGLONG llNew = pRs->m_iPtsDiscovered
+                                   + ( pRi->m_iPtsRequired * (LONGLONG)theGame.m_iAi ) / 2;
+                    if ( llNew < 0 )
+                        llNew = 0;
+                    pRs->m_iPtsDiscovered = llNew;
                 }
             }
         break;
@@ -3962,6 +4134,43 @@ void CGame::ProcessMessage(CNetCmd* pCmd )
         break;
     }
 
+    // Civil Defence: a remote owner reports its building damage multiplier to the server, the
+    // only machine that applies building damage (see CPlayer::GetEdictBldgDmgMult). Accepted only
+    // on the server, only for a non-local player, and only from that player's own connection
+    // (msgFrom, the sender's net id stamped by vpSendData, as in the pause_messages host path).
+    case CNetCmd::bldg_dmg_mult: {
+        CNetBldgDmgMult* pMsg = (CNetBldgDmgMult*)pCmd;
+        if ( !theGame.AmServer( ) )
+            break;
+        CPlayer* pPlr = theGame._GetPlayerByPlyr( pMsg->m_iPlyrNum );
+        if ( ( pPlr == NULL ) || pPlr->IsLocal( ) || ( pPlr->GetNetNum( ) != pMsg->msgFrom ) )
+            break;
+        pPlr->SetRemoteBldgDmgPermille( pMsg->m_iPermille );
+        break;
+    }
+
+    // Slash and Burn: one hex was clear-cut on the owner's client. Terrain is SHARED world
+    // state and CFarmBuilding::BuildFarm runs only on the owner's client, so without this the
+    // map forks. Applied UNCONDITIONALLY -- no IsLocal() skip, unlike edict_toggle, which
+    // carries per-player state. ApplySlash is idempotent (it returns early unless the hex is
+    // still forest), so if Broadcast( ..., bLocal = TRUE ) loops the message back to the sender
+    // the second application is a no-op. ApplySlash, not the bare hex retype, because the
+    // receiving clients must also refresh m_iTerMult on every overlapping lumber mill.
+    case CNetCmd::hex_retype: {
+        CNetHexRetype* pMsg = (CNetHexRetype*)pCmd;
+        // Range- and whitelist-check BEFORE any _GetHex: the buffer is pooled and a malformed
+        // or hostile datagram would otherwise index the hex array out of bounds. Same shape as
+        // the research_disc out-of-range drop above. m_eX/m_eY are EXCLUSIVE dimensions
+        // (CGameMap::_GetHex asserts x < m_eX), so the bound is <, not <=.
+        if ( pMsg->m_iType != CHex::plain )
+            break;
+        if ( ( pMsg->m_iX < 0 ) || ( pMsg->m_iX >= theMap.GetSize( ).cx )
+             || ( pMsg->m_iY < 0 ) || ( pMsg->m_iY >= theMap.GetSize( ).cy ) )
+            break;
+        CFarmBuilding::ApplySlash( CHexCoord( pMsg->m_iX, pMsg->m_iY ) );
+        break;
+    }
+
 #ifdef _DEBUG
 
     // we couldn't handle the message!!
@@ -3973,6 +4182,16 @@ void CGame::ProcessMessage(CNetCmd* pCmd )
 #endif
     }
 }
+
+// 015 phase 3 wire budget. vdmplay copies these records as FIXED blocks: the
+// session record (CNetPublish) as 512 bytes and the player record (CNetJoin) as
+// 256 (the netapi.cpp:3985 comment below has the two crossed - see the 015 plan
+// section 3c). Adding m_dwDataHash grew the headers from 36 to 44 and from 16 to
+// 20 bytes, and the variable tail (names, password, description) has to fit in
+// what is left. Pinned here so the next field to be added has to look at the
+// budget rather than discover it on the wire.
+static_assert( sizeof( CNetPublish ) == 44, "CNetPublish layout changed - re-check the 512-byte vdmplay copy" );
+static_assert( sizeof( CNetJoin ) == 20, "CNetJoin layout changed - re-check the 256-byte vdmplay copy" );
 
 CNetPublish* CNetPublish::Alloc( CCreateBase* pCm )
 {
@@ -4003,6 +4222,7 @@ CNetPublish* CNetPublish::Alloc( CCreateBase* pCm )
     pMsg->m_cVerMajor   = VER_MAJOR;
     pMsg->m_cVerMinor   = VER_MINOR;
     pMsg->m_cVerRelease = VER_RELEASE;
+    pMsg->m_dwDataHash  = theGame.m_dwDataHash;
 
     pMsg->m_cFlags = 0;
 #ifdef _DEBUG
@@ -4047,6 +4267,7 @@ CNetPublish* CNetPublish::Alloc( CGame* pGame )
     pMsg->m_cVerMajor   = VER_MAJOR;
     pMsg->m_cVerMinor   = VER_MINOR;
     pMsg->m_cVerRelease = VER_RELEASE;
+    pMsg->m_dwDataHash  = theGame.m_dwDataHash;
 
     pMsg->m_cFlags = 0;
 #ifdef _DEBUG
@@ -4078,9 +4299,10 @@ CNetJoin* CNetJoin::Alloc( CPlayer const* pPlyr, BOOL bSrvr )
     const int iAlloc = __max( 516, iLen );
     CNetJoin* pMsg   = (CNetJoin*)new char[iAlloc];
     memset( pMsg, 0, iAlloc );
-    pMsg->m_iLen     = iLen;
-    pMsg->m_iPlyrNum = pPlyr->GetPlyrNum( );
-    pMsg->m_bServer  = bSrvr;
+    pMsg->m_iLen       = iLen;
+    pMsg->m_iPlyrNum   = pPlyr->GetPlyrNum( );
+    pMsg->m_bServer    = bSrvr;
+    pMsg->m_dwDataHash = theGame.m_dwDataHash;
     strcpy( pMsg->m_sName, pPlyr->GetName( ) );
 
     return ( pMsg );

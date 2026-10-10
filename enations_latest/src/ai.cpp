@@ -72,9 +72,9 @@ BOOL AiTakeOverPlayer( CPlayer* pPlr )
     if ( AiNewPlayer( pPlr ) )
         return ( FALSE );
 
-    int iID = pPlr->GetPlyrNum( );
-
-    CAIMgr* pAIMgr = plAIMgrList->GetManager( iID );
+    // the manager AiNewPlayer just gave this player (a lookup by plyr num could
+    // find an older dead one still waiting for its thread to free it)
+    CAIMgr* pAIMgr = (CAIMgr*)pPlr->GetAiHdl( );
     if ( pAIMgr == NULL )
         return ( FALSE );
 
@@ -212,6 +212,14 @@ BOOL AiNewPlayer( CPlayer* pPlr )
     int iID = pPlr->GetPlyrNum( );
 
     CAIMgr* pAIMgr = plAIMgrList->GetManager( iID );
+
+    // Never hand out a manager already told to die (AiKillPlayer): its thread's
+    // next Manage() frees it (AiDeletePlayer), and this player would then hold a
+    // freed handle - the host crash in CAIMgr::MessageArrived after a Load
+    // Network Game joiner dropped. Give the player a fresh manager instead.
+    if ( ( pAIMgr != NULL ) && pAIMgr->m_bIsDead )
+        pAIMgr = NULL;
+
     if ( pAIMgr == NULL )
     {
         try

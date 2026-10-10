@@ -44,6 +44,10 @@ class CBuildRepair;
 class CBuildShipyard;
 class CRepairBuilding;
 
+// Forward declaration ONLY. building.h deliberately does not #include "altoutput.h" (see the
+// note on m_afAltAccum below); CPowerBuilding needs nothing more than the incomplete type here.
+namespace AltOutput { struct AltOutputDef; }
+
 
 /////////////////////////////////////////////////////////////////////////////
 // CStructure - data on buildings
@@ -680,7 +684,7 @@ class CBuilding : public CUnit
 {
 friend class CGame;
 friend class CWndOrders;
-friend void CUnit::DecDamagePoints (int iDamage, DWORD dwKiller);
+friend void CUnit::DecDamagePoints (int iDamage, DWORD dwKiller, BOOL bApplyMults);
 
 public:
 									CBuilding () { ctor (); }
@@ -693,6 +697,56 @@ public:
 		virtual void GetInputs (int * pVals) const;
 		virtual void GetAccepts (int * pVals) const;
 		virtual void ConstComplete () { }
+
+		// ---- auto-stock ceilings -------------------------------------------------
+		// How much of iInd the AUTO-ROUTER (CHPRouter) is willing to pile up here.
+		// -1 == uncapped, which is the answer for every building whose demand is
+		// already self-limiting (mines/farms need nothing; smelters and power plants
+		// ask for a bounded number of minutes of input via GetNextMinuteMat).
+		//
+		// Only the sinks that used to grow without bound override this: warehouses
+		// and the rocket (flat ceilings, below) and vehicle factories (a multiple of
+		// the dearest thing they can build). Construction and repair are NEVER capped
+		// -- a building that needs materials to finish gets them regardless.
+		//
+		// This bounds AUTOMATIC hauling only. Hand-loading a truck and a player-drawn
+		// route still move whatever the player asks for.
+		virtual int		GetAutoStockCap (int /*iInd*/) const { return ( -1 ); }
+
+		// Per-material auto-stock veto ("no iron in this warehouse"). Player-set, one
+		// bit per haulable material, riding m_unitFlags -- see CUnit::UNIT_FLAGS. The
+		// sense is BLOCKED-when-set so zero (every pre-existing building, and every
+		// building in an older save) means "accept everything", exactly as before.
+		BOOL					IsMatBlocked (int iInd) const;
+		void					SetMatBlocked (int iInd, BOOL bBlock);
+		// TRUE if this building type exposes the per-material checkboxes at all.
+		BOOL					CanBlockMaterials () const;
+		// TRUE if this building type exposes the per-material checkboxes at all.
+		// TRUE if iInd is one of the materials that HAS a veto bit (the six haulable
+		// ones). Callers index by MATERIAL id, never by bit position, so the UI is
+		// free to list them in whatever order reads best.
+		static BOOL				IsBlockableMat (int iInd);
+
+		// ---- automatic routing membership ---------------------------------------
+		// Is this building part of the auto-router's network? Default TRUE. When a
+		// player turns it off the router stops all OPEN-ENDED stocking of it: no
+		// production inputs, vehicle-build materials, power-plant fuel or warehouse
+		// surplus delivered in; no pickups FROM it; and its own surplus no longer
+		// counts toward what warehouses are told to absorb.
+		//
+		// CONSTRUCTION and REPAIR materials are the exception and keep flowing --
+		// those needs are finite and are what lets the building exist at all, so
+		// stalling them would just be a way to silently strand a half-built or
+		// bombed-out structure. (Same carve-out the auto-stock ceilings make.)
+		//
+		// Player-drawn routes and the Load Truck dialog are unaffected either way --
+		// this is a switch for hand-managing one building, not for shutting it down.
+		BOOL					IsAutoRouteEnabled () const;
+		void					SetAutoRouteEnabled (BOOL bEnable);
+		// TRUE if this building type takes part in material routing at all, i.e.
+		// whether the toggle is worth showing. Housing/command/embassy/fort/research
+		// neither consume nor supply haulable materials, so they never do.
+		BOOL					CanAutoRoute () const;
 
 		void					AnimateOperating (BOOL bOper);
 		void					SetAmbientHalfSpeed (BOOL bHalf);
@@ -764,9 +818,14 @@ public:
 			int p = (int)( m_fAltAccum * 100.0f );
 			return ( p < 0 ) ? 0 : ( p > 100 ? 100 : p );
 		}
-		// eMultiTrickle (Desperate/Scrounging) progress: line 0 accumulator as a representative bar.
+		// eMultiTrickle (Desperate/Scrounging) progress: the FURTHEST-ALONG line as a representative
+		// bar. Line 0 alone sits dead at 0 for a terrain-scaled Scrounging warehouse whose site
+		// yields no lumber, even though its other lines are ticking along fine.
 		int						GetAltProgressPerMulti () const {
-			int p = (int)( m_afAltAccum[0] * 100.0f );
+			float fMax = m_afAltAccum[0];
+			for ( int i = 1; i < 4; i++ )
+				if ( m_afAltAccum[i] > fMax ) fMax = m_afAltAccum[i];
+			int p = (int)( fMax * 100.0f );
 			return ( p < 0 ) ? 0 : ( p > 100 ? 100 : p );
 		}
 
@@ -792,6 +851,16 @@ public:
 		int						GetBldgMatRepair (int iInd) const;
 		virtual int		GetBldgResReq (int iInd, BOOL) const { return GetBldgMatReq (iInd, TRUE); }
 		virtual int		GetNextMinuteMat (int iInd) const { return GetBldgResReq (iInd, FALSE); }
+
+		// Per-building MATERIAL ROLE -- the single source of truth for "what does THIS building
+		// want delivered / hand out / need on hand right now". Virtual because a per-BUILDING mode
+		// (an AltOutput toggle) can answer differently from the static per-TYPE structure data, which
+		// by construction cannot see it. Base = "no material role"; only CPowerBuilding overrides
+		// these today (a later pass could adopt them for CMaterialBuilding).
+		virtual int		EffInputMat () const { return -1; }		// material it wants delivered NOW (-1 = none)
+		virtual int		EffOutputMat () const { return -1; }	// material it hands out NOW      (-1 = none)
+		virtual int		EffInputPerMin () const { return 0; }	// TRUE units/min of EffInputMat consumed (0 = none)
+		virtual int		EffInputBatch () const { return 1; }	// units of EffInputMat on hand to run ONE batch (1 = any)
 
 		void					AddConstDone (int iDone);
 		CStructureSprite *GetSprite() const
@@ -945,6 +1014,13 @@ public:
 
 		virtual void GetInputs (int * pVals) const;
 		virtual void GetAccepts (int * pVals) const { GetInputs (pVals); }
+
+		// A factory hoards up to STOCK_UNITS times the largest per-material demand of
+		// anything it can currently build -- so a plant whose dearest unit takes 200
+		// steel tops out at 1000 steel, and never accumulates a material nothing in
+		// its catalogue uses. Inherited unchanged by CShipyardBuilding.
+		enum { STOCK_UNITS = 5 };
+		virtual int		GetAutoStockCap (int iInd) const;
 
 		void					DestroyAllWindows ();
 
@@ -1114,7 +1190,24 @@ public:
 		virtual void GetInputs (int * pVals) const;
 		virtual void GetAccepts (int * pVals) const { GetInputs (pVals); }
 
+		// Material role (see CBuilding::EffInputMat). A plant normally burns its fuel and hands out
+		// nothing; with a TIME-DRIVEN AltOutput conversion on it consumes the def's input instead.
+		virtual int		EffInputMat () const;
+		virtual int		EffOutputMat () const;
+		virtual int		EffInputPerMin () const;
+		virtual int		EffInputBatch () const;
+
+		// Conversion-cycle progress for a TIME-DRIVEN alt mode (the batch timer). A fuel plant
+		// keeps the CBuilding base answer of -1 ("no production cycle").
+		virtual int		GetProductionPer () const;
+
 protected:
+
+		// The def driving this plant's TIME-DRIVEN alt mode, or NULL: toggle on, def Available()
+		// for the owner, and m_eDrive == eTimeDriven. One source of truth for all four Eff*
+		// answers and for BuildPower's gates. NULL unless this plant is actively running a kiln
+		// (Charcoal) or liquefaction conversion; every other def is fuel-driven.
+		AltOutput::AltOutputDef const *	TimeDrivenDef () const;
 
 #ifdef _DEBUG
 public:
@@ -1130,12 +1223,55 @@ class CWarehouseBuilding : public CBuilding
 public:
 
 									CWarehouseBuilding () { }
-									CWarehouseBuilding (int iBldg, int iBldgDir, int iOwner=0, DWORD ID = 0) : 
+									CWarehouseBuilding (int iBldg, int iBldgDir, int iOwner=0, DWORD ID = 0) :
 																	CBuilding (iBldg, iBldgDir, iOwner, ID) { }
 
 		virtual void GetAccepts (int * pVals) const;
 
+		// Scrounging (AltOutput): what the ground around THIS warehouse is made of, on three
+		// 0..10 scales - forest cover, soil fertility (both as the farm and mill placement
+		// preview shows them), and broken ground (rough / hill / desert, mountain double). Every line of
+		// the Scrounging toggle scales with one of them, so the SITE decides what it yields:
+		// woods give lumber, good soil gives food, rough country gives scrap iron and coal,
+		// and a warehouse paved into the city core gives nothing at all. Scanned on first use
+		// and cached; see CWarehouseBuilding::UpdateScrounge.
+		//
+		// Terrain DOES change at runtime -- Slash and Burn retypes forest -> plain -- so this
+		// cache is not write-once. CFarmBuilding::ApplySlash calls InvalidateScrounge on every
+		// warehouse whose scan ring covers the cut hex, and the next getter re-scans.
+		int				GetScroungeForestMult ();
+		int				GetScroungeSoilMult ();
+		int				GetScroungeIronMult ();
+		int				GetScroungeCoalMult ();
+		void			UpdateScrounge ();
+		void			InvalidateScrounge ();
+
+		// Flat per-material ceiling for the auto-router. The rocket is the colony's
+		// central store so it gets the bigger one; a warehouse is a local depot.
+		// Both used to be bottomless: the router hands a warehouse every surplus it
+		// can find (SetExcessMaterials) and never subtracted what the warehouse was
+		// already holding, so idle trucks shuttled forever.
+		//
+		// NOTE a SEAPORT is also UTwarehouse in ENATIONS.DAT -- it is warehouse-class
+		// for every existing router behaviour (it already shows a Storage section and
+		// already absorbs surplus), so it is capped too. Broken out as its own constant
+		// because a dock is a transfer point, not a depot, and may well want a
+		// different number once this has been played.
+		enum { ROCKET_STOCK_CAP = 5000, WAREHOUSE_STOCK_CAP = 2000, SEAPORT_STOCK_CAP = 2000 };
+
+		virtual int		GetAutoStockCap (int iInd) const;
+
 protected:
+
+		// -1 = not scanned yet (also the state after a load, and after InvalidateScrounge)
+		// - these are runtime-only.
+		// HUNDREDTHS of the 0..10 scale (so 0..1000; the two scrap ones reach 2000 because
+		// mountain counts double). MultiLinesFor does the single rounding - do NOT truncate
+		// these to whole multipliers on the way past, that bug shipped once already.
+		LONG			m_iScrForest = -1;
+		LONG			m_iScrSoil   = -1;
+		LONG			m_iScrIron   = -1;
+		LONG			m_iScrCoal   = -1;
 
 #ifdef _DEBUG
 public:
@@ -1237,8 +1373,42 @@ public:
 								~CFarmBuilding ();
 
 		static int		LandMult (CHexCoord _hex, int iTyp, int iDir);
+
+		// The two halves of LandMult, usable by any building that wants to know what its
+		// own site is made of (Scrounging asks this of a warehouse). Both 0..10: forest
+		// coverage over the footprint+3 ring, soil fertility over the footprint+1 ring.
+		// ScrapMultsAt is the third of the set (not part of LandMult - no farm wants it):
+		// scrap-bearing ground over the footprint+2 ring - rough / hill / desert at full
+		// weight, mountain DOUBLE, forest HALF, plus city (iron only) and road (coal only).
+		// Iron and coal are SEPARATE scales, so it fills two outputs in one pass. Scale is
+		// 0..20, not 0..10: rock beats the cap.
+		// iScale multiplies the result before the divide, so a caller can keep fractional
+		// precision the whole-number average would throw away: Scrounging passes 100 and
+		// rounds ONCE at the end. Farms/mills omit it and get the historic 0..10.
+		static int		ForestMultAt (CHexCoord _hex, int iTyp, int iDir, int iScale = 1);
+		static int		SoilMultAt (CHexCoord _hex, int iTyp, int iDir);
+		static void		ScrapMultsAt (CHexCoord _hex, int iTyp, int iDir, int * piIron, int * piCoal,
+									  int iScale = 1);
+		// SoilMultAt as SCROUNGING sees it - identical except bog and water read 6, so a
+		// warehouse on a marsh or a shoreline forages 1 food. Farms keep SoilMultAt; nothing
+		// of theirs moves.
+		static int		ScroungeSoilMultAt (CHexCoord _hex, int iTyp, int iDir, int iScale = 1);
 		virtual int		GetProductionPer () const;
 		void					BuildFarm ();
+
+		// Slash and Burn: is THIS mill cutting at 250% right now? Lumber mill + alt_oil set +
+		// an Available() eModifier def. The ONE source of truth -- BuildFarm and both UI rate
+		// readouts call it rather than re-deriving the test. FALSE for every food farm by
+		// construction (the lumber check comes first).
+		BOOL					SlashBurnActive () const;
+
+		// Slash and Burn deforestation. SlashTick() accrues destroyed hexes on TIME and is called
+		// from BuildFarm on every tick the mill actually produces. ApplySlash() is the ONE place a
+		// hex is cleared: it retypes the hex and refreshes m_iTerMult on every lumber mill whose
+		// box covers it. Both the local path and the netapi hex_retype RX path call ApplySlash, so
+		// no client can keep a stale multiplier. Static because the RX side has no mill to hand.
+		void					SlashTick ();
+		static BOOL		ApplySlash (CHexCoord hex);
 		void					UpdateFarm ();
 
 		// Soil fertility of the hexes this farm covers (0..10). The status bar and
@@ -1263,6 +1433,13 @@ protected:
 		void					ctor ();
 
 		LONG					m_iTerMult;											// multiplier for terrain
+
+		// Slash and Burn: fractional hexes-to-destroy carried between ticks. TRANSIENT -- it is
+		// deliberately NOT serialized. CFarmBuilding::Serialize writes exactly ONE field
+		// (m_iTerMult), so appending anything here would change the on-disk layout of every farm
+		// and lumber mill in every existing save. Losing it on load costs at most one hex of
+		// progress, the same trade CBuilding::m_fAltAccum already makes.
+		float					m_fSlashAccum;
 
 		CList <CLandUse *, CLandUse *>	m_landUse;		// surrounding tiles we are using
 		LONG					m_iTimeToNext;									// time to next change

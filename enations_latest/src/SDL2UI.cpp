@@ -1,5 +1,5 @@
 #include "stdafx.h"
-#include "en_harness.h"
+#include "en_hangdump.h"   // EnHangHeartbeat() - hang-watchdog liveness beat
 #include "SDL2UI.h"
 #include "GameWindow.h"
 #include "SDL2MainMenu.h"
@@ -893,7 +893,11 @@ void SDL2Listbox::AddItem(const std::string& text, void* data) {
 // Falls back to a plain AddItem when no shared font is available.
 void SDL2Listbox::AddItemWrapped(const std::string& text) {
     TTF_Font* font = GetUiFont(13);
-    int avail = m_rect.w - 12;
+    // Always reserve the scrollbar gutter: whether the bar is showing depends on
+    // the item count, which changes as lines are appended, so measuring against
+    // the wider no-bar slot would make already-wrapped rows font-shrink the
+    // moment the list overflows. Reserving up front keeps wrapping stable.
+    int avail = m_rect.w - 12 - kScrollbarW;
     if (!font || avail <= 0 || text.empty()) { AddItem(text); return; }
 
     int tw = 0, th = 0;
@@ -944,18 +948,91 @@ void SDL2Listbox::Clear() {
     m_selected = -1;
     m_marked = -1;
     m_scrollOffset = 0;
+    m_sbDragging = false;
+    m_sbRepeat.End();
+}
+
+// ---------------------------------------------------------------------------
+// Scroll geometry — the SINGLE definition of "which item is painted where".
+//
+//   paint:     row r (0 .. VisibleRows()-1) is drawn at m_rect.y + r*m_itemHeight
+//              and shows item (r + m_scrollOffset)
+//   hit-test:  RowAtY() is the exact algebraic inverse of that line.
+//
+// Both Render() and HandleEvent() call these, so a click can never resolve to a
+// different item than the one under the cursor.
+// ---------------------------------------------------------------------------
+int SDL2Listbox::VisibleRows() const {
+    if (m_itemHeight <= 0) return 0;
+    int rows = m_rect.h / m_itemHeight;   // whole rows only; the sub-row remainder
+    return rows > 0 ? rows : 0;           // at the bottom is never painted
+}
+
+int SDL2Listbox::MaxScroll() const {
+    return std::max(0, (int)m_items.size() - VisibleRows());
+}
+
+bool SDL2Listbox::HasScrollbar() const {
+    return VisibleRows() > 0 && (int)m_items.size() > VisibleRows();
+}
+
+int SDL2Listbox::ContentW() const {
+    return HasScrollbar() ? (m_rect.w - kScrollbarW) : m_rect.w;
+}
+
+SDL_Rect SDL2Listbox::ScrollbarRect() const {
+    if (!HasScrollbar()) return SDL_Rect{ 0, 0, 0, 0 };
+    // Spans the box's full inner height (inside the 1px bevel on each side), not
+    // just the painted rows: m_rect.h is rarely a multiple of m_itemHeight, and a
+    // bar sized to VisibleRows()*m_itemHeight left a sub-row strip of m_colBg
+    // background showing under the down arrow at the bottom of the gutter.
+    return SDL_Rect{ m_rect.x + m_rect.w - kScrollbarW, m_rect.y + 1,
+                     kScrollbarW - 1, m_rect.h - 2 };
+}
+
+// The gutter split into its up arrow, track and down arrow, with the thumb placed
+// inside the track. One call, shared with SDL2RouteWindow/SDL2UnitList, used by the
+// paint AND by every hit-test — so an arrow can never be drawn somewhere the click
+// test does not look for it.
+EnSb::Metrics SDL2Listbox::SbMetrics() const {
+    return EnSb::Layout(ScrollbarRect(), (int)m_items.size(), VisibleRows(),
+                        m_scrollOffset);
+}
+
+SDL_Rect SDL2Listbox::ThumbRect() const {
+    return SbMetrics().thumb;
+}
+
+void SDL2Listbox::ClampScroll() {
+    m_scrollOffset = std::max(0, std::min(MaxScroll(), m_scrollOffset));
+}
+
+void SDL2Listbox::ScrollBy(int rows) {
+    m_scrollOffset += rows;
+    ClampScroll();
+}
+
+int SDL2Listbox::RowAtY(int y) const {
+    int rows = VisibleRows();
+    if (rows <= 0) return -1;
+    int dy = y - m_rect.y;
+    if (dy < 0) return -1;
+    int row = dy / m_itemHeight;
+    if (row >= rows) return -1;               // the unpainted remainder strip
+    int idx = row + m_scrollOffset;
+    if (idx < 0 || idx >= (int)m_items.size()) return -1;
+    return idx;
 }
 
 void SDL2Listbox::EnsureVisible(int idx) {
     if (idx < 0 || idx >= (int)m_items.size()) return;
-    int visibleItems = m_rect.h / m_itemHeight;
+    int visibleItems = VisibleRows();
     if (visibleItems <= 0) return;
     if (idx < m_scrollOffset)
         m_scrollOffset = idx;
     else if (idx >= m_scrollOffset + visibleItems)
         m_scrollOffset = idx - visibleItems + 1;
-    int maxScroll = std::max(0, (int)m_items.size() - visibleItems);
-    m_scrollOffset = std::max(0, std::min(maxScroll, m_scrollOffset));
+    ClampScroll();
 }
 
 void* SDL2Listbox::GetItemData(int index) const {
@@ -979,7 +1056,25 @@ void SDL2Listbox::Render(SDL_Surface* dst, TTF_Font* font) {
     FillRect(dst, m_rect, m_colBg);
     DrawBevel(dst, m_rect, 1, UIColors::BtnDark, UIColors::BtnLight);
 
-    int visibleItems = m_rect.h / m_itemHeight;
+    // Items may have been removed since the last event (Clear + refill); clamp
+    // here so paint and the next hit-test agree on m_scrollOffset.
+    ClampScroll();
+
+    // Auto-repeat for a held arrow button. Render() is the widget's only per-frame
+    // hook (DoModal and GameWindow::PollEvents both call it every frame), so this is
+    // where a held press advances. EnSb::Repeat is time-based, so the scroll rate is
+    // the same whatever the frame rate. The global button check self-heals a press
+    // whose button-up went to another window — otherwise the list would keep
+    // scrolling with nothing held down.
+    if (m_sbRepeat.Active()) {
+        if (!(SDL_GetGlobalMouseState(nullptr, nullptr) & SDL_BUTTON_LMASK))
+            m_sbRepeat.End();
+        else
+            ScrollBy(m_sbRepeat.Steps(SDL_GetTicks()) * m_sbRepeat.dir);
+    }
+
+    int visibleItems = VisibleRows();
+    int contentW     = ContentW();   // shrinks by the gutter only when overflowing
     for (int i = 0; i < visibleItems && (i + m_scrollOffset) < (int)m_items.size(); i++) {
         int idx = i + m_scrollOffset;
         int iy = m_rect.y + i * m_itemHeight;
@@ -989,10 +1084,10 @@ void SDL2Listbox::Render(SDL_Surface* dst, TTF_Font* font) {
         // Row highlight: browse-selection wins over the persistent "active"
         // marker (green) when they land on the same row.
         if (selected) {
-            SDL_Rect hlRect = { m_rect.x + 1, iy, m_rect.w - 2, m_itemHeight };
+            SDL_Rect hlRect = { m_rect.x + 1, iy, contentW - 2, m_itemHeight };
             FillRect(dst, hlRect, m_colSelBg);
         } else if (marked) {
-            SDL_Rect hlRect = { m_rect.x + 1, iy, m_rect.w - 2, m_itemHeight };
+            SDL_Rect hlRect = { m_rect.x + 1, iy, contentW - 2, m_itemHeight };
             FillRect(dst, hlRect, kMarkRow);
         }
 
@@ -1000,12 +1095,22 @@ void SDL2Listbox::Render(SDL_Surface* dst, TTF_Font* font) {
                               : selected ? m_colSelText
                               : marked   ? kMarkText
                                          : m_colText;
-        SDL_Rect textRect = { m_rect.x + 6, iy, m_rect.w - 12, m_itemHeight };
+        SDL_Rect textRect = { m_rect.x + 6, iy, contentW - 12, m_itemHeight };
         // Shrink long names to fit the row instead of clipping them, but by
         // re-rendering at a smaller CRISP font size (not bitmap-scaling, which was
         // mushy) — matching the original game. 13pt is the dialog's widget size.
         RenderTextShrinkFont(dst, font, 13, m_items[idx].text.c_str(), textRect, textColor);
     }
+
+    // Scrollbar: drawn last, over the reserved gutter. Its presence is the only
+    // on-screen signal that the list continues past the last painted row; the
+    // thumb's size/position show how much and where, and the arrow buttons at the
+    // two ends give a click target for one row at a time (QA: "scroll bars, but no
+    // arrows on them"). Geometry + chrome both come from EnSb, shared with the
+    // route window and the unit list.
+    if (HasScrollbar())
+        EnSb::Draw(dst, SbMetrics(), EnSb::GoldColors(), m_scrollOffset,
+                   (int)m_items.size(), VisibleRows());
 }
 
 bool SDL2Listbox::HandleEvent(const SDL_Event& event) {
@@ -1019,28 +1124,41 @@ bool SDL2Listbox::HandleEvent(const SDL_Event& event) {
             case SDLK_UP:
                 if (m_selected > 0) {
                     m_selected--;
-                    // Scroll to keep selection visible
-                    if (m_selected < m_scrollOffset) m_scrollOffset = m_selected;
+                    EnsureVisible(m_selected);   // scroll to keep selection visible
                     if (m_onSelect) m_onSelect(m_selected);
                 }
                 return true;
             case SDLK_DOWN:
                 if (m_selected < count - 1) {
                     m_selected++;
-                    int visibleItems = m_rect.h / m_itemHeight;
-                    if (m_selected >= m_scrollOffset + visibleItems)
-                        m_scrollOffset = m_selected - visibleItems + 1;
+                    EnsureVisible(m_selected);
                     if (m_onSelect) m_onSelect(m_selected);
                 }
                 return true;
+            // Page keys: same jump the scrollbar trough makes, one screenful.
+            case SDLK_PAGEUP:
+            case SDLK_PAGEDOWN: {
+                int step = VisibleRows();
+                if (step < 1) step = 1;
+                int from = (m_selected < 0) ? 0 : m_selected;
+                int to = (event.key.keysym.sym == SDLK_PAGEUP) ? (from - step)
+                                                               : (from + step);
+                to = std::max(0, std::min(count - 1, to));
+                if (to != m_selected) {
+                    m_selected = to;
+                    EnsureVisible(m_selected);
+                    if (m_onSelect) m_onSelect(m_selected);
+                }
+                return true;
+            }
             case SDLK_HOME:
-                m_selected = 0; m_scrollOffset = 0;
+                m_selected = 0;
+                EnsureVisible(m_selected);
                 if (m_onSelect) m_onSelect(m_selected);
                 return true;
             case SDLK_END:
                 m_selected = count - 1;
-                { int vis = m_rect.h / m_itemHeight;
-                  m_scrollOffset = std::max(0, count - vis); }
+                EnsureVisible(m_selected);
                 if (m_onSelect) m_onSelect(m_selected);
                 return true;
             case SDLK_RETURN:
@@ -1049,10 +1167,67 @@ bool SDL2Listbox::HandleEvent(const SDL_Event& event) {
         }
     }
 
+    // Scrollbar gutter, checked BEFORE row selection so a click on the bar can
+    // never also select a row. EnSb::HitTest partitions the WHOLE gutter into
+    // arrow / page / thumb / page / arrow, so every pixel of the bar does exactly
+    // what it looks like it should.
+    if (event.type == SDL_MOUSEBUTTONDOWN && event.button.button == SDL_BUTTON_LEFT &&
+        HasScrollbar()) {
+        EnSb::Metrics sb = SbMetrics();
+        switch (EnSb::HitTest(sb, event.button.x, event.button.y)) {
+            case EnSb::HitArrowUp:
+                ScrollBy(-1);                              // one row on the click,
+                m_sbRepeat.Begin(-1, SDL_GetTicks());      // then repeat while held
+                return true;
+            case EnSb::HitArrowDown:
+                ScrollBy(1);
+                m_sbRepeat.Begin(1, SDL_GetTicks());
+                return true;
+            case EnSb::HitPageUp:
+                ScrollBy(-VisibleRows());
+                return true;
+            case EnSb::HitPageDown:
+                ScrollBy(VisibleRows());
+                return true;
+            case EnSb::HitThumb:
+                m_sbDragging   = true;
+                m_sbDragOffset = event.button.y - sb.thumb.y;
+                return true;
+            case EnSb::HitNone:
+            default:
+                break;                                     // not on the bar at all
+        }
+    }
+    if (event.type == SDL_MOUSEMOTION && m_sbDragging) {
+        // Self-heal: a button-up delivered elsewhere (cursor left the dialog)
+        // would otherwise leave the drag latched and swallow every motion event.
+        if (!(event.motion.state & SDL_BUTTON_LMASK)) {
+            m_sbDragging = false;
+            return false;
+        }
+        EnSb::Metrics sb = SbMetrics();
+        m_scrollOffset = EnSb::OffsetFromThumbTop(sb, event.motion.y - m_sbDragOffset,
+                                                  (int)m_items.size(), VisibleRows());
+        ClampScroll();
+        return true;
+    }
+    if (event.type == SDL_MOUSEBUTTONUP && event.button.button == SDL_BUTTON_LEFT &&
+        (m_sbDragging || m_sbRepeat.Active())) {
+        m_sbDragging = false;
+        m_sbRepeat.End();
+        return true;
+    }
+
     if (event.type == SDL_MOUSEBUTTONDOWN && event.button.button == SDL_BUTTON_LEFT) {
         if (PointInRect(event.button.x, event.button.y, m_rect)) {
-            int idx = (event.button.y - m_rect.y) / m_itemHeight + m_scrollOffset;
-            if (idx >= 0 && idx < (int)m_items.size()) {
+            // RowAtY is the inverse of the paint mapping, so this resolves to
+            // exactly the item drawn under the cursor at the current scroll
+            // position — and to -1 for the sub-row remainder strip below the
+            // last painted row, which used to select an item that was never
+            // drawn there.
+            int idx = (event.button.x < m_rect.x + ContentW())
+                          ? RowAtY(event.button.y) : -1;
+            if (idx >= 0) {
                 // Double-click detection
                 Uint32 now = SDL_GetTicks();
                 if (idx == m_lastClickIndex && (now - m_lastClickTime) < 400) {
@@ -1077,9 +1252,7 @@ bool SDL2Listbox::HandleEvent(const SDL_Event& event) {
     if (event.type == SDL_MOUSEWHEEL) {
         int mx = event.wheel.mouseX, my = event.wheel.mouseY;
         if (PointInRect(mx, my, m_rect)) {
-            m_scrollOffset -= event.wheel.y * 2;
-            int maxScroll = std::max(0, (int)m_items.size() - m_rect.h / m_itemHeight);
-            m_scrollOffset = std::max(0, std::min(maxScroll, m_scrollOffset));
+            ScrollBy(-event.wheel.y * 2);
             return true;
         }
     }
@@ -2215,7 +2388,7 @@ int SDL2Dialog::DoModal() {
 
     SDL_Event event;
     while (m_running) {
-        EnHarness_Service();   // service harness requests during modal dialogs too (all platforms)
+        EnHangHeartbeat();     // modal dialogs run their own pump and never reach PollEvents
 #ifndef _WIN32
         vpPumpNet( 0 );        // service the MP network (accept joins, read data) while modal
         EnPumpNetMessages();   // deliver the resulting WM_VPNOTIFY -> OnNetMsg (found sessions / joined players)

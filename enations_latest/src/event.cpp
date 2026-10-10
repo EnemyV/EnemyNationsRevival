@@ -363,9 +363,24 @@ void CGame::_Event (int ID, int iTyp, char const * psText, int iVoice)
 	TRAP (ID == EVENT_VEH_UNDER_ATK);
 	TRAP (ID == EVENT_PLAYER_LEFT);
 	TRAP (ID == EVENT_PLAYER_JOINED);
-	TRAP (ID == EVENT_HPR_SEAPORTS);
-	TRAP (ID == EVENT_HPR_CARGOSHIP);
-	TRAP (ID == EVENT_HPR_NOREACH);
+
+	// EVENT_HPR_SEAPORTS / CARGOSHIP / NOREACH used to TRAP here too. They are raised by
+	// live 1996 router code - CHPRouter::ConsiderLandWater (chproute.cpp:2460/2477/2643) and
+	// the ship-assignment path (chproute.cpp:3026) - whenever the human's cargo router cannot
+	// get a truck to a seaport. All three have resource strings (IDS_EVENT_HPR_*) and are shown
+	// as a normal status message in Release, so the traps guarded nothing: they were stale
+	// "not implemented yet" markers. In Debug they turned a legitimate "no reachable seaport"
+	// into a crash - operator play session 2026-09-19, dump enations_full_20260919_182034
+	// (iBest == 0xFFFE, bCanGetThere == 0, a cargo ship and >= 2 seaports present).
+	// Keep the condition visible in Debug without breaking.
+#ifdef _DEBUG
+	if ( (ID == EVENT_HPR_SEAPORTS) || (ID == EVENT_HPR_CARGOSHIP) || (ID == EVENT_HPR_NOREACH) )
+		{
+		char szHpr[128];
+		sprintf (szHpr, "[TRAP-REMOVED] [EVENT] HP router event %d raised (was a 1996 TRAP)\n", ID);
+		OutputDebugStringA (szHpr);
+		}
+#endif
 
 	int iRes = aiRes [ID];
 	int iSfx = aiSfx [ID];

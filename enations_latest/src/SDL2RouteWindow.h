@@ -1,6 +1,7 @@
 #pragma once
 
 #include "SDL2Panel.h"
+#include "SDL2Scrollbar.h"   // EnSb:: shared scrollbar geometry/chrome/hit-test
 #include <string>
 #include <vector>
 #include <functional>
@@ -36,9 +37,18 @@ public:
 
     CVehicle* GetVehicle() const { return m_pVeh; }
 
+    // Advance press-and-hold auto-repeat on the scrollbar arrows for every open
+    // route window. Unlike SDL2Listbox (whose Render runs every frame) this window
+    // only repaints on demand, so it has no per-frame hook of its own; GameWindow
+    // calls this once per frame from PollEvents. No-op when nothing is held.
+    static void TickScrollRepeats();
+
 private:
     void RebuildList();
     void Layout();   // (re)position buttons + list rows for the current panel size
+    // The ONE place m_scrollOffset moves: arrows, pages, wheel and auto-repeat all
+    // call this, so the clamp and the repaint cannot be forgotten at one site.
+    void ScrollRows(int rows);
     bool HandleEvent(SDL_Event& event, int localX, int localY);
     TTF_Font* GetFont(int size);
 
@@ -85,10 +95,18 @@ private:
     SDL_Rect m_listRect    = { 0, 0, 0, 0 };  // drawn list area (full width)
     int      m_listInnerW  = 0;               // list width excluding the scrollbar column
     bool     m_hasScrollbar = false;
-    SDL_Rect m_sbThumb     = { 0, 0, 0, 0 };  // scrollbar thumb rect (when present)
+    // Scrollbar geometry (track, thumb, and the up/down arrow buttons at the ends),
+    // captured by Render() from the SAME EnSb::Layout call that paints it so the
+    // hit-test cannot disagree with the chrome. Shared with SDL2Listbox/SDL2UnitList.
+    EnSb::Metrics m_sbMetrics;
+    EnSb::Repeat  m_sbRepeat;                 // arrow held down; ticked per frame
     bool     m_sbDragging  = false;
     int      m_sbDragOffset = 0;
-    static const int SB_COL_W = 8;            // scrollbar column width
+    // Scrollbar column width. Was 8 (with a 6px thumb painted inside it); the arrow
+    // buttons are squares as wide as the column, and an 8px arrow is too small to
+    // hit or to read, so the gutter is 12 like the dialog list boxes. Only the
+    // gutter widened - rows, row height and every button keep their geometry.
+    static const int SB_COL_W = 12;
     SDL_Rect m_loopRect    = { 0, 0, 0, 0 };  // "Loop" checkbox hit-rect (F1)
 
     // Game art surfaces

@@ -16,6 +16,7 @@
 
 #include "stdafx.h"
 #include "en_logpath.h"   // EnLogCaptureLaunchDir - must run before the exe-dir chdir
+#include "en_hangdump.h"  // hang watchdog + the shared dump-path helper
 
 #include "lastplnt.h"
 
@@ -39,42 +40,11 @@ extern CConquerApp theApp;
 #ifdef _WIN32
 static LONG WINAPI EnWriteFullDump( EXCEPTION_POINTERS* ep )
 {
-    const char* dir = getenv( "EN_DUMP_DIR" );
-    const char* lad = getenv( "LOCALAPPDATA" );
-    char path[MAX_PATH];
-    char folder[MAX_PATH];
-    if ( dir && dir[0] )
-        lstrcpynA( folder, dir, MAX_PATH );
-    else if ( lad && lad[0] )
-    {
-        wsprintfA( folder, "%s\\EnemyNations", lad );
-        CreateDirectoryA( folder, NULL );          // parent must exist first
-        wsprintfA( folder, "%s\\EnemyNations\\crashdumps", lad );
-    }
-    else
-        lstrcpynA( folder, "d:\\tmp\\crashdumps", MAX_PATH );
-    CreateDirectoryA( folder, NULL );
-
-    SYSTEMTIME st; GetLocalTime( &st );
-    wsprintfA( path, "%s\\enations_full_%04d%02d%02d_%02d%02d%02d_pid%lu.dmp",
-               folder, st.wYear, st.wMonth, st.wDay, st.wHour, st.wMinute, st.wSecond,
-               GetCurrentProcessId() );
-
-    HANDLE hf = CreateFileA( path, GENERIC_WRITE, 0, NULL, CREATE_ALWAYS,
-                             FILE_ATTRIBUTE_NORMAL, NULL );
-    if ( hf == INVALID_HANDLE_VALUE )
-    {
-        // Unwritable dir (read-only Program Files, missing drive): last resort %TEMP%.
-        char tmp[MAX_PATH];
-        if ( GetTempPathA( MAX_PATH, tmp ) )
-        {
-            wsprintfA( path, "%senations_full_%04d%02d%02d_%02d%02d%02d_pid%lu.dmp",
-                       tmp, st.wYear, st.wMonth, st.wDay, st.wHour, st.wMinute,
-                       st.wSecond, GetCurrentProcessId() );
-            hf = CreateFileA( path, GENERIC_WRITE, 0, NULL, CREATE_ALWAYS,
-                              FILE_ATTRIBUTE_NORMAL, NULL );
-        }
-    }
+    // Folder choice, name stamp and the %TEMP% fallback live in EnDumpOpenFile
+    // (en_hangdump.cpp) so the hang dumper writes to exactly the same place.
+    // Prefix "full" keeps the crash dump's historical name enations_full_*.dmp.
+    char path[MAX_PATH]; path[0] = '\0';
+    HANDLE hf = (HANDLE)EnDumpOpenFile( "full", path, MAX_PATH );
     if ( hf != INVALID_HANDLE_VALUE )
     {
         MINIDUMP_EXCEPTION_INFORMATION mei;
@@ -86,12 +56,19 @@ static LONG WINAPI EnWriteFullDump( EXCEPTION_POINTERS* ep )
             MiniDumpWithFullMemory | MiniDumpWithHandleData |
             MiniDumpWithThreadInfo | MiniDumpWithFullMemoryInfo );
 
-        MiniDumpWriteDump( GetCurrentProcess(), GetCurrentProcessId(), hf,
-                           type, ep ? &mei : NULL, NULL, NULL );
+        BOOL  bWrote = MiniDumpWriteDump( GetCurrentProcess(), GetCurrentProcessId(), hf,
+                                          type, ep ? &mei : NULL, NULL, NULL );
+        DWORD dwErr  = bWrote ? 0 : GetLastError();
         CloseHandle( hf );
+        if ( !bWrote )
+            DeleteFileA( path );   // a partial dump is not a dump
 
-        char msg[MAX_PATH + 32];
-        wsprintfA( msg, "ENDUMP: wrote full dump %s\n", path );
+        char msg[MAX_PATH + 64];
+        if ( bWrote )
+            _snprintf_s( msg, sizeof( msg ), _TRUNCATE, "ENDUMP: wrote full dump %s\n", path );
+        else
+            _snprintf_s( msg, sizeof( msg ), _TRUNCATE, "ENDUMP: MiniDumpWriteDump failed (0x%08lx), deleted %s\n",
+                         (unsigned long)dwErr, path );
         OutputDebugStringA( msg );
     }
     return EXCEPTION_EXECUTE_HANDLER;   // let the process terminate after dumping
@@ -113,6 +90,14 @@ extern "C" int APIENTRY WinMain( HINSTANCE hInstance,
 #ifdef _WIN32
     SetUnhandledExceptionFilter( EnWriteFullDump );
 #endif
+
+    // Hang watchdog: the filter above only fires on an EXCEPTION. A hard freeze
+    // (main loop stops pumping, no fault) produced nothing at all, so the
+    // operator's frozen session had to be killed with zero evidence. This
+    // writes the same full-memory dump when the main thread stops pumping SDL
+    // events for EN_HANGDUMP_SECS (default 40s). Diagnostic only - it never
+    // touches the process state. Debug: on; Release: set EN_HANGDUMP=1.
+    EnHangWatchdogStart( );
 
     // Capture the launch cwd BEFORE the chdir below, so debug logs land where the
     // game was launched from (the run dir) instead of following the exe into the
@@ -202,6 +187,9 @@ extern "C" int APIENTRY WinMain( HINSTANCE hInstance,
     {
         exitCode = theApp.Run();
     }
+    // Run() has returned: the main loop is gone for good, so a "silent main
+    // thread" from here on is just shutdown, not a hang. Stop the watchdog.
+    EnHangWatchdogStop( );
     theApp.ExitInstance();
 
     return exitCode;

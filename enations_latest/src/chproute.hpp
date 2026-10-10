@@ -19,6 +19,26 @@
 #define __CHPROUTE_HPP__
 
 //
+// BUGS #107 - the hull facing GetStagingHex screens its pick against.
+//
+// Values, never a pointer: VehicleErrorResponse reads the vehicle inside the
+// global critical section and must not touch it afterwards (the sim thread
+// destroys vehicles while the AI worker runs), so the four facts the turn
+// test needs are copied out of the hull while the lock is held.
+//   iDir128 - CVehicle::GetDir, in 128ths of a rotation (base.h FULL_ROT 128)
+//   hexHead - the hull's head hex, the bearing is measured from there
+//   bOneHex - FL1hex, a hull with no turn clamp at all (vehmove.cpp ~941)
+//   bBoat   - boats may turn 3 eighths per step, everything else 2 (~948)
+//
+struct EnStagingFacing
+{
+	int			iDir128;
+	CHexCoord	hexHead;
+	BOOL		bOneHex;
+	BOOL		bBoat;
+};
+
+//
 // this class defines the human player's vehicle routing for
 // unattended material distribution
 //
@@ -113,8 +133,12 @@ protected:
 	BOOL GetShipHex( DWORD dwID, CHexCoord& hex );
 	BOOL GetVehicleHex( DWORD dwID, CHexCoord& hex );
 	BOOL GetBldgExit( DWORD dwID, CHexCoord& hex );
-	BOOL GetStagingHex( CAIUnit *pUnitToStage, 
-		CAIUnit *pUnitNearby, CHexCoord& hexDest );
+	// BUGS #107: pFacing is optional and defaults to NULL - with NULL this is the
+	// same search it always was, byte for byte, for every existing caller.  Only
+	// the human router's blocked-vehicle response passes a facing.
+	BOOL GetStagingHex( CAIUnit *pUnitToStage,
+		CAIUnit *pUnitNearby, CHexCoord& hexDest,
+		EnStagingFacing const *pFacing = NULL );
 	
 	// cloned members from CAIRouter
 	void GetBuildingNeeding( void );
@@ -122,6 +146,11 @@ protected:
 
     void FillPriorities( void );
 	void SecondaryStocking( int iMat, int iFromBldg, int iToBldg );
+	// Headroom left under this building's auto-stock ceiling for iMat: cap minus what
+	// it already holds, floored at 0. INT_MAX when the building is uncapped (which is
+	// every building except warehouses/rocket and vehicle factories), so callers can
+	// compare against it without special-casing. Takes the global critical section.
+	int AutoStockRoom( DWORD dwBldgID, int iMat );
 	int GetVehicleCount( CBuilding *pBldg );
 	BOOL NeedTransports( void );
     BOOL FindTransport( CAIUnit *pCAIBldg );
@@ -141,6 +170,7 @@ protected:
 
 	BOOL TrucksAreEnroute( CAIUnit *pBldg );
 	void UnAssignShip( CAIUnit *pShip );
+	void ReleasePickupShips( DWORD dwTruckID );
 	void UnassignTrucks( DWORD dwTruckID );
 	void UnassignTrucks( CAIUnit *pBldg );
 

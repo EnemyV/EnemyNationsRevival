@@ -19,7 +19,6 @@
 #include "area.h"
 #include "bridge.h"
 #include "GameWindow.h"
-#include "en_harness.h"   // HarnessPendingLoadPath (headless load skips the browser)
 #include "SDL2MFCPanel.h"
 #include "SDL2FileBrowser.h"
 #include "building.inl"
@@ -27,6 +26,8 @@
 #include "chproute.hpp"
 #include "codec.h"
 #include "cpathmgr.h"
+#include "pathworld.h"
+#include "pathservice.h"
 #include "error.h"
 #include "event.h"
 #include "help.h"
@@ -95,6 +96,22 @@ void CPlayer::ctor( )
     m_iPwrNeed        = 1;
     m_iPwrHave        = 0;
     m_iPplNeedBldg    = 1;
+    m_iPplNeedLast    = -1;   // no finished tick yet -- Desperate Measures drafts the flat base
+    m_iSurplusPplLast = 0;
+    m_iSurplusPplTick = 0;
+    m_iPwrHaveLast    = 0;
+    m_iPwrNeedLast    = -1;   // ditto for the power half of the surplus machinery
+    m_iSurplusPwrLast = 0;
+    m_iSurplusPwrTick = 0;
+    m_iDespDraft      = 0;
+    m_iPubWorksDraft  = 0;
+    m_iCivDefDraft    = 0;
+    m_iCivDefPower    = 0;
+    m_iWarFootDraft   = 0;
+    m_iWarFootPower   = 0;
+    m_iRsrchSubDraft  = 0;
+    m_iSurplusSparePpl = 0;
+    m_iSurplusSparePwr = 0;
     m_iPplBldg        = 0;
     m_iPplVeh         = 0;
     m_fPplMult        = 1.0;
@@ -112,6 +129,13 @@ void CPlayer::ctor( )
     m_dwEdicts            = 0;
     m_fEdictFuelCarry     = 0.0f;   // runtime-only fractional gas-surcharge carry (not reset per recompute)
     m_bAutoRsrchPending   = FALSE;  // runtime-only AutoResearch set_rsrch-in-flight guard
+    m_iSweepMillis          = 0;      // runtime-only Resonance Sweep timer phase
+    m_uSweepRand          = 1;      // runtime-only Resonance Sweep private RNG (1 == the CRT seed)
+    m_bSweepLit           = FALSE;  // runtime-only: no lit ring outstanding
+    m_iSweepLitMillis       = 0;
+    m_aSweepLitHexes.clear( );
+    m_iSweepLitCX         = 0;
+    m_iSweepLitCY         = 0;
     m_fEdictConstMult     = 1.0f;
     m_fEdictMineMult      = 1.0f;
     m_fEdictRsrchMult     = 1.0f;
@@ -131,6 +155,14 @@ void CPlayer::ctor( )
     m_fEdictEnergyUpkeepPct    = 0.0f;
     m_fEdictWorkforceUpkeepPct = 0.0f;
     m_fEdictFoodUpkeepPct      = 0.0f;
+    m_fSurplusConstMult    = 1.0f;   // dynamic, rebuilt every pump by ApplySurplusEdicts
+    m_fSurplusFortMult     = 1.0f;
+    m_fSurplusBldgDmgMult  = 1.0f;
+    m_fSurplusInfBuildMult = 1.0f;
+    m_fSurplusRsrchMult    = 1.0f;
+    m_iRemoteBldgDmgPermille = 1000;   // runtime-only Civil Defence replication (CNetBldgDmgMult)
+    m_iSentBldgDmgPermille   = -1;     // -1: the first pump of a game (new or loaded) always reports
+    m_dwSentBldgDmgTime      = 0;
     m_fAttack         = 1.0;
     m_fDefense        = 1.0;
     m_fPopMod         = 0.0;
@@ -189,8 +221,6 @@ void CPlayer::ctor( )
     m_iNumDiscovered = 0;
 
     m_pXferToClient = NULL;
-
-    m_bPauseMsgs = FALSE;
 
     m_iBuiltBldgsHave = 1;
     m_bPlacedRocket   = FALSE;
@@ -263,6 +293,15 @@ void CPlayer::RecomputeEdictMults( )
     m_fEdictEnergyUpkeepPct    = 0.0f;
     m_fEdictWorkforceUpkeepPct = 0.0f;
     m_fEdictFoodUpkeepPct      = 0.0f;
+    // The surplus edicts' mults come from ApplySurplusEdicts, not from g_aEdicts (they scale
+    // with the live draft), so there is nothing to fold in below. Neutralise them anyway: this
+    // runs on every toggle and on load, and it makes a just-revoked edict's bonus vanish on the
+    // spot instead of lingering for the remainder of the pump.
+    m_fSurplusConstMult    = 1.0f;
+    m_fSurplusFortMult     = 1.0f;
+    m_fSurplusBldgDmgMult  = 1.0f;
+    m_fSurplusInfBuildMult = 1.0f;
+    m_fSurplusRsrchMult    = 1.0f;
 
     for ( int id = 0; id < EDICT_COUNT; ++id )
     {
@@ -608,6 +647,316 @@ void CPlayer::AddGas( int iNum )
     m_aiMade[CMaterialTypes::gas] += iNum;
 }
 
+// ApplySurplusEdicts -- the ONE per-pump pass that prices every surplus-scaled edict (Desperate
+// Measures, Public Works, Civil Defence, War Footing, and Research Subsidy's surplus half).
+// Called at the end
+// of StartLoop, for every player including the AI: it is cheap, deterministic, and in a net game
+// every client must compute the identical draft or the economies desync.
+//
+// Every one of them is a FLAT cost plus a cut of a SURPLUS, and the two need not be the same
+// resource (see the family table in edicts.h). Desperate Measures, for instance, is
+// DESPERATE_BASE_DRAFT workers plus SURPLUS_DRAFT_PCT% of the spare left over, and its scrounge
+// scales with the total -- so an empire with idle population gets MORE out of the edict, at the
+// same resources-per-worker exchange rate.
+//
+// ACCOUNTING, uniform across the family: a flat cost is booked into m_iPplNeedBldg/m_iPwrNeed
+// and LEFT there -- it is NOT added to m_iSurplusPplTick/m_iSurplusPwrTick. Only the surplus-
+// derived cuts go into the Tick sums. The reason is that the Tick sums are what next pump adds
+// back to reconstruct "the spare as if these edicts were not running": borrowed idle capacity
+// must be handed back, but a flat bill the colony is really paying must stay inside the need, or
+// the edicts would see their own bills as free capacity and spend them again. One consequence
+// worth stating: the spare this pass is handed has already had every flat cost deducted (they
+// were in last pump's need), so the walk below must NOT deduct them a second time -- it takes
+// the percentage straight off the pool.
+//
+// The whole difficulty is making that percentage HOLD STILL. A draft is itself part of the
+// workforce need, so a naive pct of "spare = have - need" chases its own tail: draft up -> spare
+// down -> draft down -> spare up, oscillating every pump and flickering the output with it.
+// Three things are required, and none alone is enough:
+//
+//   1. Read LAST pump's FINISHED need (m_iPplNeedLast). The live m_iPplNeedBldg is a partial sum
+//      while the buildings are still accumulating, so its mid-pump value depends on where a
+//      building happens to sit in the iteration order -- jitter even with no feedback at all.
+//   2. Add the surplus edicts' own previous CUTS back (m_iSurplusPplLast / m_iSurplusPwrLast)
+//      before taking the new cut. What is left is the spare as it would be IF THESE EDICTS WERE
+//      NOT BORROWING IT -- a quantity the cut does not appear in. The cut then computes the same
+//      answer every pump while the rest of the economy holds: the fixed point we want, rather
+//      than an orbit around one.
+//   3. Compute it HERE, once, not at each host building. Two rockets asking a live counter would
+//      get two different answers; here the cached m_iDespDraft is what the sim charges AND what
+//      the info window quotes.
+//
+// A colony with no slack at all therefore pays exactly the flat costs of whatever it switched
+// on, and goes into deficit by them if it cannot afford them -- enabling an edict is a real
+// commitment, which is the whole point of the flat half.
+void CPlayer::ApplySurplusEdicts( )
+{
+
+    ASSERT_STRICT_VALID( this );
+
+    // Clear this pump's cached results -- an inactive edict drafts nothing and bonuses it is no
+    // longer paying for must not survive into this pump.
+    m_iDespDraft     = 0;
+    m_iPubWorksDraft = 0;
+    m_iCivDefDraft   = 0;
+    m_iCivDefPower   = 0;
+    m_iWarFootDraft  = 0;
+    m_iWarFootPower  = 0;
+    m_iRsrchSubDraft = 0;
+    m_fSurplusConstMult    = 1.0f;
+    m_fSurplusFortMult     = 1.0f;
+    m_fSurplusBldgDmgMult  = 1.0f;
+    m_fSurplusInfBuildMult = 1.0f;
+    m_fSurplusRsrchMult    = 1.0f;
+
+    // Spare workforce / power "as if the surplus edicts were not running" (points 1 + 2 above).
+    // A Last field < 0 means there is no finished pump to read yet (new game, or the first pump
+    // after a load -- these fields are runtime-only, deliberately not serialized). Scoring a
+    // zeroed need would make the ENTIRE workforce look spare and spike the drafts for one pump,
+    // so treat the spare as 0: the active edicts charge exactly their flat costs, nothing more.
+    LONG lSparePpl = 0;
+    LONG lSparePwr = 0;
+    if ( m_iPplNeedLast >= 0 )
+        lSparePpl = m_iPplBldg - ( m_iPplNeedLast - m_iSurplusPplLast );
+    if ( m_iPwrNeedLast >= 0 )
+        lSparePwr = m_iPwrHaveLast - ( m_iPwrNeedLast - m_iSurplusPwrLast );
+    if ( lSparePpl < 0 )
+        lSparePpl = 0;
+    if ( lSparePwr < 0 )
+        lSparePwr = 0;
+    m_iSurplusSparePpl = lSparePpl;   // what the UI/harness report as "spare" this pump
+    m_iSurplusSparePwr = lSparePwr;
+
+    // Each surplus edict charges its FLAT cost (booked, never added back) and then takes its cut
+    // of the REMAINING pool, shrinking it for the next one. So the walk is bounded -- they can
+    // never between them borrow more surplus than the colony has idle -- and its result depends
+    // only on EdictId order, never on building or player iteration order. They are visited below
+    // in that order; keep this walk and EdictIsSurplus (edicts.h) in step.
+
+    // --- EDICT_RESEARCH_SUBSIDY (office): pct upkeeps + a cut of the spare workforce ----------
+    // Its "flat" half is not a number but the static +30% research / +25% power / +15% workers
+    // in its g_aEdicts row, charged by RecomputeEdictMults + StartLoop like any other edict's.
+    // Here we only price the surplus half: a SMALLER cut than the rest of the family
+    // (RSRCH_SUBSIDY_DRAFT_PCT), seconding idle workers to the labs for up to
+    // RSRCH_SUBSIDY_MAX_PCT more research. The cut is surplus-derived, so it IS added back.
+    // Lowest EdictId of the family, so it is visited first and cuts the untouched pool.
+    if ( IsEdictActive( EDICT_RESEARCH_SUBSIDY ) )
+    {
+        int iCut = SurplusShare( (int)lSparePpl, RSRCH_SUBSIDY_DRAFT_PCT );
+        lSparePpl -= iCut;
+
+        m_iRsrchSubDraft = iCut;
+        AddPplNeedBldg( iCut );
+        m_iSurplusPplTick += iCut;
+        m_fSurplusRsrchMult = 1.0f + ( RSRCH_SUBSIDY_MAX_PCT / 100.0f ) *
+                                         SurplusScale( iCut, RSRCH_SUBSIDY_FULL_DRAFT );
+    }
+
+    // --- EDICT_DESPERATE_MEASURES (rocket): flat workers + a cut of the spare workforce -------
+    if ( IsEdictActive( EDICT_DESPERATE_MEASURES ) )
+    {
+        int iCut = SurplusShare( (int)lSparePpl, SURPLUS_DRAFT_PCT );
+        lSparePpl -= iCut;
+
+        m_iDespDraft = DESPERATE_BASE_DRAFT + iCut;
+        // Book the whole draft as demand HERE (this runs after StartLoop's reset, so we are
+        // seeding the pump's fresh need); only the CUT half is remembered for next pump's
+        // add-back, per the accounting rule in the header. The rocket's own GetPeople() is still
+        // booked by CBuilding::Operate; this is only the conscription.
+        AddPplNeedBldg( m_iDespDraft );
+        m_iSurplusPplTick += iCut;
+    }
+
+    // --- EDICT_PUBLIC_WORKS (rocket): flat workers + a cut of the spare workforce -------------
+    // The bonus scales with the TOTAL draft, so even a colony with no slack gets the base's
+    // worth (PUBLIC_WORKS_BASE_DRAFT / PUBLIC_WORKS_FULL_DRAFT of the maximum).
+    if ( IsEdictActive( EDICT_PUBLIC_WORKS ) )
+    {
+        int iCut = SurplusShare( (int)lSparePpl, SURPLUS_DRAFT_PCT );
+        lSparePpl -= iCut;
+
+        m_iPubWorksDraft = PUBLIC_WORKS_BASE_DRAFT + iCut;
+        AddPplNeedBldg( m_iPubWorksDraft );
+        m_iSurplusPplTick += iCut;
+        m_fSurplusConstMult = 1.0f + ( PUBLIC_WORKS_MAX_PCT / 100.0f ) *
+                                         SurplusScale( (int)m_iPubWorksDraft, PUBLIC_WORKS_FULL_DRAFT );
+    }
+
+    // --- EDICT_CIVIL_DEFENCE (rocket): flat workers + a cut of the surplus POWER --------------
+    // Population + surplus energy. The workers are the flat bill (they man the shelters whether
+    // or not anyone is idle); the EFFECT is set by the power drawn, which is the surplus half.
+    if ( IsEdictActive( EDICT_CIVIL_DEFENCE ) )
+    {
+        int iCutPwr = SurplusShare( (int)lSparePwr, SURPLUS_POWER_PCT );
+        lSparePwr -= iCutPwr;
+
+        m_iCivDefDraft = CIVDEF_BASE_DRAFT;   // flat, no surplus-people cut
+        m_iCivDefPower = iCutPwr;
+        AddPplNeedBldg( m_iCivDefDraft );
+        AddPwrNeed( m_iCivDefPower );
+        m_iSurplusPwrTick += iCutPwr;         // only the surplus half is added back
+
+        float fScale = SurplusScale( iCutPwr, CIVDEF_FULL_POWER );
+        m_fSurplusBldgDmgMult = 1.0f - ( CIVDEF_MAX_DMG_PCT / 100.0f ) * fScale;
+        m_fSurplusFortMult    = 1.0f + ( CIVDEF_MAX_FORT_PCT / 100.0f ) * fScale;
+    }
+
+    // --- EDICT_WAR_FOOTING (command center): flat POWER + a cut of the spare workforce --------
+    // Energy + surplus people: the mirror of Civil Defence. The power is the flat bill; the
+    // effect is set by the workers drafted.
+    if ( IsEdictActive( EDICT_WAR_FOOTING ) )
+    {
+        int iCutPpl = SurplusShare( (int)lSparePpl, SURPLUS_DRAFT_PCT );
+        lSparePpl -= iCutPpl;
+
+        m_iWarFootDraft = iCutPpl;
+        m_iWarFootPower = WARFOOT_BASE_POWER;   // flat, no surplus-power cut
+        AddPplNeedBldg( m_iWarFootDraft );
+        AddPwrNeed( m_iWarFootPower );
+        m_iSurplusPplTick += iCutPpl;           // only the surplus half is added back
+
+        m_fSurplusInfBuildMult = 1.0f + ( WARFOOT_MAX_INF_PCT / 100.0f ) *
+                                            SurplusScale( iCutPpl, WARFOOT_FULL_DRAFT );
+    }
+
+    ReportBldgDmgMult( );
+}
+
+// --- Civil Defence across the network ---------------------------------------------------------
+// The edict's damage reduction (m_fSurplusBldgDmgMult) is priced above from the owner's own spare
+// power, which only the owner's machine has: buildings Operate only where their owner is local,
+// so on the server a REMOTE human's power totals are zero and its computed value is always 1.0.
+// But the server is where building damage is applied (UnitDamage -> DecDamagePoints). So the
+// owner reports its value (CNetBldgDmgMult) and the server uses that for a non-local player.
+// Meat Shield (m_fEdictBldgDmgMult) comes from the replicated edict bits and Blast Shielding from
+// the replicated research flags, so neither is reported. Local players and single player: as before.
+float CPlayer::GetEdictBldgDmgMult( ) const
+{
+    float fSurplus = m_fSurplusBldgDmgMult;
+    if ( ( !IsLocal( ) ) && theGame.IsNetGame( ) )
+        fSurplus = IsEdictActive( EDICT_CIVIL_DEFENCE ) ? ( m_iRemoteBldgDmgPermille / 1000.0f ) : 1.0f;
+    return ( m_fEdictBldgDmgMult * fSurplus );
+}
+
+// Owner side, once per pump from ApplySurplusEdicts: a client tells the server when its value
+// changes, at most every CIVDEF_REPORT_INTERVAL_MS (a later pump sends the pending value), and
+// always on the first pump of a game. The server's own players need no message.
+void CPlayer::ReportBldgDmgMult( )
+{
+    if ( ( !IsLocal( ) ) || ( !theGame.IsNetGame( ) ) || theGame.AmServer( ) )
+        return;
+    int iPermille = BldgDmgPermille( m_fSurplusBldgDmgMult );
+    if ( iPermille == m_iSentBldgDmgPermille )
+        return;
+    DWORD dwNow = timeGetTime( );
+    if ( ( m_iSentBldgDmgPermille >= 0 ) && ( dwNow - m_dwSentBldgDmgTime < (DWORD)CIVDEF_REPORT_INTERVAL_MS ) )
+        return;
+    CNetBldgDmgMult msg( this, iPermille );
+    theGame.PostToServer( &msg, sizeof( msg ) );
+    m_iSentBldgDmgPermille = iPermille;
+    m_dwSentBldgDmgTime    = dwNow;
+}
+
+// Server side (bldg_dmg_mult in netapi.cpp, already checked to come from this player's own
+// connection). Clamped to what the edict can produce, so a bad value cannot buy more.
+void CPlayer::SetRemoteBldgDmgPermille( int iPermille )
+{
+    m_iRemoteBldgDmgPermille = ClampBldgDmgPermille( iPermille );
+}
+
+// --- What ApplySurplusEdicts charged this pump -----------------------------------------------
+// The info-window readout (the edict checkbox labels) and the harness `pstats` dump both read THESE, never
+// their own copy of the arithmetic, so a number on screen is by construction the number the sim
+// used. A non-surplus edict answers 0 / neutral.
+int CPlayer::GetEdictDraftPpl( int edictId ) const
+{
+    ASSERT_STRICT_VALID( this );
+    switch ( edictId )
+    {
+    case EDICT_RESEARCH_SUBSIDY:     return ( (int)m_iRsrchSubDraft );
+    case EDICT_DESPERATE_MEASURES:   return ( (int)m_iDespDraft );
+    case EDICT_PUBLIC_WORKS:         return ( (int)m_iPubWorksDraft );
+    case EDICT_CIVIL_DEFENCE:        return ( (int)m_iCivDefDraft );
+    case EDICT_WAR_FOOTING:          return ( (int)m_iWarFootDraft );
+    }
+    return ( 0 );
+}
+
+int CPlayer::GetEdictDraftPwr( int edictId ) const
+{
+    ASSERT_STRICT_VALID( this );
+    switch ( edictId )
+    {
+    case EDICT_CIVIL_DEFENCE:        return ( (int)m_iCivDefPower );    // the surplus half here
+    case EDICT_WAR_FOOTING:          return ( (int)m_iWarFootPower );   // flat bill
+    // Research Subsidy's power cost is the pct upkeep in its g_aEdicts row, not a flat number
+    // this pass booked, so there is nothing to report here.
+    }
+    return ( 0 );
+}
+
+// The edict's effect scale. 0..1 for the ramped edicts (0 = drafted nothing, 1 = fully
+// staffed); for Desperate Measures there is no cap, so report the scrounge multiplier instead
+// (draft / DESPERATE_RATE_PER -- the exact factor CBuilding::Operate scales the rates by).
+float CPlayer::GetEdictScale( int edictId ) const
+{
+    ASSERT_STRICT_VALID( this );
+    switch ( edictId )
+    {
+    case EDICT_DESPERATE_MEASURES:
+        return ( (float)m_iDespDraft / (float)DESPERATE_RATE_PER );
+    case EDICT_PUBLIC_WORKS:
+        return ( SurplusScale( (int)m_iPubWorksDraft, PUBLIC_WORKS_FULL_DRAFT ) );
+    case EDICT_CIVIL_DEFENCE:   // surplus input is POWER (the workers are the flat bill)
+        return ( SurplusScale( (int)m_iCivDefPower, CIVDEF_FULL_POWER ) );
+    case EDICT_WAR_FOOTING:     // surplus input is PEOPLE (the power is the flat bill)
+        return ( SurplusScale( (int)m_iWarFootDraft, WARFOOT_FULL_DRAFT ) );
+    case EDICT_RESEARCH_SUBSIDY:   // surplus input is PEOPLE (the static pcts are the flat half)
+        return ( SurplusScale( (int)m_iRsrchSubDraft, RSRCH_SUBSIDY_FULL_DRAFT ) );
+    }
+    return ( 1.0f );
+}
+
+// The live line appended to a surplus edict's (i) tooltip in the info window: ONLY what the
+// current draft is buying. The draft counts themselves ride in the checkbox's own label, and
+// Desperate Measures' yield is shown in the rocket's Production widget, so neither is repeated
+// here. "" for a non-surplus edict or an inactive one (nothing to say).
+std::string CPlayer::GetEdictEffectText( int edictId ) const
+{
+    ASSERT_STRICT_VALID( this );
+    if ( !EdictIsSurplus( edictId ) || !IsEdictActive( edictId ) )
+        return ( std::string( ) );
+
+    const float fScale = GetEdictScale( edictId );
+    char        buf[160];
+    buf[0] = 0;
+
+    switch ( edictId )
+    {
+    case EDICT_PUBLIC_WORKS:
+        snprintf( buf, sizeof( buf ), "+%d%% build speed",
+                  (int)( PUBLIC_WORKS_MAX_PCT * fScale + 0.5f ) );
+        break;
+    case EDICT_CIVIL_DEFENCE:
+        snprintf( buf, sizeof( buf ), "-%d%% building damage, +%d%% fort speed",
+                  (int)( CIVDEF_MAX_DMG_PCT * fScale + 0.5f ),
+                  (int)( CIVDEF_MAX_FORT_PCT * fScale + 0.5f ) );
+        break;
+    case EDICT_WAR_FOOTING:
+        snprintf( buf, sizeof( buf ), "+%d%% infantry build speed",
+                  (int)( WARFOOT_MAX_INF_PCT * fScale + 0.5f ) );
+        break;
+    case EDICT_RESEARCH_SUBSIDY:
+        // The static +30% is on the checkbox's own description; this line is only the EXTRA the
+        // seconded workers are buying right now.
+        snprintf( buf, sizeof( buf ), "+%d%% extra research",
+                  (int)( RSRCH_SUBSIDY_MAX_PCT * fScale + 0.5f ) );
+        break;
+    // EDICT_DESPERATE_MEASURES (and anything else): its yield is shown in the Production widget.
+    }
+    return ( std::string( buf ) );
+}
+
 void CPlayer::StartLoop( )
 {
 
@@ -618,13 +967,32 @@ void CPlayer::StartLoop( )
     // demand as a pct of the accumulated base, applied here — BEFORE the throttle below —
     // so an unaffordable edict correctly drags m_fPwrMult/m_fPplMult down (the cost half).
     if ( m_fEdictEnergyUpkeepPct    > 0.0f ) m_iPwrNeed     += (int)( m_iPwrNeed     * m_fEdictEnergyUpkeepPct );
+    // Flat edict draw (Resonance Sweep). Added AFTER the pct line so the percentage taxes the
+    // colony own demand and not the emitter -- and added here, once per civ, rather than at a
+    // host building, so owning three Command Centers does not triple the bill. Like the pct
+    // above this rides the raw member only until the loop resets it; GetPwrNeed re-adds it for
+    // display. Unaffordable means the whole colony browns out through m_fPwrMult below, which
+    // is the intended pressure -- and for the sweep specifically that same m_fPwrMult is what
+    // stretches its recharge, so an emitter you cannot power throttles itself.
+    m_iPwrNeed += GetEdictFlatPwrNeed( );
     if ( m_fEdictWorkforceUpkeepPct > 0.0f ) m_iPplNeedBldg += (int)( m_iPplNeedBldg * m_fEdictWorkforceUpkeepPct );
 
-    if ( m_iPplBldg < m_iPplNeedBldg )
+    // EDICT_AUTO_RESEARCH's flat civ-wide half (its per-lab worker surcharge is charged at the
+    // building, in CBuilding::Operate's UTresearch case). Booked here with the pct upkeeps so it
+    // is inside the need m_fPwrMult/m_fPplMult throttle from AND inside the m_iPwrNeedLast /
+    // m_iPplNeedLast snapshot below -- a bill the colony really pays, never spare capacity.
+    if ( IsEdictActive( EDICT_AUTO_RESEARCH ) )
+    {
+        m_iPwrNeed     += AUTO_RSRCH_POWER;
+        m_iPplNeedBldg += AUTO_RSRCH_WORKERS;
+    }
+
+    // #82/#87: never divide by a zero (or negative) need; a negative have against zero need produced -inf, then NaN in GetFrameProd, then an INT_MIN fire rate whose product with AVG_SPEED_MUL overflowed to 0 at the Shoot divide.
+    if ( m_iPplNeedBldg > 0 && m_iPplBldg < m_iPplNeedBldg )
         m_fPplMult = float( m_iPplBldg ) / float( m_iPplNeedBldg );
     else
         m_fPplMult = 1.0;
-    if ( m_iPwrHave < m_iPwrNeed )
+    if ( m_iPwrNeed > 0 && m_iPwrHave < m_iPwrNeed )
         m_fPwrMult = float( m_iPwrHave ) / float( m_iPwrNeed );
     else
         m_fPwrMult = 1.0;
@@ -658,6 +1026,20 @@ void CPlayer::StartLoop( )
         SampleHistory( );
     }
 
+    // Surplus-scaled edicts read the workforce as of a FINISHED pump, so snapshot here -- after
+    // the edict upkeep fold-in above (so it matches the need m_fPplMult was just computed from)
+    // and before the reset below wipes it. The drafts roll over the same way: what the surplus
+    // edicts drew this pump becomes next pump's add-back. (The upkeep pct also scaled the drafts
+    // inside m_iPplNeedBldg while the add-back is the raw figure; the difference is
+    // upkeepPct * draft, which only makes the spare estimate slightly conservative.)
+    m_iPplNeedLast    = m_iPplNeedBldg;
+    m_iSurplusPplLast = m_iSurplusPplTick;
+    m_iSurplusPplTick = 0;
+    m_iPwrHaveLast    = m_iPwrHave;
+    m_iPwrNeedLast    = m_iPwrNeed;
+    m_iSurplusPwrLast = m_iSurplusPwrTick;
+    m_iSurplusPwrTick = 0;
+
     // clear for next count
     m_iPwrHave     = 0;
     m_iPwrNeed     = 0;
@@ -665,6 +1047,11 @@ void CPlayer::StartLoop( )
     m_iFoodProd    = 0;
 
     m_iRsrchHave = 0;
+
+    // Price the surplus-scaled edicts for the pump that is about to run. This must be AFTER the
+    // reset (it seeds the fresh need with the drafts) and after m_fPplMult/m_fPwrMult are
+    // computed above (the research credit is throttled by them, like any other producer).
+    ApplySurplusEdicts( );
 }
 
 // Append one colony-stat sample to the ring buffer (called once per period from
@@ -758,7 +1145,8 @@ void CPlayer::Research( int iNumSec )
     {
         if ( !m_bAutoRsrchPending )
         {
-            int iBest = 0, iMinCost = 0x7FFFFFFF;
+            int       iBest    = 0;
+            long long iMinCost = 0x7FFFFFFFFFFFFFFFLL;   // 64-bit: m_iPtsRequired is
             for ( int i = 1; i < theRsrch.GetSize( ); ++i )   // cheapest available; lowest index wins ties
                 if ( CanRsrch( i ) && theRsrch.ElementAt( i ).m_iPtsRequired < iMinCost )
                 {
@@ -804,7 +1192,15 @@ void CPlayer::Research( int iNumSec )
     CRsrchStatus* pRs      = &GetRsrch( GetRsrchItem( ) );
     ASSERT( !pRs->m_bDiscovered );
 
-    int iNum = m_iRsrchHave * iNumSec * 2;
+    // Research Speed line: +10% points per level (100% at none .. 150% at level 5).
+    // 64-bit intermediate because the scaled product is 1.5x what this line used to
+    // compute, and the 32-bit version of this arithmetic has overflowed before (see
+    // the m_iPtsDiscovered note below). At 100% the result is bit-identical to the old
+    // expression, so saves and pre-line games are unaffected.
+    long long llNum = ( (long long)m_iRsrchHave * iNumSec * 2 * GetRsrchSpeedPct( ) ) / 100;
+    if ( llNum > 0x7FFFFFFF ) llNum = 0x7FFFFFFF;   // unreachable in practice, but this
+    if ( llNum < 0 )          llNum = 0;            // line has overflowed before (see below)
+    int iNum = (int)llNum;
     pRs->m_iPtsDiscovered += iNum;
 
     // did we discover it
@@ -816,8 +1212,17 @@ void CPlayer::Research( int iNumSec )
         // (m_iPtsDiscovered is unbounded) making RandNum's argument NEGATIVE ->
         // rand.cpp:49 assert. Drop the factor: identical odds, no overflow. Research
         // runs only for local players, so no cross-machine RNG-stream impact.
-        if ( RandNum( pRs->m_iPtsDiscovered ) > pRi->m_iPtsRequired )
+    {
+        // RandNum takes an int and asserts on a negative argument, but m_iPtsDiscovered is
+        // 64-bit now -- narrowing it implicitly is exactly how this line produced a negative
+        // roll before. Saturate instead. With costs held under RSRCH_PTS_CEILING this branch
+        // never sees a value that large anyway (it only runs while discovered <= required * 2).
+        LONGLONG llRoll = pRs->m_iPtsDiscovered;
+        if ( llRoll > 0x7FFFFFFF )
+            llRoll = 0x7FFFFFFF;
+        if ( RandNum( (int)llRoll ) > pRi->m_iPtsRequired )
             bFoundIt = TRUE;
+    }
 
     if ( !bFoundIt )
     {
@@ -861,6 +1266,312 @@ void CPlayer::Research( int iNumSec )
         theGame.MulEvent( MEVENT_RSRCH_DONE, NULL );
         CWndComm::UpdateMail( );
     }
+}
+
+//---------------------------------------------------------------------------
+// Resonance Sweep (EDICT_RESONANCE_SWEEP, unlocked by CRsrchArray::drive_core_resonance).
+// Once per recharge (RESONANCE_SWEEP_RELOAD_SECS at full power, longer when the grid is short
+// -- see GetSweepReloadSecs), pick ONE enemy rocket at random and resolve what
+// we know of it. The three outcomes are deliberately the SAME three the engine already runs
+// when one of our own units scouts an enemy building (the reveal block in
+// CUnit::IncrementSpotting, unit.cpp) -- this is that block reached by a different trigger,
+// not a new visibility rule:
+//     destroyed     -> delete the corpse, so our map stops drawing a ship that is gone
+//     never seen    -> MakeBldgVisible, then refresh
+//     already known -> refresh only (damage level, construction pct, animations)
+// The refresh is what keeps the edict worth its power once every rocket has been found: an
+// enemy building that has left our vision keeps the look it had when we last saw it
+// (DecrementSpotting only pauses its animations), so absent a ping its damage reads however
+// stale our last sighting was, and a ship destroyed out of sight would sit there intact.
+//
+// LOCAL VIEW ONLY, and that is why this needs no net message. m_iVisible means "can the local
+// human see this"; the whole spotting system is single-viewpoint (IncrementSpotting bails
+// unless m_pOwner->IsMe). So this runs for IsMe() alone, mutates no simulated state, and each
+// client sweeps for its own player.
+//
+// The pick uses a PRIVATE LCG and never RandNum. RandNum drives MyRand, which rand.cpp
+// documents as feeding ALL deterministic game randomness (world-gen, placement, combat rolls)
+// and which the cross-platform join handshake fingerprints; drawing from it on a per-client,
+// view-only path would advance that shared stream by a different amount on every machine.
+// Which rocket lights up has no business being part of the simulation.
+//---------------------------------------------------------------------------
+// Flat (absolute) power drawn by the active civ-wide edicts, plus the Resonance Sweep's
+// per-tier surcharge. Live rather than cached: researching a Drive-Core Resonance tier while
+// the edict is already on must raise the draw immediately, and a copy cached in
+// RecomputeEdictMults would not move until the next toggle.
+int CPlayer::GetEdictFlatPwrNeed( ) const
+{
+    int iPwr = 0;
+    for ( int id = 0; id < EDICT_COUNT; ++id )
+    {
+        if ( ( m_dwEdicts & ( 1u << id ) ) == 0 )
+            continue;
+        if ( g_aEdicts[id].scope != EDICT_CIVWIDE )
+            continue;
+        iPwr += g_aEdicts[id].iFlatEnergyUpkeep;
+    }
+
+    // The catalog holds the tier-1 emitter; each tier above it widens the ring and costs more.
+    if ( IsEdictActive( EDICT_RESONANCE_SWEEP ) )
+    {
+        int iTier = GetResonanceTier( );
+        if ( iTier > 1 )
+            iPwr += RESONANCE_SWEEP_POWER_TIER * ( iTier - 1 );
+    }
+    return ( iPwr );
+}
+
+// Recharge time for one ping. m_fPwrMult is the fraction of our power demand actually met
+// (StartLoop), so this stretches in proportion to the shortfall: full power = the base, half
+// power = double, quarter = quadruple. Capped rather than allowed to divide by ~0, so a total
+// blackout stalls the sweep at RESONANCE_SWEEP_MAX_RELOAD instead of producing a nonsense or
+// negative interval.
+int CPlayer::GetSweepReloadSecs( ) const
+{
+    float fPwr = m_fPwrMult;
+    if ( fPwr > 1.0f )
+        fPwr = 1.0f;
+
+    int iSecs;
+    if ( fPwr <= (float)RESONANCE_SWEEP_RELOAD_SECS / RESONANCE_SWEEP_MAX_RELOAD )
+        iSecs = RESONANCE_SWEEP_MAX_RELOAD;
+    else
+        iSecs = (int)( (float)RESONANCE_SWEEP_RELOAD_SECS / fPwr );
+
+    if ( iSecs > RESONANCE_SWEEP_MAX_RELOAD )
+        iSecs = RESONANCE_SWEEP_MAX_RELOAD;
+    if ( iSecs < RESONANCE_SWEEP_RELOAD_SECS )
+        iSecs = RESONANCE_SWEEP_RELOAD_SECS;
+    return ( iSecs );
+}
+
+struct SweepLightContext
+{
+    CPlayer* pPlayer;
+    CBuilding* pChosenRocket;
+    std::vector<CHexCoord>* pLitHexes;
+};
+
+// Light one hex of a sweep ring. Enemy rocket footprints other than the chosen rocket are
+// excluded before IncVisible, so the shared reveal handler cannot disclose them.
+static int fnSweepLight( CHex* pHex, CHexCoord hex, void* pData )
+{
+    SweepLightContext* pContext = (SweepLightContext*)pData;
+    if ( pHex->GetUnits( ) & CHex::bldg )
+    {
+        CBuilding* pBldg = theBuildingHex._GetBuilding( hex );
+        if ( ( pBldg != NULL ) && ( pBldg != pContext->pChosenRocket ) &&
+             ( pBldg->GetData( ) != NULL ) &&
+             ( pBldg->GetData( )->GetType( ) == CStructureData::rocket ) &&
+             ( pBldg->GetOwner( ) != NULL ) && ( pBldg->GetOwner( ) != pContext->pPlayer ) &&
+             ( pBldg->GetOwner( )->GetTheirRelations( ) != RELATIONS_ALLIANCE ) )
+            return ( FALSE );
+    }
+
+    pHex->IncVisible( );
+    if ( pHex->GetVisibility( ) == 1 )
+        EnHexBecameVisible( pHex, hex, pContext->pPlayer );
+    pContext->pLitHexes->push_back( hex );
+    return ( FALSE );
+}
+
+// Release one hex of a sweep ring. Mirrors CUnit::DecrementSpotting, including re-freezing an
+// enemy building's ambients once it drops out of sight again.
+static void SweepUnlightHex( CHex* pHex, CHexCoord hex, CPlayer* pPlayer )
+{
+    // m_bVisible is a BYTE: decrementing one that is already 0 wraps it to 255 and pins the hex
+    // lit for the rest of the game. We release only recorded increments, but still guard the
+    // count because an independent map reset could have invalidated it.
+    ASSERT( pHex->GetVisibility( ) );
+    if ( pHex->GetVisible( ) <= 0 )
+        return;
+
+    pHex->DecVisible( );
+    if ( !pHex->GetVisibility( ) )
+    {
+        hex.SetInvalidated( );
+        if ( pHex->GetUnits( ) & CHex::bldg )
+        {
+            CBuilding* pBldg = theBuildingHex._GetBuilding( hex );
+            if ( ( pBldg != NULL ) && ( pBldg->GetOwner( ) != pPlayer ) && !pBldg->IsLive( ) )
+                pBldg->PauseAnimations( TRUE );
+        }
+    }
+}
+
+// Light the ground around a rocket the sweep just found. Tier 1 lights nothing -- it is a bare
+// contact and the ship itself is handled by the caller.
+void CPlayer::SweepLight( CBuilding* pRocket )
+{
+    if ( m_bSweepLit )
+        SweepUnlight( );              // never stack two rings
+
+    int iRing = GetSweepRings( );
+    if ( ( iRing <= 0 ) || ( pRocket == NULL ) )
+        return;
+
+    CHexCoord hexOrg( pRocket->GetHex( ).X( ) - iRing, pRocket->GetHex( ).Y( ) - iRing );
+    hexOrg.Wrap( );
+
+    m_hexSweepLit   = hexOrg;
+    m_iSweepLitCX   = pRocket->GetCX( ) + 2 * iRing;
+    m_iSweepLitCY   = pRocket->GetCY( ) + 2 * iRing;
+    m_bSweepLit     = TRUE;
+    m_iSweepLitMillis = RESONANCE_SWEEP_LIT_SECS * 1000;
+
+    m_aSweepLitHexes.clear( );
+    SweepLightContext context = { this, pRocket, &m_aSweepLitHexes };
+    theMap.EnumHexes( m_hexSweepLit, m_iSweepLitCX, m_iSweepLitCY, fnSweepLight, &context );
+}
+
+// Release only the hexes whose visibility counts this ring raised; safe to call when nothing is lit.
+void CPlayer::SweepUnlight( )
+{
+    if ( !m_bSweepLit )
+        return;
+
+    m_bSweepLit     = FALSE;          // cleared FIRST so re-entry cannot decrement twice
+    m_iSweepLitMillis = 0;
+    for ( std::vector<CHexCoord>::size_type i = 0; i < m_aSweepLitHexes.size( ); ++i )
+    {
+        CHex* pHex = theMap._GetHex( m_aSweepLitHexes[i] );
+        if ( pHex != NULL )
+            SweepUnlightHex( pHex, m_aSweepLitHexes[i], this );
+    }
+    m_aSweepLitHexes.clear( );
+}
+
+void CPlayer::ResonanceSweep( int iElapsedMillis )
+{
+    // Age out any lit ring FIRST, and release it unconditionally if the sweep is no longer
+    // running -- the edict can be switched off, or revoked with our last Command Center
+    // (EdictHostLost), while a ring is up, and the hexes must come back either way.
+    if ( iElapsedMillis < 0 )
+        iElapsedMillis = 0;
+    BOOL bRunning = IsMe( ) && IsEdictActive( EDICT_RESONANCE_SWEEP );
+    if ( m_bSweepLit )
+    {
+        m_iSweepLitMillis -= iElapsedMillis;
+        if ( ( m_iSweepLitMillis <= 0 ) || ( !bRunning ) )
+            SweepUnlight( );
+    }
+
+    // Only the local human view. Zero the bank when the edict is off so re-arming starts a
+    // fresh cycle rather than firing instantly on time that accrued while it was switched off.
+    if ( !bRunning )
+    {
+        m_iSweepMillis = 0;
+        return;
+    }
+
+    int iReload = GetSweepReloadSecs( ) * 1000;
+    // Compare before adding so even a very long stall cannot overflow the bank.
+    if ( iElapsedMillis < iReload - m_iSweepMillis )
+    {
+        m_iSweepMillis += iElapsedMillis;
+        return;
+    }
+    // Start a fresh interval from this contact. A stalled frame must not bank a
+    // second contact that fires immediately after it.
+    m_iSweepMillis = 0;
+
+    // Pass 1 - count the candidates. Allies are skipped: their rockets are already visible to
+    // us, so pinging one would burn the sweep to learn nothing.
+    int      nRocket = 0;
+    POSITION pos     = theBuildingMap.GetStartPosition( );
+    while ( pos != NULL )
+    {
+        DWORD      dwID;
+        CBuilding* pBldg;
+        theBuildingMap.GetNextAssoc( pos, dwID, pBldg );
+        if ( ( pBldg == NULL ) || ( pBldg->GetData( ) == NULL ) )
+            continue;
+        if ( pBldg->GetData( )->GetType( ) != CStructureData::rocket )
+            continue;
+        if ( ( pBldg->GetOwner( ) == NULL ) || ( pBldg->GetOwner( )->IsMe( ) ) )
+            continue;
+        if ( pBldg->GetOwner( )->GetTheirRelations( ) == RELATIONS_ALLIANCE )
+            continue;
+        nRocket++;
+    }
+    if ( nRocket <= 0 )
+        return;
+
+    // Private stream (see the note above): the documented MSVC CRT LCG, the same shape
+    // rand.cpp uses, but on our own state so g_enRandState is left untouched.
+    m_uSweepRand = m_uSweepRand * 214013U + 2531011U;
+    int iWant = (int)( ( ( m_uSweepRand >> 16 ) & 0x7FFF ) % (unsigned int)nRocket );
+
+    // Pass 2 - walk to the chosen one and take the pointer. We must be OUT of the map
+    // iteration before acting on it: the destroyed case deletes the building, which would
+    // invalidate the POSITION we are iterating with.
+    CBuilding* pRocket = NULL;
+    int        iOn     = 0;
+    pos = theBuildingMap.GetStartPosition( );
+    while ( pos != NULL )
+    {
+        DWORD      dwID;
+        CBuilding* pBldg;
+        theBuildingMap.GetNextAssoc( pos, dwID, pBldg );
+        if ( ( pBldg == NULL ) || ( pBldg->GetData( ) == NULL ) )
+            continue;
+        if ( pBldg->GetData( )->GetType( ) != CStructureData::rocket )
+            continue;
+        if ( ( pBldg->GetOwner( ) == NULL ) || ( pBldg->GetOwner( )->IsMe( ) ) )
+            continue;
+        if ( pBldg->GetOwner( )->GetTheirRelations( ) == RELATIONS_ALLIANCE )
+            continue;
+        if ( iOn++ == iWant )
+        {
+            pRocket = pBldg;
+            break;
+        }
+    }
+    if ( pRocket == NULL )
+        return;
+
+    std::string sWho = pRocket->GetOwner( )->GetName( );
+
+    // Always name the map location. A bearing the player cannot act on is not intel: without
+    // this the status line says a ship was found and leaves them to hunt a big map for it.
+    char sWhere[64];
+    sprintf( sWhere, " at %d,%d", pRocket->GetHex( ).X( ), pRocket->GetHex( ).Y( ) );
+
+    // Destroyed: drop the corpse. Mirrors the dead-building branch of the scouting reveal --
+    // our map has been showing a ship that no longer exists, and this is how the player finds
+    // out. Nothing below this line may touch pRocket.
+    if ( pRocket->IsFlag( CUnit::dead ) )
+    {
+        delete pRocket;
+        theApp.m_wndBar.SetStatusText(
+            0, ( "Resonance Sweep: no return from " + sWho + sWhere + ". That ship has been destroyed." ).c_str( ),
+            CStatInst::status );
+        return;
+    }
+
+    BOOL bNew = !pRocket->IsVisible( );
+    if ( bNew )
+        pRocket->MakeBldgVisible( );
+
+    // Refresh what we display of it, exactly as the scouting reveal does.
+    pRocket->SetConstPer( );
+    pRocket->UpdateDamageLevel( );
+    if ( ( !pRocket->IsConstructing( ) ) && ( !pRocket->IsFlag( CUnit::stopped ) ) )
+    {
+        if ( !pRocket->GetAmbient( CSpriteView::ANIM_FRONT_1 )->IsEnabled( ) )
+            pRocket->EnableAnimations( TRUE );
+        pRocket->PauseAnimations( FALSE );
+    }
+
+    // From tier 2 the ping also opens the ground around it for a few seconds (real vision:
+    // their vehicles show while it is lit). Tier 1 lights nothing and this is a no-op.
+    SweepLight( pRocket );
+
+    theApp.m_wndBar.SetStatusText(
+        0,
+        ( ( bNew ? ( "Resonance Sweep: contact. Located the ship belonging to " + sWho )
+                 : ( "Resonance Sweep: re-acquired the ship belonging to " + sWho ) ) + sWhere + "." ).c_str( ),
+        CStatInst::status );
 }
 
 #ifdef _CHEAT
@@ -945,11 +1656,36 @@ void CPlayer::UpdateRacialAttributes( int iRsrch )
         m_bRange = m_iRsrchItem - CRsrchArray::range_1 + 1;
         m_bRange = __minmax( 0, 3, m_bRange );
         break;
+    // range_4 is appended at the END of the enum (not contiguous after range_3), so map it
+    // explicitly -- the subtraction above would give a nonsense level. The level-4 range
+    // bonus is a diminishing step in CUnit::AssignData (the >>(4-lvl) form would shift by 0).
+    case CRsrchArray::range_4:
+        m_bRange = 4;
+        break;
     case CRsrchArray::atk_1:
     case CRsrchArray::atk_2:
     case CRsrchArray::atk_3:
         m_bAttack = m_iRsrchItem - CRsrchArray::atk_1 + 1;
         m_bAttack = __minmax( 0, 3, m_bAttack );
+        break;
+    // atk_4..atk_8 are appended at the END of the enum -- same reason as range_4 above.
+    // atk_4 was appended in an earlier batch than atk_5..8, so the two groups are NOT
+    // contiguous with each other and each level is mapped by hand. The per-level bonus
+    // (diminishing, floored at +2 percentage points) is a table in CUnit::AssignData.
+    case CRsrchArray::atk_4:
+        m_bAttack = 4;
+        break;
+    case CRsrchArray::atk_5:
+        m_bAttack = 5;
+        break;
+    case CRsrchArray::atk_6:
+        m_bAttack = 6;
+        break;
+    case CRsrchArray::atk_7:
+        m_bAttack = 7;
+        break;
+    case CRsrchArray::atk_8:
+        m_bAttack = 8;
         break;
     case CRsrchArray::def_1:
     case CRsrchArray::def_2:
@@ -1140,6 +1876,22 @@ BOOL CPlayer::CanRsrch( int iIndex )
         if ( !GetExists( *piNum ) )
             return ( FALSE );
 
+    // Research Speed 1: gated on how much research the colony has ALREADY completed,
+    // not on a precursor topic (the prereq array is AND-only and cannot express "any
+    // N of them"). Only PAID topics count -- the free ones load pre-discovered, so
+    // counting them would grant 5 of the 10 before the game even starts. Loop bound is
+    // GetRsrchSize() (the player's own array), not num_types, so a save still being
+    // resized up cannot walk off the end.
+    if ( iIndex == CRsrchArray::rsrch_speed_1 )
+    {
+        int iDone = 0;
+        for ( int iOn = 1; iOn < GetRsrchSize( ); iOn++ )
+            if ( GetRsrch( iOn ).m_bDiscovered && ( theRsrch[iOn].m_iPtsRequired > 0 ) )
+                iDone++;
+        if ( iDone < RSRCH_SPEED_MIN_TOPICS )
+            return ( FALSE );
+    }
+
     // Pontoon Bridges: ONE-OF building gate (light factory line / refinery /
     // heavy factory) - the prereq array is AND-only, so the OR lives here
     if ( iIndex == CRsrchArray::bridge_short )
@@ -1295,6 +2047,13 @@ void CPlayer::Serialize( CArchive& ar )
         ar >> m_iPwrHave;
         ar >> m_iPplNeedBldg;
         ar >> m_iPplBldg;
+        // #82/#87: a pre-fix or otherwise corrupted save can carry m_iPplBldg near INT_MIN
+        // or INT_MAX (the runaway-accumulator symptom; its write-site origin is still
+        // unexplained -- see BUGS #82). Loaded unclamped it feeds `iPplTotal * 60` in
+        // PeopleAndFood (signed overflow before the float cast) and the m_fPplMult divide
+        // in StartLoop before either runs even once. This does not repair or explain the
+        // bad value -- it only stops an already-bad number from propagating once loaded.
+        m_iPplBldg = __minmax( 1, 1000000, m_iPplBldg );
         ar >> m_iPplVeh;
         ar >> m_iFood;
         ar >> m_iFoodProd;
@@ -1308,6 +2067,14 @@ void CPlayer::Serialize( CArchive& ar )
 
         ar >> m_iRsrchHave;
         ar >> m_iRsrchItem;
+
+        // Resonance Sweep's lit ring is runtime-only and is NOT serialized. Hex visibility is
+        // rebuilt from our own units on load, so a ring recorded before the save refers to
+        // counts that no longer exist -- drop it rather than releasing it (see SweepUnlight).
+        m_bSweepLit     = FALSE;
+        m_iSweepLitMillis = 0;
+        m_aSweepLitHexes.clear( );
+        m_iSweepMillis    = 0;
         // Read research statuses element-by-element to preserve valid object layout.
         {
             DWORD_PTR nNewSize = ar.ReadCount( );
@@ -1512,6 +2279,9 @@ void CGame::_ctor( )
 
     m_bServer    = FALSE;
     m_bIsNetGame = FALSE;
+    // Set HERE and not in ctor(): the gameplay data hash is computed once at
+    // startup, and ctor() runs again for every new game (015 phase 3).
+    m_dwDataHash = 0;
     ctor( );
 
     // block size, block count, flags
@@ -1554,6 +2324,7 @@ void CGame::ctor( )
 
     m_uTimer     = 0;
     m_bUnPauseMe = m_bShouldPause = m_bShouldNetPause = m_bPauseMsgs = m_bMessages = m_bAnimate = m_bOperate = FALSE;
+    m_aPausedNet.clear( );
     m_dwElapsedTime                                                                                  = 0;
     m_dwOperTimeLast = m_dwFrameTimeLast = timeGetTime( );
     m_dwFramesElapsed = m_dwOpersElapsed = m_dwOperSecElapsed = m_dwOperSecFrames;
@@ -1818,6 +2589,71 @@ void CGame::SetMessagesPaused(BOOL bPause )
         m_uTimer = 0;
     }
     theGame.ClearNetPause();
+}
+
+// Host: connection idNet sent pause_messages. We stay paused while ANY connection
+// has a pause outstanding. The key is the sender's net id (the vdmplay msgFrom),
+// never its plyr num: a Load Network Game joiner's plyr num changes between its
+// pause and its unpause, which left one flag set forever and the host paused for
+// good (joiner stopped getting veh_comp_loc).
+void CGame::NetPauseRequest( VPPLAYERID idNet, BOOL bPause )
+{
+
+    ASSERT( m_bServer );
+
+    std::vector<VPPLAYERID>::iterator it = std::find( m_aPausedNet.begin( ), m_aPausedNet.end( ), idNet );
+    if ( bPause )
+    {
+        // net id 0 is never a live connection, so nothing could ever unpause it
+        ASSERT( idNet != 0 );
+        if ( ( idNet != 0 ) && ( it == m_aPausedNet.end( ) ) )
+            m_aPausedNet.push_back( idNet );
+        SetMessagesPaused( TRUE );
+        return;
+    }
+
+    if ( it != m_aPausedNet.end( ) )
+        m_aPausedNet.erase( it );
+
+    // any other connection still paused - wait for the rest. NOT a fault (it was a
+    // TRAP, which froze the host at the start of the first 3-client MP game): with
+    // several clients the pause windows overlap routinely, e.g. at game start.
+    if ( !m_aPausedNet.empty( ) )
+    {
+        if ( theApp.m_pLogFile != NULL )
+            theApp.Log( "Pause: staying paused, another player still paused" );
+        return;
+    }
+
+    // everyone says ok
+    if ( theApp.m_pLogFile != NULL )
+    {
+        SYSTEMTIME st;
+        char       sBuf[200];
+        GetLocalTime( &st );
+        sprintf( sBuf, "Pause: Off at %d:%d", st.wMinute, st.wSecond );
+        theApp.Log( sBuf );
+    }
+    SetMessagesPaused( FALSE );
+}
+
+// Host: connection idNet is gone (left, taken over by the AI, or removed). Its
+// outstanding pause goes with it; resume if it was the last one holding us.
+void CGame::NetPauseDrop( VPPLAYERID idNet )
+{
+
+    if ( ( !m_bServer ) || ( idNet == 0 ) )
+        return;
+
+    std::vector<VPPLAYERID>::iterator it = std::find( m_aPausedNet.begin( ), m_aPausedNet.end( ), idNet );
+    if ( it == m_aPausedNet.end( ) )
+        return;
+
+    // was TRAP (untested 1996 path): a joiner whose link drops mid-load does this
+    EN_TRAP_REMOVED( "NetPauseDrop: a connection left with a pause outstanding - dropped" );
+    m_aPausedNet.erase( it );
+    if ( m_aPausedNet.empty( ) )
+        SetMessagesPaused( FALSE );
 }
 
 extern void EnMpDiagLog( const char* fmt, ... );   // [mp-plyr] trace (netapi.cpp)
@@ -2218,6 +3054,8 @@ void CGame::AiTakeOverPlayer( CPlayer* pPlr, BOOL bStartThread, BOOL bShowDlg )
                  pPlr->GetPlyrNum( ), pPlr->GetName( ), ( _GetMe( ) == pPlr ) ? 1 : 0,
                  (int)m_bServer, (int)bStartThread );
 
+    const VPPLAYERID idNet = pPlr->GetNetNum( );   // its pause is keyed by this
+
     pPlr->SetAI( TRUE );
     pPlr->SetLocal( m_bServer );
     pPlr->SetState( CPlayer::ready );
@@ -2227,24 +3065,8 @@ void CGame::AiTakeOverPlayer( CPlayer* pPlr, BOOL bStartThread, BOOL bShowDlg )
 
     if ( m_bServer )
     {
-        if ( pPlr->m_bPauseMsgs )
-        {
-            TRAP( );
-            pPlr->m_bPauseMsgs = FALSE;
-            POSITION pos;
-            for ( pos = theGame.GetAll( ).GetHeadPosition( ); pos != NULL; )
-            {
-                CPlayer* pPlr = theGame.GetAll( ).GetNext( pos );
-                // if any player says pause - we pause
-                if ( pPlr->m_bPauseMsgs )
-                {
-                    TRAP( );
-                    goto NoUnPause;
-                }
-            }
-            SetMessagesPaused(FALSE);
-        }
-    NoUnPause:
+        // undo its pausing (OnMsgLeave already did, keyed by the same net id)
+        NetPauseDrop( idNet );
 
         // tell them
         CDlgSaveMsg dlgMsg( CWnd::FromHandle( theApp.m_wndMain.m_hWnd ) );
@@ -2285,7 +3107,14 @@ void CGame::AiReleasePlayer( CPlayer* pPlr, int iNetNum, const char* pName, BOOL
 
     if ( m_bServer )
     {
-        ::AiKillPlayer( pPlr->GetAiHdl( ) );
+        // the player is human now: it must not keep a handle to a manager that
+        // is going away (AiTakeOverPlayer would later hand it the freed one)
+        DWORD_PTR dwAiID = pPlr->GetAiHdl( );
+        pPlr->SetAiHdl( 0 );
+        if ( bPlaying )
+            ::AiKillPlayer( dwAiID );    // its running thread deletes it (Manage -> AiDeletePlayer)
+        else
+            ::AiDeletePlayer( dwAiID );  // StartGame: its thread was never started, so nothing else ever would
         pPlr->m_iNumAiGpfs = 0;
 
         // CDlgPlyrList removed (Phase 2d) — SDL2PlayerListDialog refreshes on open.
@@ -2368,28 +3197,8 @@ void CGame::RemovePlayer( CPlayer* pPlr )
     // we're dead
     pPlr->SetState( CPlayer::dead );
 
-    // undo pausing
-    if ( m_bServer )
-    {
-        if ( pPlr->m_bPauseMsgs )
-        {
-            TRAP( );
-            pPlr->m_bPauseMsgs = FALSE;
-            POSITION pos;
-            for ( pos = theGame.GetAll( ).GetHeadPosition( ); pos != NULL; )
-            {
-                CPlayer* pPlr = theGame.GetAll( ).GetNext( pos );
-                // if any player says pause - we pause
-                if ( pPlr->m_bPauseMsgs )
-                {
-                    TRAP( );
-                    goto NoUnPause;
-                }
-            }
-            SetMessagesPaused(FALSE);
-        }
-    }
-NoUnPause:
+    // undo pausing (keyed by its connection; no-op for the AI and the host)
+    NetPauseDrop( pPlr->GetNetNum( ) );
 
     // CDlgPlyrList removed (Phase 2d) — SDL2PlayerListDialog refreshes on open.
     // (CDlgRelations RemovePlayer removed)
@@ -2531,8 +3340,14 @@ void CGame::ProcessAllMessages( )
     if ( !m_bMessages )
         return;
 
+    // A start deferred by the client waiting room (CmdStart / start_loaded_game,
+    // netapi.cpp) runs from the join flow once the lobby closes. Whatever the
+    // host queued behind it must wait for that start, as it did in 1996 when
+    // the start ran in-line.
+    extern bool g_bClientLobbyWaiting, g_bClientStartReceived;
+
     // process all messages so we have none pending
-    while ( TRUE )
+    while ( !( g_bClientLobbyWaiting && g_bClientStartReceived ) )
     {
         EnterCriticalSection( &cs );
         if (m_messagePointerList.GetCount( ) <= 0 )
@@ -2609,16 +3424,8 @@ int CGame::LoadGame( CWnd* pPar, BOOL bReplace )
 
     EnableAllWindows( NULL, FALSE );
 
-    // Headless harness load (HarnessLoadGame): the .en path is pre-supplied, so skip
-    // the file-browser modal entirely (the POSIX SDL2FileBrowser isn't harness-
-    // drivable). Mirrors SaveGame's pre-set-filename skip. nullptr for any normal
-    // menu-driven load, so that path is unchanged.
-    if ( HarnessPendingLoadPath( ) )
-    {
-        theGame.m_sFileName = HarnessPendingLoadPath( );
-    }
     // Use SDL2 file browser if the SDL2 window is active, else fall back to MFC
-    else if ( theApp.m_gameWindow )
+    if ( theApp.m_gameWindow )
     {
         SDL2FileBrowser browser( theApp.m_gameWindow.get(), SDL2FileBrowser::Open,
                                  "Load Game", "", "", ".en" );
@@ -2930,6 +3737,17 @@ int CGame::StartGame( BOOL bReplace )
         return ( IDCANCEL );
     }
 
+    // Loaded world: same reset as a new one.
+    EnNavNewGame( );
+
+#if EN_PATH_PROBES
+    // Same dimensions, same moment: the step-A shadow instance (load path).
+    EnPathShadowInit( theMap.Get_eX( ), theMap.Get_eY( ) );
+#endif
+
+    // Load path twin of the CreateNewWorld start: after Init, after EnNavNewGame.
+    EnPathWorkerStart( theMap.Get_eX( ), theMap.Get_eY( ) );
+
     // center on our rocket
     m_maploc = CMapLoc( 0, 0 );
     pos      = theBuildingMap.GetStartPosition( );
@@ -3209,6 +4027,13 @@ int CGame::SaveGame( CWnd* pPar )
         m_iZoom  = 0;
     }
 
+    // No path search may be in flight across serialization (plan section 2.6). The guard
+    // closes submissions and waits for the queue and every worker to go idle, then
+    // re-opens on EVERY way out of this function - and there are a dozen, plus the
+    // throw the serialization itself can raise. Nothing pending is serialized; nothing
+    // in this slice is serialized at all, but the seam is the point.
+    EnPathWorkerQuiesceScope _pqSave;
+
     // we save it
     try
     {
@@ -3474,23 +4299,80 @@ void CGame::Serialize( CArchive& ar )
 
         // version, cheats, & debug
         ar >> m_dwMaj >> m_dwMin >> m_dwVer >> m_wDbg >> m_wCht;
-        if ( EnGetProfileInt( "Cheat", "DiffVer", 1 ) )
+
+        // BUGS #102: m_dwVer is the SAVE-FORMAT counter - the field readers gate on it
+        // (theGame.m_dwVer >= 3/4/5/6 at :1399, :1410, :1424, :1432, :1462) - but nothing
+        // validated it. A save written by a LATER build carries the same major/minor, so
+        // it passes the product-version check below, and is then decoded under a counter
+        // this build does not implement: there is no branch for the newer fields, they
+        // cannot be skipped, and every subsequent read is misaligned. That is a stream
+        // desync rather than a refusal, which is the failure the >= gates exist to avoid.
+        // Refuse forward saves explicitly. OLDER saves are unaffected - reading them is
+        // exactly what those gates are for - and this check is deliberately NOT under
+        // Cheat\DiffVer: a format the build cannot parse is not a tester preference.
+        // DEBUG OVERRIDE (Cheat\IgnoreSaveVersion, default 0 = OFF).
+        // #101 deliberately narrowed Cheat\DiffVer so it can no longer waive a
+        // MAJOR/MINOR mismatch - correct for the shipped tester door, but it left no
+        // way to force-load a mismatched save while debugging. This is that way, and
+        // it is deliberately a SEPARATE, self-describing key rather than widening
+        // DiffVer again: it waives the forward-counter refusal and the whole header
+        // check, it is named for exactly what it does, and it is off unless someone
+        // sets it. RELEASE GATE: compiled out of a shipping Release entirely (below)
+        // and must be absent from a shipping registry, same as DiffVer. Registry base
+        // is HKCU\Software\Second Chance\Second Chance.
+#if defined( _DEBUG ) || defined( _CHEAT )
+        const BOOL bIgnoreSaveVer = EnGetProfileInt( "Cheat", "IgnoreSaveVersion", 0 ) ? TRUE : FALSE;
+#else
+        // BUGS #99 batch (save format Release 8): a shipped Release must not be able to
+        // honour a debug door that waives the save-header checks at all, so the registry
+        // read is compiled out and the waiver becomes a compile-time FALSE - the same
+        // principle #101 applied to the DiffVer door. Both predicates below are written
+        // against this one flag and are otherwise untouched, so with the key unset (the
+        // default, and the only shipped state) behaviour is identical in every config.
+        const BOOL bIgnoreSaveVer = FALSE;
+#endif
+
+        if ( ( m_dwVer > (DWORD)VER_RELEASE ) && ( !bIgnoreSaveVer ) )
         {
-            //			if ((m_dwMaj != VER_MAJOR) || (m_dwMin != VER_MINOR) ||
+            // strPrintf is NOT printf: it substitutes MFC-style POSITIONAL %1/%2
+            // and pulls every argument with va_arg( va, const char* )
+            // (EnSettings.cpp:246). printf specifiers are copied through verbatim,
+            // so the original %lu form showed the player the literal text "%lu".
+            // Format the numbers into strings first and use positional placeholders,
+            // the way the sibling IDS_SAVE_VER message below already does.
+            std::string sSaveFmt  = std::to_string( (unsigned long)m_dwVer );
+            std::string sBuildFmt = std::to_string( (unsigned long)VER_RELEASE );
+            std::string sMsg = strPrintf(
+                "This saved game was written by a newer version of Second Chance.\n\n"
+                "Save format %1; this build reads up to %2.\n\n"
+                "Load it with the version that wrote it.",
+                sSaveFmt.c_str( ), sBuildFmt.c_str( ) );
+            EnMessageBox( sMsg.c_str( ) );
+            ThrowError( ERR_RES_CREATE_WND );
+        }
 
-            BOOL wrongMajorVersion     = ( m_dwMaj != VER_MAJOR );
-            BOOL wrongMinorVersion     = ( m_dwMin != VER_MINOR );
-            BOOL debugCheatMissmatched = ( m_wDbg != _wDebug ) || ( m_wCht != _wCheat );
+        // BUGS #101: the Cheat\DiffVer tester door waived the WHOLE header check, so a
+        // Release build with DiffVer=0 accepted a mismatched product version and then
+        // deserialised it instead of refusing. Narrow the door rather than remove it:
+        // the three conditions are computed unconditionally (pure reads of fields
+        // deserialised above plus compile-time constants - no calls, no side effects,
+        // no ordering dependency), and DiffVer now waives ONLY the debug/cheat-flag
+        // pair it exists for. With DiffVer non-zero the predicate is identical to the
+        // shipped one, so the default path is unchanged.
+        const BOOL bDiffVer              = EnGetProfileInt( "Cheat", "DiffVer", 1 ) ? TRUE : FALSE;
+        const BOOL wrongMajorVersion     = ( m_dwMaj != VER_MAJOR );
+        const BOOL wrongMinorVersion     = ( m_dwMin != VER_MINOR );
+        const BOOL debugCheatMissmatched = ( m_wDbg != _wDebug ) || ( m_wCht != _wCheat );
 
-            if ( wrongMajorVersion || wrongMinorVersion || debugCheatMissmatched )
-            {
-                std::string sVer1 = GetVerText( m_dwMaj, m_dwMin, m_dwVer, m_wDbg, m_wCht );
-                std::string sVer2 = GetVerText( VER_MAJOR, VER_MINOR, VER_RELEASE, _wDebug, _wCheat );
-                std::string sMsg = strPrintf( EnLoadStdString( IDS_SAVE_VER ).c_str(),
-                                              sVer1.c_str( ), sVer2.c_str( ) );
-                EnMessageBox( sMsg.c_str() );
-                ThrowError( ERR_RES_CREATE_WND );
-            }
+        if ( ( wrongMajorVersion || wrongMinorVersion || ( debugCheatMissmatched && bDiffVer ) )
+             && ( !bIgnoreSaveVer ) )
+        {
+            std::string sVer1 = GetVerText( m_dwMaj, m_dwMin, m_dwVer, m_wDbg, m_wCht );
+            std::string sVer2 = GetVerText( VER_MAJOR, VER_MINOR, VER_RELEASE, _wDebug, _wCheat );
+            std::string sMsg = strPrintf( EnLoadStdString( IDS_SAVE_VER ).c_str(),
+                                          sVer1.c_str( ), sVer2.c_str( ) );
+            EnMessageBox( sMsg.c_str() );
+            ThrowError( ERR_RES_CREATE_WND );
         }
 
         ar >> m_sFileName;

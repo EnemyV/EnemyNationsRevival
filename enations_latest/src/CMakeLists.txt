@@ -1,9 +1,26 @@
 message("Current CMAKE_SOURCE_DIR: ${CMAKE_SOURCE_DIR}")
 
+# Traffic event probes (runtime EN_WAIT_LOG still required). AUTO = compiled in for the
+# Debug config only; ON/OFF force it for every config. A build dir that already caches the
+# old BOOL (EN_TRAFFIC_PROBES=ON) keeps it - pass -DEN_TRAFFIC_PROBES=AUTO to switch.
+set(EN_TRAFFIC_PROBES AUTO CACHE STRING "Traffic probes: AUTO (on in Debug, off otherwise), ON, OFF")
+set_property(CACHE EN_TRAFFIC_PROBES PROPERTY STRINGS AUTO ON OFF)
+if (EN_TRAFFIC_PROBES STREQUAL "AUTO")
+    set(_EN_TRAFFIC_DEF "$<IF:$<CONFIG:Debug>,1,0>")
+else ()
+    set(_EN_TRAFFIC_DEF "$<BOOL:${EN_TRAFFIC_PROBES}>")
+endif ()
+
 # Dev cheat surface. OFF by default: a debug build is NOT a cheat build.
 # Turn on deliberately with -DEN_CHEAT=ON (needed for the in-dev End-key
 # spectator mode). See the _CHEAT note in target_compile_definitions below.
 option(EN_CHEAT "Compile the dev cheat surface (_CHEAT): map reveal, research grants, Max*, AI unit grants, End-key spectator, debug overlays" OFF)
+
+# 015 phase 2 (.dat cleanup): directory holding a loose data/ set to stage beside
+# the binary so the game can run with no ENations.dat. Empty = stage nothing, which
+# is the default. See the staging block further down for the layout and how to make
+# one. PATH, not a source path: it points OUTSIDE both repos.
+set(EN_LOOSE_DATA_DIR "" CACHE PATH "Directory containing a loose data/ set (extracted ENATIONS.DAT) to stage beside enations; empty = none")
 
 set(enations_sources
 #        advanced.cpp
@@ -40,10 +57,13 @@ set(enations_sources
 #        citizen.cpp # looks unused, i think an old ai or something?
         cpathmap.cpp
         cpathmgr.cpp
+        pathworld.cpp
+        pathservice.cpp
         creatmul.cpp
         creatsin.cpp
         credits.cpp
         cutscene.cpp
+        datahash.cpp
         DlgMsg.cpp
         DlgReg.cpp  # holds the GetDefaultApp helper used by ExitInstance
         dxfer.cpp
@@ -59,6 +79,7 @@ set(enations_sources
         lastplnt.cpp
         lastplnt.rc
         WinMain.cpp
+        en_hangdump.cpp   # hang watchdog + the dump-path helper shared with WinMain's crash dumper
         license.cpp
         main.cpp
         mainloop.cpp
@@ -132,10 +153,6 @@ set(enations_sources
         ../../input/UIButtonListener.cpp
         network/davenet.cpp
         network/sockets.cpp
-        # In-process LLM-driving harness (TCP control server). All three platforms —
-        # it is the only way to query live game state headlessly, and Windows had no
-        # equivalent. Completely inert unless EN_HARNESS is set in the environment.
-        ../../harness/control_socket.cpp
 )
 
 # ---------------------------------------------------------------------------
@@ -263,15 +280,14 @@ endif ()
 # The WIN32 keyword is a no-op on non-Windows (CMake ignores it), so it is
 # harmless to leave for the Linux build.
 add_executable(enations WIN32 ${enations_sources})
+target_compile_definitions(enations PRIVATE
+    EN_TRAFFIC_PROBES=${_EN_TRAFFIC_DEF})
 
 # network/ TUs do winsock2-before-windows.h ordering themselves; skip the
 # force-included PCH (stdafx.h->windows.h pulls winsock1 and breaks ws2tcpip.h).
-# The harness control socket is the same case, and it deliberately includes no
-# game headers at all (SDL + en_harness.h only), so it needs nothing from the PCH.
 set_source_files_properties(
     network/davenet.cpp
     network/sockets.cpp
-    ../../harness/control_socket.cpp
     PROPERTIES SKIP_PRECOMPILE_HEADERS ON)
 
 # according to enations.mak this should be MT
@@ -350,7 +366,7 @@ if (MSVC)
     # The PCH was built with the target's /fp:fast, so using it from these two
     # /fp:precise TUs warned C4651/C4652/C4653 every build (flag mismatch). Both
     # files #include "stdafx.h" directly, so skipping the PCH is behavior-neutral —
-    # they just compile the headers normally (same pattern as the harness TU above).
+    # they just compile the headers normally (same pattern as the network TUs above).
     set_source_files_properties(
         wrldinit.cpp
         wrldgen.cpp
@@ -446,7 +462,6 @@ target_include_directories(enations PUBLIC
        ../../windward/wind22/include
        ../../rendering/
        ../rendering/
-       ../../harness/
 )
 
 if (MSVC)
@@ -568,6 +583,35 @@ else ()
     )
 endif ()
 
+# 015 phase 2 (.dat cleanup): optional LOOSE data set staged next to the binary.
+# The extracted ENATIONS.DAT - one file per container entry under data/, in the
+# nested lower-case layout CDataFile::OpenAsMMIO probes, plus data/manifest.txt,
+# which is what tells the loader a loose-only install is intended. Produce it with
+# tools/data/dat_extract.py (discussion repo), then point this at the directory
+# that CONTAINS data/:
+#   cmake -DEN_LOOSE_DATA_DIR=<extract out dir> ...
+# Empty (the default) stages nothing and the build behaves exactly as before: the
+# release still ships the container. Deliberately NOT defaulted to any path in this
+# tree - the extracted set is ~516 MB of binaries and belongs in neither repo.
+# The glob is configure-time (release rules: re-run configure after a merge and
+# count the staged files), so the count below is what this build will copy.
+if (EN_LOOSE_DATA_DIR)
+    if (NOT EXISTS "${EN_LOOSE_DATA_DIR}/data/manifest.txt")
+        message(FATAL_ERROR "EN_LOOSE_DATA_DIR=${EN_LOOSE_DATA_DIR} has no data/manifest.txt - point it at the output directory of tools/data/dat_extract.py")
+    endif ()
+    file(GLOB_RECURSE EN_LOOSE_DATA_FILES "${EN_LOOSE_DATA_DIR}/data/*")
+    list(LENGTH EN_LOOSE_DATA_FILES EN_LOOSE_DATA_COUNT)
+    message(STATUS "Loose data set: ${EN_LOOSE_DATA_COUNT} files to stage from ${EN_LOOSE_DATA_DIR}/data")
+    add_custom_command(TARGET enations POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_directory_if_different
+            "${EN_LOOSE_DATA_DIR}/data"
+            "$<TARGET_FILE_DIR:enations>/data"
+        COMMAND ${CMAKE_COMMAND} -E echo
+            "Loose data set staged: ${EN_LOOSE_DATA_COUNT} files from ${EN_LOOSE_DATA_DIR}/data"
+        COMMENT "Staging loose data set (${EN_LOOSE_DATA_COUNT} files) next to the binary"
+    )
+endif ()
+
 # Stage the original .CUR cursor art next to the binary. On POSIX the Win32 GDI
 # cursor pipeline (GetIconInfo/GetDIBits) is stubbed, so CWndArea loads the .cur
 # files directly from a res/ dir found relative to the binary (area.cpp
@@ -661,12 +705,12 @@ if (WIN32)
     set(EN_REQS "  - 64-bit Windows\n  - Microsoft Visual C++ 2015-2022 Redistributable (x64)\n      https://aka.ms/vs/17/release/vc_redist.x64.exe")
     set(EN_INCLUDED "All game files are included")
     set(EN_CONTENTS_HEADING "CONTENTS")
-    set(EN_CONTENTS "  enations.exe   - the game binary (MSVC x64 Release)\n  SDL2*.dll      - SDL2 runtime libraries\n  vdmplay.dll    - video playback\n  ENations.dat   - bundled game data (~516 MB), no separate download needed\n  data/          - baked terrain set\n  res/           - cursor art\n  assets/        - intro/logo videos")
+    set(EN_CONTENTS "  enations.exe   - the game binary (MSVC x64 Release)\n  SDL2*.dll      - SDL2 runtime libraries\n  vdmplay.dll    - multiplayer networking\n  res/           - cursor art\n  assets/        - intro/logo videos")
 elseif (APPLE)
     set(EN_PLATFORM "macOS ARM64")
     set(EN_RUN "./enations")
     set(EN_REQS "  - macOS on Apple Silicon (ARM64)")
-    set(EN_CONTENTS "  enations       - the game binary (clang ARM64 Release)\n  *.dylib        - bundled SDL2 and codec libraries\n  ENations.dat   - bundled game data (~516 MB), no separate download needed\n  data/          - baked terrain set\n  res/           - cursor art\n  assets/        - intro/logo videos")
+    set(EN_CONTENTS "  enations       - the game binary (clang ARM64 Release)\n  *.dylib        - bundled SDL2 and codec libraries\n  res/           - cursor art\n  assets/        - intro/logo videos")
 else ()
     set(EN_PLATFORM "Linux x64")
     set(EN_RUN "./enations")
@@ -674,8 +718,21 @@ else ()
     # Linux needs system SDL2 libs (EN_REQS above), so the zip is not fully self-contained.
     set(EN_INCLUDED "All game files are included")
     set(EN_CONTENTS_HEADING "CONTENTS")
-    set(EN_CONTENTS "  enations       - the game binary (gcc x64 Release)\n  ENations.dat   - bundled game data (~516 MB), no separate download needed\n  data/          - baked terrain set\n  res/           - cursor art\n  assets/        - intro/logo videos")
+    set(EN_CONTENTS "  enations       - the game binary (gcc x64 Release)\n  libvdmplay_posix.so - multiplayer networking\n  res/           - cursor art\n  assets/        - intro/logo videos")
 endif ()
+
+# Release packages stage the extracted game-data set under data/. A developer
+# build without EN_LOOSE_DATA_DIR can still run with the original container.
+if (EN_LOOSE_DATA_DIR)
+    set(EN_DATA_RUN "run from this folder; loose game data is in ./data/")
+    set(EN_DATA_CONTENTS "  data/          - loose game data and baked terrain set")
+    set(EN_INCLUDED "Loose game data and runtime files are included")
+else ()
+    set(EN_DATA_RUN "run from this folder; ENations.dat or a complete loose data/ set is required")
+    set(EN_DATA_CONTENTS "  data/          - baked terrain set\n  Game data      - provide ENations.dat or a complete loose data/ set")
+    set(EN_INCLUDED "Platform runtime files are included; supply the game data")
+endif ()
+string(APPEND EN_CONTENTS "\n${EN_DATA_CONTENTS}")
 
 configure_file("${CMAKE_CURRENT_SOURCE_DIR}/../../packaging/README.txt.in"
                "${CMAKE_CURRENT_BINARY_DIR}/README.txt" @ONLY)

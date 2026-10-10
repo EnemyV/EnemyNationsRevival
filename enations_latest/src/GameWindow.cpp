@@ -1,8 +1,8 @@
 #include "stdafx.h"
 #include "en_logpath.h"   // EnLogPath - logs to the launch dir, not the exe dir
+#include "en_hangdump.h"   // EnHangHeartbeat() - hang-watchdog liveness beat
 #include "GameWindow.h"
 #include "framecap.h"   // #45 frame-capture debug mode
-#include "en_harness.h"   // EnHarness_Service() — services harness requests on the render thread
 #include "SDL2UI.h"
 #include "lastplnt.h"
 #include "resource.h"
@@ -11,6 +11,7 @@
 #include "SDL2Compositor.h"
 #include "SDL2CreateStatus.h"
 #include "SDL2Panel.h"
+#include "SDL2RouteWindow.h"  // TickScrollRepeats — per-frame scrollbar arrow auto-repeat
 #include "area.h"         // CWndArea, theAreaList (Esc deselect-vs-options decision)
 #include "music.h"        // theMusicPlayer (pause/resume on app focus change)
 #include "Perf.h"         // GaugeSet — correlate window state with frame cost
@@ -362,6 +363,30 @@ static void DisableMacWindowShadow(SDL_Window* win) {
     // as SetMacDockIcon / HideMacDockBar below.
     auto sendB = (void (*)(void*, void*, bool))objc_msgSend;
     sendB(nswin, sel_registerName("setHasShadow:"), false);
+}
+
+// Lift ONE of our borderless child windows one step ABOVE the band the detached
+// panels occupy. SDL_WINDOW_ALWAYS_ON_TOP maps to NSFloatingWindowLevel (3) on
+// Cocoa, and the detached Area/World map panels set that same flag
+// (SDL2Panel.cpp), so the tooltip and the area map share one band and the map,
+// being ordered front, covers the tooltip completely. SDL2Dialog works around the
+// same collision with a throttled SDL_RaiseWindow (SDL2UI.cpp:1934), but that path
+// calls makeKeyAndOrderFront and would take keyboard focus from the game; a
+// transient read-only tooltip must not. Setting the level instead is non-activating
+// and needs no per-frame work. +1 keeps it below status/menu levels and does not
+// change the window's relationship to OTHER applications, which ALWAYS_ON_TOP
+// already established.
+void EnMacLiftWindowAbovePanels(SDL_Window* win) {
+    if (!win) return;
+    SDL_SysWMinfo wm; SDL_VERSION(&wm.version);
+    if (!SDL_GetWindowWMInfo(win, &wm)) return;
+    void* nswin = wm.info.cocoa.window;
+    if (!nswin) return;
+    // Exact-prototype cast, same discipline as DisableMacWindowShadow above:
+    // objc_msgSend must NOT be called through a variadic signature on arm64.
+    enum { kNSFloatingWindowLevel = 3 };
+    auto sendL = (void (*)(void*, void*, long))objc_msgSend;
+    sendL(nswin, sel_registerName("setLevel:"), (long)(kNSFloatingWindowLevel + 1));
 }
 
 static void SetMacDockIcon() {
@@ -772,15 +797,9 @@ bool GameWindow::EnsureBackBuffer() {
 SDL_Surface* GameWindow::GetPresentSurface() {
     if (m_useRenderer) {
         EnsureBackBuffer();
-        // Expose the CPU back-buffer to the harness so `shot` can dump the real
-        // composited frame even when GPU read-back is blank / there is no display.
-        // Early-outs to a single atomic load when EN_HARNESS is not set.
-        EnHarness_SetMainSurface(m_backBuffer);
         return m_backBuffer;
     }
-    SDL_Surface* ws = m_window ? SDL_GetWindowSurface(m_window) : nullptr;
-    EnHarness_SetMainSurface(ws);
-    return ws;
+    return m_window ? SDL_GetWindowSurface(m_window) : nullptr;
 }
 
 void GameWindow::PresentSurface(const SDL_Rect* dirty) {
@@ -920,6 +939,11 @@ static bool HandleTrackpadPan(SDL_Event& event, SDL_Window* win)
 #endif  // __APPLE__
 
 bool GameWindow::PollEvents() {
+    // Hang watchdog: beat BEFORE the re-entrancy guard, so the nested pumps
+    // that run during load/worldgen/save (BaseYield -> PollEvents) also count
+    // as "the main thread is alive" even though the outer loop is blocked.
+    EnHangHeartbeat( );
+
     // Guard against re-entrancy: DoModal's PeekMessage pump can trigger
     // BaseYield() → PollEvents() while a dialog event loop is already active.
     // If we drain SDL events here, the dialog never sees them and hangs.
@@ -950,16 +974,77 @@ bool GameWindow::PollEvents() {
     // Portable by design: on Windows/Linux button-up is delivered reliably, so during a
     // real drag a button is down (net skips) and when idle nothing is captured (no-op) —
     // it also hardens those platforms against a focus-loss/alt-tab missed-up.
+    // SPIKE SPLIT (WinOpus 2026-09-13): [SLOWFRAME] puts 76.4ms of an 87ms spike frame
+    // inside SEC_PUMP (92% of spikes) and pump.poll owns 743 of 778ms of that. This
+    // splits PollEvents into its three parts so the spike names a LINE:
+    //   poll.capture = the per-frame SDL_GetGlobalMouseState OS round trip
+    //   poll.drain   = the SDL_PollEvent dispatch loop, with poll.events counting how
+    //                  many events one frame drains (a burst is the obvious suspect)
     {
+        Perf::ScopeNamed _pc( "poll.capture.us" );
         Uint32 mouseButtons = SDL_GetGlobalMouseState(nullptr, nullptr);
         if (!(mouseButtons & (SDL_BUTTON_LMASK | SDL_BUTTON_MMASK | SDL_BUTTON_RMASK)))
             SDL_CaptureMouse(SDL_FALSE);
     }
 
-    EnHarness_Service();   // service any pending harness request on this (render) thread
-
+    Perf::ScopeNamed _pd( "poll.drain.us" );
     SDL_Event event;
-    while (SDL_PollEvent(&event)) {
+    // SPLIT THE SDL CALL FROM THE DISPATCH. Measured: drain = 731.6ms while the sum of
+    // every event handler is 33.6ms over 39 events - so 95% of the cost is INSIDE
+    // SDL_PollEvent, which calls SDL_PumpEvents and runs the Win32 message loop across
+    // every SDL window (this game is heavily multi-window). poll.sdlcall.us isolates it,
+    // and poll.sdlcall.n counts the calls including the final empty one that ends the loop.
+    for ( ;; ) {
+        int _have;
+        {
+            Perf::ScopeNamed _sc( "poll.sdlcall.us" );
+            Perf::CounterInc( "poll.sdlcall.n" );
+            // CATCH THE INDIVIDUAL STALL. SDL_PollEvent averages 0.051ms across 3809
+            // calls yet owns 92.6% of the drain and the pump hits 62.9ms in one frame -
+            // so ONE call occasionally blocks. SDL_PollEvent runs SDL_PumpEvents, which
+            // pumps the Win32 queue for EVERY SDL window (this game runs many). Log the
+            // call that blocks, with what it returned, so the trigger names itself.
+            const uint64_t _pt0 = Perf::NowIfEnabled( );
+            _have = SDL_PollEvent(&event);
+            // audit (4): the frequency query and the FP divide ran on EVERY poll even
+            // with EN_PERF unset. Both are inside the gate now; _pms stays 0 otherwise.
+            double _pms = 0.0;
+            if ( Perf::IsEnabled( ) )
+            {
+                static LARGE_INTEGER s_qpf = { 0 };
+                if ( s_qpf.QuadPart == 0 ) QueryPerformanceFrequency( &s_qpf );
+                _pms = (double)( Perf::NowIfEnabled( ) - _pt0 ) * 1000.0 / (double)s_qpf.QuadPart;
+            }
+            // WHOLE-BODY GATED (audit item c): this opened and wrote with EN_PERF unset,
+            // behind only a 15ms threshold that alt-tab and device-lost trip in a shipped
+            // Release. Now nothing here runs unless profiling is on, and the sink goes
+            // through EnLogPath like every other probe file.
+            if ( Perf::IsEnabled( ) && _pms > 15.0 )
+            {
+                static FILE* s_pf = NULL;
+                if ( s_pf == NULL ) s_pf = fopen( EnLogPath( "slowpoll.log" ).c_str( ), "a" );
+                if ( s_pf != NULL )
+                {
+                    fprintf( s_pf, "[SLOWPOLL] %.1f ms  returned=%d  type=0x%X  windows=%d\n",
+                             _pms, _have, _have ? (unsigned)event.type : 0u,
+                             (int)m_activeDialogs.size() );
+                    fflush( s_pf );
+                }
+            }
+        }
+        if (!_have) break;
+        {
+        Perf::CounterInc( "poll.events" );
+        // PER-EVENT-TYPE COST. The drain spends ~1.65ms PER EVENT (38 events = 62.9ms
+        // in one second), so this is a slow HANDLER, not a deep queue. Name the type.
+        // RAII so `continue`/`break` paths inside this loop still record.
+        Perf::ScopeNamed _ev(
+            ( event.type == SDL_MOUSEMOTION )                                     ? "ev.motion.us" :
+            ( event.type == SDL_MOUSEBUTTONDOWN || event.type == SDL_MOUSEBUTTONUP ) ? "ev.button.us" :
+            ( event.type == SDL_MOUSEWHEEL )                                      ? "ev.wheel.us"  :
+            ( event.type == SDL_KEYDOWN || event.type == SDL_KEYUP )              ? "ev.key.us"    :
+            ( event.type == SDL_WINDOWEVENT )                                     ? "ev.window.us" :
+                                                                                    "ev.other.us" );
         if (event.type == SDL_QUIT) {
             LogToFile("SDL_QUIT received");
             m_pollingEvents = false;
@@ -1124,6 +1209,7 @@ bool GameWindow::PollEvents() {
                 theMusicPlayer.OnActivate(FALSE);
             }
         }
+        }   // close the dispatch scope opened after the SDL_PollEvent split
     }
 
     // Correlate frame cost with how many of our own extra windows are open. If the
@@ -1143,6 +1229,10 @@ bool GameWindow::PollEvents() {
             dlg->RenderFrameNonModal();
     }
 
+    // Press-and-hold on a route window's scrollbar arrow. A route window repaints
+    // only on demand, so this is its per-frame tick; no-op when no arrow is held.
+    SDL2RouteWindow::TickScrollRepeats();
+
     // Clean up dialogs that have finished (EndDialog was called)
     for (auto it = m_activeDialogs.begin(); it != m_activeDialogs.end(); ) {
         if (!(*it)->IsNonModalActive()) {
@@ -1161,6 +1251,7 @@ bool GameWindow::PollEvents() {
     else if (m_mainMenu && m_mainMenu->IsInitialized()) {
         m_mainMenu->Render();
     }
+
 
     m_pollingEvents = false;
     return false;

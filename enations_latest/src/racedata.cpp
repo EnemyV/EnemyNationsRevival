@@ -167,6 +167,19 @@ CInitData::CInitData( )
 void CInitData::Set( CRaceDef const* pRd, int iTyp )
 {
 
+    // iTyp can arrive from the wire (a joining client's chosen start position,
+    // published by a peer) -- bounds-check before using it to index m_iPos, or
+    // an out-of-range value reads outside the table (SDL2Dialogs.cpp's
+    // SDL2_RunJoinNetworkFlow -> CInitData::Set path; observed as a crash on
+    // one platform and, for small out-of-range values, a silent read of foreign
+    // bytes as starting supplies).
+    if ( ( iTyp < 0 ) || ( iTyp >= NUM_START_TYPES ) )
+    {
+        fprintf( stderr, "[racedata] CInitData::Set: iTyp=%d out of range [0,%d) - clamped to 0\n",
+                 iTyp, NUM_START_TYPES );
+        iTyp = 0;
+    }
+
     memcpy( m_fRace, pRd->m_fRace, sizeof( m_fRace ) );
     memcpy( m_iPos, &( pRd->m_iPos[iTyp] ), sizeof( m_iPos ) );
 }

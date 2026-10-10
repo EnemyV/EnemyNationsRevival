@@ -28,6 +28,15 @@ const int MAX_BOTH_INDEX = 4096;
 #include "stdafx.h"
 #include "unit.inl"
 #include "terrain.inl"
+#include "enprobes.h"  // EN_PATH_PROBES compile gate (shadow-instance members below)
+
+// The navigation read seam (ennavview.h). Every live-world read a search makes goes
+// through a view; the search body below is a template over the view type, so
+// CEnLiveNavView and CEnSnapNavView each get their own inlined copy and neither
+// pays an indirect call in the innermost A* loop. Both instantiations are used
+// inside cpathmgr.cpp, so no explicit instantiation is needed here.
+
+class PathWorld;   // SearchSnapshot's world, taken by reference only (pathworld.h)
 
 class CCell
 {
@@ -56,6 +65,31 @@ public:
 class CPathMgr
 {
     CRITICAL_SECTION m_cs;  // internal use only
+    // m_cs lifetime, tracked explicitly instead of being inferred from m_paCells.
+    // Close() frees the arena but deliberately LEAVES m_cs live, so "m_paCells != NULL"
+    // never was the same question as "m_cs is initialised": after a Close()+Init() pair
+    // the old section got re-Initialize()d with no matching Delete, and ~CPathMgr after
+    // a Close() deleted nothing at all. Invisible for one process-lifetime global,
+    // wrong for any second instance that is created and destroyed per game.
+    BOOL m_bCsInit;
+
+    // TRUE on a private instance that re-runs a search purely to be compared with
+    // the production answer. Nothing in this class may ask "am I thePathMgr?" - it
+    // asks this instead. Two things depend on it: the endpoint-repeat probe ring in
+    // GetPath() (one function-level static, so it must only ever see the production
+    // instance's requests) and every mpath.* emission inside _GetPath(), which is
+    // renamed to mpath.shadow.in.* so no production counter can move. Always FALSE
+    // for thePathMgr, and there is no path that sets it except MarkShadow().
+    BOOL m_bShadow;
+#if EN_PATH_PROBES
+    int  m_iProbeOutcome;   // PROBE_OUTCOME of the last _GetPath() on this instance
+    // The two cap forms are DIFFERENT terminations and must not be merged: the arena
+    // filling means the cell budget was too small for this map, the iteration budget
+    // running out means the search was too long. A shadow that hits one where
+    // production hit the other has diverged even if both routes clamp to the same hex.
+    BOOL m_bProbeCapArena;  // AddCellToArray failed - out of CCell arena
+    BOOL m_bProbeCapIter;   // iHang reached 0 - out of iteration budget
+#endif
 
 	// BUGBUG
 	// these are used only if the array of cells is used
@@ -118,8 +152,78 @@ public:
 	CPathMgr( int iMapEX, int iMapEY );
 	CPathMgr( void );
 	~CPathMgr();
+
+	// A CRITICAL_SECTION must never be copied and the CCell arena is owned, so a
+	// copied CPathMgr would alias one arena and duplicate one lock handle. Nothing
+	// copies one today; make it a compile error before there is a second instance
+	// around to be copied by accident.
+	CPathMgr( CPathMgr const & ) = delete;
+	CPathMgr & operator = ( CPathMgr const & ) = delete;
+
+	// Mark this instance as a comparison-only shadow. One-way, called once right
+	// after construction; thePathMgr never calls it.
+	void MarkShadow( void ) { m_bShadow = TRUE; }
+	BOOL IsShadow( void ) const { return m_bShadow; }
+
+#if EN_PATH_PROBES
+	// Exit class of the last _GetPath() on this instance, recorded at exactly the
+	// points the mpath.* exit counters are emitted. A comparison needs the class of
+	// ONE call; the counters are process-global and reset per perf interval, so they
+	// cannot answer that.
+	enum PROBE_OUTCOME
+	{
+		po_none = 0,  // did not run, or exited somewhere no counter classifies
+		po_trivial,   // rejected before searching (off-map, or already there)
+		po_ok,        // path returned and it reaches the requested destination
+		po_clamped,   // path returned, but only as far as the closest reachable cell
+		po_nopath,    // NULL returned
+		po_blocked    // destination hex cannot be entered
+	};
+	// Everything a shadow comparison needs about ONE call. Filled inside the search's
+	// own critical section, because the members it is copied from are per-instance
+	// scratch that the next caller (an AI worker, on the production instance)
+	// overwrites the moment the lock is released.
+	struct VERDICT
+	{
+		int       iClass;      // PROBE_OUTCOME
+		BOOL      bCapArena;   // arena exhausted
+		BOOL      bCapIter;    // iteration budget exhausted
+		int       iPathLen;    // length AS REPORTED to the caller, not normalised
+		BOOL      bHaveClamp;  // a vehicle was passed, so hexClamp is meaningful
+		CHexCoord hexClamp;    // that vehicle's m_hexLastClamp after the search
+		VERDICT( ) : iClass( 0 ), bCapArena( FALSE ), bCapIter( FALSE ), iPathLen( 0 ),
+		             bHaveClamp( FALSE ) { }
+	};
+#endif
 	BOOL Init( int iMapEX, int iMapEY );
         void Close ();
+
+	// Everything one snapshot search hands back. The class and the two cap flags are
+	// probe-only state, so they stay 0/FALSE with EN_PATH_PROBES compiled out.
+	struct SNAPSEARCH
+	{
+		CHexCoord * phexPath;   // new[]ed by the search; the caller owns it
+		int         iPathLen;
+		int         iClass;     // PROBE_OUTCOME
+		BOOL        bCapArena;
+		BOOL        bCapIter;
+		SNAPSEARCH ( ) : phexPath ( NULL ), iPathLen ( 0 ), iClass ( 0 ), bCapArena ( FALSE ),
+		                 bCapIter ( FALSE ) { }
+	};
+
+	// The ONLY entry a worker thread uses. It reads the PathWorld it is handed and
+	// nothing else: pVehicle is NULL, so no live CVehicle/CHex/CBuilding/CBridgeUnit is
+	// touched, and the global `cs` is never taken. Runs under THIS instance's own m_cs,
+	// which a worker's private instance never shares with anyone.
+	void SearchSnapshot ( PathWorld const & pw, CHexCoord hexFrom, CHexCoord hexTo, int iVehType,
+	                      BOOL bVehBlock, BOOL bDirectPath, SNAPSEARCH & out );
+
+	// Step D verification, main thread, probes-gated and inert unless
+	// EN_PATH_ASYNC_VERIFY names a value: run the same request synchronously against
+	// the LIVE world on the private shadow instance and diff it against the route
+	// being installed. Counts pa.verify.cmp / pa.verify.diff / pa.verify.diff.stale.
+	static void AsyncVerify ( CVehicle * pVehicle, CHexCoord const & hexFrom, CHexCoord const & hexTo,
+	                          BOOL bVehBlock, CHexCoord const * phexInstall, int iInstallLen, BOOL bStale );
 
 	void		NewBoth ( CCell * pTest );
 
@@ -141,10 +245,10 @@ public:
     CHexCoord* GetPath( CVehicle* pVehicle, CHexCoord& hexFrom, CHexCoord& hexTo, int& iPathLen, int iVehType = 0,
                         BOOL bVehBlock = FALSE, BOOL bDirectPath = FALSE );
 
-	CHexCoord *CreateHexPath( int& iPathLen, CCell *pDestCell );
+	template <class TView> CHexCoord *CreateHexPath( TView const & view, int& iPathLen, CCell *pDestCell );
 	int GetCellDirection( CHexCoord& fromHex, CHexCoord& toHex );
-	void AdjustDestination( void );
-	void ChangeDestination( void );
+	template <class TView> void AdjustDestination( TView const & view );
+	template <class TView> void ChangeDestination( TView const & view );
 
 	void GetHeadingCell( int iPos, CCell *pFromCell, int& iX, int& iY );
 	void GetFromCell( CVehicle *pVeh, CCell *pFromCell );
@@ -158,9 +262,9 @@ public:
 
 	int GetPathCount( CCell *pDestCell );
 	BOOL AtDestination( CCell *pCell );
-	BOOL CanEnterBridge( CCell *pFromCell, CCell *pToCell );
-	void GetCellCosts( int iPos, CCell *pFromCell, CCell *pToCell );
-	void GetCellAt( int iPos, CCell *pFromCell, int& iX, int& iY );
+	template <class TView> BOOL CanEnterBridge( TView const & view, CCell *pFromCell, CCell *pToCell );
+	template <class TView> void GetCellCosts( TView const & view, int iPos, CCell *pFromCell, CCell *pToCell );
+	template <class TView> void GetCellAt( TView const & view, int iPos, CCell *pFromCell, int& iX, int& iY );
 
 	// BUGBUG
 	// these are used only if the array of cells is used
@@ -175,10 +279,56 @@ public:
 	int GetMapCellCount() const { return (int)m_mapCell.GetCount(); }
 
 	private:
-    CHexCoord* _GetPath( CVehicle* pVehicle, CHexCoord& hexFrom, CHexCoord& hexTo, int& iPathLen, int iVehType = 0,
-                         BOOL bVehBlock = FALSE, BOOL bDirectPath = FALSE );
+    // ONE search body, instantiated per view type. The view is passed in rather than
+    // constructed here: a snapshot search must read the snapshot it was handed.
+    template <class TView>
+    CHexCoord* _GetPath( TView const& view, CVehicle* pVehicle, CHexCoord& hexFrom, CHexCoord& hexTo, int& iPathLen,
+                         int iVehType = 0, BOOL bVehBlock = FALSE, BOOL bDirectPath = FALSE );
+
+#if EN_PATH_PROBES
+    // GetPathProd() is the body GetPath() has always had, verbatim, including its
+    // mpath.us scope timer - so a shadow search started after it returns lands
+    // outside EVERY production timing counter, not just outside the exit counters.
+    // With EN_PATH_PROBES compiled out this split does not exist: the body is
+    // CPathMgr::GetPath again (see EN_PM_PROD_ENTRY in cpathmgr.cpp).
+    CHexCoord* GetPathProd  ( CVehicle* pVehicle, CHexCoord& hexFrom, CHexCoord& hexTo, int& iPathLen, int iVehType,
+                              BOOL bVehBlock, BOOL bDirectPath );
+    CHexCoord* ShadowGetPath( CVehicle* pVehicle, CHexCoord& hexFrom, CHexCoord& hexTo, int& iPathLen, int iVehType,
+                              BOOL bVehBlock, BOOL bDirectPath );
+#endif
 };
 
 extern CPathMgr thePathMgr;
+
+// Step D diagnostic, probes-gated and an empty stub without them: CVehicle::Move
+// reached its Done label `moving` with no next step. One line to pathshadow.log naming
+// the path state and the exit that got there, so a soak hands back the shape instead
+// of a bare assert. Takes values, not the vehicle, so nothing here reaches into CVehicle.
+void EnPathAsyncLogNoNext( unsigned long ulVehId, int iMode, unsigned long long uReqId, int iRetries,
+                           int iPathLen, int iPathOff, int iStepsLeft, long long llTicksSinceReq,
+                           char const* pszWhere );
+
+#if EN_PATH_PROBES
+// Ladder step A: ONE private CPathMgr that re-runs each main-thread movement search
+// behind the production one and compares the two answers. Measurement only - it is
+// constructed only when EN_PATH_SHADOW is set in the environment, it never feeds the
+// game, nothing reads its route, and every counter it emits is namespaced. Init and
+// Close mirror thePathMgr's, at the same call sites.
+// EN_PATH_SHADOW must carry a VALUE: 1 / true / on / yes (any case) enable the
+// shadow. Absent, empty, 0, false, off, no - or anything unrecognised - leave it
+// off, so the obvious way to switch it off really does. Resolved once, then cached,
+// and the effective setting is logged at Init whenever the variable was set at all.
+BOOL EnPathShadowOn  ( void );
+void EnPathShadowInit( int iMapEX, int iMapEY );
+void EnPathShadowClose( void );
+
+// Ladder step C, the measurement half. The worker's answer is compared against the
+// SAME-SNAPSHOT reference the shadow already computed for that call - never against
+// the live-world answer, which would measure snapshot staleness instead of the
+// worker. The reference route is kept here, keyed by requestId, until its result
+// comes back. Main thread only.
+void EnPathWorkerDrain    ( void );   // at the publication point, before PublishTick
+void EnPathWorkerRefsClear( void );   // world teardown: free every stored reference
+#endif
 
 #endif // __CPATHMGR_H__

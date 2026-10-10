@@ -2,6 +2,7 @@
 
 #include <SDL.h>
 #include <SDL_ttf.h>
+#include "SDL2Scrollbar.h"   // EnSb:: shared scrollbar geometry/chrome/hit-test
 #include <string>
 #include <vector>
 #include <functional>
@@ -221,6 +222,9 @@ public:
 
     bool IsChecked() const { return m_checked; }
     void SetChecked(bool c) { m_checked = c; }
+    // Live label: the edict rows fold their current draft numbers into the checkbox text
+    // ("Public Works (1,231 workers)"), so Refresh() rewrites it every pump.
+    void SetText(const std::string& t) { m_text = t; }
 
 private:
     std::string m_text;
@@ -242,6 +246,9 @@ public:
     void Render(SDL_Surface* dst, TTF_Font* font) override;
     void RenderOverlay(SDL_Surface* dst, TTF_Font* font, const SDL_Rect& dlgRect) override;
     bool HandleEvent(const SDL_Event& event) override;
+    // Live tip: RenderOverlay renders m_tip afresh on every hovered frame (nothing is
+    // cached), so replacing the string takes effect immediately.
+    void SetTip(const std::string& t) { m_tip = t; }
 
 private:
     std::string m_tip;
@@ -309,6 +316,10 @@ public:
     void SetColors(SDL_Color bg, SDL_Color selBg, SDL_Color text, SDL_Color selText) {
         m_colBg = bg; m_colSelBg = selBg; m_colText = text; m_colSelText = selText;
     }
+    // Row height, identical for every list. Exposed so layout code can size a
+    // list box to a WHOLE number of rows — a list only paints floor(h/rowH)
+    // rows, so a height that isn't a multiple leaves a dead strip at the bottom.
+    static int RowHeight() { return 22; }
     int GetCount() const { return (int)m_items.size(); }
     void* GetItemData(int index) const;
     const std::string& GetItemText(int index) const;
@@ -325,11 +336,43 @@ private:
     SDL_Color m_colSelBg   = {  48,  58, 148, 255 };
     SDL_Color m_colText    = {  48,  58, 148, 255 };
     SDL_Color m_colSelText = { 225, 182,  55, 255 };
-    int m_itemHeight = 22;
+    int m_itemHeight = RowHeight();
     SelectCallback m_onSelect;
     DblClickCallback m_onDblClick;
     Uint32 m_lastClickTime = 0;
     int m_lastClickIndex = -1;
+
+    // --- Vertical scrollbar -------------------------------------------------
+    // A list only ever paints floor(h / itemHeight) rows starting at
+    // m_scrollOffset; everything past that was previously invisible AND
+    // unadvertised (no bar), so a player with more saves than fit simply could
+    // not reach them. The bar appears only when the list actually overflows, so
+    // short lists are pixel-identical to before.
+    //
+    // The bar's geometry (track, thumb, and the two arrow buttons at the ends)
+    // comes from EnSb::Layout in SDL2Scrollbar.h, shared with SDL2RouteWindow and
+    // SDL2UnitList, and Render() plus every hit-test derive from the SAME call.
+    static const int kScrollbarW = 12;
+    bool m_sbDragging   = false;
+    int  m_sbDragOffset = 0;   // grab point inside the thumb, in pixels
+    EnSb::Repeat m_sbRepeat;   // press-and-hold on an arrow; ticked from Render()
+
+    // Scroll geometry. Render() and the click hit-test BOTH derive from these,
+    // so the painted row -> item mapping and its inverse cannot drift apart.
+    int      VisibleRows() const;
+    int      MaxScroll() const;
+    bool     HasScrollbar() const;
+    int      ContentW() const;          // row width excluding the scrollbar gutter
+    SDL_Rect ScrollbarRect() const;     // the whole gutter (track + both arrows)
+    EnSb::Metrics SbMetrics() const;    // gutter broken into arrows/track/thumb
+    SDL_Rect ThumbRect() const;
+    void     ClampScroll();
+    // Scroll by n rows (n may be negative) and clamp. The one place the offset
+    // moves for arrows, pages, the wheel and auto-repeat alike.
+    void     ScrollBy(int rows);
+    // Exact inverse of the paint mapping: a y in widget coords -> item index,
+    // or -1 when that y is not on a painted row.
+    int      RowAtY(int y) const;
 };
 
 // ============================================================================

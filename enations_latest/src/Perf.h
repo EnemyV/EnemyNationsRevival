@@ -49,6 +49,10 @@ namespace Perf
 
     // ---- section timers ----------------------------------------------------
     uint64_t Now();                              // raw performance counter ticks
+    // GATED clock read. Perf::Now() always calls QueryPerformanceCounter, so every
+    // inline `const uint64_t t0 = Perf::Now();` pays a syscall even with EN_PERF unset.
+    // Use this at probe sites: returns 0 and reads nothing when profiling is off.
+    inline uint64_t NowIfEnabled() { return IsEnabled() ? Now() : 0; }
     void     SectionEnd( int slot, uint64_t startTicks );
 
     // Fixed slot ids for the hot phases (avoids string lookups on hot path).
@@ -71,6 +75,10 @@ namespace Perf
         SEC_COUNT
     };
 
+    // TRUE only on the thread that called Init() (the main loop). Lock-wait on the
+    // MAIN thread is a frame stall; the same wait on an AI worker is not.
+    bool IsMainThread();
+
     // ---- named counters ----------------------------------------------------
     void CounterInc( const char* name, int64_t by = 1 );  // accumulator
     void CounterAdd( const char* name, int64_t v );       // accumulator
@@ -80,6 +88,55 @@ namespace Perf
     // ad-hoc sub-phase profiling finer than the fixed Section slots. The counter
     // then reads as µs/interval (÷1000 ≈ the ms/s render/present columns).
     void CounterAddElapsedUs( const char* name, uint64_t startTicks );
+    // Microseconds since a NowIfEnabled() stamp, for probes that keep their own
+    // accumulators instead of a named counter. Returns 0 when profiling is off.
+    uint64_t ElapsedUs( uint64_t startTicks );
+    // Session-relative seconds, the SAME base perf.log's t= column uses. msgtype.log
+    // stamped absolute GetTickCount()/1000, so joining the two logs gave a 2,758,756 s
+    // offset and ZERO overlapping windows - which reads as "no data", not as a bug.
+    unsigned long MatchSec();
+
+    // PER-FRAME message attribution. The drain records each handler's cost here;
+    // FrameMark names the costliest type on the [SLOWFRAME] line and then resets,
+    // so the label belongs to THAT frame and not to the session.
+    void NoteMsgUs( int msgType, uint64_t us );
+    // per-FRAME invalidate sample for [SLOWFRAME]: dirty-hex count and the cost of
+    // the invalidate pass, so dirty-set SIZE and frame TIME can be paired per frame.
+    void NoteFrameInval( int dirtyHexes, uint64_t invalUs );
+    // per-FRAME main-thread A* tally for [SLOWFRAME]: how many searches a slow frame
+    // contains and the cost of its single WORST one. A per-frame budget can only
+    // spread MANY searches; it cannot split ONE - an A* is atomic.
+    void NoteFrameSearch( uint64_t us );
+    // per-FRAME sleep decision for [SLOWFRAME]: the FRESH SLACK at the decision point
+    // (ms to the next sim tick; negative = already behind) and what we actually slept.
+    // @WinAstra's gate on the sleep fix: 266 ms/s is only waste if the slow cohort shows
+    // negative slack. If slack is positive there, the 10 ms was pacing.
+    void NoteFrameSleep( int slackMs, uint64_t sleptUs );
+
+    // Per-frame TAIL-drain cost; [SLOWFRAME] msg= is the HEAD drain only.
+    void NoteFrameMsgTail( uint64_t us );
+
+    // RAII scoped timer for a NAMED counter. (Audit note: this is functionally the
+    // same shape as ScopeCounter; kept separate only because it early-outs on
+    // IsEnabled() at construction. Collapse into ScopeCounter when that is confirmed
+    // equivalent at every call site - not done blind.) Use where a fixed Section slot is
+    // overkill but an early `goto`/`return` must still be recorded - a bare
+    // CounterAddElapsedUs at the end of a block silently loses those paths.
+    struct ScopeNamed
+    {
+        const char* m_name;
+        uint64_t    m_start;
+        bool        m_active;
+        ScopeNamed( const char* name )
+        {
+            m_active = IsEnabled();
+            if ( m_active ) { m_name = name; m_start = Now(); }
+        }
+        ~ScopeNamed()
+        {
+            if ( m_active ) CounterAddElapsedUs( m_name, m_start );
+        }
+    };
 
     // RAII scoped timer for a fixed slot. Early-outs when disabled.
     struct ScopeSlot

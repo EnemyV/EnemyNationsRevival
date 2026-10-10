@@ -7,19 +7,23 @@
 
 
 #include "enprobes.h"
+#include "en_logpath.h"   // EnLogPath - msgtype.log beside the other probe sinks
+#include "en_hangdump.h"   // EnHangHeartbeat() - hang-watchdog liveness beat
 #include "ai.h"
 #include "altoutput.h"
 #include "edicts.h"     // EDICT_DESPERATE_MEASURES (rocket scrounge edict)
 #include "aisnap.h"  // Tier-B AI world snapshot (published here, read by AI threads)
+#include "pathworld.h"  // movement-A* world snapshot (published here)
 #include "area.h"
 #include "building.inl"
 #include "chproute.hpp"
 #include "cpathmgr.h"
+#include "pathservice.h"
 #include "cpathmap.h"
 #include "cutscene.h"
-#include "en_harness.h"   // EnHarness_ServiceMainLoop() — main-loop-safe harness ops (save)
 #include "event.h"
 #include "GameWindow.h"
+#include <typeinfo>   // typeid: per-window r.draw attribution
 #include "Perf.h"
 #include "SDL2CreateStatus.h"
 #include "SDL2Compositor.h"
@@ -71,12 +75,10 @@ static int CountContenders( CList<CPlayer*, CPlayer*>& lst )
 // A game that has only ever had ONE contender (observer watching a single AI,
 // or no opponents at all) is decided before it starts. Declare it, but not on
 // the first tick - an instant cut-scene at world-create reads as a bug.
-// Sim clock, stops when paused. NOTE: it is zeroed on LOAD too, not just at
-// create (newworld.cpp:1227 SetElapsedSeconds(0), the sim-clock-debt line, runs
-// after deserialize), so this floor RE-ARMS on every load - measured 7950 -> 25
-// by MacOpus. Harmless: loading an already-decided game declares its winner 60
-// game-seconds later instead of at once. Do NOT assume "a load is past the
-// floor" anywhere else.
+// Sim clock, stops when paused. LetsGo zeroes it for a new or joined game only;
+// a loaded game keeps the clock its save restored, so this floor does NOT re-arm
+// on load: a save already past 60 s that is decided resolves on its first
+// once-a-second check, exactly as it would have had play continued.
 static const DWORD DECIDED_GRACE_SECS = 60;
 
 
@@ -148,12 +150,6 @@ int CConquerApp::Run( )
         {
             BOOL bQuitReceived = FALSE;
 
-            // Service main-loop-only harness ops (e.g. `save`) here at the loop
-            // top, before event-pumping/render — SaveGame re-pumps the event loop,
-            // so it must not run from the render-path EnHarness_Service. All
-            // platforms; returns immediately unless EN_HARNESS armed the server.
-            EnHarness_ServiceMainLoop();
-
             // Profiling: one "frame" == one outer loop iteration. Cheap no-op
             // unless EN_PERF is set; flushes a perf.log line each interval.
             Perf::FrameMark();
@@ -175,15 +171,30 @@ int CConquerApp::Run( )
             }
 #endif
 
-            uint64_t _perfPumpStart = Perf::IsEnabled() ? Perf::Now() : 0;
+            // Hang watchdog: one beat per main-loop iteration. If this stops
+            // moving for EN_HANGDUMP_SECS the watchdog writes a full minidump.
+            EnHangHeartbeat( );
 
+            uint64_t _perfPumpStart = Perf::IsEnabled() ? Perf::NowIfEnabled() : 0;
+
+            // SPIKE SPLIT: [SLOWFRAME] showed SEC_PUMP is 74.5ms of an 85ms spike frame
+            // (96% of spikes) while sim/render/present stay flat. SEC_PUMP covers the SDL
+            // poll, the progress-dialog render and BaseYield's Win32 pump - split them so
+            // the spike names a function instead of a section.
             // === Phase 3a: INVERTED event loop - SDL2 events first ===
             // Process SDL2 events if game window is active
-            if ( m_gameWindow && m_gameWindow->PollEvents() )
             {
-                // SDL_QUIT received - post WM_QUIT so shutdown is clean
-                ::PostQuitMessage( 0 );
-                bQuitReceived = TRUE;
+                // SPIKE SPLIT: [SLOWFRAME] showed SEC_PUMP is 74.5ms of an 85ms spike
+                // frame (96% of spikes) while sim/render/present stay flat. SEC_PUMP
+                // covers the SDL poll, the progress-dialog render and BaseYield's Win32
+                // pump - separate braced scopes so the spike names a function.
+                Perf::ScopeNamed _perfPoll( "pump.poll.us" );
+                if ( m_gameWindow && m_gameWindow->PollEvents() )
+                {
+                    // SDL_QUIT received - post WM_QUIT so shutdown is clean
+                    ::PostQuitMessage( 0 );
+                    bQuitReceived = TRUE;
+                }
             }
 
             // Render progress dialog directly (same logic as BaseYield)
@@ -196,6 +207,9 @@ int CConquerApp::Run( )
 
             // === Secondary: Windows messages (for system integration, Win32 housekeeping) ===
             // Check for WM_QUIT or other Windows messages if they're pending
+            {
+            Perf::ScopeNamed _perfYield( "pump.yield.us" );   // BRACED: an unbraced guard
+            // here outlived the pump and swallowed GraphicsEnginePump - it read 1009ms/s.
             if ( bQuitReceived || BaseYield( ) )
             {
                 // BaseYield returned TRUE (WM_QUIT detected) or we already got SDL_QUIT
@@ -212,6 +226,8 @@ int CConquerApp::Run( )
 #endif
                         return ExitInstance( );
                     }
+            }
+
             }
 
             if ( Perf::IsEnabled() )
@@ -600,6 +616,65 @@ BOOL CConquerApp::CheckYield( )
     return ( FALSE );
 }
 
+// typeid().name() is "class CFoo" on MSVC; the space would break perf.log's
+// space-separated key=value line, so point past the last space. The returned
+// pointer is into the compiler's static type-name storage, so it stays valid
+// for the life of the process, which is what Perf::ScopeCounter requires.
+static const char* EnDrawTag( const CWndAnim* pWnd )
+{
+    // GATE FIRST (@WinFable 23:28Z, class-B residual 1): typeid( ).name( ) plus strrchr
+    // ran per rendering window per frame BEFORE ScopeCounter's own ctor gate, so the
+    // probe cost something with EN_PERF unset. A probe must not change behaviour.
+    if ( !Perf::IsEnabled( ) ) return "";
+    if ( pWnd == NULL ) return "draw.null";
+    const char* n = typeid( *pWnd ).name( );
+    if ( n == NULL ) return "draw.?";
+    const char* sp = strrchr( n, ' ' );
+    return sp ? sp + 1 : n;
+}
+
+// PER-TYPE MESSAGE HISTOGRAM (WinFable's round-4 instrument). Counters are out:
+// ~30 CNetCmd types x 2 drains x 3 metrics would blow MAX_COUNTERS=160, so this
+// accumulates into a fixed array and writes its own sink. g_enMsgDrain says WHICH
+// drain is running (0 = head, at the top of the pump; 1 = tail, mainloop's
+// ProcessAllMessages(100) after the Operate block) because they hold different
+// traffic. Whole body is inert unless Perf::IsEnabled().
+namespace {
+    // Sized from the enum, not a magic number: CNetCmd's ordinals run to 95, so a
+    // 64-slot table silently dropped shoot_gun (75), veh_comp_loc (85) and
+    // comp_unit_damage (86) - exactly the combat types the second arm needs.
+    const int kMsgTypes = 128;
+    struct MsgStat { long long n; long long us; long long maxUs; };
+    MsgStat g_msgStat[2][kMsgTypes] = {};
+    int     g_enMsgDrain = 0;
+    DWORD   g_msgDumpLast = 0;
+
+    void EnMsgHistoDump()
+    {
+        if ( !Perf::IsEnabled( ) ) return;
+        DWORD now = timeGetTime( );
+        if ( g_msgDumpLast != 0 && now - g_msgDumpLast < 10000 ) return;
+        g_msgDumpLast = now;
+        FILE* f = fopen( EnLogPath( "msgtype.log" ).c_str( ), "a" );
+        if ( f == NULL ) return;
+        // INTERVAL statistics: without the reset below, n and us accumulate for the
+        // whole session and maxUs is a LIFETIME max, so no two dumps can name the
+        // slowest handler in the current interval - the question this exists to answer.
+        for ( int d = 0; d < 2; ++d )
+            for ( int t = 0; t < kMsgTypes; ++t )
+                if ( g_msgStat[d][t].n > 0 )
+                    fprintf( f, "[MSGTYPE] t=%lu drain=%s type=%d n=%lld total_ms=%.1f max_ms=%.1f\n",
+                             (unsigned long)Perf::MatchSec( ), d ? "tail" : "head", t,
+                             g_msgStat[d][t].n,
+                             (double)g_msgStat[d][t].us / 1000.0,
+                             (double)g_msgStat[d][t].maxUs / 1000.0 );
+        fclose( f );
+        for ( int d = 0; d < 2; ++d )
+            for ( int t = 0; t < kMsgTypes; ++t )
+                g_msgStat[d][t] = MsgStat();   // reset: each dump is ONE interval
+    }
+}
+
 void CConquerApp::ProcessAllMessages( DWORD dwBudgetMs )
 {
 
@@ -645,19 +720,47 @@ void CConquerApp::ProcessAllMessages( DWORD dwBudgetMs )
             // hang-regression probe: the drain budget checks BETWEEN messages,
             // so one slow handler = one multi-second frame (t=632: 9,958ms in
             // ProcessAllMessages under a 400ms budget). Name the message type.
-            DWORD dwMsgT0  = timeGetTime( );
             int   iMsgType = (int)( (CNetCmd*)pBuf )->GetType( );
+            const uint64_t _mhT0 = Perf::NowIfEnabled( );
             theGame.ProcessMessage( (CNetCmd*)pBuf );
-            DWORD dwMsgMs = timeGetTime( ) - dwMsgT0;
-            if ( dwMsgMs > 250 )
+            if ( Perf::IsEnabled( ) && iMsgType >= 0 && iMsgType < kMsgTypes )
             {
-                char szM[80];
-                sprintf( szM, "[SLOWMSG] type %d took %lu ms\n", iMsgType, dwMsgMs );
-                OutputDebugStringA( szM );
+                const long long _us = (long long)Perf::ElapsedUs( _mhT0 );
+                MsgStat& st = g_msgStat[ g_enMsgDrain ? 1 : 0 ][ iMsgType ];
+                st.n++; st.us += _us;
+                if ( _us > st.maxUs ) st.maxUs = _us;
+                Perf::NoteMsgUs( iMsgType, (uint64_t)_us );   // per-FRAME top type for [SLOWFRAME]
+                // audit (4): [SLOWMSG] used its own pair of bare timeGetTime calls, two
+                // per message with EN_PERF unset - about 2,900 clock calls a second at the
+                // measured 1,460 messages/s. It now shares the one gated clock above.
+                if ( _us > 40000 )   // 40ms; was 250ms, which tests ONE message while msg= is a SUM
+                {
+                    char szM[80];
+                    sprintf( szM, "[SLOWMSG] type %d took %lld ms\n", iMsgType, _us / 1000 );
+                    OutputDebugStringA( szM );
+                }
             }
         }
 #else
-        theGame.ProcessMessage((CNetCmd *) pBuf);
+        // PER-TYPE HISTOGRAM on the path that ACTUALLY RUNS when EN_PERF_PROBES is 0
+        // (the lane default). My first cut put this only inside the #if branch above,
+        // so with lane gates it compiled out entirely and wrote an EMPTY msgtype.log -
+        // which would have read as "no messages in the drain" rather than as a broken
+        // probe. Runtime-gated on Perf::IsEnabled() only, per the audit.
+        {
+            const bool     _mhOn = Perf::IsEnabled( );   // gate GetType too (class-B 5)
+            const int      _mhTy = _mhOn ? (int)( (CNetCmd*)pBuf )->GetType( ) : -1;
+            const uint64_t _mhT0 = Perf::NowIfEnabled( );
+            theGame.ProcessMessage((CNetCmd *) pBuf);
+            if ( _mhOn && _mhTy >= 0 && _mhTy < kMsgTypes )
+            {
+                const long long _us = (long long)Perf::ElapsedUs( _mhT0 );
+                MsgStat& st = g_msgStat[ g_enMsgDrain ? 1 : 0 ][ _mhTy ];
+                st.n++; st.us += _us;
+                if ( _us > st.maxUs ) st.maxUs = _us;
+                Perf::NoteMsgUs( _mhTy, (uint64_t)_us );   // per-FRAME top type for [SLOWFRAME]
+            }
+        }
 #endif
         theGame.FreeQueueElement((CNetCmd *) pBuf);
 
@@ -703,9 +806,27 @@ void CConquerApp::_RenderScreens( )
 {
 
     DWORD dwNow               = timeGetTime( );
+    // JANK PROBE: count how far the ANIMATION clock advances per render. Smooth
+    // motion is ~every render advancing exactly one step; judder is a mix of 0s
+    // and 2+. Nothing in perf.log records this today - avg/max frame time cannot
+    // tell a steady 35ms from an alternating 20/70ms, and those are different bugs.
+    // clk.future counts the render clock landing AHEAD of now, which this function
+    // can cause on its own (see the += rem below vs the -= rem on the oper clock
+    // at the bottom of the pump) and which the OP-CLOCK SANITY clamp then undoes.
+    if ( theGame.m_dwFrameTimeLast > dwNow )
+        Perf::CounterInc( "clk.future" );
     div_t dtFrame             = div( dwNow - theGame.m_dwFrameTimeLast, 1000 / FRAME_RATE );
     theGame.m_dwFramesElapsed = dtFrame.quot;
-    theGame.m_dwFrameTimeLast = dwNow + dtFrame.rem;
+    // CARRY the unconsumed remainder, don't ADD it. quot whole 1/24s frames were
+    // consumed; rem ms are left over and must be carried INTO the next interval.
+    // (This IS the lane's arithmetic - 1aa0b262 is an ancestor of 0076db78. My
+    // cherry-pick of 067a9d36 resolved the conflict to the STALE side and put
+    // `+ rem` back, reverting a landed fix on the measurement branch and in the
+    // play-dir exe QA was testing. Restored; the counters below stay.)
+    theGame.m_dwFrameTimeLast = dwNow - dtFrame.rem;
+    Perf::CounterInc( dtFrame.quot == 0 ? "anim.step0"
+                    : ( dtFrame.quot == 1 ? "anim.step1"
+                    : ( dtFrame.quot == 2 ? "anim.step2" : "anim.step3plus" ) ) );
 
     if ( !theGame.ShouldAnimate() )
     {
@@ -734,6 +855,7 @@ void CConquerApp::_RenderScreens( )
                 ANIM_THROTTLE_MS = 0;
         }
         DWORD dwAnimNow = timeGetTime( );
+        const uint64_t _qInval = Perf::NowIfEnabled( );   // paired with the dirty count below
         {
             Perf::ScopeCounter _ci( "r.inval" );   // invalidate pass (theMap.Update)
             for ( CWndAnim* pWnd : theAnimList )
@@ -752,15 +874,29 @@ void CConquerApp::_RenderScreens( )
         }
         {
             Perf::ScopeCounter _cd( "r.draw" );    // draw pass (UpdateRect walk + capture)
+            // ATTRIBUTION (2026-09-13): r.draw is the largest identified render item
+            // (190 ms/s on the host) and the sprite layer accounts for only 5.4% of it,
+            // so 94.6% of it had no name. The rr.* counters live inside ReRender, NOT
+            // Draw, so none of them can see this loop. One counter per concrete window
+            // class via RTTI attributes every window without touching any window class.
             for ( CWndAnim* pWnd : theAnimList )
                 if ( pWnd->RenderingThisFrame( ) )
+                {
+                    Perf::ScopeCounter _cw( EnDrawTag( pWnd ) );
                     pWnd->Draw( );
+                }
         }
 
         // Item 5 (dirty-rects) de-risk probe: how many hexes were invalidated this
         // frame (sim moves + render-time marks). If this is O(moving-units) and not
         // O(visible-hexes), the push-based dirty-rect source is viable.
-        Perf::CounterAdd( "inval.hexes", theMap.GetHexValidMatrix( )->GetDirtyCount( ) );
+        {
+            const int _nDirty = theMap.GetHexValidMatrix( )->GetDirtyCount( );
+            Perf::CounterAdd( "inval.hexes", _nDirty );
+            // same value onto the [SLOWFRAME] line, so dirty-set SIZE and frame TIME
+            // are paired PER FRAME - the per-second view cannot tell cause from effect
+            Perf::NoteFrameInval( _nDirty, Perf::ElapsedUs( _qInval ) );
+        }
 
         CHexCoord::ClearInvalidated( );  // Set terrain invalidated flags to FALSE
 
@@ -841,7 +977,18 @@ void CConquerApp::GraphicsEnginePump( )
         Perf::ScopeSlot _perfMsg( Perf::SEC_MSG );
         const int   iBacklog = theGame.m_messagePointerList.GetCount( );
         const DWORD dwBudget = iBacklog > 2000 ? 400 : ( iBacklog > 500 ? 200 : 100 );
+        // SPIKE PROBE: msg= is the only strong positive correlate of worst-frame
+        // time (r=+0.61 over 449 intervals). Record what the budget actually did:
+        // the backlog it saw, the tier it chose, and whether the drain RAN OUT of
+        // budget (= this frame was cut short by the cap, not by an empty queue).
+        Perf::GaugeSet( "msg.backlog", iBacklog );
+        Perf::CounterInc( dwBudget == 400 ? "msg.tier400"
+                                          : ( dwBudget == 200 ? "msg.tier200" : "msg.tier100" ) );
+        const bool  _msgOn    = Perf::IsEnabled( );   // gate the clock pair (class-B 2)
+        const DWORD dwDrainT0 = _msgOn ? timeGetTime( ) : 0;
         ProcessAllMessages( dwBudget );
+        if ( _msgOn && timeGetTime( ) - dwDrainT0 >= dwBudget )
+            Perf::CounterInc( "msg.capped" );
     }
 
     theGame._SettimeGetTime( );
@@ -890,11 +1037,21 @@ void CConquerApp::GraphicsEnginePump( )
             // case just yield (Sleep(0)) so AI/network worker threads still get scheduled but
             // we immediately loop back to render again. (The sim-tick path keeps its own
             // explicit AI time slice below, so AI is not starved.)
+            // SEC_SLEEP is shared by all four sleep sites, so a [SLOWFRAME] "sleep=" is
+            // their SUM and cannot say which one fired. Slow frames carry a median 10.9 ms
+            // of sleep and site :1029 below still has the 10 ms floor this branch had
+            // removed - these names settle which. Inert unless EN_PERF is set.
             Perf::ScopeSlot _perfSleep( Perf::SEC_SLEEP );
             if ( dwSleep > 0 )
+            {
+                Perf::ScopeCounter _cs( "slp.pace" );
                 ::Sleep( __minmax( 1, 1000 / FRAME_RATE, dwSleep ) );
+            }
             else
+            {
+                Perf::ScopeCounter _cs( "slp.yield" );
                 ::Sleep( 0 );   // render-bound: yield without the 10ms penalty
+            }
         }
         return;
     }
@@ -906,10 +1063,41 @@ void CConquerApp::GraphicsEnginePump( )
         int iExtra =
             ( (int)( 2 * 1000 / FRAME_RATE ) - (int)( theGame.GettimeGetTime( ) - theGame.m_dwOperTimeLast ) ) / 2;
         Perf::ScopeSlot _perfSleep( Perf::SEC_SLEEP );
-        ::Sleep( __minmax( 10, 2 * 1000 / FRAME_RATE, iExtra ) );
+        // slp.ai.floor counts the case the sibling branch above was repaired for: iExtra
+        // at or below the clamp floor means we are NOT ahead of schedule and are sleeping
+        // 10 ms anyway. Counting only - the Sleep call is unchanged.
+        if ( iExtra <= 10 ) Perf::CounterInc( "slp.ai.floor" );
+        else                Perf::CounterInc( "slp.ai.real" );
+        { Perf::ScopeCounter _cs( "slp.ai" );
+          ::Sleep( __minmax( 10, 2 * 1000 / FRAME_RATE, iExtra ) ); }
     }
     else
-        { Perf::ScopeSlot _perfSleep( Perf::SEC_SLEEP ); ::Sleep( 10 ); }  // give network some time
+    {
+        Perf::ScopeSlot _perfSleep( Perf::SEC_SLEEP );
+        // @WinAstra's decision-time instrument. This branch has no slack test at all -
+        // it sleeps 10 ms whether the tick is early or 40 ms late. Compute the SAME
+        // quantity the repaired render path uses, for MEASUREMENT ONLY: ms remaining to
+        // the next sim tick, negative when we are already behind. The Sleep is unchanged.
+        // @WinAstra, correcting me: the early return at :983 only falls through when
+        // GettimeGetTime() >= m_dwOperTimeLast + 1000/FRAME_RATE, so "41 - elapsed <= 0"
+        // is GUARANTEED here - my ahead/behind counter was measuring a tautology, and
+        // GettimeGetTime() is the CACHED stamp (player.h:1219), not a fresh read. The
+        // slack value is kept only because the [SLOWFRAME] line records HOW FAR past the
+        // quantum we were, which is not tautological; the ahead/behind split is gone.
+        int _slack = 0;
+        if ( Perf::IsEnabled( ) )
+            _slack = (int)( 1000 / FRAME_RATE )
+                   - (int)( theGame.GettimeGetTime( ) - theGame.m_dwOperTimeLast );
+
+        // The bounded sleep-trial env switch is REMOVED (@WinFable 21:57Z). It closed:
+        // Sleep(0) converts 194 ms/s of sleep into 200 ms/s of render+present+msg - it
+        // buys frames, not AI - so a launch-time switch that changes SHIPPED pacing has
+        // no reason to stay in the tree. Stock 10 ms exactly as the lane has it; only the
+        // measurement around it is new, and measurement must not change behaviour.
+        const uint64_t _t0 = Perf::NowIfEnabled( );
+        { Perf::ScopeCounter _cs( "slp.net" ); ::Sleep( 10 ); }
+        Perf::NoteFrameSleep( _slack, Perf::ElapsedUs( _t0 ) );
+    }
 
     // animate if 1/24 of a second has passed
     div_t dtFrame             = div( theGame.GettimeGetTime( ) - theGame.m_dwOperTimeLast, 1000 / FRAME_RATE );
@@ -922,6 +1110,16 @@ void CConquerApp::GraphicsEnginePump( )
         // time played
         theGame.m_dwElapsedTime += theGame.m_dwOpersElapsed;
 
+        // Local intel uses active real time, independent of the simulation speed.
+        // This frame clock also stops advancing the sweep while play is paused.
+        // Hold cs: the sweep walks theBuildingMap and can delete dead buildings, and the
+        // AI threads walk that map under cs.
+        EnterCriticalSection( &cs );
+        if ( theGame._GetMe( ) != NULL )
+            theGame._GetMe( )->ResonanceSweep(
+                theGame.m_dwFramesElapsed * ( 1000 / FRAME_RATE ) );
+        LeaveCriticalSection( &cs );
+
         // every 15 seconds we check for number of buildings
         static int iFifteen = 0;
 
@@ -930,6 +1128,12 @@ void CConquerApp::GraphicsEnginePump( )
         theGame.m_dwOperSecFrames += theGame.m_dwOpersElapsed;
         if ( theGame.m_dwOperSecFrames >= (DWORD)( FRAME_RATE * theGame.m_iSpeedMul ) )
         {
+            // 591ms of every second inside SEC_SIM is attributed to nothing (measured:
+            // sim 1013 - sleep 260 - msg 55 - operB 12 - operV 95). Perf.h guesses the
+            // remainder is "once-a-second housekeeping + message-posting scans +
+            // animate" - this names it instead of guessing. NOTE this block contains a
+            // `goto NoOper`, so it must be RAII, not a paired call at the end.
+            Perf::ScopeNamed _perfSec( "pump.sec.us" );
             div_t dtNum                = div( theGame.m_dwOperSecFrames, FRAME_RATE );
             theGame.m_dwOperSecElapsed = dtNum.quot;
             theGame.m_dwOperSecFrames  = dtNum.rem;
@@ -1305,15 +1509,21 @@ void CConquerApp::GraphicsEnginePump( )
 
         // got stuck waiting here?
         // take the critical section while we do our thing
+        // ("got stuck waiting here?" is in the 1996 source - so measure it and answer.)
+        const uint64_t _qCs = Perf::NowIfEnabled( );
         EnterCriticalSection( &cs );
+        Perf::CounterAddElapsedUs( "pump.cswait.us", _qCs );
 
         // figure the multipliers, etc
         POSITION pos;
-        for ( pos = theGame.GetAll( ).GetHeadPosition( ); pos != NULL; )
         {
-            CPlayer* pPlr = theGame.GetAll( ).GetNext( pos );
-            ASSERT_STRICT_VALID( pPlr );
-            pPlr->StartLoop( );
+            Perf::ScopeNamed _perfStart( "pump.startloop.us" );
+            for ( pos = theGame.GetAll( ).GetHeadPosition( ); pos != NULL; )
+            {
+                CPlayer* pPlr = theGame.GetAll( ).GetNext( pos );
+                ASSERT_STRICT_VALID( pPlr );
+                pPlr->StartLoop( );
+            }
         }
 
         // operate the buildings
@@ -1431,7 +1641,7 @@ void CConquerApp::GraphicsEnginePump( )
                     int iNum = msgDam.AddUnit( pBldg, iDam );
                     if ( iNum >= NUM_UNIT_DAMAGE_ELEM )
                     {
-                        TRAP( );
+                        EN_TRAP_REMOVED( "damage batch full (buildings) - flushed early" );   // was a 1996 TRAP: a full packet is normal in big fights
                         theGame.PostToServer( &msgDam, sizeof( msgDam ) );
                         msgDam.Reset( );
                     }
@@ -1443,7 +1653,7 @@ void CConquerApp::GraphicsEnginePump( )
                     int iNum = msgSetDam.AddUnit( pBldg );
                     if ( iNum >= NUM_UNIT_SET_DAMAGE_ELEM )
                     {
-                        TRAP( );
+                        EN_TRAP_REMOVED( "set-damage batch full (buildings) - flushed early" );   // was a 1996 TRAP: a full packet is normal in big fights
                         theGame.PostToAllClients( &msgSetDam, sizeof( msgSetDam ), FALSE );
                         msgSetDam.Reset( );
                     }
@@ -1479,7 +1689,7 @@ void CConquerApp::GraphicsEnginePump( )
                     int iNum = msgDam.AddUnit( pVeh, iDam );
                     if ( iNum >= NUM_UNIT_DAMAGE_ELEM )
                     {
-                        TRAP( );
+                        EN_TRAP_REMOVED( "damage batch full (vehicles) - flushed early" );   // was a 1996 TRAP: a full packet is normal in big fights
                         theGame.PostToServer( &msgDam, sizeof( msgDam ) );
                         msgDam.Reset( );
                     }
@@ -1491,7 +1701,7 @@ void CConquerApp::GraphicsEnginePump( )
                     int iNum = msgSetDam.AddUnit( pVeh );
                     if ( iNum >= NUM_UNIT_SET_DAMAGE_ELEM )
                     {
-                        TRAP( );
+                        EN_TRAP_REMOVED( "set-damage batch full (vehicles) - flushed early" );   // was a 1996 TRAP: a full packet is normal in big fights
                         theGame.PostToAllClients( &msgSetDam, sizeof( msgSetDam ), FALSE );
                         msgSetDam.Reset( );
                     }
@@ -1515,10 +1725,53 @@ void CConquerApp::GraphicsEnginePump( )
         LeaveCriticalSection( &cs );
 
         // process messages from Operate calls (same time-box as the pump head)
-        ProcessAllMessages( 100 );
+        // THE SECOND DRAIN. This sits inside SEC_SIM but OUTSIDE SEC_MSG, so every
+        // earlier measurement missed it - including the one where I concluded the
+        // message-drain budget was innocent (msg.capped=0 covered only the HEAD drain
+        // at the top of this function). Its flat 100ms budget matches the 79ms median
+        // of the in-game sim spikes. msg.tail.capped counts drains that ran OUT of
+        // budget, i.e. frames this call cut short.
+        {
+            Perf::ScopeNamed _mt( "msg.tail.us" );
+            g_enMsgDrain = 1;
+            // gate GetCount and the clock pair (class-B 3 and 4): both were probe-only
+            // work that ran with EN_PERF unset.
+            const bool  _mtOn = Perf::IsEnabled( );
+            if ( _mtOn )
+                Perf::GaugeSet( "msg.tail.backlog",
+                                (int64_t)theGame.m_messagePointerList.GetCount( ) );
+            const DWORD _mt0 = _mtOn ? timeGetTime( ) : 0;
+            const uint64_t _mtq = Perf::NowIfEnabled( );
+            ProcessAllMessages( 100 );
+            // [SLOWFRAME] msg= is SEC_MSG, the HEAD drain only; this drain is inside
+            // SEC_SIM but outside SEC_MSG, so without this note the per-frame drain
+            // share cannot be computed from the slow-frame line at all.
+            Perf::NoteFrameMsgTail( Perf::ElapsedUs( _mtq ) );
+            if ( _mtOn && timeGetTime( ) - _mt0 >= 100 )
+                Perf::CounterInc( "msg.tail.capped" );
+            g_enMsgDrain = 0;
+            EnMsgHistoDump( );
+        }
     }  // if operate
 
 NoOper:
+
+    // PUBLICATION POINT for the movement-A* world snapshot: the tick's whole world
+    // mutation batch (head message drain, building/vehicle/projectile Operate, tail
+    // message drain) is behind us and the next tick's searches are ahead. Both the
+    // operate and the skip path reach here. No-op unless EN_PATH_SNAP is set.
+    // Install every worker answer that came back this tick, before the snapshot is
+    // replaced - the stale test compares a result's epoch against the world the tick
+    // ends in. No-op unless EN_PATH_WORKER and EN_PATH_ASYNC are both set.
+    EnPathAsyncDrain( );
+
+#if EN_PATH_PROBES
+    // Step C's comparison drain. It and the install above are alternatives, never both:
+    // EnPathWorkerSubmit refuses to submit while EN_PATH_ASYNC is on, so with async
+    // live there is nothing here for this to pop.
+    EnPathWorkerDrain( );
+#endif
+    PathWorld::PublishTick( );
 
     // Tier-B AI snapshot: publish the world copy the AI threads read lock-free
     // (self-throttled to ~tick cadence; takes `cs` briefly inside). Sits after
@@ -1874,13 +2127,24 @@ RepairDone:;
         if ( ( GetData( )->GetType( ) == CStructureData::rocket )
              && GetOwner( )->IsEdictActive( EDICT_DESPERATE_MEASURES ) )
         {
-            // +100 draft workers; fixed 10 lumber / 5 iron / 5 food / 5 coal per minute.
-            // Keep in sync with the "Cost: 100 workers" line in g_aEdicts (edicts.cpp).
-            GetOwner( )->AddPplNeedBldg( GetData( )->GetPeople( ) + 100 );
-            static const AltOutput::AltMat aDesperate[4] =
-                { { CMaterialTypes::lumber, 10 }, { CMaterialTypes::iron, 5 },
-                  { CMaterialTypes::food, 5 },    { CMaterialTypes::coal, 5 } };
-            AltOutput::CreditTrickle( this, (int)theGame.GetOpersElapsed( ), m_afAltAccum, aDesperate, 4 );
+            // The conscription itself is priced ONCE per pump, per player, by
+            // CPlayer::ApplySurplusEdicts (it also books the draft as workforce demand there) --
+            // so all this branch owes is the rocket's own staffing plus the scrounge the draft
+            // buys. The exchange rate stays 10 lumber / 5 iron / 5 food / 5 coal per
+            // DESPERATE_RATE_PER workers however large the draft grows: an empire with idle
+            // population runs the edict bigger, not more efficiently. The rocket info window
+            // quotes these same lines scaled the same way off DESPERATE_BASE_RATES (edicts.cpp),
+            // so the number on screen and the number credited cannot drift.
+            GetOwner( )->AddPplNeedBldg( GetData( )->GetPeople( ) );
+            const int iDraft = GetOwner( )->GetDesperateDraft( );
+            AltOutput::AltMat aDesperate[DESPERATE_RATE_LINES];
+            for ( int i = 0; i < DESPERATE_RATE_LINES; i++ )
+            {
+                aDesperate[i]           = DESPERATE_BASE_RATES[i];
+                aDesperate[i].m_iPerMin = ( aDesperate[i].m_iPerMin * iDraft ) / DESPERATE_RATE_PER;
+            }
+            AltOutput::CreditTrickle( this, (int)theGame.GetOpersElapsed( ), m_afAltAccum,
+                                      aDesperate, DESPERATE_RATE_LINES );
         }
         else
         {
@@ -1898,15 +2162,22 @@ RepairDone:;
 
     // R&D from this building
     case CStructureData::UTresearch: {
+        // EDICT_AUTO_RESEARCH's scoped half: every research center needs
+        // AUTO_RSRCH_LAB_WORKER_PCT% more workers while the edict is active. Power is untouched,
+        // and the idle branch's half-staff rule scales the surcharge with it.
+        int iLabPpl = GetData( )->GetPeople( );
+        if ( GetOwner( )->IsEdictActive( EDICT_AUTO_RESEARCH ) )
+            iLabPpl = (int)( iLabPpl * ( 1.0f + AUTO_RSRCH_LAB_WORKER_PCT / 100.0f ) + 0.5f );
+
         if ( GetOwner( )->GetRsrchItem( ) != 0 )
         {
             GetOwner( )->AddPwrNeed( GetData( )->GetPower( ) );
-            GetOwner( )->AddPplNeedBldg( GetData( )->GetPeople( ) );
+            GetOwner( )->AddPplNeedBldg( iLabPpl );
         }
         else
         {
             GetOwner( )->AddPwrNeed( GetData( )->GetPower( ) / 2 );
-            GetOwner( )->AddPplNeedBldg( GetData( )->GetPeople( ) / 2 );
+            GetOwner( )->AddPplNeedBldg( iLabPpl / 2 );
         }
 
         CBuildResearch* pBr  = GetData( )->GetBldResearch( );
@@ -2810,13 +3081,18 @@ void CPowerBuilding::BuildPower( )
 
     float fPower = GetFrameProd( 1 );
 
-    // Coal Liquefaction mode (bug #43): when this coal plant's alt-output toggle is ON and
-    // the tech is researched, it STOPS feeding the colony power grid and instead converts
-    // its coal into oil (the conversion runs below via AltOutput::Convert). So while the
-    // toggle is active we suppress the AddPwrHave() calls -- the plant produces oil, not
-    // power. (No-op for non-coal plants / toggle OFF / un-researched: bCoalLiq stays false
-    // and power generation is byte-identical to before.)
-    const bool bCoalLiq = IsFlag( CUnit::alt_oil ) && ( AltOutput::Available( this ) != nullptr );
+    // AltOutput mode-switch, split into its TWO independent halves. Conflating them is what
+    // the single old bCoalLiq flag did, and it is why moving a def would have changed shipped
+    // behaviour two phases early:
+    //   bAltStopsPower -- POWER half. DERIVED (a store-consuming conversion def on a UTpower
+    //                     host), so it is TRUE for today's Coal Liquefaction exactly as
+    //                     bCoalLiq was: the plant feeds no power to the grid and instead DRAWS
+    //                     2 power to run the conversion.
+    //   bAltTimeDriven -- PRODUCTION half. The def's own explicit m_eDrive. FALSE for every def
+    //                     shipped today, so the fuel-burn path below is byte-identical.
+    const AltOutput::AltOutputDef* pAlt = IsFlag( CUnit::alt_oil ) ? AltOutput::Available( this ) : nullptr;
+    const bool bAltStopsPower = pAlt && AltOutput::StopsPower( this, pAlt );
+    const bool bAltTimeDriven = pAlt && ( pAlt->m_eDrive == AltOutput::EDrive::eTimeDriven );
 
     if ( pBp->GetInput( ) < 0 )
     {
@@ -2825,6 +3101,105 @@ void CPowerBuilding::BuildPower( )
         GetOwner( )->AddPwrHave( (int)( (float)pBp->GetPower( ) * fPower ) );
         return;
     }
+
+    if ( bAltTimeDriven )
+    {
+        // ---- TIME-DRIVEN conversion (a kiln / liquefaction plant) --------------------------
+        // No fuel is burned at all. The conversion runs off the plant's own production
+        // accumulator and consumes the DEF's input material; GetRate( ) is reused as the
+        // CONVERSION period, so the existing per-type tuning knob still applies. Unreachable
+        // until a def sets m_eDrive = eTimeDriven.
+        const int iIn    = pAlt->m_iInputMat;
+        const int iRatio = AltOutput::InputRatio( this, pAlt );
+        if ( ( iRatio <= 0 ) || ( pBp->GetRate( ) <= 0 ) )
+        {
+            AnimateOperating( FALSE );
+            return;
+        }
+
+        // Can't fund ONE whole batch -> not operating. Same rule as IsOperating( ) and
+        // EffInputBatch( ). Note what is deliberately NOT here: the fuel path's low-fuel
+        // discard branch below. On a fuel plant "burned the last of it" is correct; applied to
+        // a kiln's lumber it would DELETE trucked input without converting it. Sub-batch input
+        // is simply left in the store.
+        if ( GetStore( iIn ) < iRatio )
+        {
+            AnimateOperating( FALSE );
+            return;
+        }
+
+        AnimateOperating( TRUE );
+
+        // The POWER half stays on the DERIVED flag -- unchanged from shipped Coal-Liq behaviour.
+        if ( !bAltStopsPower )
+            GetOwner( )->AddPwrHave( (int)( (float)pBp->GetPower( ) * fPower ) );
+        else
+            GetOwner( )->AddPwrNeed( 2 );
+
+        int iInc = GetProd( 1 );
+        if ( iInc <= 0 )
+            return;
+        m_iBuildDone += iInc;
+
+        if ( m_iBuildDone < pBp->GetRate( ) )
+            return;
+
+        int iNum = m_iBuildDone / pBp->GetRate( );      // conversion batches elapsed this tick
+
+        // Batch TIME is spent whether or not the store could fund it. That is the deliberate
+        // half of the accumulator decision: unfunded time is DISCARDED, so a starved plant
+        // banks no debt and there is no burst the moment a truck arrives, and m_iBuildDone
+        // stays bounded below Rate exactly as it does on the fuel path.
+        //
+        // The other half is caller-side too, and it is why AltOutput::Convert( ) is NOT
+        // modified (it is shared with the fuel-driven Coal-Liq and Charcoal callers, which must
+        // stay byte-identical): Convert's eRatioConsume branch credits fAccum BEFORE it clamps
+        // to what the store can afford, so a starved caller banks unfunded OUTPUT forever and
+        // dumps it in one burst later. This caller can never trigger that, because it only ever
+        // passes iDo * iRatio -- an exact whole-batch input quantity the store already holds --
+        // so fWant is an integer, fAccum returns to exactly 0 after every call, and nothing is
+        // ever banked.
+        m_iBuildDone -= iNum * pBp->GetRate( );
+
+        int iAfford = GetStore( iIn ) / iRatio;         // whole batches the store can fund
+        int iDo     = __min( iNum, iAfford );
+
+        // The ONE consumer of the TRUE consumption rate. Everything router-facing keeps the
+        // router's own units instead (see CPowerBuilding::GetNextMinuteMat).
+        int i1Min   = EffInputPerMin( );
+        int iBefore = GetStore( iIn );
+
+        // Convert( ) takes the INPUT quantity, not the batch count.
+        if ( iDo > 0 )
+            AltOutput::Convert( this, iDo * iRatio, m_fAltAccum );
+
+        int iAfter = GetStore( iIn );
+        if ( iAfter < iRatio )
+        {
+            // Ran dry this tick. Ask the router HERE, once: from the next tick the top gate
+            // returns before any notification path, so this is the last chance to ask.
+            AnimateOperating( FALSE );
+            theGame.Event( EVENT_MANUF_HALTED, EVENT_WARN, this );
+            if ( GetOwner( )->IsMe( ) )
+                theGame.m_pHpRtr->MsgOutMat( this );
+            else
+                MaterialMessage( );
+        }
+        else if ( ( iBefore >= i1Min ) && ( iAfter < i1Min ) )
+        {
+            // Crossed the 1-minute mark this tick -- ask for more. Sampled AFTER Convert( ) for
+            // the same reason the fuel path does: Convert drains the store with no router
+            // notification of its own.
+            if ( GetOwner( )->IsMe( ) )
+                theGame.m_pHpRtr->MsgOutMat( this );
+        }
+
+        // update the %
+        MaterialChange( );
+        return;
+    }
+
+    // ---- FUEL-DRIVEN (every def shipped today; unchanged apart from bCoalLiq's rename) -----
 
     // if we have nothing to burn there is nothing to do -- and it isn't operating, so stop the
     // animation (operator: a coal-liq plant with no coal shouldn't animate).
@@ -2839,7 +3214,7 @@ void CPowerBuilding::BuildPower( )
     // add in our power if we have any input materials left -- UNLESS we're in coal-liq mode,
     // where the burned coal becomes oil instead of power AND the plant DRAWS 2 power to run the
     // conversion (operator).
-    if ( !bCoalLiq )
+    if ( !bAltStopsPower )
         GetOwner( )->AddPwrHave( (int)( (float)pBp->GetPower( ) * fPower ) );
     else
         GetOwner( )->AddPwrNeed( 2 );
@@ -3021,23 +3396,104 @@ void CFarmBuilding::BuildFarm( )
         GrowFields( );
     UpdateFieldStage( FARM_HARVEST_SLOW * GetData( )->GetBldFarm( )->GetTimeToFarm( ) );
 
+    // EXHAUSTED SITE -- draw nothing at all, exactly like a depleted mine (operator).
+    // m_iTerMult is the 0..10 terrain multiplier and it is the whole of fMul below, so at 0 this
+    // farm can never yield anything: it is the mill's equivalent of CMineBuilding's
+    // `m_iMinerals <= 0`. Mirror that hook's shape -- and note WHERE it sits, which is the point
+    // of the fix: BuildMine returns BEFORE AddPwrNeed/AddPplNeedBldg, so a dead mine costs the
+    // colony no power and no workers. A mill that has slashed its own box flat was still paying
+    // full upkeep for nothing.
+    //
+    // Reachable only since Slash and Burn: before it, terrain never changed at runtime, so a
+    // built farm's m_iTerMult never fell. (A food farm sited on zero-fertility soil hits the same
+    // path; same rule, and it is correct for it too.)
+    //
+    // Set `stopped` AND `abandoned`, exactly as the dead mine does. `stopped` alone was not enough:
+    // from the next tick CBuilding::Operate takes its stopped branch, which charges HALF power and
+    // workers to every finished, non-abandoned building -- forever, since the mill never reaches
+    // this branch again. `abandoned` is what that branch exempts. It is a one-way door, and that is
+    // right: nothing at runtime turns a hex back into forest, and a food farm's m_iTerMult is fixed
+    // at placement. Its other effects match a dead extractor: the panel reads "(exhausted)" at 0
+    // cost, repair crews are released instead of welded, the router still collects leftover stock
+    // but never treats it as a live source, and the AI stops counting a dead MILL (lumber is in its
+    // extractor range) and builds a replacement.
+    if ( m_iTerMult <= 0 )
+    {
+        m_iBuildDone = 0;
+        SetFlag( stopped );
+        SetFlag( abandoned );
+        m_iLastPer = 0;
+        AnimateOperating( FALSE );
+        return;
+    }
+
     // add in its power & people usuage
     GetOwner( )->AddPwrNeed( GetData( )->GetPower( ) );
     // Agricultural Subsidy edict bumps only the farm's own worker requirement (default ×1.0).
     GetOwner( )->AddPplNeedBldg(
         (int)( GetData( )->GetPeople( ) * GetOwner( )->GetEdictFarmWorkerMult( ) + 0.5f ) );
 
+    CBuildFarm* pBf = GetData( )->GetBldFarm( );
+
     // BUGBUG - pull this from the adjoining hexes!!!
     float fMul = GetOwner( )->GetFarmProd( ) * m_iTerMult;
 
-    CBuildFarm* pBf = GetData( )->GetBldFarm( );
+    // Slash and Burn: this mill cuts at 250% while its toggle is on. Per-BUILDING, no CPlayer
+    // state and no edict multiplier chain. Food farms are untouched BY CONSTRUCTION --
+    // SlashBurnActive( ) requires a lumber mill -- so the multiplier can never leak onto food.
+    if ( SlashBurnActive( ) )
+        fMul *= AltOutput::SLASH_BURN_MULT;
+
     // get the productivity of this farm and add it to our total
     if ( pBf->GetTypeFarm( ) == CMaterialTypes::food )
         GetOwner( )->AddFoodProd(
             GetFrameProdNoPeople( fMul * float( 24 * 60 * pBf->GetQuantity( ) ) / float( pBf->GetTimeToFarm( ) ) ) );
 
+    // Slash and Burn: destroy forest on TIME, on every tick this mill actually produces -- not
+    // only on harvest ticks. The gate is the per-FRAME production rate, which is the exact
+    // expression of "does this mill produce at all": GetFrameProdNoPeople is
+    // m_fDamPerfMult * fMul * powerFactor with NO accumulator and NO truncation, so it is > 0
+    // exactly when all three factors are. The three real self-terminating gates are therefore
+    // preserved exactly:
+    //   - a stopped / abandoned / event-wedged mill never reaches BuildFarm at all (Operate),
+    //   - a mill wrecked to zero damage-performance has m_fDamPerfMult == 0,
+    //   - a mill that has cut its own box down to fertility 0 has fMul == 0,
+    //     so it stops slashing exactly when it stops yielding.
+    // Do NOT gate on GetProdNoPeople( fMul ) instead. That returns the TRUNCATED per-tick
+    // increment, which is 0 on many ticks for a weak mill (it carries the remainder in
+    // m_fOperMod), so those ticks would contribute no accrual and SLASH_HEXES_PER_MINUTE would
+    // silently run at roughly half rate at fertility 1 -- the dial would not mean what it says.
+    // (Note this does NOT exclude an unpowered mill: the lumber mill has a non-zero
+    // CStructureData::GetNoPower, so it keeps producing at a reduced rate without power and
+    // keeps slashing. That is existing behaviour, not a choice made here.)
+    // "Is this mill actually harvesting?" -- the per-FRAME production rate. Computed once and
+    // used for BOTH the animation and the slash gate, because it is the same question.
+    const BOOL bProducing = ( GetFrameProdNoPeople( fMul ) > 0.0f );
+
+    // Stop the harvest animation when it is NOT harvesting (operator-reported). A mill that has
+    // slashed its own box down to fertility 0 keeps standing and keeps animating while yielding
+    // nothing. Before Slash and Burn that state was effectively unreachable -- terrain never
+    // changed at runtime, so a built mill's m_iTerMult never fell -- which is why BuildFarm never
+    // had to turn the animation off and, unlike BuildPower, never called AnimateOperating at all.
+    //
+    // Gate on the RATE, never on the truncated iInc below: iInc is 0 on many ticks for a weak
+    // mill (the remainder carries in m_fOperMod), so gating on it would strobe the animation and,
+    // because AnimateOperating posts CMsgBldgStat on every state CHANGE, spam that message across
+    // the network every few frames. AnimateOperating is idempotent, so calling it each tick with
+    // an unchanged value costs nothing -- the same pattern BuildPower already uses.
+    //
+    // NOTE this also covers food farms (fertility 0, or wrecked to m_fDamPerfMult == 0), which
+    // previously kept animating too. Same rule, one line, and it is the correct answer for them
+    // as well -- but it IS a behaviour change slightly wider than Slash and Burn itself.
+    AnimateOperating( bProducing );
+
+    if ( SlashBurnActive( ) && bProducing )
+        SlashTick( );
+
     // get change based on everything
     // farms are special - no people degradation
+    // (Must still run exactly once per tick, and after the slash gate above: it advances
+    // m_fOperMod.)
     int iInc = GetProdNoPeople( fMul );
     if ( iInc <= 0 )
         return;
@@ -3062,37 +3518,13 @@ void CFarmBuilding::BuildFarm( )
     }
     else
     {
-        // Charcoal (#44), via the reusable AltOutput system: when this is a LUMBER MILL (the
-        // sawmill) whose alt-output toggle (alt_oil) is ON and the Charcoal tech is
-        // researched, it runs a kiln that converts harvested lumber into coal ("Charcoal")
-        // at a fixed 2 lumber -> 1 coal (eRatioConsume). MODE-SWITCH: while the kiln runs,
-        // normal lumber output STOPS -- we feed only a TIER-SCALED slice of the harvest into
-        // the mill's store as kiln fuel (GetCharcoalPct; T1 very low) and credit no player
-        // lumber, so the 2:1 ratio stays fixed while throughput scales with research.
-        if ( pBf->GetTypeFarm( ) == CMaterialTypes::lumber
-             && IsFlag( CUnit::alt_oil )
-             && AltOutput::Available( this ) )
-        {
-            int iPct  = GetOwner( )->GetCharcoalPct( );
-            int iFeed = ( dtRate.quot * iPct ) / 100;   // tier-scaled lumber into the kiln
-            if ( iFeed > 0 )
-            {
-                // Stage the kiln feed in BOTH the mill store and the player have-total so it
-                // matches Convert's eRatioConsume bookkeeping (it decrements both by the lumber
-                // it consumes). Net player lumber change is ~zero (mode-switch) and coal is
-                // credited by Convert. We do NOT IncMaterialMade the lumber -- it becomes coal,
-                // and Convert already records the coal as made.
-                AddToStore( pBf->GetTypeFarm( ), iFeed );
-                GetOwner( )->IncMaterialHave( pBf->GetTypeFarm( ), iFeed );
-                AltOutput::Convert( this, iFeed, m_fAltAccum );
-            }
-        }
-        else
-        {
-            AddToStore( pBf->GetTypeFarm( ), dtRate.quot );
-            GetOwner( )->IncMaterialMade( pBf->GetTypeFarm( ), dtRate.quot );
-            GetOwner( )->IncMaterialHave( pBf->GetTypeFarm( ), dtRate.quot );
-        }
+        // The lumber mill has no alt-output mode any more: Charcoal moved to the COAL POWER
+        // PLANT, where the kiln is fed TRUCKED lumber instead of a slice of this mill's own
+        // harvest (see the Charcoal def in altoutput.cpp). So a mill always credits its full
+        // harvest, exactly as it did before Charcoal was ever hosted here.
+        AddToStore( pBf->GetTypeFarm( ), dtRate.quot );
+        GetOwner( )->IncMaterialMade( pBf->GetTypeFarm( ), dtRate.quot );
+        GetOwner( )->IncMaterialHave( pBf->GetTypeFarm( ), dtRate.quot );
     }
 
     // update the %

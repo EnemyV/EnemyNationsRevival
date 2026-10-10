@@ -22,9 +22,6 @@
 #include "minerals.inl"
 #include "player.h"
 #include "relation.h"
-#include "edicts.h"       // g_aEdicts / EDICT_COUNT (HarnessDumpEdicts)
-#include "altoutput.h"    // AltOutput::Available / AltOutputDef (HarnessDumpAltBuildings)
-#include "en_harness.h"   // HarnessDumpUnits (defined at end of file)
 #include "sfx.h"
 #include "sprite.h"
 #include "stdafx.h"
@@ -42,7 +39,6 @@
 #include "SDL2RouteWindow.h"
 #include "Perf.h"
 #include "SDL2GameDialogs.h"
-#include "SDL2Dialogs.h"   // SDL2_RunLoadSinglePlayerFlow (HarnessLoadGame)
 #include <SDL.h>
 #include <SDL_syswm.h>
 #include <unordered_map>
@@ -1419,6 +1415,11 @@ CWndArea::CWndArea( )
     m_phexRoadPath  = NULL;
     m_ppUnderSprite = NULL;
     m_iNumRoadHex   = 0;
+
+    m_bBuildDrag = FALSE;   // #38 drag-place
+    m_nDragSites = 0;
+    m_iDragCx    = 0;
+    m_iDragCy    = 0;
 }
 
 void CWndArea::PostNcDestroy( )
@@ -1952,6 +1953,283 @@ void CWndArea::MaterialChange( CUnit const* pUnit )
     m_WndStatic.UpdateStat( );
 }
 
+// #38 THE PER-SITE BUILD VERDICT. One body, two callers: the hover (one hex under the
+// cursor) and the drag-place line (N sites in one gesture). They MUST agree - a line that
+// queued sites the hover calls unbuildable, or refused sites the hover calls fine, is a
+// rules drift the player reads as the preview lying - so the rule half of the 1996 hover
+// block lives here verbatim and nothing duplicates it.
+//
+// What is NOT here: the status-bar strings. Only the hover has a status bar to write, and
+// keeping the strings at the call site is what makes this a pure per-site verdict. The
+// numbers those strings need (the farm multiplier, the mine quantity/density) come back in
+// the verdict, so the caller never recomputes them - LandMult / TotalQuantity / TotalDensity
+// are called exactly as often as they were before.
+struct CBuildVerdict
+{
+    enum KIND { plain, farm_kind, mine_kind };        // which special-case block ran
+    enum QUALITY { good, warn, bad };                 // how good a site it is
+
+    int  m_iFound;          // FoundationCost's cost, or < 0 for "cannot build here"
+    int  m_iWhy;            // FoundationCost's reason code (read when it refused)
+    int  m_iCurType;        // SetBldgCur's cursor type: 0 = ok, 1 = cannot, 2 = poor site
+    int  m_iKind;
+    int  m_iQuality;
+    BOOL m_bRefused;        // FoundationCost (or the rocket exit test) refused OUTRIGHT:
+                            // the hover returns early on this, BEFORE any farm/mine test,
+                            // so no farm/mine numbers were measured.
+    int  m_iMul;            // farm/lumber: the land multiplier
+    int  m_iQuan, m_iDen;   // mine: the scaled quantity and density
+
+    // A site the drag may queue. Both halves matter: m_bRefused covers the early refusal
+    // (where m_iFound can still be >= 0, when only the rocket exit test failed) and
+    // m_iFound covers the farm/mine overrides, which write -1 into it.
+    BOOL CanBuild( ) const { return ( ( !m_bRefused ) && ( m_iFound >= 0 ) ); }
+};
+
+static void BuildSiteVerdict( CHexCoord const& hexUL, int iBuild, int iDir, BOOL bBuildOk,
+                              CBuildVerdict& v )
+{
+    v.m_iWhy     = 0;
+    v.m_iKind    = CBuildVerdict::plain;
+    v.m_iQuality = CBuildVerdict::good;
+    v.m_iMul     = 0;
+    v.m_iQuan    = 0;
+    v.m_iDen     = 0;
+
+    v.m_iFound = theMap.FoundationCost( hexUL, iBuild, iDir, NULL, NULL, &v.m_iWhy );
+
+    // NOTE: m_iFound is deliberately NOT forced to -1 here. The 1996 hover left it as
+    // FoundationCost returned it on this path, so a site that failed only the rocket exit
+    // test still reports a cost - and rocket_pos re-tests the exits at button-up anyway.
+    // CanBuild() is the test that does not care which half refused.
+    v.m_bRefused = ( v.m_iFound < 0 ) || ( !bBuildOk );
+    if ( v.m_bRefused )
+    {
+        v.m_iCurType = 1;
+        v.m_iQuality = CBuildVerdict::bad;
+        return;
+    }
+
+    v.m_iCurType = v.m_iFound < 0 ? 1 : 0;
+    switch ( iBuild )
+    {
+    case CStructureData::farm:
+    case CStructureData::lumber: {
+        v.m_iKind = CBuildVerdict::farm_kind;
+        v.m_iMul  = CFarmBuilding::LandMult( hexUL, iBuild, iDir );
+        if ( ( v.m_iMul < 2 ) || ( v.m_iFound < 0 ) )
+        {
+            v.m_iFound   = -1;
+            v.m_iCurType = 1;
+            v.m_iQuality = CBuildVerdict::bad;
+        }
+        else if ( v.m_iMul < 5 )
+        {
+            v.m_iCurType = 2;
+            v.m_iQuality = CBuildVerdict::warn;
+        }
+        break;
+    }
+
+    case CStructureData::coal:
+    case CStructureData::iron:
+    case CStructureData::oil_well:
+    case CStructureData::copper: {
+        v.m_iKind = CBuildVerdict::mine_kind;
+        CStructureData const* pData = theStructures.GetData( iBuild );
+        int                   iSize = pData->GetCX( ) * pData->GetCY( );
+        int                   qMul  = CMineBuilding::TotalQuantity( hexUL, iBuild, iDir );
+        int                   iDiv;
+        switch ( iBuild )
+        {
+        case CStructureData::coal:
+            iDiv = MAX_MINERAL_COAL_QUANTITY;
+            break;
+        case CStructureData::iron:
+            iDiv = MAX_MINERAL_IRON_QUANTITY;
+            break;
+        case CStructureData::oil_well:
+            iDiv = MAX_MINERAL_OIL_QUANTITY;
+            break;
+        case CStructureData::copper:
+            iDiv = MAX_MINERAL_XIL_QUANTITY;
+            break;
+        default:
+            iDiv = MAX_MINERAL_QUANTITY;
+            break;
+        }
+
+        int iQuan = ( qMul * 1000 ) / ( iDiv * iSize );
+        if ( qMul > 0 )
+            iQuan = __max( 1, iQuan );
+        int dMul = CMineBuilding::TotalDensity( hexUL, iBuild, iDir );
+        int iDen = ( dMul * 100 ) / ( MAX_MINERAL_DENSITY * iSize );
+        if ( dMul > 0 )
+            iDen = __max( 1, iDen );
+        v.m_iQuan = iQuan;
+        v.m_iDen  = iDen;
+
+        if ( ( qMul < 2 ) || ( v.m_iFound < 0 ) || ( dMul < 1 ) )
+        {
+            v.m_iFound   = -1;
+            v.m_iCurType = 1;
+            v.m_iQuality = CBuildVerdict::bad;
+        }
+        else if ( ( iQuan < 400 / ( iSize / 2 ) ) && ( iDen < 40 / ( iSize / 2 ) ) )
+        {
+            v.m_iCurType = 2;
+            v.m_iQuality = CBuildVerdict::warn;
+        }
+        break;
+    }
+
+    default:
+        break;
+    }
+}
+
+// #38 DRAG-PLACE, THE LINE. The sites a drag from hexFrom to hexTo lays down, as footprint
+// UL anchors. One axis only - the DOMINANT one, x when the hex deltas tie, which is the
+// same choice and the same tie-break the road preview makes (SetRoadIcons) - and one
+// footprint per step along it: cx hexes going east/west, cy going north/south, with cx/cy
+// already carrying the dir swap CGameMap::SetBldgCur applies to the placement cursor. So
+// the footprints abut and never overlap, which is legal: FoundationCost's bldg_next only
+// refuses an abutting building when the two differ in altitude by more than 10.
+//
+// The deltas go through CHexCoord::Diff, the house wrap-aware subtract, so a drag ACROSS
+// THE SEAM lays a contiguous line the short way round instead of a map-wide one; each site
+// is wrapped, so what comes out is a canonical hex an order can carry.
+//
+// Returns the number of sites written, always >= 1 while nMax >= 1: a zero-length drag is
+// one site, which is exactly a plain Shift-place.
+static int BuildDragLine( CHexCoord const& hexFrom, CHexCoord const& hexTo, int cx, int cy,
+                          CHexCoord* pSites, int nMax )
+{
+    if ( ( pSites == NULL ) || ( nMax <= 0 ) )
+        return ( 0 );
+    if ( cx < 1 )
+        cx = 1;
+    if ( cy < 1 )
+        cy = 1;
+
+    int dx = CHexCoord::Diff( hexTo.X( ) - hexFrom.X( ) );
+    int dy = CHexCoord::Diff( hexTo.Y( ) - hexFrom.Y( ) );
+
+    int iStepX = 0;
+    int iStepY = 0;
+    int nSteps = 0;
+    if ( abs( dx ) >= abs( dy ) )
+    {
+        iStepX = ( dx >= 0 ) ? cx : -cx;
+        nSteps = abs( dx ) / cx;
+    }
+    else
+    {
+        iStepY = ( dy >= 0 ) ? cy : -cy;
+        nSteps = abs( dy ) / cy;
+    }
+
+    int nOn = 0;
+    for ( int iOn = 0; ( iOn <= nSteps ) && ( nOn < nMax ); iOn++ )
+    {
+        CHexCoord hexSite( hexFrom.X( ) + iStepX * iOn, hexFrom.Y( ) + iStepY * iOn );
+        hexSite.Wrap( );
+        pSites[nOn++] = hexSite;
+    }
+    return ( nOn );
+}
+
+// #38 DRAG-PLACE: re-lay the candidate line for the cursor at `point` and judge every site
+// through the SHARED verdict (BuildSiteVerdict) - the same body the hover uses for the one
+// hex under the cursor, so the line cannot promise a site the hover would refuse. Called
+// on every mouse-move of the drag and once more from the release.
+void CWndArea::UpdateBuildDrag( CPoint point )
+{
+
+    m_nDragSites = 0;
+    if ( !m_bBuildDrag )
+        return;
+    if ( ( m_iBuild <= 0 ) || ( m_iBuild > theStructures.GetNumBuildings( ) ) )
+        return;
+    CStructureData const* pData = theStructures.GetData( m_iBuild );
+    if ( pData == NULL )
+        return;
+
+    // the footprint, swapped for the facing exactly as SetBldgCur swaps it
+    const int iDir = GetBuildDir( );
+    m_iDragCx      = ( iDir & 1 ) ? pData->GetCY( ) : pData->GetCX( );
+    m_iDragCy      = ( iDir & 1 ) ? pData->GetCX( ) : pData->GetCY( );
+    if ( ( m_iDragCx <= 0 ) || ( m_iDragCy <= 0 ) )
+        return;
+
+    // Both ends go through ToBuildUL, the placement anchor the hover and the click both
+    // use, so the line is a line of real placements rather than of cursor hexes.
+    CHexCoord hexNow = m_aa.WindowToHex( point );
+    hexNow.Wrap( );
+    CHexCoord hexFrom( m_hexDragDn );
+    CHexCoord hexFromUL = ToBuildUL( hexFrom );
+    CHexCoord hexToUL   = ToBuildUL( hexNow );
+
+    m_nDragSites = BuildDragLine( hexFromUL, hexToUL, m_iDragCx, m_iDragCy, m_ahexDrag, MAX_DRAG_PLACE );
+    for ( int iOn = 0; iOn < m_nDragSites; iOn++ )
+    {
+        CBuildVerdict v;
+        BuildSiteVerdict( m_ahexDrag[iOn], m_iBuild, iDir, TRUE, v );
+        m_abDragOk[iOn] = v.CanBuild( ) ? 1 : 0;
+    }
+}
+
+// #38 DRAG-PLACE: the gesture is over (committed, cancelled, or the window lost it). The
+// preview reads m_nDragSites, so zeroing it is what takes the line off the map.
+//
+// Every way out goes through here: the commit, a refused single placement (bad_loc), the
+// no-crane bail and Esc / deselect / SelectOff (all via BldgCurOff), losing activation, a
+// press starting a new gesture, and a move that arrives without the button or Shift. That
+// last one is also the backstop for a button-up this window never saw - a release outside
+// the SDL panel, say: the line is still drawn until the next move over the area map, and
+// that move ends it, so a stale gesture cannot outlive the cursor coming back.
+void CWndArea::EndBuildDrag( )
+{
+
+    m_bBuildDrag = FALSE;
+    m_nDragSites = 0;
+}
+
+// #38 DRAG-PLACE PREVIEW, published for the SDL2 terrain overlay pass. Free functions
+// declared extern at the use site, the way g_enEditHex is: SDL2Terrain.cpp is the GPU hot
+// TU and must not pull area.h (MFC) in. The state lives on the area window that owns the
+// drag; these find it from the view being rendered, so a second area map onto the same
+// world does not draw another window's gesture.
+static CWndArea* DragPlaceWindow( CAnimAtr const* paa )
+{
+    for ( POSITION pos = theAreaList.GetHeadPosition( ); pos != NULL; )
+    {
+        CWndArea* pArea = theAreaList.GetNext( pos );
+        if ( ( pArea != NULL ) && ( &pArea->GetAA( ) == paa ) && ( pArea->GetDragPlaceCount( ) > 0 ) )
+            return ( pArea );
+    }
+    return ( NULL );
+}
+
+int g_enDragPlaceCount( CAnimAtr const* paa, int* pcx, int* pcy )
+{
+    CWndArea* pArea = DragPlaceWindow( paa );
+    if ( pArea == NULL )
+        return ( 0 );
+    if ( ( pcx != NULL ) && ( pcy != NULL ) )
+        pArea->GetDragPlaceSize( *pcx, *pcy );
+    return ( pArea->GetDragPlaceCount( ) );
+}
+
+BOOL g_enDragPlaceSite( CAnimAtr const* paa, int iOn, CHexCoord& hexUL )
+{
+    CWndArea* pArea = DragPlaceWindow( paa );
+    if ( ( pArea == NULL ) || ( iOn < 0 ) || ( iOn >= pArea->GetDragPlaceCount( ) ) )
+        return ( FALSE );
+    hexUL = pArea->GetDragPlaceSite( iOn );
+    return ( pArea->GetDragPlaceOk( iOn ) );
+}
+
 void CWndArea::OnMouseMove( UINT nFlags, CPoint point )
 {
 
@@ -2065,6 +2343,23 @@ void CWndArea::OnMouseMove( UINT nFlags, CPoint point )
     if ( m_iMode == road_set )
         SetRoadIcons( hexcoord );
 
+    // #38 DRAG-PLACE: keep the candidate line in step with the cursor. Placed BEFORE the
+    // build block below, which returns early for an unbuildable hex under the cursor - the
+    // line must keep updating while the cursor is over a site it cannot use, because the
+    // sites BEHIND the cursor are still good and the player is still dragging.
+    //
+    // The drag lives only while both the button and Shift are held: releasing Shift (or any
+    // re-entry that is not a real drag move, e.g. the synthetic OnMouseMove a footprint
+    // rotation makes) cancels the gesture, so a line is never queued after its preview
+    // stopped describing it.
+    if ( m_bBuildDrag )
+    {
+        if ( ( m_iMode != build_loc ) || ( !( nFlags & MK_LBUTTON ) ) || ( !( nFlags & MK_SHIFT ) ) )
+            EndBuildDrag( );
+        else
+            UpdateBuildDrag( point );
+    }
+
     // if not visible then it's not there
     if ( pUnit != NULL )
         if ( ( ( pUnit->GetUnitType( ) == CUnit::building ) && ( !pUnit->IsVisible( ) ) ) ||
@@ -2123,9 +2418,14 @@ void CWndArea::OnMouseMove( UINT nFlags, CPoint point )
          ( m_iMode == rocket_pos ) )
     {
         CHexCoord _hexBuild = ToBuildUL( hexcoord );
-        int       iWhy;
-        m_iFound = theMap.FoundationCost( _hexBuild, m_iBuild, GetBuildDir( ), NULL, NULL, &iWhy );
-        if ( ( m_iFound < 0 ) || ( !bBuildOk ) )
+
+        // #38: the verdict is shared with the drag-place line (BuildSiteVerdict above), so
+        // the two cannot drift. The strings stay here - only the hover has a status bar.
+        CBuildVerdict v;
+        BuildSiteVerdict( _hexBuild, m_iBuild, GetBuildDir( ), bBuildOk, v );
+        int iWhy = v.m_iWhy;
+        m_iFound = v.m_iFound;
+        if ( v.m_bRefused )
         {
             theMap.SetBldgCur( _hexBuild, m_iBuild, GetBuildDir( ), 1 );
             if ( ( iWhy > 0 ) && ( iWhy <= 9 ) && ( !m_sHelpCantBuild[iWhy - 1].empty( ) ) )
@@ -2139,24 +2439,20 @@ void CWndArea::OnMouseMove( UINT nFlags, CPoint point )
             return;
         }
 
-        int iCurType = m_iFound < 0 ? 1 : 0;
+        int iCurType = v.m_iCurType;
         switch ( m_iBuild )
         {
         case CStructureData::farm:
         case CStructureData::lumber: {
-            int                   iMul = CFarmBuilding::LandMult( _hexBuild, m_iBuild, GetBuildDir( ) );
-            std::string           sText = "(" + IntToStr( iMul ) + ") ";
+            std::string           sText = "(" + IntToStr( v.m_iMul ) + ") ";
             CStatInst::IMPORTANCE iImp;
-            if ( ( iMul < 2 ) || ( m_iFound < 0 ) )
+            if ( v.m_iQuality == CBuildVerdict::bad )
             {
-                m_iFound = -1;
-                iCurType = 1;
                 sText += m_sHelpNoFarm;
                 iImp = CStatInst::critical;
             }
-            else if ( iMul < 5 )
+            else if ( v.m_iQuality == CBuildVerdict::warn )
             {
-                iCurType = 2;
                 sText += m_sHelpBadFarm;
                 iImp = CStatInst::warn;
             }
@@ -2173,49 +2469,16 @@ void CWndArea::OnMouseMove( UINT nFlags, CPoint point )
         case CStructureData::iron:
         case CStructureData::oil_well:
         case CStructureData::copper: {
-            CStructureData const* pData = theStructures.GetData( m_iBuild );
-            int                   iSize = pData->GetCX( ) * pData->GetCY( );
-            int                   qMul  = CMineBuilding::TotalQuantity( _hexBuild, m_iBuild, GetBuildDir( ) );
-            int                   iDiv;
-            switch ( m_iBuild )
-            {
-            case CStructureData::coal:
-                iDiv = MAX_MINERAL_COAL_QUANTITY;
-                break;
-            case CStructureData::iron:
-                iDiv = MAX_MINERAL_IRON_QUANTITY;
-                break;
-            case CStructureData::oil_well:
-                iDiv = MAX_MINERAL_OIL_QUANTITY;
-                break;
-            case CStructureData::copper:
-                iDiv = MAX_MINERAL_XIL_QUANTITY;
-                break;
-            default:
-                iDiv = MAX_MINERAL_QUANTITY;
-                break;
-            }
-
-            int iQuan = ( qMul * 1000 ) / ( iDiv * iSize );
-            if ( qMul > 0 )
-                iQuan = __max( 1, iQuan );
-            int dMul = CMineBuilding::TotalDensity( _hexBuild, m_iBuild, GetBuildDir( ) );
-            int iDen = ( dMul * 100 ) / ( MAX_MINERAL_DENSITY * iSize );
-            if ( dMul > 0 )
-                iDen = __max( 1, iDen );
-
-            std::string           sText = "(" + IntToStr( iQuan, 10, true ) + ", " + IntToStr( iDen ) + ") ";
+            std::string           sText = "(" + IntToStr( v.m_iQuan, 10, true ) + ", " +
+                                          IntToStr( v.m_iDen ) + ") ";
             CStatInst::IMPORTANCE iImp;
-            if ( ( qMul < 2 ) || ( m_iFound < 0 ) || ( dMul < 1 ) )
+            if ( v.m_iQuality == CBuildVerdict::bad )
             {
-                m_iFound = -1;
-                iCurType = 1;
                 sText += m_sHelpNoMine;
                 iImp = CStatInst::critical;
             }
-            else if ( ( iQuan < 400 / ( iSize / 2 ) ) && ( iDen < 40 / ( iSize / 2 ) ) )
+            else if ( v.m_iQuality == CBuildVerdict::warn )
             {
-                iCurType = 2;
                 sText += m_sHelpBadMine;
                 iImp = CStatInst::warn;
             }
@@ -2258,7 +2521,13 @@ void CWndArea::OnMouseMove( UINT nFlags, CPoint point )
 //--------------------------------------------------------------------------
 void CWndArea::Draw( )
 {
-    m_aa.Render( );
+    // SPLIT (2026-09-13): CWndArea::Draw is 78.9 ms/s on the VM = 97.3% of r.draw and
+    // 64.4% of SEC_RENDER, and nothing inside it was timed - the same shape the sprite
+    // full-branch and the radar walk had before they were measured. Three scopes:
+    // the terrain/sprite render, the dirty-rect blit, and the SECOND DIB->panel copy
+    // that exists only because overlays are drawn after Render( ) already copied once.
+    { Perf::ScopeCounter _car( "a.render" );
+      m_aa.Render( ); }
 
     // Draw any overlays here
 
@@ -2301,12 +2570,21 @@ void CWndArea::Draw( )
     if ( Perf::IsEnabled() )
         Perf::CounterAdd( "area.paintrects", m_aa.GetDirtyRects( )->m_nRectPaintCur );
 
-    m_aa.GetDirtyRects( )->BltRects( );
+    { Perf::ScopeCounter _cab( "a.blt" );
+      m_aa.GetDirtyRects( )->BltRects( ); }
 
     // Re-copy DIB to SDL panel after overlays (selection rect) are drawn.
     // CAnimAtr::Render() copied the DIB before overlays, so we need a second pass.
-    if ( m_aa.m_sdlPanel )
+    // On the GPU-terrain path RenderDetached composites from the sprite layer and never
+    // reads m_surface, so this copy is skipped there, mirroring the IsGpuFull gate in
+    // CAnimAtr::Render(). It must stay on when the own renderer exists but the terrain
+    // mesh is not loaded, because Render() has already skipped its copy and RenderDetached
+    // then blits m_surface, so this is the only feed on that edge.
+    if ( m_aa.m_sdlPanel && !m_aa.m_sdlPanel->PresentsGpuTerrain( ) )
+    {
+        Perf::ScopeCounter _cap( "a.topanel" );
         RenderingAdapter::RenderToPanel( &m_aa, m_aa.m_sdlPanel );
+    }
 
     // Sync area static bar position and z-order to area panel
     // Resize the bar panel surface to match the area panel width
@@ -2614,6 +2892,33 @@ void CWndArea::DrawRouteWaypoints( )
         return best;
     };
 
+    // #38: GHOST FOOTPRINT for a queued build order - the outline of the CX x CY hex
+    // rectangle the building will stand on (the two swap when it is turned 90 degrees,
+    // the same rule the placement cursor uses). Drawn with the same dotted segments as
+    // the route legs, and snapped to the wrap copy nearest `ref` for the same reason.
+    auto ghost = [&]( CHexCoord hcUL, int iBldg, int iDir, CPoint ref )
+    {
+        if ( ( iBldg <= 0 ) || ( iBldg > theStructures.GetNumBuildings( ) ) )
+            return;
+        CStructureData const* pData = theStructures.GetData( iBldg );
+        if ( pData == NULL )
+            return;
+        int cx = ( iDir & 1 ) ? pData->GetCY( ) : pData->GetCX( );
+        int cy = ( iDir & 1 ) ? pData->GetCX( ) : pData->GetCY( );
+        if ( ( cx <= 0 ) || ( cy <= 0 ) )
+            return;
+        CPoint c[4];
+        for ( int i = 0; i < 4; ++i )
+        {
+            CHexCoord hc( hcUL.X( ) + ( ( ( i == 1 ) || ( i == 2 ) ) ? cx - 1 : 0 ),
+                          hcUL.Y( ) + ( ( i >= 2 ) ? cy - 1 : 0 ) );
+            hc.Wrap( );
+            c[i] = wrapNear( hexWin( hc ), ref );
+        }
+        for ( int i = 0; i < 4; ++i )
+            seg( c[i], c[( i + 1 ) & 3] );
+    };
+
     for ( POSITION pos = m_lstUnits.GetHeadPosition( ); pos != NULL; )
     {
         CUnit* pUnit = m_lstUnits.GetNext( pos );
@@ -2645,6 +2950,18 @@ void CWndArea::DrawRouteWaypoints( )
             CPoint  wp = wrapNear( hexWin( pR->GetCoord( ) ), prev );   // torus: short path over the seam
             seg( prev, wp );
             plot( wp.x, wp.y, 3 );   // a slightly bigger dot marks each waypoint
+            // #38: a queued BUILD order also shows WHAT will stand there, not only the
+            // leg's end dot
+            if ( pR->GetRouteType( ) == CRoute::build )
+                ghost( pR->GetCoord( ), pR->GetBldgType( ), pR->GetBldgDir( ), wp );
+            // #38: a queued ROAD order shows the segment it will lay
+            if ( pR->GetRouteType( ) == CRoute::build_road )
+            {
+                CPoint we = wrapNear( hexWin( pR->GetEndCoord( ) ), wp );
+                seg( wp, we );
+                plot( we.x, we.y, 3 );
+                wp = we;
+            }
             prev = wp;
         }
     }
@@ -3324,45 +3641,7 @@ int CWndArea::OnCreate( LPCREATESTRUCT lpCreateStruct )
                     if (sc == SDL_SCANCODE_LEFTBRACKET)  { pThis->RotateBuildDir(-1); return true; }
                     if (sc == SDL_SCANCODE_RIGHTBRACKET) { pThis->RotateBuildDir(+1); return true; }
 
-#ifdef _WIN32
-                    // Harness (Windows transport): F9 dumps the local player's units via
-                    // HarnessDumpUnits (en_harness.h) to OutputDebugString, which dbgcatch
-                    // captures — giving the PostMessage/.ps1 harness deterministic unit
-                    // screen-xy + crane ID instead of blind pixel-sweeping. Linux/mac use the
-                    // control_socket `units` command (non-MSVC) over the SAME shared fn; this
-                    // is just the Windows transport. BEGIN/END markers bracket the dump so it
-                    // is trivially grep-able in the dbgcatch log.
-                    if (sc == SDL_SCANCODE_F9) {
-                        std::string dump;
-                        HarnessDumpUnits( dump );
-                        OutputDebugStringA( "[HUNITS-BEGIN]\n" );
-                        OutputDebugStringA( dump.c_str( ) );
-                        OutputDebugStringA( "[HUNITS-END]\n" );
-                        return true;
-                    }
-                    // F10: center the area view on my first OWNED crane so it sits at
-                    // view-center (clickable) — F9's reported xy is sprite-offset/wrapped,
-                    // so the crane-dblclick needs the unit centered first. Arg-less mirror
-                    // of control_socket's `center <id>`. Logs id+result to OutputDebugString.
-                    if (sc == SDL_SCANCODE_F10) {
-                        unsigned long id = 0;
-                        POSITION pos = theVehicleMap.GetStartPosition( );
-                        while ( pos != NULL ) {
-                            DWORD dwID = 0; CVehicle* pVeh = NULL;
-                            theVehicleMap.GetNextAssoc( pos, dwID, pVeh );
-                            if ( pVeh && pVeh->GetOwner( ) && pVeh->GetOwner( )->IsMe( )
-                                 && pVeh->GetData( ) && pVeh->GetData( )->IsCrane( ) ) { id = dwID; break; }
-                        }
-                        char msg[96];
-                        if ( id ) {
-                            bool ok = HarnessCenterUnit( id );
-                            snprintf( msg, sizeof( msg ), "[HCENTER] crane id=%lu centered=%d\n", id, ok ? 1 : 0 );
-                        } else {
-                            snprintf( msg, sizeof( msg ), "[HCENTER] no owned crane found\n" );
-                        }
-                        OutputDebugStringA( msg );
-                        return true;
-                    }
+#if defined(_WIN32)
 #ifdef _CHEAT
                     // F12: DEV cheat — discover ALL research for the local player so the
                     // research-gated tail (AltOutput toggles, fort/seaport/shipyard/embassy,
@@ -3952,6 +4231,19 @@ void CWndArea::OnLButtonDown( UINT nFlags, CPoint point )
     // set these up so we know the down came from here
     case build_ready:
         m_iMode = build_loc;
+        // #38 DRAG-PLACE: a press WITH SHIFT arms the line gesture (the road drag's shape:
+        // record the origin, take the mouse). Without Shift nothing is armed and the button
+        // means what it always did. A press that never moves lays ONE site - BuildDragLine
+        // returns a single site for a zero-length drag - so a plain Shift-click is
+        // unchanged; only a drag of at least one footprint queues more than one.
+        EndBuildDrag( );   // a press never inherits the previous gesture's line
+        if ( nFlags & MK_SHIFT )
+        {
+            m_bBuildDrag = TRUE;
+            m_hexDragDn  = hexcoord;
+            m_hexDragDn.Wrap( );
+            CaptureMouse( );
+        }
         break;
     case rocket_ready:
         m_iMode = rocket_pos;
@@ -4053,11 +4345,69 @@ void CWndArea::ShiftQueueMove( CVehicle* pVeh, CSubHex const& sub )
 {
     ASSERT_STRICT_VALID( pVeh );
 
+    // #38 A SHIFT-MOVE BEHIND QUEUED OR RUNNING JOBS IS AN ORDER, NOT A ROUTE.
+    //
+    // Operator 2026-09-19: "when build a building, then queueing up roads, it worked well.
+    // then i queued up a movement and it canceled the existing queue (overwrote it)."
+    // A crane holding only ORDERS has no movement stops, so the bFresh test below reads
+    // TRUE, the fresh-queue path deletes every queued road, and SetLocation's ClearOrders
+    // takes anything it missed - the whole work queue gone for one Shift-click. Routes and
+    // orders cannot share a list, so the answer is not to append a waypoint: it is to
+    // append the move AS AN ORDER, which waits its turn behind the jobs already queued and
+    // then drives, and leaves the running job alone (NextOrder's busy test refuses until
+    // the crane is idle).
+    //
+    // The same rule while a crane job is RUNNING but nothing is queued yet: a plain
+    // placement leaves an empty list, so HasOrders is FALSE and only the event (or the
+    // dispatch state) says the crane is working.
+    if ( pVeh->HasOrders( ) || pVeh->IsRunningOrder( ) ||
+         ( pVeh->GetEvent( ) == CVehicle::build ) ||
+         ( pVeh->GetEvent( ) == CVehicle::build_road ) ||
+         ( pVeh->GetEvent( ) == CVehicle::repair_bldg ) )
+    {
+        CHexCoord hexMv( sub );   // AddOrder takes a hex, as the append path below does
+
+        // Shift-click on an already queued MOVE order deletes it, the same toggle-off the
+        // waypoint block below gives. Only an order that is NOT the one currently under
+        // way: deleting that would leave the crane driving at a destination no row names.
+        auto&    rlq = pVeh->GetRouteList( );
+        POSITION pq  = rlq.GetHeadPosition( );
+        while ( pq != NULL )
+        {
+            POSITION cur = pq;
+            CRoute*  pR  = rlq.GetNext( pq );
+            if ( ( pR != NULL ) && ( pR->GetRouteType( ) == CRoute::move ) &&
+                 ( pR->GetCoord( ) == hexMv ) &&
+                 ( !( pVeh->IsRunningOrder( ) && ( cur == pVeh->GetRoutePos( ) ) ) ) )
+            {
+                delete pR;
+                rlq.RemoveAt( cur );
+                if ( pVeh->GetRoutePos( ) == cur )
+                    pVeh->SetRoutePos( rlq.GetHeadPosition( ) );
+                if ( pVeh->m_pSdlRoute != NULL )
+                    pVeh->m_pSdlRoute->RefreshRoute( );
+                return;
+            }
+        }
+
+        pVeh->AddOrder( hexMv, CRoute::move, 0, 0 );
+        pVeh->NextOrder( );   // dispatches only if the crane is genuinely idle
+        if ( pVeh->m_pSdlRoute != NULL )
+            pVeh->m_pSdlRoute->RefreshRoute( );
+        return;
+    }
+
+    // Decide fresh-vs-append BEFORE ResumeUnit can arm `route` off the list below - and
+    // ask the list itself, not just the event: a PAUSED vehicle still holding movement
+    // stops is appended to (ResumeUnit puts it back on them), while a list holding only
+    // queued ORDERS is not a route at all and starts a fresh queue. Reading the event
+    // after ResumeUnit used to answer "routing" for an order-only list, which is how a
+    // Shift-move after queued roads handed SetLocation an order node as its position.
+    BOOL bFresh = ( pVeh->GetEvent( ) != CVehicle::route ) && ( !pVeh->HasMoveStops( ) );
+
     pVeh->ResumeUnit( );
     pVeh->TempTargetOff( );
     pVeh->_SetTarget( NULL );
-
-    BOOL bFresh = ( pVeh->GetEvent( ) != CVehicle::route );
 
     // Shift-click on an EXISTING queued waypoint DELETES it (toggle-off) instead of
     // appending a duplicate. (operator feature.) Only when already routing; match by hex.
@@ -4145,6 +4495,18 @@ void CWndArea::ShiftQueueMove( CVehicle* pVeh, CSubHex const& sub )
 // the operator wants a move to interrupt them. If the vehicle is auto-router-controlled (a
 // loop/haul route) release it from the router first, then clear the route list and reset the
 // loop flag to the default.
+// #38: TRUE while this vehicle's list still holds 1996 MOVEMENT stops. An order queue
+// and a movement route may not share one list - ArrivedDest would drive to an order as
+// if it were a stop and delete it unexecuted - so the FIRST order appended onto a
+// vehicle that is running stops takes the list over through StopRoute (which also hands
+// it back from the auto-router). The other direction is enforced in CVehicle::SetLocation.
+// The predicate itself now lives on CVehicle (unit.cpp) - ResumeUnit needs the same
+// question answered - so this is a thin forwarder for the call sites below.
+static BOOL HasMoveStops( CVehicle* pVeh )
+{
+    return ( pVeh->HasMoveStops( ) );
+}
+
 void CWndArea::StopRoute( CVehicle* pVeh )
 {
     if ( pVeh->IsHpControl( ) )          // on an auto-router (loop/haul) route — release it
@@ -4158,6 +4520,13 @@ void CWndArea::StopRoute( CVehicle* pVeh )
     pVeh->GetRouteList( ).RemoveAll( );
     pVeh->SetRoutePos( NULL );
     pVeh->SetRouteLoop( TRUE );
+    pVeh->ClearOrders( );   // #38: the list is already empty; this resets the order state
+    // The list is gone, so the "routing" EVENT must go too. Left set, NextOrder's busy
+    // test (vehicle.cpp) refuses for ever - queued roads never start - and a later
+    // Shift-move sees event == route, takes the non-fresh path and appends onto a list
+    // it believes it owns. Plain-move callers already do this right after StopRoute.
+    if ( pVeh->GetEvent( ) == CVehicle::route )
+        pVeh->SetEvent( CVehicle::none );
     if ( pVeh->m_pSdlRoute != NULL )
         pVeh->m_pSdlRoute->RefreshRoute( );
 }
@@ -4179,7 +4548,10 @@ void CWndArea::OnLButtonUp( UINT nFlags, CPoint point )
     // local player. Debug asserted (player.h:1042); Release marched into the
     // null-deref (mac2 .ips 2026-07-02). No player → the click has no meaning.
     if ( theGame._GetMe( ) == NULL )
+    {
+        EndBuildDrag( );   // #38: the button is up, so no gesture survives this return
         return;
+    }
 
     CSubHex _sub = m_aa.WindowToSubHex( point );
     _sub.Wrap( );
@@ -4194,6 +4566,19 @@ void CWndArea::OnLButtonUp( UINT nFlags, CPoint point )
 
         ASSERT_STRICT_VALID( m_pUnit );
         ASSERT_STRICT( m_pUnit->GetUnitType( ) == CUnit::vehicle );
+        // m_posRoute was captured when the route window's Waypoint/Load/Unload button was
+        // pressed, and that row can be deleted before this click. A POSITION that is no
+        // longer on the list trips SetLocation's TRAP (a Debug crash; Release appends at
+        // the tail there), so append at the tail here. NULL still means "at the head".
+        if ( m_posRoute != NULL )
+        {
+            auto&    rl = ( (CVehicle*)m_pUnit )->GetRouteList( );
+            POSITION p = rl.GetHeadPosition( );
+            while ( ( p != NULL ) && ( p != m_posRoute ) )
+                rl.GetNext( p );
+            if ( p == NULL )
+                m_posRoute = rl.GetTailPosition( );
+        }
         ( (CVehicle*)m_pUnit )->SetLocation( hex, m_posRoute, m_iRouteType );
         if ( ( (CVehicle*)m_pUnit )->m_pWndRoute != NULL )
             ( ( (CVehicle*)m_pUnit )->m_pWndRoute )->NewRoute( (CVehicle*)m_pUnit );
@@ -4210,7 +4595,23 @@ void CWndArea::OnLButtonUp( UINT nFlags, CPoint point )
     case build_loc:
     case rocket_pos: {
         ASSERT_STRICT( ( 0 < m_iBuild ) && ( m_iBuild <= theStructures.GetNumBuildings( ) ) );
-        if ( ( nFlags & MK_SHIFT ) && ( m_pUnit != NULL ) && ( m_pUnit->GetUnitType( ) == CUnit::vehicle ) )
+
+        // #38: Shift+place QUEUES the building on the selected crane instead of
+        // replacing its job. Gated on build_loc ONLY - this case label is shared with
+        // rocket_pos, where Shift keeps its 1996 meaning (bail back out of placement).
+        const BOOL bQueueBuild = ( m_iMode == build_loc ) && ( nFlags & MK_SHIFT ) && ( m_pUnit != NULL ) &&
+                                 ( m_pUnit->GetUnitType( ) == CUnit::vehicle );
+
+        // #38 DRAG-PLACE: re-lay the line from THE RELEASE POINT, so what gets queued is
+        // exactly the line the player last saw (the up can arrive at a pixel no move event
+        // reported). More than one site = this release is a drag; exactly one = the drag
+        // never left its first footprint, which is a plain Shift-place and goes down the
+        // single-site path below, m_iFound gate and all.
+        if ( bQueueBuild && m_bBuildDrag )
+            UpdateBuildDrag( point );
+        const BOOL bDragBuild = bQueueBuild && m_bBuildDrag && ( m_nDragSites > 1 );
+        if ( ( nFlags & MK_SHIFT ) && ( !bQueueBuild ) && ( m_pUnit != NULL ) &&
+             ( m_pUnit->GetUnitType( ) == CUnit::vehicle ) )
         {
             TRAP( );  // BUGBUG - check what this does
             ( (CVehicle*)m_pUnit )->SetEvent( CVehicle::none );
@@ -4220,10 +4621,13 @@ void CWndArea::OnLButtonUp( UINT nFlags, CPoint point )
 
         hex = ToBuildUL( hex );
 
-        // make sure not on water or another city
-        if ( m_iFound < 0 )
+        // make sure not on water or another city. A DRAG skips its unbuildable sites one by
+        // one instead of failing as a whole - the hex under the cursor at the release is
+        // often past the last site that fits, and the sites behind it are still good.
+        if ( ( m_iFound < 0 ) && ( !bDragBuild ) )
         {
         bad_loc:
+            EndBuildDrag( );   // #38: a refused placement ends the gesture with it
             theGame.Event( m_iMode == rocket_pos ? EVENT_ROCKET_CANT : EVENT_CONST_CANT, EVENT_BAD, m_iBuild );
             m_iMode = ( m_iMode == rocket_pos ) ? rocket_ready : build_ready;
             return;
@@ -4274,14 +4678,71 @@ void CWndArea::OnLButtonUp( UINT nFlags, CPoint point )
         // find the closest surrounding hex
         theGame.Event( EVENT_CONST_CANT, EVENT_OFF );
 
-        CHexCoord hexDest( hex );
-        BuildBldgDest( (CVehicle*)m_pUnit, m_iBuild, GetBuildDir( ), hexDest );
+        CVehicle* pVehBuild = (CVehicle*)m_pUnit;
 
-        // lets build here
+        // #38 DRAG-PLACE COMMIT: the whole previewed line, in drag order. Every site was
+        // judged by BuildSiteVerdict - the hover's own body - so an unbuildable one is
+        // SKIPPED and the rest of the line still queues; the host still validates each
+        // placement when the order is dispatched, exactly as it does for a single one.
+        // NextOrder() is called ONCE, after the appends: it starts an idle crane on the
+        // first site and is a no-op on a busy one, and calling it per site would dispatch
+        // the first, then refuse N-1 times for nothing.
+        if ( bDragBuild )
+        {
+            if ( HasMoveStops( pVehBuild ) )
+                StopRoute( pVehBuild );   // #38: one list, one meaning
+            const int nSites = m_nDragSites;
+            for ( int iOn = 0; iOn < nSites; iOn++ )
+            {
+                if ( !m_abDragOk[iOn] )
+                    continue;
+                CHexCoord hexSite( m_ahexDrag[iOn] );
+                pVehBuild->AddOrder( hexSite, CRoute::build, m_iBuild, GetBuildDir( ) );
+            }
+            EndBuildDrag( );   // the preview comes off now the orders carry their own ghosts
+            pVehBuild->NextOrder( );
+            if ( pVehBuild->m_pSdlRoute != NULL )
+                pVehBuild->m_pSdlRoute->RefreshRoute( );
+            m_iMode = build_ready;   // still armed, same crane, same building type
+            SetButtonState( );
+            return;
+        }
+
+        // #38 QUEUE: the site passed the same check a plain placement makes (m_iFound
+        // above), so append the order and STAY armed - same crane still selected, same
+        // building type still on the cursor - so the next click places the next one.
+        // Esc / Cancel leaves the mode and the queue stays on the crane. NextOrder only
+        // dispatches if the crane is idle; on a busy crane this is a pure append.
+        if ( bQueueBuild )
+        {
+            if ( HasMoveStops( pVehBuild ) )
+                StopRoute( pVehBuild );   // #38: one list, one meaning
+            pVehBuild->AddOrder( hex, CRoute::build, m_iBuild, GetBuildDir( ) );
+            pVehBuild->NextOrder( );
+            if ( pVehBuild->m_pSdlRoute != NULL )
+                pVehBuild->m_pSdlRoute->RefreshRoute( );
+            m_iMode = build_ready;
+            SetButtonState( );
+            return;
+        }
+
+        // #38: this release is a plain (or single-site Shift) placement, so the gesture is
+        // over either way. The bad_loc / no-crane exits above go through BldgCurOff or
+        // return in modes the preview does not draw in, so this is the last one left.
+        EndBuildDrag( );
+
+        CHexCoord hexDest( hex );
+        BuildBldgDest( pVehBuild, m_iBuild, GetBuildDir( ), hexDest );
+
+        // lets build here - a plain placement REPLACES the queue (the same
+        // replace-versus-append split a move has) and executes now
+        if ( HasMoveStops( pVehBuild ) )
+            StopRoute( pVehBuild );   // #38: and its movement stops, as a plain move does
+        pVehBuild->ClearOrders( );
         m_pUnit->ResumeUnit( );
-        ( (CVehicle*)m_pUnit )->SetBuilding( hex, m_iBuild, GetBuildDir( ) );
-        ( (CVehicle*)m_pUnit )->SetEvent( CVehicle::build );
-        ( (CVehicle*)m_pUnit )->SetDestAndMode( hexDest, CVehicle::full );
+        pVehBuild->SetBuilding( hex, m_iBuild, GetBuildDir( ) );
+        pVehBuild->SetEvent( CVehicle::build );
+        pVehBuild->SetDestAndMode( hexDest, CVehicle::full );
 
         // we loose selection of the crane so we don't change the orders
         m_lstUnits.RemoveAllUnits( TRUE );
@@ -4453,12 +4914,35 @@ void CWndArea::OnLButtonUp( UINT nFlags, CPoint point )
         if ( ( m_pUnit == NULL ) || ( m_pUnit->GetUnitType( ) != CUnit::vehicle ) )
             break;
 
-        SelectOff( );
+        // #38: Shift QUEUES this segment on the selected crane(s) and stays armed, so
+        // the next drag queues the next segment. (Shift used to CANCEL the drag here.)
         if ( nFlags & MK_SHIFT )
         {
+            CHexCoord hexQ = m_aa.WindowToHex( point );
+            hexQ.Wrap( );
+            CHexCoord hexStartQ( m_hexRoadStart );
+            hexStartQ.Wrap( );
+            for ( POSITION posQ = m_lstUnits.GetHeadPosition( ); posQ != NULL; )
+            {
+                CUnit* pUnitQ = m_lstUnits.GetNext( posQ );
+                ASSERT_STRICT_VALID( pUnitQ );
+                if ( pUnitQ->GetUnitType( ) != CUnit::vehicle )
+                    continue;
+                CVehicle* pVehQ = (CVehicle*)pUnitQ;
+                if ( HasMoveStops( pVehQ ) )
+                    StopRoute( pVehQ );   // #38: one list, one meaning
+                pVehQ->AddOrder( hexStartQ, CRoute::build_road, 0, 0, &hexQ );
+                pVehQ->NextOrder( );   // no-op unless the crane is idle
+                if ( pVehQ->m_pSdlRoute != NULL )
+                    pVehQ->m_pSdlRoute->RefreshRoute( );
+            }
+            m_iMode = road_begin;   // stay armed for the next segment
+            AreaApplyCursor( m_hCurRoadBgn[m_aa.m_iZoom] );
             SetButtonState( );
             return;
         }
+
+        SelectOff( );
 
         CHexCoord hex = m_aa.WindowToHex( point );
 
@@ -4467,6 +4951,9 @@ void CWndArea::OnLButtonUp( UINT nFlags, CPoint point )
         {
             CUnit* pUnit = m_lstUnits.GetNext( pos );
             ASSERT_STRICT_VALID( pUnit );
+            if ( HasMoveStops( (CVehicle*)pUnit ) )
+                StopRoute( (CVehicle*)pUnit );   // #38: and its movement stops, as a plain move does
+            ( (CVehicle*)pUnit )->ClearOrders( );   // #38: a plain road REPLACES the queue
             SetDestAndSfx( (CVehicle*)pUnit, m_hexRoadStart );
             ( (CVehicle*)pUnit )->SetRoad( m_hexRoadStart, hex );
         }
@@ -4483,7 +4970,11 @@ void CWndArea::OnLButtonUp( UINT nFlags, CPoint point )
         if ( ( m_pUnit == NULL ) || ( m_pUnit->GetUnitType( ) != CUnit::vehicle ) )
             break;
 
-        SelectOff( );
+        // #38: Shift QUEUES the repair on the selected crane(s) and stays armed, so the
+        // next click queues the next repair.
+        const BOOL bQueueRepair = ( nFlags & MK_SHIFT ) != 0;
+        if ( !bQueueRepair )
+            SelectOff( );
 
         CHexCoord hex = m_aa.WindowToHex( point );
         hex.Wrap( );
@@ -4498,11 +4989,32 @@ void CWndArea::OnLButtonUp( UINT nFlags, CPoint point )
                 ASSERT_STRICT_VALID( pUnit );
                 if ( ( (CVehicle*)pUnit )->GetData( )->GetType( ) == CTransportData::construction )
                 {
+                    CVehicle* pVehR = (CVehicle*)pUnit;
+                    if ( bQueueRepair )
+                    {
+                        if ( HasMoveStops( pVehR ) )
+                            StopRoute( pVehR );   // #38: one list, one meaning
+                        pVehR->AddOrder( hex, CRoute::repair, 0, 0 );
+                        pVehR->NextOrder( );   // no-op unless the crane is idle
+                        if ( pVehR->m_pSdlRoute != NULL )
+                            pVehR->m_pSdlRoute->RefreshRoute( );
+                        continue;
+                    }
+                    if ( HasMoveStops( pVehR ) )
+                        StopRoute( pVehR );   // #38: and its movement stops, as a plain move does
+                    pVehR->ClearOrders( );   // #38: a plain repair REPLACES the queue
                     pUnit->ResumeUnit( );
-                    ( (CVehicle*)pUnit )->SetEvent( CVehicle::repair_bldg );
-                    SetDestAndSfx( (CVehicle*)pUnit, hex );
+                    pVehR->SetEvent( CVehicle::repair_bldg );
+                    SetDestAndSfx( pVehR, hex );
                 }
             }
+        }
+
+        if ( bQueueRepair )
+        {
+            m_iMode = repair_bldg;   // stay armed for the next repair
+            SetButtonState( );
+            return;
         }
 
         // deselect all
@@ -4649,9 +5161,9 @@ void CWndArea::BuildOn( int iIndex )
     ASSERT_STRICT_VALID( m_pUnit );
     ASSERT_STRICT( ( 0 <= iIndex ) && ( iIndex < theStructures.GetNumBuildings( ) ) );
 
-    // for events
-    ( (CVehicle*)m_pUnit )->SetEvent( CVehicle::none );
-    ( (CVehicle*)m_pUnit )->SetBldgType( iIndex );
+    // Picking a type arms the window; it is not a command to the crane. Placement
+    // sets the crane's event and type itself, so a crane that is building keeps
+    // its job until the player actually places.
 
     CStructureData const* pData = theStructures.GetData( iIndex );
 
@@ -5500,6 +6012,7 @@ void CWndArea::OnActivate( UINT nState, CWnd* pWndOther, BOOL bMinimized )
     m_bPanBtnDown = FALSE;
     m_bRmbCmdDown = FALSE;
     m_bLineMove   = FALSE;
+    EndBuildDrag( );   // #38 drag-place is a drag gesture too
     ReleaseMouse( );
     ::ClipCursor( NULL );
 
@@ -6535,6 +7048,23 @@ BOOL CWndArea::OnMouseWheel( UINT nFlags, short zDelta, CPoint pt )
 void CWndArea::OnKeyUp( UINT nChar, UINT nRepCnt, UINT nFlags )
 {
 
+    // Releasing Shift leaves the road / building tool; the crane stays selected and
+    // its queued orders stay queued (road cancel path, not CancelBuildUnit).
+    if ( nChar == VK_SHIFT )
+    {
+        if ( ( m_iMode == road_begin ) || ( m_iMode == road_set ) )
+        {
+            ClrRoadIcons( );
+            CancelRoadUnit( );
+        }
+        else if ( ( m_iMode == build_ready ) || ( m_iMode == build_loc ) )
+        {
+            ReleaseMouse( );   // may still be captured from a drag-place press
+            SelectOff( );
+            SetButtonState( );
+        }
+    }
+
     // handle changes in CTRL & SHIFT which changes the cursor
     if ( ( nChar == VK_CONTROL ) || ( nChar == VK_SHIFT ) )
         SetMouseState( );
@@ -7353,6 +7883,8 @@ void CWndArea::OnCloseWin( )
 void CWndArea::BldgCurOff( )
 {
 
+    EndBuildDrag( );   // #38: leaving placement mode (Esc/OnDeselect, SelectOff, a
+                       // completed placement) drops any drag-place line with it
     theMap.ClrBldgCur( );
     m_iBuild = -1;
     m_iMode  = normal;
@@ -7695,797 +8227,4 @@ int CWndArea::NumGiveable( ) const
     }
 
     return ( iCount );
-}
-
-//---------------------------------------------------------------------------
-// HarnessHexToWindow — project a hex tile to its CENTER pixel in the area
-// window via the LIVE view transform. MapToWindowHex returns the hex's 4 corner
-// points in window px (its BOOL return is a front/back-facing cull we ignore);
-// the centroid is the unit's ground/select point — i.e. exactly the pixel you
-// click to select the unit. This replaces the older
-// WrapWorldToWindow(WorldToCenterWorld(GetWorldPixels())) path, which was offset
-// from the rendered sprite by ~the cluster spacing and made click-targeting miss.
-//---------------------------------------------------------------------------
-static CPoint HarnessHexToWindow( CAnimAtr& aa, const CHexCoord& hex )
-{
-    CPoint p[4];
-    aa.MapToWindowHex( hex, p );
-    return CPoint( ( p[0].x + p[1].x + p[2].x + p[3].x ) / 4,
-                   ( p[0].y + p[1].y + p[2].y + p[3].y ) / 4 );
-}
-
-//---------------------------------------------------------------------------
-// HarnessDumpUnits — enumerate the LOCAL PLAYER's units (vehicles + buildings)
-// and project each to its area-window pixel, so a headless driver can locate &
-// click the crane (or any unit) deterministically instead of blind-sweeping.
-// Declared in en_harness.h. Called on the game/render thread (reads live state).
-// One line per unit:
-//   vehicle:  "<id> <screenX> <screenY> <kind> <me|other> <hexX> <hexY>\n"
-//   building: "<id> <screenX> <screenY> building <me|other> <constructing|operational> <hexX> <hexY>\n"
-// The hex pair is appended LAST on both line kinds - backward-compatible, the same
-// convention as the build-state field (older parsers read fields 1-5 / 1-6). Read it
-// as "the last two fields", which holds for both kinds. It exists because <screenX>/
-// <screenY> are projected through the LIVE VIEW TRANSFORM and so are only meaningful
-// on the client that produced them - two nodes comparing unit lists must compare
-// HEXES, not pixels (board 2026-08-23).
-// The building build-state is an appended 6th field (backward-compatible — older
-// parsers read fields 1-5); poll it for "operational" to know the info window
-// will open (a foundation/constructing building's info window stays closed).
-//---------------------------------------------------------------------------
-void HarnessDumpSelection( std::string& out )
-{
-    out.clear( );
-
-    CWndArea* a = theAreaList.GetTop( );
-    if ( a == NULL )
-    {
-        out = "err no-area-window\n";
-        return;
-    }
-    CUnit* pPrimary = a->GetUnit( );
-    char line[256];
-    snprintf( line, sizeof( line ), "sel count %d primary %s\n",
-              a->NumSelected( ),
-              pPrimary ? pPrimary->GetData( )->GetDesc( ).c_str( ) : "(none)" );
-    out = line;
-}
-
-void HarnessDumpUnits( std::string& out )
-{
-    out.clear( );
-
-    CWndArea* a = theAreaList.GetTop( );
-    if ( a == NULL )
-    {
-        out = "err no-area-window\n";
-        return;
-    }
-    CAnimAtr& aa = a->GetAnimAtr( );
-    char line[160];
-    int  iVehTotal = 0, iVehMine = 0, iBldgTotal = 0, iBldgMine = 0;
-    std::string body;
-
-    // Vehicles (the crane lives here). Owner==me OR no-owner-filter fallback:
-    // some headless SP states leave m_bMe momentarily unset, so if NObody is
-    // flagged "me" we fall back to listing all vehicles (still useful to locate).
-    POSITION pos = theVehicleMap.GetStartPosition( );
-    while ( pos != NULL )
-    {
-        DWORD     dwID = 0;
-        CVehicle* pVeh = NULL;
-        theVehicleMap.GetNextAssoc( pos, dwID, pVeh );
-        if ( pVeh == NULL )
-            continue;
-        ++iVehTotal;
-        bool bMine = ( pVeh->GetOwner( ) != NULL && pVeh->GetOwner( )->IsMe( ) );
-        if ( bMine )
-            ++iVehMine;
-
-        CPoint pt = HarnessHexToWindow( aa, pVeh->GetHexHead( ) );
-
-        const char*           kind  = "vehicle";
-        CTransportData const* pData = pVeh->GetData( );
-        if ( pData != NULL )
-        {
-            if ( pData->IsCrane( ) )          kind = "crane";
-            else if ( pData->IsTransport( ) ) kind = "transport";
-            else if ( pData->IsCarrier( ) )   kind = "carrier";
-            else if ( pData->IsPeople( ) )    kind = "infantry";
-        }
-
-        // Hex appended as the LAST two fields (see header comment): the screen px
-        // above are view-relative, so two clients' dumps are not comparable - the
-        // hex IS. Costs nothing: GetHexHead() is already in hand for the projection.
-        CHexCoord hexV = pVeh->GetHexHead( );
-        snprintf( line, sizeof( line ), "%lu %d %d %s %s %d %d\n",
-                  (unsigned long) dwID, (int) pt.x, (int) pt.y, kind,
-                  bMine ? "me" : "other", hexV.X( ), hexV.Y( ) );
-        body += line;
-    }
-
-    // Buildings (for the building-info screenshot sweep).
-    pos = theBuildingMap.GetStartPosition( );
-    while ( pos != NULL )
-    {
-        DWORD      dwID  = 0;
-        CBuilding* pBldg = NULL;
-        theBuildingMap.GetNextAssoc( pos, dwID, pBldg );
-        if ( pBldg == NULL )
-            continue;
-        ++iBldgTotal;
-        bool bMine = ( pBldg->GetOwner( ) != NULL && pBldg->GetOwner( )->IsMe( ) );
-        if ( bMine )
-            ++iBldgMine;
-
-        CPoint pt = HarnessHexToWindow( aa, pBldg->GetHex( ) );
-        // Build-state (appended, backward-compatible 6th field): lets a headless
-        // driver poll "is it done?" deterministically instead of guessing the
-        // construction wait — a freshly-placed building is a foundation and its
-        // info window won't open until the crane finishes it. "operational" = the
-        // info window will open; "constructing" = still a foundation/being built.
-        const char* bstate = pBldg->IsConstructing( ) ? "constructing" : "operational";
-        CHexCoord hexB = pBldg->GetHex( );
-        snprintf( line, sizeof( line ), "%lu %d %d building %s %s %d %d\n",
-                  (unsigned long) dwID, (int) pt.x, (int) pt.y, bMine ? "me" : "other", bstate,
-                  hexB.X( ), hexB.Y( ) );
-        body += line;
-    }
-
-    snprintf( line, sizeof( line ), "# veh %d/%d mine, bldg %d/%d mine\n",
-              iVehMine, iVehTotal, iBldgMine, iBldgTotal );
-    out  = line;
-    out += body;
-}
-
-//---------------------------------------------------------------------------
-// HarnessDumpBldgState — enumerate ALL buildings (mine AND AI/other) with their
-// combat/construction state, so a headless driver can verify fire-control fixes
-// (e.g. #60 option-(a): a FINISHED+stopped armed camp must compute fireRate>0)
-// without driving live combat. Reads only public accessors; called on the game/
-// render thread. One line per building:
-//   "<id> t<type> <me|other> cd<constDone> stop<0|1> bfr<baseFR> fr<fireRate>\n"
-// where type=BLDG_TYPE (0=city 1=rocket 16=barracks_2/camp), constDone=-1 means
-// finished, baseFR=_GetFireRate() (>0 ⇒ armed), fr=GetFireRate() (>0 ⇒ will fire).
-// Declared in en_harness.h.
-//---------------------------------------------------------------------------
-void HarnessDumpBldgState( std::string& out )
-{
-    out.clear( );
-    int iTotal = 0, iArmed = 0, iArmedSilent = 0;
-    std::string body;
-    char line[160];
-
-    POSITION pos = theBuildingMap.GetStartPosition( );
-    while ( pos != NULL )
-    {
-        DWORD      dwID  = 0;
-        CBuilding* pBldg = NULL;
-        theBuildingMap.GetNextAssoc( pos, dwID, pBldg );
-        if ( pBldg == NULL )
-            continue;
-        ++iTotal;
-        bool bMine    = ( pBldg->GetOwner( ) != NULL && pBldg->GetOwner( )->IsMe( ) );
-        CStructureData const* pData = pBldg->GetData( );
-        int  iType    = ( pData != NULL ) ? (int) pData->GetType( )      : -1;
-        int  iConst   = pBldg->GetConstDone( );
-        int  iStopped = ( pBldg->GetFlags( ) & CUnit::stopped ) ? 1 : 0;
-        int  iBaseFR  = ( pData != NULL ) ? pData->_GetFireRate( )       : 0;  // >0 ⇒ armed (the :1429 gate)
-        int  iFireRt  = pBldg->GetFireRate( );       // live computed (>0 ⇒ fires)
-        if ( iBaseFR > 0 )
-        {
-            ++iArmed;
-            if ( iFireRt == 0 )
-                ++iArmedSilent;                       // armed but won't fire (#60 symptom)
-        }
-        snprintf( line, sizeof( line ), "%lu t%d %s cd%d stop%d bfr%d fr%d\n",
-                  (unsigned long) dwID, iType, bMine ? "me" : "other",
-                  iConst, iStopped, iBaseFR, iFireRt );
-        body += line;
-    }
-
-    snprintf( line, sizeof( line ), "# bldg %d total, armed %d, armed-but-silent %d\n",
-              iTotal, iArmed, iArmedSilent );
-    out  = line;
-    out += body;
-}
-
-//---------------------------------------------------------------------------
-// HarnessDumpAIStates — per-player economy/population snapshot for the T-0068
-// AI-stall investigation. READ-ONLY (reads public accessors + walks the building
-// map; mutates nothing). One line per player:
-//   "player <p> <me|ai> pop<n> wkforce<have>/<need> mult<f> | apt<n> ofc<n> camp<n> refin<n> oil<n> econ7_<n>/7 wantApt<0|1>"
-// wantApt mirrors CAIGoalMgr::CheckPlayer's m_iNeedApt test (1.5*AptCap <= PplTotal),
-// using apartment-count as an AptCap proxy (apt==0 ⇒ AptCap 0). mult<<1 ⇒ understaffed.
-// Declared in en_harness.h. Called on the game/render thread via EnHarness_Service.
-//---------------------------------------------------------------------------
-void HarnessDumpAIStates( std::string& out )
-{
-    out.clear( );
-    char line[256];
-    for ( int iPlyr = 0; iPlyr < 16; ++iPlyr )
-    {
-        CPlayer* p = theGame._GetPlayerByPlyr( iPlyr );
-        if ( p == NULL )
-            continue;
-        int  apt = 0, ofc = 0, camp = 0, refin = 0, oil = 0;
-        bool has[CStructureData::num_types] = { false };
-        POSITION pos = theBuildingMap.GetStartPosition( );
-        while ( pos != NULL )
-        {
-            DWORD dwID = 0; CBuilding* pB = NULL;
-            theBuildingMap.GetNextAssoc( pos, dwID, pB );
-            if ( pB == NULL || pB->GetOwner( ) != p )
-                continue;
-            CStructureData const* pd = pB->GetData( );
-            if ( pd == NULL )
-                continue;
-            int t = (int) pd->GetType( );
-            if ( t >= 0 && t < CStructureData::num_types )
-                has[t] = true;
-            if      ( t >= CStructureData::apartment_1_1 && t <= CStructureData::apartment_3_2 ) apt++;
-            else if ( t >= CStructureData::office_2_1     && t <= CStructureData::office_3_2 )   ofc++;
-            else if ( t == CStructureData::barracks_2 )  camp++;
-            else if ( t == CStructureData::refinery )    refin++;
-            else if ( t == CStructureData::oil_well )    oil++;
-        }
-        static const int gate[7] = { CStructureData::power_1, CStructureData::lumber,
-            CStructureData::smelter, CStructureData::farm, CStructureData::refinery,
-            CStructureData::coal, CStructureData::iron };
-        int econ7 = 0;
-        for ( int g = 0; g < 7; ++g ) if ( has[gate[g]] ) econ7++;
-        int pop = p->GetPplTotal( );
-        int wantApt = ( ( apt + ( apt >> 1 ) ) <= pop ) ? 1 : 0;  // mirror caigmgr 1.5*AptCap<=PplTotal
-        snprintf( line, sizeof( line ),
-                  "player %d %s pop%d wkforce%d/%d mult%.2f | apt%d ofc%d camp%d refin%d oil%d econ7_%d/7 wantApt%d\n",
-                  iPlyr, p->IsMe( ) ? "me" : "ai", pop, p->GetPplBldg( ), p->GetPplNeedBldg( ),
-                  p->GetPplMult( ), apt, ofc, camp, refin, oil, econ7, wantApt );
-        out += line;
-    }
-    if ( out.empty( ) )
-        out = "# no players (not in-game?)\n";
-}
-
-//---------------------------------------------------------------------------
-// HarnessCenterUnit — center the focused area view on the unit with `id`
-// (vehicle or building), so a headless driver can then click view-center to
-// select it. Declared in en_harness.h. Called on the game/render thread.
-//---------------------------------------------------------------------------
-bool HarnessCenterUnit( unsigned long id )
-{
-    CWndArea* a = theAreaList.GetTop( );
-    if ( a == NULL )
-        return false;
-
-    DWORD dwID = (DWORD) id;
-
-    CVehicle* pVeh = NULL;
-    if ( theVehicleMap.Lookup( dwID, pVeh ) && pVeh != NULL )
-    {
-        a->Center( (CUnit*) pVeh );
-        return true;
-    }
-
-    CBuilding* pBldg = NULL;
-    if ( theBuildingMap.Lookup( dwID, pBldg ) && pBldg != NULL )
-    {
-        a->Center( (CUnit*) pBldg );
-        return true;
-    }
-
-    return false;
-}
-
-//---------------------------------------------------------------------------
-// HarnessHexInfo — report the map hex under an area-window client pixel: its hex
-// coords, altitude, visibility, and whether a unit occupies it. READ-ONLY (no game
-// or view mutation). Lets a headless driver find a FLAT buildable spot (scan a few
-// points, pick where alts match with no unit) or a SLOPE (adjacent hexes whose alt
-// differs) deterministically, instead of eyeballing the placement cursor's OK/
-// no-build sprite (iCurType, ~area.cpp:1964) in a downscaled screenshot. Mirrors the
-// screen->hex path in CWndArea::OnMouseMove (GetAA().GetHit -> _GetHexCoord ->
-// theMap._GetHex). Pass the same area-window client px you'd give clickid/dblclickid.
-// Call on the render thread (reads the view + map). Backs the `hexinfo <areaWin> <x>
-// <y>` control_socket command. Declared in en_harness.h.
-//---------------------------------------------------------------------------
-void HarnessHexInfo( int x, int y, std::string& out )
-{
-    CWndArea* a = theAreaList.GetTop( );
-    if ( a == NULL ) { out = "err no-area\n"; return; }
-
-    CPoint    point( x, y );
-    CHitInfo  hitinfo = a->GetAA( ).GetHit( point );
-    CHexCoord hexcoord( hitinfo._GetHexCoord( ) );
-    hexcoord.Wrap( );
-    CHex* pHex = theMap._GetHex( hexcoord );
-    if ( pHex == NULL ) { out = "err no-hex\n"; return; }
-
-    out  = "hex " + IntToStr( hexcoord.X( ) ) + " " + IntToStr( hexcoord.Y( ) );
-    out += " alt " + IntToStr( pHex->GetAlt( ) );
-    out += " vis " + std::string( pHex->GetVisible( ) ? "1" : "0" );
-    out += " unit " + std::string( hitinfo.GetUnit( ) != NULL ? "1" : "0" );
-    // water + tree block building but are NOT "units" — without these a flat, clear-of-
-    // units, visible hex still fails FoundationCost (trees/water), which is exactly what
-    // bit the placement captures. A buildable spot = water 0, tree 0, flat (matching
-    // neighbour alts), vis 1, unit 0.
-    out += " water " + std::string( pHex->IsWater( ) ? "1" : "0" );
-    out += " tree " + IntToStr( pHex->GetTree( ) );
-    // Terrain sprite type id + variant index. Lets a headless QA driver LOCATE
-    // terrain-blend boundaries deterministically — e.g. a river hex (terr=CHex::river)
-    // adjacent to a lake hex (terr=CHex::lake), which are BOTH water=1 and so were
-    // previously indistinguishable here. Needed to repro the #8 river<->lake blend
-    // (and the badlands<->ocean / swamp<->rough blend family).
-    CTerrainSprite* spr = pHex->GetSprite( );
-    out += " terr " + IntToStr( spr ? spr->GetID( ) : -1 );
-    out += " tidx " + IntToStr( spr ? spr->GetIndex( ) : -1 );
-    // vtype = GetVisibleType(): what the MINIMAP paints (world.cpp pclrTerrain
-    // lookup) — distinct from terr (the actual sprite). Lets a headless driver
-    // verify fog display-deferral (e.g. #30: GrabHex's flatten must not reach
-    // vtype on a never-explored hex until the reveal).
-    out += " vtype " + IntToStr( pHex->GetVisibleType( ) );
-    // Sub-surface mineral deposit (theMinerals is hex-keyed). A coal mine / iron
-    // mine / oil well can ONLY be placed on a hex that carries the matching
-    // deposit, and the deposit is invisible to the terrain/tree fields above — so
-    // a headless driver had no way to LOCATE a minable hex (it bit the build-chain
-    // QA: lumber-mill/farm place on any grass, but mines need the deposit).
-    // CMaterialTypes: copper=2 oil=6 coal=8 iron=9; -1 = no deposit here.
-    CMinerals* pMn = NULL;
-    if ( theMinerals.Lookup( hexcoord, pMn ) && pMn != NULL )
-        out += " mineral " + IntToStr( pMn->GetType( ) )
-             + " den " + IntToStr( pMn->GetDensity( ) )
-             + " qty " + IntToStr( pMn->GetQuantity( ) );
-    else
-        out += " mineral -1 den 0 qty 0";
-    out += "\n";
-}
-
-//---------------------------------------------------------------------------
-// HarnessFindTerrain — scan the whole map for the first hex of terrain type `id`
-// (CHex terrain enum: lake=3, ocean=6, river=8, swamp=11, ...); if adjId>=0 also
-// require a 4-neighbour of type adjId (e.g. river next to lake = the #8 river<->lake
-// blend boundary). On a hit, center the focused area view on that hex so a headless
-// driver can `shotid 5` the area window right at the boundary — the missing piece
-// for terrain-blend repro (the harness `center` only centers on a UNIT, and devsaves
-// open on the all-land base). READ-ONLY of the map; mutates only the view. Render
-// thread only. Declared in en_harness.h.
-//---------------------------------------------------------------------------
-void HarnessFindTerrain( int id, int adjId, std::string& out )
-{
-    CWndArea* a = theAreaList.GetTop( );
-    if ( a == NULL ) { out = "err no-area\n"; return; }
-
-    CSize sz = theMap.GetSize( );
-    static const int dx[4] = { 0, 1, 0, -1 };
-    static const int dy[4] = { -1, 0, 1, 0 };
-    for ( int y = 0; y < sz.cy; ++y )
-    {
-        for ( int x = 0; x < sz.cx; ++x )
-        {
-            CHex* h = theMap.GetHex( x, y );
-            if ( h == NULL ) continue;
-            CTerrainSprite* s = h->GetSprite( );
-            if ( s == NULL || s->GetID( ) != id ) continue;
-
-            int ax = -1, ay = -1;
-            if ( adjId >= 0 )
-            {
-                bool adj = false;
-                for ( int e = 0; e < 4; ++e )
-                {
-                    CHexCoord nc( x + dx[e], y + dy[e] ); nc.Wrap( );
-                    CHex* n = theMap.GetHex( nc );
-                    if ( n && n->GetSprite( ) && n->GetSprite( )->GetID( ) == adjId )
-                    { adj = true; ax = nc.X( ); ay = nc.Y( ); break; }
-                }
-                if ( !adj ) continue;
-            }
-
-            CHexCoord hc( x, y );
-            CMapLoc   ml( hc );
-            a->Center( ml );   // move the view to the found hex (then caller shotid 5)
-
-            out  = "found " + IntToStr( x ) + " " + IntToStr( y );
-            out += " terr " + IntToStr( id );
-            if ( adjId >= 0 ) out += " adj " + IntToStr( adjId ) + " at " + IntToStr( ax ) + " " + IntToStr( ay );
-            out += " (view centered)\n";
-            return;
-        }
-    }
-    out = "notfound terr " + IntToStr( id );
-    if ( adjId >= 0 ) out += " adj " + IntToStr( adjId );
-    out += "\n";
-}
-
-//---------------------------------------------------------------------------
-// HarnessCenterHex — center the focused area view on an arbitrary hex (x,y), so a
-// headless driver can `shotid <areaWin>` a SPECIFIC location. `center <unitId>`
-// only targets a unit and findterr/findbridge only reach searched hexes; there was
-// no way to navigate to a plain coordinate for a pixel eyes-on (bridge draw, blend
-// seams) — the radar is ~5 hexes/px, too coarse to click. Reads the map bounds +
-// mutates the view, so it's serviced on the render thread like findterr. [mac2]
-//---------------------------------------------------------------------------
-void HarnessCenterHex( int x, int y, std::string& out )
-{
-    CWndArea* a = theAreaList.GetTop( );
-    if ( a == NULL ) { out = "err no-area\n"; return; }
-
-    CSize sz = theMap.GetSize( );
-    if ( x < 0 || y < 0 || x >= sz.cx || y >= sz.cy )
-    {
-        out = "err oob " + IntToStr( x ) + " " + IntToStr( y ) +
-              " (map " + IntToStr( sz.cx ) + "x" + IntToStr( sz.cy ) + ")\n";
-        return;
-    }
-
-    CHexCoord hc( x, y );
-    CMapLoc   ml( hc );
-    a->Center( ml );
-
-    out = "centered " + IntToStr( x ) + " " + IntToStr( y ) + "\n";
-}
-
-//---------------------------------------------------------------------------
-// HarnessBuildRoad — drive a crane road-build headlessly. The interactive path
-// (RoadUnit sets road_begin → LButtonDown captures m_hexRoadStart → LButtonUp in
-// road_set calls pVeh->SetRoad(start,end)) can't be delivered via the harness:
-// the 'R' hotkey never reaches the game (keyboard focus) and the road drag uses
-// CaptureMouse. So we call the SAME commit — CVehicle::SetRoad — directly on the
-// player's first owned crane (SetRoad sets build_road + drives the crane to the
-// start; it then lays the road toward the end as it works). Backs `road`. Mutates
-// game state → main/render-thread serviced. Declared in en_harness.h.
-//---------------------------------------------------------------------------
-void HarnessBuildRoad( int x1, int y1, int x2, int y2, std::string& out )
-{
-    CSize sz = theMap.GetSize( );
-    if ( x1 < 0 || y1 < 0 || x2 < 0 || y2 < 0 ||
-         x1 >= sz.cx || y1 >= sz.cy || x2 >= sz.cx || y2 >= sz.cy )
-    {
-        out = "err oob (map " + IntToStr( sz.cx ) + "x" + IntToStr( sz.cy ) + ")\n";
-        return;
-    }
-
-    CHexCoord hcStart( x1, y1 ), hcEnd( x2, y2 );
-    CHex* pHexStart = theMap._GetHex( hcStart );
-    if ( pHexStart == NULL || !pHexStart->CanRoad( ) )
-    {
-        out = "err start-hex not roadable\n";
-        return;
-    }
-
-    CVehicle* pCrane = NULL;
-    POSITION  pos = theVehicleMap.GetStartPosition( );
-    while ( pos != NULL )
-    {
-        DWORD     dwID = 0;
-        CVehicle* pVeh = NULL;
-        theVehicleMap.GetNextAssoc( pos, dwID, pVeh );
-        if ( pVeh && pVeh->GetOwner( ) && pVeh->GetOwner( )->IsMe( ) &&
-             pVeh->GetData( ) && pVeh->GetData( )->IsCrane( ) )
-        {
-            pCrane = pVeh;
-            break;
-        }
-    }
-    if ( pCrane == NULL ) { out = "err no owned crane\n"; return; }
-
-    pCrane->SetRoad( hcStart, hcEnd );
-    out = "road crane=" + IntToStr( (int)pCrane->GetID( ) ) +
-          " (" + IntToStr( x1 ) + "," + IntToStr( y1 ) + ")->(" +
-          IntToStr( x2 ) + "," + IntToStr( y2 ) + ")\n";
-}
-
-//---------------------------------------------------------------------------
-// HarnessFindBridge — list every bridge hex (CHex::bridge unit bit) with its fog
-// state (`bridge <x> <y> vis <0|1> seen <0|1>`), then center the focused area view
-// on the first NEVER-SEEN one (vis=0 seen=0; else the first found). Backs the #30
-// bridge-fog verify: a never-seen bridge must NOT draw until scouted (vis flips),
-// after which IsBridge latches ("seen 1") and it stays shown. READ-ONLY of the map
-// (GetVisibility/IsBridge only — does NOT call SetBridge); mutates only the view.
-// Render thread only. Declared in en_harness.h.
-//---------------------------------------------------------------------------
-void HarnessFindBridge( std::string& out )
-{
-    CWndArea* a = theAreaList.GetTop( );
-    if ( a == NULL ) { out = "err no-area\n"; return; }
-
-    CSize sz = theMap.GetSize( );
-    int nListed = 0, cx = -1, cy = -1;
-    bool haveUnseen = false;
-    for ( int y = 0; y < sz.cy; ++y )
-    {
-        for ( int x = 0; x < sz.cx; ++x )
-        {
-            CHex* h = theMap.GetHex( x, y );
-            if ( h == NULL || !( h->GetUnits( ) & CHex::bridge ) ) continue;
-
-            BOOL vis = h->GetVisibility( ), seen = h->IsBridge( );
-            if ( nListed < 60 )   // bound the reply; bridges are rare
-                out += "bridge " + IntToStr( x ) + " " + IntToStr( y )
-                     + " vis "  + IntToStr( vis  ? 1 : 0 )
-                     + " seen " + IntToStr( seen ? 1 : 0 ) + "\n";
-            ++nListed;
-            if ( cx < 0 ) { cx = x; cy = y; }              // fallback: first found
-            if ( !haveUnseen && !vis && !seen )            // prefer: never-seen
-            { cx = x; cy = y; haveUnseen = true; }
-        }
-    }
-    if ( nListed == 0 ) { out = "notfound bridge\n"; return; }
-
-    CHexCoord hc( cx, cy );
-    CMapLoc   ml( hc );
-    a->Center( ml );
-    out += "total " + IntToStr( nListed ) + " centered " + IntToStr( cx ) + " "
-         + IntToStr( cy ) + ( haveUnseen ? " (never-seen)\n" : " (first)\n" );
-}
-
-//---------------------------------------------------------------------------
-// HarnessDumpEdicts — list every civ-wide edict and whether it's currently active
-// for the local player (CPlayer::IsEdictActive). Lets a headless QA driver verify an
-// edict TOGGLE: read state, clickid the checkbox, read state again. Backs `edicts`.
-// Render/game thread only (reads live player state). Declared in en_harness.h.
-//---------------------------------------------------------------------------
-void HarnessDumpEdicts( std::string& out )
-{
-    CPlayer* me = theGame.GetMe( );
-    if ( me == NULL ) { out = "err no-player (not in-game?)\n"; return; }
-    for ( int id = 0; id < EDICT_COUNT; ++id )
-    {
-        const EdictDef& e = g_aEdicts[id];
-        out += "edict " + IntToStr( id ) + " "
-             + std::string( e.name ? e.name : "?" )
-             + " active " + std::string( me->IsEdictActive( id ) ? "1" : "0" ) + "\n";
-    }
-}
-
-//---------------------------------------------------------------------------
-// HarnessDumpAltBuildings — list every AltOutput-capable building OWNED BY the local
-// player (one line: id, alt_oil on/off, mode, label) so a headless QA driver can FIND a
-// coal plant / BioFuel / charcoal / fracking building by id without a 500-window showinfo
-// scan (each showinfo opens a new stacking window — impractical). Mirrors the building loop
-// in HarnessDumpUnits + the AltOutput::Available filter (the exact predicate secAltOutput
-// uses). Backs `altbldgs`. Render/game thread only. Declared in en_harness.h.
-//---------------------------------------------------------------------------
-void HarnessDumpAltBuildings( std::string& out )
-{
-    if ( theAreaList.GetTop( ) == NULL ) { out = "err not in-game\n"; return; }
-    char line[256];
-    POSITION pos = theBuildingMap.GetStartPosition( );
-    while ( pos != NULL )
-    {
-        DWORD      dwID  = 0;
-        CBuilding* pBldg = NULL;
-        theBuildingMap.GetNextAssoc( pos, dwID, pBldg );
-        if ( pBldg == NULL )
-            continue;
-        if ( pBldg->GetOwner( ) == NULL || !pBldg->GetOwner( )->IsMe( ) )
-            continue;
-        const AltOutput::AltOutputDef* pDef = AltOutput::Available( pBldg );
-        if ( pDef == NULL )
-            continue;
-        snprintf( line, sizeof( line ), "altbldg %lu on %d mode %d label \"%s\"\n",
-                  (unsigned long) dwID,
-                  pBldg->IsFlag( CUnit::alt_oil ) ? 1 : 0,
-                  (int) pDef->m_eMode,
-                  pDef->m_szLabel ? pDef->m_szLabel : "?" );
-        out += line;
-    }
-    if ( out.empty( ) )
-        out = "# no AltOutput-capable buildings owned by me\n";
-}
-
-//---------------------------------------------------------------------------
-// HarnessDumpPlayerStats — exact colony stats for the local player, so a QA driver can read
-// a precise before/after delta (the in-game Office/Apartment readouts clip the 4th digit
-// behind the history graph). Backs `pstats`. Render/game thread only.
-//---------------------------------------------------------------------------
-void HarnessDumpPlayerStats( std::string& out )
-{
-    CPlayer* me = theGame.GetMe( );
-    if ( me == NULL ) { out = "err no-player (not in-game?)\n"; return; }
-    out += "pplneedbldg " + IntToStr( me->GetPplNeedBldg( ) ) + "\n";   // workforce NEED (edict + #2 workforce hooks land here)
-    out += "pplbldg "     + IntToStr( me->GetPplBldg( ) )     + "\n";   // workforce ON HAND
-    out += "pwrneed "     + IntToStr( me->GetPwrNeed( ) )     + "\n";   // power NEED (Mining-Subsidy upkeep lands here)
-    out += "pwrhave "     + IntToStr( me->GetPwrHave( ) )     + "\n";
-    out += "food "        + IntToStr( me->GetFood( ) )        + "\n";
-    out += "foodneed "    + IntToStr( me->GetFoodNeed( ) )    + "\n";
-}
-
-//---------------------------------------------------------------------------
-// HarnessShowInfoWindow — open a building's read-only info window by unit id (same
-// window a map double-click opens via CBuilding::ShowInfoWindow). Lets a QA driver
-// deterministically open a SPECIFIC building (e.g. an edict-host office/command/
-// apartment) without screen-coord clicking, then clickid its edict checkbox. Render
-// thread only (creates a non-modal dialog). Backs `showinfo <bldgid>`. en_harness.h.
-//---------------------------------------------------------------------------
-bool HarnessShowInfoWindow( unsigned long id )
-{
-    if ( theAreaList.GetTop( ) == NULL ) return false;   // not in-game
-    CBuilding* pBldg = theBuildingMap.GetBldg( (DWORD) id );
-    if ( pBldg == NULL ) return false;
-    pBldg->ShowInfoWindow( );
-    return true;
-}
-
-//---------------------------------------------------------------------------
-// HarnessSetAltOil — set/clear a building's alt_oil (AltOutput) flag directly by unit id,
-// bypassing the info-window checkbox. QA-only: lets a driver verify AltOutput effects
-// (BioFuel/Coal-Liq/Charcoal/Fracking + the #2 kiln workforce cost) via pstats without
-// fighting checkbox click-coords. Mirrors the BuildAltOutput onChange (SetFlag/ClrFlag).
-// Render/game thread only. Backs `setalt`.
-//---------------------------------------------------------------------------
-bool HarnessSetAltOil( unsigned long id, bool on )
-{
-    if ( theAreaList.GetTop( ) == NULL ) return false;   // not in-game
-    CBuilding* pBldg = theBuildingMap.GetBldg( (DWORD) id );
-    if ( pBldg == NULL ) return false;
-    if ( on ) pBldg->SetFlag( CUnit::alt_oil );
-    else      pBldg->ClrFlag( CUnit::alt_oil );
-    return true;
-}
-
-//---------------------------------------------------------------------------
-// HarnessSetEdict — set/clear a civ-wide edict for the local player directly by edict id,
-// bypassing the info-window checkbox. QA-only: lets a driver verify edict DOWNSIDE deltas
-// (workforce/power/food upkeep) via pstats without hunting per-window checkbox click-coords
-// or ambiguity over which row flipped. Routes through ToggleEdictNet — the exact path the
-// BuildEdicts checkbox onChange takes (ToggleEdict + RecomputeEdictMults; broadcasts only in
-// a net game) — so the effect is identical to a real click. Render/game thread only. Backs
-// `setedict`. Declared in en_harness.h.
-//---------------------------------------------------------------------------
-bool HarnessSetEdict( int edictId, bool on )
-{
-    if ( theAreaList.GetTop( ) == NULL ) return false;   // not in-game
-    if ( edictId < 0 || edictId >= EDICT_COUNT ) return false;
-    CPlayer* me = theGame.GetMe( );
-    if ( me == NULL ) return false;
-    me->ToggleEdictNet( edictId, on );
-    return true;
-}
-
-//---------------------------------------------------------------------------
-// HarnessPan — scroll the focused area view by a pixel delta, driving the exact
-// PanByPixels path the macOS trackpad two-finger pan uses. QA-only: lets a driver
-// verify the pan/scroll mechanic headlessly (keyboard-arrow scroll doesn't reach
-// the area map through the offscreen focus path, so this is the only way to
-// exercise the scroll without a real trackpad). Render/game thread only. Backs
-// `pan`. Declared in en_harness.h.
-//---------------------------------------------------------------------------
-bool HarnessPan( int dxPix, int dyPix )
-{
-    CWndArea* pTop = theAreaList.GetTop( );
-    if ( pTop == NULL ) return false;   // not in-game
-    pTop->PanByPixels( dxPix, dyPix );
-    return true;
-}
-
-//---------------------------------------------------------------------------
-// HarnessSaveGame — save the current game to <path> headlessly so a developed/
-// researched game can be snapshotted and SHARED (one such save unblocks all the
-// research-gated work team-wide: gated buildings, AltOutput in-game verify, late-
-// game feature tests). CGame::SaveGame skips its file-browser modal when
-// m_gameWindow is set AND m_sFileName is pre-filled, so we just set the path and
-// call it. Must run on the render/main thread (touches UI + game state) — call
-// from EnHarness_Service, never the socket thread. Returns true on a written save.
-// Declared in en_harness.h.
-//---------------------------------------------------------------------------
-bool HarnessSaveGame( const char* path )
-{
-    if ( path == NULL || path[0] == '\0' )
-        return false;
-    // SaveGame returns IDCANCEL unless we're in-game (area window live, rocket
-    // already placed) — guard so a menu-time save just reports failure.
-    if ( theAreaList.GetTop( ) == NULL )
-        return false;
-    theGame.m_sFileName = path;            // pre-fill => SaveGame skips the browser
-    return ( theGame.SaveGame( (CWnd*) NULL ) == IDOK );
-}
-
-//---------------------------------------------------------------------------
-// HarnessLoadGame — load a .en save headlessly from the MAIN MENU. Runs the normal
-// SP load flow (SDL2_RunLoadSinglePlayerFlow) but, while g_harnessLoadPath is set,
-// CGame::LoadGame skips the file-browser (uses the path) and
-// SDL2_RunLoadSinglePlayerFlow skips the pick-player modal (auto-selects _GetMe()).
-// Lets a headless driver consume a shared developed save (the POSIX menu file-
-// browser isn't harness-drivable). Must run from the main loop (the flow re-pumps
-// events). Returns true on a loaded+started game. Declared in en_harness.h.
-//---------------------------------------------------------------------------
-static std::string g_harnessLoadPath;   // non-empty only during a headless load
-
-const char* HarnessPendingLoadPath( void )
-{
-    return g_harnessLoadPath.empty( ) ? NULL : g_harnessLoadPath.c_str( );
-}
-
-bool HarnessLoadGame( const char* path )
-{
-    if ( path == NULL || path[0] == '\0' )
-        return false;
-    // Only valid from the menu (no game in progress). m_pCreateGame catches an
-    // in-flight create/load flow, but it is NULL during normal play — so on its
-    // own it does NOT reject an in-game `load`, which then tears the world down
-    // before the menu-only flow fails, leaving a zombie (chrome window only, no
-    // area map). AmInGame() is the "a game is already running" signal; reject
-    // cleanly here, before any teardown. [linux2 regression find 2026-06-29]
-    if ( theApp.m_pCreateGame != NULL || theApp.AmInGame( ) )
-        return false;
-    // A nonexistent path must NOT enter the load flow: it throws mid-flow and the
-    // exception escapes this frame's catch (CatchOther + `[ASSERT-IGNORED]
-    // m_pMe != NULL` player.h:1042 — mac2 2026-07-03, cost an hour of phantom
-    // "load regressions"). Pre-check the file, and auto-append the ".en"
-    // extension when the bare name doesn't resolve but "<path>.en" does — the
-    // file-browser normally supplies it; headless callers often won't.
-    std::string sPath( path );
-    FILE* pfProbe = fopen( sPath.c_str( ), "rb" );
-    if ( pfProbe == NULL )
-    {
-        std::string sWithExt = sPath + ".en";
-        pfProbe = fopen( sWithExt.c_str( ), "rb" );
-        if ( pfProbe == NULL )
-            return false;                              // clean err, no flow entry
-        sPath = sWithExt;
-    }
-    fclose( pfProbe );
-    g_harnessLoadPath = sPath;                         // arms the headless skips
-    bool bOk = false;
-    try { bOk = SDL2_RunLoadSinglePlayerFlow( theApp.m_gameWindow.get( ) ); }
-    catch ( ... ) { bOk = false; }
-    g_harnessLoadPath.clear( );                        // disarm (also on failure)
-    return bOk;
-}
-
-//---------------------------------------------------------------------------
-// HarnessGrantResearch — POSIX analogue of win's Windows F12 hotkey: discover ALL
-// research for the local human instantly so the research-gated tail is reachable
-// without the multi-hour grind. Cheat-gated to the game's convention (win @e79a75ae):
-//   - #ifdef _CHEAT  → compiled OUT of Release (DebugDiscoverAllResearch is _CHEAT-only)
-//   - [Cheat]/GrantResearch registry flag (default 0) → opt-in even in Debug
-//   - GetNetNum()==0 → single-player only (MP would desync on a local mutation)
-// Returns false (no-op) in Release, or if not opted-in / not in-game-SP.
-// Call on the game/render thread. Declared in en_harness.h.
-//---------------------------------------------------------------------------
-bool HarnessGrantResearch( void )
-{
-#ifdef _CHEAT
-    if ( !EnGetProfileInt( "Cheat", "GrantResearch", 0 ) )
-        return false;                                   // opt-in only
-    CPlayer* me = theGame.GetMe( );
-    if ( me == NULL || me->GetNetNum( ) != 0 )
-        return false;                                   // in-game + single-player only
-    me->DebugDiscoverAllResearch( );
-    return true;
-#else
-    return false;                                       // cheat compiled out of Release
-#endif
-}
-
-//---------------------------------------------------------------------------
-// HarnessDumpGameState — READ-ONLY single-player game-over/progress probe for the
-// local human. The defeat predicate mirrors mainloop.cpp exactly: you lose the tick
-// GetBldgsHave() hits 0 (which also flips CGame state out of `play` to CGame::other);
-// you win when <=1 player remains. Lets a headless driver poll survival + how hard
-// it's being hit each tick. Call on the game/render thread. Declared in en_harness.h.
-//---------------------------------------------------------------------------
-void HarnessDumpGameState( std::string& out )
-{
-    if ( !theApp.AmInGame( ) )
-    {
-        out = "state menu (not in-game)\n";
-        return;
-    }
-    CPlayer* me = theGame._GetMe( );
-    int  st = theGame.GetState( );
-    long bh = me ? (long) me->GetBldgsHave( ) : -1;
-    long vh = me ? (long) me->GetVehsHave( )  : -1;
-    long bd = me ? (long) me->GetBldgsDest( ) : -1;
-    long vd = me ? (long) me->GetVehsDest( )  : -1;
-    int  allc = theGame.GetAll( ).GetCount( );
-    int  aic  = theGame.GetAi( ).GetCount( );
-    unsigned long elapsed = (unsigned long) theGame.GetElapsedSeconds( );
-    bool lost = ( st == CGame::other ) || ( bh <= 0 );
-    bool won  = ( allc <= 1 );
-    const char* verdict = won ? "WON" : ( lost ? "LOST" : "playing" );
-    char buf[256];
-    snprintf( buf, sizeof(buf),
-        "state %d hp %d bldgshave %ld vehshave %ld bldgsdest %ld vehsdest %ld players %d ai %d elapsed %lu %s\n",
-        st, theGame.HaveHP( ) ? 1 : 0, bh, vh, bd, vd, allc, aic, elapsed, verdict );
-    out = buf;
 }

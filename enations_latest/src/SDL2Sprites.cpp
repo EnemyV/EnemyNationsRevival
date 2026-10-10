@@ -959,12 +959,20 @@ namespace SDL2Sprites
 
         if ( full )
         {
+            // UNTIMED BRANCH (measured 2026-09-13): spr.t.grid/scan/emit all sit in the
+            // else body, so on a session where spr.fullsw was 96.7-99.6% of frames every
+            // spr.t.* read ~0.0 ms/s and the executing path had no timer at all. That
+            // reads as "the sprite layer is cheap" when it means "not measured".
+            Perf::ScopeCounter _cf( "spr.t.full" );
             SDL_SetRenderDrawBlendMode( r, SDL_BLENDMODE_NONE );
             SDL_SetRenderDrawColor( r, 0, 0, 0, 0 );
-            SDL_RenderClear( r );
-            BuildOrderAll( order, ulX, ulY, vpW, vpH );
+            { Perf::ScopeCounter _cc( "spr.t.fullclear" );
+              SDL_RenderClear( r ); }
+            { Perf::ScopeCounter _cb( "spr.t.fullbuild" );
+              BuildOrderAll( order, ulX, ulY, vpW, vpH ); }
             SDL_SetRenderDrawBlendMode( r, SDL_BLENDMODE_BLEND );
-            EmitOrder( r, order, ulX, ulY );
+            { Perf::ScopeCounter _ce( "spr.t.fullemit" );
+              EmitOrder( r, order, ulX, ulY ); }
         }
         else
         {

@@ -366,7 +366,9 @@ class CSubHex : public CPoint
 
 #ifdef _DEBUG
   public:
-    virtual void AssertValid( ) const;
+    // Not virtual (same as CHexCoord): CSubHex is copied raw into net messages, and a
+    // vtable pointer there made Debug peers fault on AssertMsgValid and drop them.
+    void AssertValid( ) const;
 #endif
 };
 
@@ -743,6 +745,7 @@ class CMaterialTypes
     };  // goods + 1
 
     static void ctor( );
+    static void InitDesc( );
     static void dtor( );
 
     static int            GetNumTypes( ) { return ( num_types ); }

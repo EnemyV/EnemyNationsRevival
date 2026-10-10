@@ -92,12 +92,25 @@ void CRsrchStatus::Serialize( CArchive& ar )
         ASSERT_VALID( this );
         //TRAP( );
 
+        // Always 64-bit (save release 9+). The reader below is what copes with older saves.
         ar << m_bDiscovered << m_iPtsDiscovered;
     }
     else
     {
         //TRAP( );
-        ar >> m_bDiscovered >> m_iPtsDiscovered;
+        ar >> m_bDiscovered;
+
+        // m_iPtsDiscovered WIDENED from 32 to 64 bits at save release 9. A width change has to
+        // be gated on BOTH sides or the stream desyncs for every later field: pre-9 saves put 4
+        // bytes here, so read exactly that and widen it.
+        if ( theGame.m_dwVer >= 9 )
+            ar >> m_iPtsDiscovered;
+        else
+        {
+            LONG lOld = 0;
+            ar >> lOld;
+            m_iPtsDiscovered = lOld;
+        }
     }
 }
 
@@ -261,7 +274,7 @@ void CRsrchArray::Open( )
         CRsrchItem* pFull = &ElementAt( bridge );
         CRsrchItem* pMid  = &ElementAt( medium_facilities );   // "Mid-sized Buildings"
 
-        pRi->m_iPtsRequired      = __max( 1, pFull->m_iPtsRequired / 2 );  // half of Bridge Building
+        pRi->m_iPtsRequired      = __max( 1LL, pFull->m_iPtsRequired / 2 );  // half of Bridge Building
         pRi->m_iScenarioReq      = pMid->m_iScenarioReq;                   // same gate as Mid-sized Buildings
         pRi->m_iNumRsrchRequired = 0;                                      // no research prereq
 
@@ -310,7 +323,7 @@ void CRsrchArray::Open( )
         static const int aiExtra[4] = {
             (int)manf_1, (int)const_2, (int)const_3, (int)nuclear };
 
-        int iPts = ElementAt( bridge ).m_iPtsRequired;
+        long long iPts = ElementAt( bridge ).m_iPtsRequired;
         for ( int iOn = 0; iOn < 4; iOn++ )
         {
             CRsrchItem* pRi = &ElementAt( bridge_2 + iOn );
@@ -355,7 +368,7 @@ void CRsrchArray::Open( )
         static const int aiExtra[3] = {
             (int)manf_1, (int)manf_2, (int)nuclear };
 
-        int iPts = ElementAt( cargo_handling ).m_iPtsRequired;
+        long long iPts = ElementAt( cargo_handling ).m_iPtsRequired;
         for ( int iOn = 0; iOn < 3; iOn++ )
         {
             CRsrchItem* pRi = &ElementAt( cargo_handling_2 + iOn );
@@ -378,23 +391,28 @@ void CRsrchArray::Open( )
         }
     }
 
-    // In-code research topics: the Fuel Efficiency line (not in the DAT file). An 18-level
+    // In-code research topics: the Fuel Efficiency line (not in the DAT file). A 23-level
     // line unlocked after Gas Turbines; level 1 requires gas_turbine, each later the prev.
-    // Cost DOUBLES to 32*B at level 6, then flat +16*B (L7=48B ... L18=224B; B = gas_turbine
+    // Cost DOUBLES to 32*B at level 6, then flat +16*B (L7=48B ... L23=304B; B = gas_turbine
     // cost). Gas saving diminishes 5/4/4/3/3/3/2/2/2/2 to 30% at level 10, then +1% per level
-    // to 38% at level 18 (see CPlayer::GetFuelPct). The late levels are deliberately mundane
-    // garage tweaks (additives, thinner oil, cleaner filters), not sci-fi. Levels 1-10 are
-    // contiguous; 11-12, 13-16, and 17-18 were appended at the enum end for save parity, so
-    // the setup loop maps the index through aiIdx[] rather than a running offset.
+    // to 38% at level 18, then +2% per level to 48% at level 23 (see CPlayer::GetFuelPct).
+    // The late levels are deliberately mundane garage tweaks (additives, thinner oil, valve
+    // timing), not sci-fi. NOTE: no level's text may claim to be the "last" or "final" one --
+    // this line has been extended four times and every such claim had to be walked back.
+    // Levels 1-10 are contiguous; 11-12, 13-16, 17-18 and 19-23 were appended at the enum end
+    // for save parity, so the setup loop maps the index through aiIdx[] rather than a
+    // running offset.
     {
-        static char const* aszName[18] = {
+        static char const* aszName[23] = {
             "Fuel Injection",      "Lean-Burn Tuning",    "Turbo Compounding",
             "Regenerative Braking","Waste-Heat Recovery", "Better Spark Timing",
             "Exhaust Reclamation", "Synthetic Lubricants","Low-Friction Bearings",
             "Reduced Rolling Resistance","Fuel Additives", "Tighter Tolerances",
             "Low-Viscosity Oil",   "Cleaner Fuel Filters","Lightweight Flywheels",
-            "Idle Cutoff",         "Coasting Governor",   "Fuel Preheating" };
-        static char const* aszDesc[18] = {
+            "Idle Cutoff",         "Coasting Governor",   "Fuel Preheating",
+            "Variable Valve Timing","Cylinder Deactivation","Ceramic Cylinder Liners",
+            "Two-Stage Turbocharging","Hydraulic Hybrid Drive" };
+        static char const* aszDesc[23] = {
             "Our engines still gulp fuel through crude carburetors. We should be able to meter each drop with proper injection and burn a good 5% less gas.",
             "We think we can tune the engines to run leaner, coaxing more travel out of every tank for another 4%.",
             "All that hot exhaust just blows away. If we feed it back through a turbine we should recover another 4% of the fuel.",
@@ -404,16 +422,21 @@ void CRsrchArray::Open( )
             "There is still unburned fuel going out the tailpipe. We should be able to catch and re-burn it for another 2%.",
             "The local oils gum up in this climate. A proper synthetic lubricant should cut friction across the drivetrain for 2%.",
             "Our bearings are rougher than we would like. Polishing them to a low-friction finish should be good for another 2%.",
-            "Our wheels and tracks fight the ground the whole way. Trimming that rolling resistance should save a final 2%, a full 30% by now.",
+            "Our wheels and tracks fight the ground the whole way. Trimming that rolling resistance should save another 2%, a full 30% by now.",
             "The local crude is full of grit. A dose of the right additives should keep our engines from gumming up and save another 1%.",
             "If our machinists shave the tolerances a little finer, the engines will leak a bit less power, worth about 1%.",
             "A thinner oil would let everything spin easier once the engine warms up. We think that is good for another 1%.",
             "Half the dirt on this planet ends up in our fuel lines. Finer filters should keep the injectors happy for another 1%.",
             "Our flywheels are heavier than they need to be. Shaving them down should free up about 1%.",
             "Vehicles sitting idle just drink fuel for nothing. A cutoff that stops the engine when they wait should save 1%.",
-            "On a downhill our engines keep pulling when they could just coast. A governor to ease off should be worth a last 1%.",
-            "Cold fuel burns poorly in this thin air. Warming it before it hits the cylinder should wring out one final 1%." };
-        static char const* aszRslt[18] = {
+            "On a downhill our engines keep pulling when they could just coast. A governor to ease off should be worth another 1%.",
+            "Cold fuel burns poorly in this thin air. Warming it before it hits the cylinder should wring out another 1%.",
+            "Our valves open and shut on a fixed cam whether the engine is crawling or flat out. We should be able to let the timing shift with the load and save another 2%.",
+            "On an empty run half our cylinders are just along for the ride. We think we can shut them down when the load is light for another 2%.",
+            "Our cylinder walls bleed heat straight into the coolant. Lining them with ceramic should keep that heat in the burn, and it's good for another 2%.",
+            "One turbo is always either too small or too big. However, if we stage a small one behind a large one we should cover the whole range and save another 2%.",
+            "We should be able to store the energy of a stop in a pressure accumulator and spend it pulling away again. It's heavy and it's a lot of plumbing, but it should be worth another 2%." };
+        static char const* aszRslt[23] = {
             "Fuel injection is working. Our vehicles stop dumping gas down the intake and burn about 5% less of it.",
             "The engines run lean and clean now. Our vehicles squeeze another 4% out of every tank.",
             "Turbo compounding is fitted. The exhaust that used to blow away now helps drive the wheels, saving another 4%.",
@@ -431,26 +454,34 @@ void CRsrchArray::Open( )
             "Lighter flywheels are installed. Less dead weight to spin up, 1% less gas (35% total).",
             "Idle cutoff is fielded. Our vehicles stop guzzling while they sit around, 1% saved (36% total).",
             "The coasting governor works. Our vehicles freewheel where they can instead of burning gas, 1% saved (37% total).",
-            "Fuel preheating is running. Even in the cold our engines burn every drop, the last 1% we are going to get (38% total)." };
+            "Fuel preheating is running. Even in the cold our engines burn every drop, 1% saved (38% total).",
+            "We can now shift the valve timing with the load. The engines breathe right at every speed and burn 2% less gas (40% total).",
+            "Cylinder deactivation is working. Our engines drop to half their cylinders on the easy stretches, 2% saved (42% total).",
+            "The ceramic liners are in service. The heat stays where it does work instead of going out the radiator, 2% less gas (44% total).",
+            "The two-stage turbos are fitted. There's boost from idle to redline now and we burn 2% less gas (46% total).",
+            "We now have hydraulic hybrid drive. Our vehicles launch on stored pressure instead of fuel, 2% saved (48% total)." };
 
         // Extra (cross-line) prereq per level, on top of the previous level. -1 = none.
         // Turbo compounding leans on manufacturing; better spark timing needs nuclear-era
         // physics. Levels above each gate inherit it through the chain, so we only pin it
         // once where it first becomes necessary. The late mundane levels add no new gate.
-        static const int aiExtra[18] = {
-            -1, -1, (int)manf_1, -1, -1, (int)nuclear, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1 };
+        static const int aiExtra[23] = {
+            -1, -1, (int)manf_1, -1, -1, (int)nuclear, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,
+            -1, -1, -1, -1, -1 };
 
         // Level (0-based) -> enum id. Non-contiguous because 11-12, 13-16 and 17-18 were
         // appended at the enum end for save parity.
-        static const int aiIdx[18] = {
+        static const int aiIdx[23] = {
             fuel_efficiency_1,  fuel_efficiency_2,  fuel_efficiency_3,  fuel_efficiency_4,  fuel_efficiency_5,
             fuel_efficiency_6,  fuel_efficiency_7,  fuel_efficiency_8,  fuel_efficiency_9,  fuel_efficiency_10,
             fuel_efficiency_11, fuel_efficiency_12, fuel_efficiency_13, fuel_efficiency_14,
-            fuel_efficiency_15, fuel_efficiency_16, fuel_efficiency_17, fuel_efficiency_18 };
+            fuel_efficiency_15, fuel_efficiency_16, fuel_efficiency_17, fuel_efficiency_18,
+            fuel_efficiency_19, fuel_efficiency_20, fuel_efficiency_21, fuel_efficiency_22,
+            fuel_efficiency_23 };
 
-        int iBase = ElementAt( gas_turbine ).m_iPtsRequired;   // B = gas_turbine cost
-        int iPts  = iBase;                                     // level 1 = B
-        for ( int iOn = 0; iOn < 18; iOn++ )
+        long long iBase = ElementAt( gas_turbine ).m_iPtsRequired;   // B = gas_turbine cost
+        long long iPts  = iBase;                               // level 1 = B
+        for ( int iOn = 0; iOn < 23; iOn++ )
         {
             CRsrchItem* pRi = &ElementAt( aiIdx[iOn] );
 
@@ -527,7 +558,7 @@ void CRsrchArray::Open( )
         static const int aiExtra[10] = {
             -1, -1, -1, -1, -1, (int)atk_3, -1, -1, -1, -1 };
 
-        int iBase = ElementAt( gas_turbine ).m_iPtsRequired;   // B, same base as Fuel Efficiency
+        long long iBase = ElementAt( gas_turbine ).m_iPtsRequired;   // B, same base as Fuel Efficiency
         for ( int iOn = 0; iOn < 10; iOn++ )
         {
             CRsrchItem* pRi = &ElementAt( vehicle_speed_1 + iOn );
@@ -581,7 +612,7 @@ void CRsrchArray::Open( )
             "Fluidic drives are fielded. Our vehicles move 1% faster.",
             "Gyroscopic stabilizers are perfected. Our vehicles reach their top speed." };
 
-        int iBase = ElementAt( gas_turbine ).m_iPtsRequired;   // B, same base as Fuel Efficiency
+        long long iBase = ElementAt( gas_turbine ).m_iPtsRequired;   // B, same base as Fuel Efficiency
         for ( int iOn = 0; iOn < 2; iOn++ )
         {
             CRsrchItem* pRi = &ElementAt( vehicle_speed_11 + iOn );
@@ -673,41 +704,45 @@ void CRsrchArray::Open( )
         }
     }
 
-    // In-code research topics: Fracking 1-6 (#23, not in the DAT file). Exhausted oil
+    // In-code research topics: Fracking 1-7 (#23, not in the DAT file). Exhausted oil
     // wells trickle oil when fracking is toggled ON (consumed in the mine production hook
     // via CPlayer::GetFrackOilPerMin), at +50% well energy. Each tier costs DOUBLE the
     // previous and chains the prior tier; T1 needs gas_turbine, later tiers also a
     // Fuel-Efficiency level. The AI's frozen research path doesn't pursue these (optional
     // human tiers). Point/gate values are easy to retune (operator balances in-game).
     {
-        static const char* aszFrName[6] = {
+        static const char* aszFrName[7] = {
             "Hydraulic Fracturing", "Horizontal Drilling", "Proppant Injection",
-            "Microseismic Mapping", "Supercritical Extraction", "Thermal Flooding" };
-        static const char* aszFrDesc[6] = {
-            "High-pressure fluid fractures spent rock, coaxing a 5/min oil trickle from exhausted wells.",
-            "Horizontal bores reach untapped pockets, lifting the trickle to 7/min.",
-            "Engineered proppants hold fractures open longer, raising recovery to 9/min.",
-            "Microseismic mapping targets the richest seams, yielding 11/min.",
-            "Supercritical solvents strip the last bound oil from dead rock, 13/min.",
-            "Pumped steam drives the last clinging oil out of dead rock, lifting the trickle to 15/min." };
-        static const char* aszFrRslt[6] = {
-            "Hydraulic fracturing online. Exhausted wells now trickle oil (toggle per well).",
-            "Horizontal drilling fielded. Fracked wells yield more oil.",
-            "Proppant injection in service. Fracked-well oil rises again.",
-            "Microseismic mapping operational. Fracked wells reach deeper pockets.",
-            "Supercritical extraction perfected. Maximum oil from spent wells.",
-            "Thermal flooding operational. Even the most spent wells give up a little more oil." };
+            "Microseismic Mapping", "Supercritical Extraction", "Thermal Flooding",
+            "Electrokinetic Recovery" };
+        static const char* aszFrDesc[7] = {
+            "Our spent wells still hold oil we can't reach. If we fracture the rock with high pressure fluid we should be able to draw off 5 units a minute.",
+            "A vertical bore only touches what lies straight beneath it. We should be able to drill sideways into the pockets it misses and take 7.",
+            "Our fractures close again as soon as the pressure comes off. Engineered proppant should hold them open for 9.",
+            "We are fracturing blind and wasting half the effort on dead rock. Listening to the seismic echoes should find us the better seams and 11.",
+            "Some of the oil is bound to the rock and no pressure will shift it. A supercritical solvent should strip it loose for 13.",
+            "The oil that is left clings too tightly to flow. However, if we flood the seam with steam we should be able to drive it out for 15.",
+            "Even steam leaves oil behind in the tightest rock. We think we can walk it to the bore with a direct current and take 17." };
+        static const char* aszFrRslt[7] = {
+            "We can now fracture our spent wells. Turn one back on and an exhausted well gives up 5 units of oil a minute.",
+            "We are now drilling horizontally. Our fracked wells reach what the old bores missed and give 7.",
+            "The new proppants hold our fractures open. Our fracked wells now give 9.",
+            "We can now map a seam by its own echoes. Our bores go where the oil is and the wells give 11.",
+            "We have supercritical extraction working. It strips out oil that no pressure could move and the wells give 13.",
+            "We have the steam flood operational. Even the most spent wells give up 15 now.",
+            "We are now running a current through the seam. It draws out the oil the steam left behind and the wells give 17." };
         // Extra (cross-line) prereq per tier, on top of the previous tier. -1 = none.
-        static const int aiFrExtra[6] = {
-            -1, (int)fuel_efficiency_1, (int)fuel_efficiency_3, (int)fuel_efficiency_5, (int)fuel_efficiency_8, (int)fuel_efficiency_10 };
+        static const int aiFrExtra[7] = {
+            -1, (int)fuel_efficiency_1, (int)fuel_efficiency_3, (int)fuel_efficiency_5, (int)fuel_efficiency_8, (int)fuel_efficiency_10,
+            (int)fuel_efficiency_12 };
 
         // Level (0-based) -> enum id. Tiers 1-5 are contiguous; tier 6 was appended at the
         // enum end for save parity, so it is NOT fracking_5+1 -- map it explicitly.
-        static const int aiFrIdx[6] = {
-            fracking_1, fracking_2, fracking_3, fracking_4, fracking_5, fracking_6 };
+        static const int aiFrIdx[7] = {
+            fracking_1, fracking_2, fracking_3, fracking_4, fracking_5, fracking_6, fracking_7 };
 
-        int iPts = ElementAt( gas_turbine ).m_iPtsRequired;
-        for ( int iOn = 0; iOn < 6; iOn++ )
+        long long iPts = ElementAt( gas_turbine ).m_iPtsRequired;
+        for ( int iOn = 0; iOn < 7; iOn++ )
         {
             CRsrchItem* pRi = &ElementAt( aiFrIdx[iOn] );
 
@@ -763,7 +798,7 @@ void CRsrchArray::Open( )
         // raised from farm_1 (an early ag tech) to gas_turbine so every tier costs more, and the
         // T1 entry gate now also requires ADVANCED MANUFACTURING (manf_3) -- the same high gate
         // coal-liquefaction sits behind -- so Biomass Digestion can't be reached early.
-        int iPts = ElementAt( gas_turbine ).m_iPtsRequired;
+        long long iPts = ElementAt( gas_turbine ).m_iPtsRequired;
         for ( int iOn = 0; iOn < 6; iOn++ )
         {
             CRsrchItem* pRi = &ElementAt( biofuel_1 + iOn );
@@ -795,11 +830,13 @@ void CRsrchArray::Open( )
         }
     }
 
-    // In-code research topics: Coal Liquefaction (2 tiers, not in the DAT file). A coal
+    // In-code research topics: Coal Liquefaction (2 tiers, not in the DAT file). An OIL
     // POWER PLANT, once tier 1 is researched and its per-building alt-output toggle is ON,
-    // also converts coal into oil via the shared AltOutput system (eRatioConsume). Tier 1
-    // runs the recipe at 3 coal -> 1 oil; tier 2 improves it to 2 coal -> 1 oil (the ratio
-    // is read per-tier by CPlayer::GetCoalLiqRatio and wired into the def's m_pfnRatioIn).
+    // STOPS generating power and cracks DELIVERED coal into oil via the shared AltOutput
+    // system (eRatioConsume, eTimeDriven). Tier 1 runs the recipe at 3 coal -> 1 oil; tier 2
+    // improves it to 2 coal -> 1 oil (the ratio is read per-tier by CPlayer::GetCoalLiqRatio
+    // and wired into the def's m_pfnRatioIn). It was hosted on the COAL plant before the
+    // relocation, where the coal was the plant's own fuel and the oil could not be exported.
     // Tier 1 chained off Advanced Manufacturing. Tier 2 is a deliberate MEGA-EXPENSIVE
     // endgame tech: a flat 2,000,000-point cost, gated behind fuel_efficiency_5 (so a few
     // fuel-efficiency techs are researched first) as well as tier 1. Appended LAST in the
@@ -819,8 +856,8 @@ void CRsrchArray::Open( )
         pRi->m_piRsrchRequired[0] = (int)manf_3;
 
         pRi->m_sName   = "Coal Liquefaction";
-        pRi->m_sDesc   = "Fischer-Tropsch synthesis cracks coal into liquid fuel: a toggled coal power plant turns 3 coal into 1 oil.";
-        pRi->m_sResult = "Coal liquefaction online. Coal power plants can convert coal to oil (toggle per plant).";
+        pRi->m_sDesc   = "Fischer-Tropsch synthesis cracks coal into liquid fuel: a toggled oil power plant stops generating power and turns 3 delivered coal into 1 oil.";
+        pRi->m_sResult = "Coal liquefaction online. An oil power plant can be switched to crack trucked-in coal into oil (toggle per plant).";
 
         // Tier 2: better catalysts wring more oil from the same coal (3:1 -> 2:1). Priced as a
         // super-expensive endgame prize (2 million points) and gated behind a chunk of the fuel-
@@ -840,42 +877,45 @@ void CRsrchArray::Open( )
 
         pRi2->m_sName   = "Catalytic Coal Cracking";
         pRi2->m_sDesc   = "A better catalyst bed should let our plants squeeze the same oil from less coal, dropping the recipe to 2 coal for 1 oil. It will take a fortune in research to perfect.";
-        pRi2->m_sResult = "Catalytic cracking is dialed in. Our coal plants now make 1 oil from just 2 coal instead of 3.";
+        pRi2->m_sResult = "Catalytic cracking is dialed in. A liquefying oil plant now makes 1 oil from just 2 delivered coal instead of 3.";
     }
 
-    // In-code research topic: Charcoal (5 tiers, not in the DAT file). A lumber MILL (the
-    // sawmill -- UTfarm whose GetTypeFarm() == lumber), once a Charcoal tier is researched
-    // and its per-building alt-output toggle is ON, runs a kiln: it converts harvested
-    // lumber into coal ("Charcoal" label only) at a fixed 2 lumber -> 1 coal via the shared
-    // AltOutput system (eRatioConsume), MODE-SWITCH (lumber output stops while the kiln
-    // runs). The 2:1 ratio is fixed; the THROUGHPUT is tier-scaled by CPlayer::GetCharcoalPct
-    // (T1 = VERY LOW per operator spec, T2-5 raise it). No energy cost. T1 chained off Gas
-    // Turbines; T2-4 chain the prior tier (mirrors the BioFuel line). Cost doubles each tier.
-    // Appended LAST in the enum so save indices don't shift. The AI's frozen research path
-    // doesn't pursue these.
+    // In-code research topic: Charcoal (5 tiers, not in the DAT file). A COAL POWER PLANT,
+    // once a Charcoal tier is researched and its per-building alt-output toggle is ON, STOPS
+    // generating power and runs as a KILN: it chars DELIVERED lumber into coal via the shared
+    // AltOutput system (eRatioConsume, eTimeDriven). The tier ladder scales the RECIPE --
+    // CPlayer::GetCharcoalRatio, 4/3/3/2/2 lumber per coal -- because there is no harvest to
+    // take a slice of at a power plant (the pre-relocation host was the lumber mill, scaled by
+    // the now-deleted GetCharcoalPct). Only T2 and T4 actually move the ratio; T3 and T5 are
+    // flavour/prerequisite steps, and the text below must not claim otherwise. Draws +2
+    // workers. T1 chained off Gas Turbines; T2-5 chain the prior tier (mirrors the BioFuel
+    // line). Cost doubles each tier. Appended LAST in the enum so save indices don't shift.
+    // The AI's frozen research path doesn't pursue these.
     {
         static const char* aszChName[5] = {
             "Charcoal Kiln", "Retort Kiln", "Continuous Carbonization", "Pyrolysis Refinery",
             "Fluidized-Bed Reactor" };
+        // Ratio by tier: T1 4:1, T2 3:1, T3 3:1, T4 2:1, T5 2:1 (CPlayer::GetCharcoalRatio).
+        // T3 and T5 do NOT improve the recipe -- their text says so rather than inventing a gain.
         static const char* aszChDesc[5] = {
-            "A simple wood kiln chars lumber into coal: a toggled sawmill converts 2 lumber into 1 coal at a very low rate.",
-            "Sealed retort kilns char lumber more efficiently, raising the sawmill's charcoal output.",
-            "Continuous carbonization lines keep the kiln running, raising charcoal output again.",
-            "A full pyrolysis refinery wrings still more charcoal from every log.",
-            "A fluidized-bed reactor chars every scrap at once, squeezing the most coal yet from each log." };
+            "A simple wood kiln chars lumber into coal: a toggled coal power plant stops generating power and converts 4 delivered lumber into 1 coal.",
+            "Sealed retort kilns waste less of every log, cutting the kiln's recipe to 3 lumber for 1 coal.",
+            "Continuous carbonization lines keep the kiln burning around the clock instead of in batches. The recipe stays at 3 lumber for 1 coal, but the line is the groundwork for the pyrolysis refinery.",
+            "A full pyrolysis refinery captures the volatiles a kiln normally loses, cutting the recipe to 2 lumber for 1 coal.",
+            "A fluidized-bed reactor chars every scrap at once. The recipe holds at 2 lumber for 1 coal - this is the end of the ladder, not a further saving." };
         static const char* aszChRslt[5] = {
-            "Charcoal kiln online. Sawmills can convert lumber into coal (toggle per mill).",
-            "Retort kilns fielded. Sawmill charcoal output rises.",
-            "Continuous carbonization in service. More charcoal per log.",
-            "Pyrolysis refinery fielded. Charcoal output climbs again.",
-            "Fluidized-bed reactor perfected. Maximum charcoal from every sawmill." };
+            "Charcoal kiln online. A coal power plant can be switched to char trucked-in lumber into coal at 4 lumber per coal (toggle per plant).",
+            "Retort kilns fielded. Our kilns now need only 3 lumber per coal.",
+            "Continuous carbonization in service. Still 3 lumber per coal, but the pyrolysis refinery is now within reach.",
+            "Pyrolysis refinery fielded. Our kilns now need only 2 lumber per coal.",
+            "Fluidized-bed reactor perfected. The kiln line is complete at 2 lumber per coal." };
 
         // Level (0-based) -> enum id. Tiers 1-4 are contiguous; tier 5 was appended at the
         // enum end for save parity, so it is NOT charcoal_4+1 -- map it explicitly.
         static const int aiChIdx[5] = {
             charcoal_1, charcoal_2, charcoal_3, charcoal_4, charcoal_5 };
 
-        int iPts = ElementAt( gas_turbine ).m_iPtsRequired;
+        long long iPts = ElementAt( gas_turbine ).m_iPtsRequired;
         for ( int iOn = 0; iOn < 5; iOn++ )
         {
             CRsrchItem* pRi = &ElementAt( aiChIdx[iOn] );
@@ -895,6 +935,464 @@ void CRsrchArray::Open( )
         }
     }
 
+    // In-code research topic: Slash and Burn (1 tier, not in the DAT file). A lumber MILL, once
+    // this is researched and its per-building alt-output toggle is ON, harvests at 250%
+    // (AltOutput::SLASH_BURN_MULT, applied in CFarmBuilding::BuildFarm) -- and permanently
+    // destroys the forest around it as it cuts, until there is nothing left to harvest. The def
+    // is eModifier: it produces no secondary material, it only carries the toggle.
+    // Chained off farm_1 but a DEDICATED topic, deliberately NOT gated on farm_1 itself: a mill
+    // carrying a stale alt_oil bit from the old sawmill-hosted Charcoal would otherwise start
+    // clear-cutting the instant an old save loaded. Appended LAST in the enum so save indices
+    // don't shift. The AI's frozen research path doesn't pursue it.
+    {
+        CRsrchItem* pRi = &ElementAt( slash_and_burn );
+
+        // TUNING VALUE: the same cost basis charcoal_1 uses (2 x the gas_turbine tech). Retune
+        // here -- nothing else reads it.
+        pRi->m_iPtsRequired      = ElementAt( gas_turbine ).m_iPtsRequired * 2;
+        pRi->m_iScenarioReq      = ElementAt( farm_1 ).m_iScenarioReq;
+        pRi->m_iNumBldgsRequired = 0;
+
+        pRi->m_iNumRsrchRequired  = 1;
+        pRi->m_piRsrchRequired    = new int[1];
+        pRi->m_piRsrchRequired[0] = (int)farm_1;
+
+        pRi->m_sName   = "Slash and Burn";
+        pRi->m_sDesc   = "Fire the undergrowth and take the whole stand at once instead of thinning it: a toggled sawmill cuts at 250% of its normal rate. The forest it clears does not grow back, and when the last of it is down the mill is worth nothing.";
+        pRi->m_sResult = "Slash and burn permitted. A sawmill can be switched to cut at 250% -- but it PERMANENTLY destroys the forest around it, and that cannot be undone (toggle per mill).";
+    }
+
+    // ---- Research Speed 1-5 (in-code) ----------------------------------------
+    // Each level makes RESEARCH ITSELF 10% faster: the points earned per tick go
+    // 100% -> 110% -> 120% -> 130% -> 140% -> 150% (CPlayer::GetRsrchSpeedPct,
+    // consumed in CPlayer::Research). Costs are ABSOLUTE (not a multiple of a DAT
+    // topic, the way the fuel/charcoal lines are): 100k doubling to 1.6M. That puts
+    // the whole line between acc_3 (320k, priciest DAT topic) and coal_liquefaction_2
+    // (2M), so unlike the late Fuel Efficiency tiers these stay reachable in a normal
+    // game. T1 has no precursor topic: it unlocks once the colony has completed
+    // RSRCH_SPEED_MIN_TOPICS paid topics (gate in CPlayer::CanRsrch), so it is earned
+    // by research experience rather than by one arbitrary tech. T2-5 chain off the
+    // previous tier. The scenario gate is still borrowed from telephone.
+    //
+    // Text follows the ORIGINAL DAT voice, measured off the "New/Improved/Adv.
+    // Construction Techniques" productivity line (the game's own analogue of this
+    // one): no "%" anywhere (the original never uses it), no semicolons or dashes,
+    // single space after a period, "However," / "In fact," as the connectors, and the
+    // a little -> significantly -> a lot -> much -> drastically ladder (every rung of
+    // which is attested in the original text). It calls the building a "Research
+    // Institute", which is the name the original uses -- never "laboratory".
+    // NOTE: no level's text may claim to be the "last" or "final" one -- the fuel
+    // line was extended four times and every such claim had to be walked back.
+    {
+        static const char* aszRsName[5] = {
+            "New Research Methods",
+            "Precision Instruments",
+            "Scientific Computing",
+            "Automated Test Benches",
+            "Parallel Research Teams" };
+        static const char* aszRsDesc[5] = {
+            "If we spent some time learning how to run our Research Institutes more efficiently instead of just working harder it could pay off for us in increased productivity.",
+            "Our Research Institutes are still working with the instruments we brought with us. We should be able to build proper ones here and learn more from every experiment.",
+            "Our researchers spend more of their time working through their figures than running experiments. If we put our computers on the numbers they could get on with the science.",
+            "Our test benches stand idle every night when the shift goes home. We should be able to run them unattended and keep our experiments going around the clock.",
+            "We have our researchers all working the same problem one at a time. If we split them into teams working in parallel we could chase several answers at once." };
+        static const char* aszRsRslt[5] = {
+            "With what we have learned we should be able to complete our research a little faster. However, there is quite a bit left to learn.",
+            "We have the new instruments in place. Our researchers get a clean reading the first time and we complete our research significantly faster. However, there is still a good bit left to learn.",
+            "We can now put our computers on the numbers. Our researchers are free of their figures and we complete our research a lot faster. However, there is a bit left to learn.",
+            "We have the test benches running unattended. The work doesn't stop when the shift goes home and we complete our research much faster. However, there is not much left to learn.",
+            "We are now running our researchers in parallel teams. Chasing several answers at once has drastically increased the pace of our research. In fact, our Research Institutes now spend more time writing up results than getting them." };
+
+        // Absolute costs, doubling: 100k / 200k / 400k / 800k / 1.6M.
+        static const int aiRsPts[5] = { 100000, 200000, 400000, 800000, 1600000 };
+
+        // Contiguous at the enum end, but map explicitly so a future append cannot
+        // silently shift the line (the fuel line learned this the hard way).
+        static const int aiRsIdx[5] = {
+            rsrch_speed_1, rsrch_speed_2, rsrch_speed_3, rsrch_speed_4, rsrch_speed_5 };
+
+        for ( int iOn = 0; iOn < 5; iOn++ )
+        {
+            CRsrchItem* pRi = &ElementAt( aiRsIdx[iOn] );
+
+            pRi->m_iPtsRequired       = aiRsPts[iOn];
+            pRi->m_iScenarioReq       = ElementAt( telephone ).m_iScenarioReq;
+            pRi->m_iNumBldgsRequired  = 0;
+
+            // T1 has NO precursor topic: its gate is the RSRCH_SPEED_MIN_TOPICS count
+            // check in CPlayer::CanRsrch. Leaving the count at 0 keeps m_piRsrchRequired
+            // NULL (set by the ctor), which is what CRsrchArray::Close expects to delete.
+            // T2-5 chain off the previous tier as usual.
+            if ( 0 == iOn )
+                pRi->m_iNumRsrchRequired = 0;
+            else
+            {
+                pRi->m_iNumRsrchRequired  = 1;
+                pRi->m_piRsrchRequired    = new int[1];
+                pRi->m_piRsrchRequired[0] = aiRsIdx[iOn - 1];
+            }
+
+            pRi->m_sName   = aszRsName[iOn];
+            pRi->m_sDesc   = aszRsDesc[iOn];
+            pRi->m_sResult = aszRsRslt[iOn];
+        }
+    }
+
+
+    // ---- Moho Mining upgrade line 2-6 (in-code) ------------------------------
+    // The IRON twin of Fracking: an EXHAUSTED iron mine trickles iron when the per-
+    // building toggle is on (AltOutput "Moho Mining", +50% mine power). Until now this
+    // was a single flat 10 iron/min granted free by the DAT mine_2 topic and had no
+    // upgrade path at all -- these five tiers are that path. mine_2 stays the free base
+    // tier (still 10/min, NOT repriced, so nobody loses a capability they already have)
+    // and each paid tier adds +1 iron/min, reaching 15 at moho_6.
+    //
+    // Cost doubles per tier off mine_2 as the basis (296k .. 4.736M), mirroring how the
+    // Fracking line doubles off gas_turbine. Gating is deliberately NOT the Fuel
+    // Efficiency line that Fracking leans on -- deep rock is a CONSTRUCTION problem, so
+    // the cross-line prereqs walk the const_1..3 ladder, with nuclear up front for the
+    // power a Moho bore needs. Rates/gates are easy to retune (operator balances in-game).
+    {
+        // The BASE Moho capability rides on the DAT mine_2 topic, whose own result text talks
+        // only about mining faster -- so nothing ever told the player the toggle exists and it
+        // was found by accident. Append one sentence announcing it. Safe to do here: Open()
+        // asserts GetSize()==0 on entry, so the DAT text is re-read fresh every load and this
+        // cannot append twice.
+        ElementAt( mine_2 ).m_sResult += " We can also work an exhausted iron mine again by boring past the crust.";
+
+        static const char* aszMoName[5] = {
+            "Mantle Boreholes", "Diamond Drill Strings", "Magma-Assisted Smelting",
+            "Seismic Ore Imaging", "Continuous Deep Extraction" };
+        static const char* aszMoDesc[5] = {
+            "Our revived mines only ever scratched the crust. If we bore down past it we should be able to reach ore the shafts never touched and take 11 units a minute.",
+            "Our drill strings blunt themselves on mantle rock and don't last a week before re-tipping. Diamond strings should keep them cutting for 12.",
+            "There is heat enough at the bore face to work the ore where it lies. We should be able to smelt it down there and bring up 13.",
+            "We are boring into whatever lies beneath us and hoping. However, seismic imaging should steer us into the better ore bodies for 14.",
+            "Our bores stop every time the cutting head comes up. A continuous head should keep them advancing around the clock for 15." };
+        static const char* aszMoRslt[5] = {
+            "We can now bore past the crust. Our exhausted iron mines give up 11 units of iron a minute.",
+            "The diamond strings are in service. Our bores cut mantle rock for days without stopping and the mines give 12.",
+            "We can now smelt the ore at the bore face. The heat down there does the work for us and the mines give 13.",
+            "We have seismic ore imaging working. Our bores find the ore instead of hunting for it and the mines give 14.",
+            "We are now cutting around the clock. The deep bores don't stop any more and the mines give 15." };
+
+        // Extra (cross-line) prereq per tier, on top of the previous tier. -1 = none.
+        static const int aiMoExtra[5] = {
+            (int)nuclear, (int)const_1, (int)const_2, (int)const_3, (int)advanced_facilities };
+
+        // Level (0-based) -> enum id. Contiguous at the enum end, but mapped explicitly
+        // so a future append cannot silently shift the line.
+        static const int aiMoIdx[5] = { moho_2, moho_3, moho_4, moho_5, moho_6 };
+
+        long long iPts = ElementAt( mine_2 ).m_iPtsRequired;   // basis: the topic that grants base Moho
+        for ( int iOn = 0; iOn < 5; iOn++ )
+        {
+            CRsrchItem* pRi = &ElementAt( aiMoIdx[iOn] );
+
+            iPts *= 2;
+            pRi->m_iPtsRequired       = iPts;
+            pRi->m_iScenarioReq       = ElementAt( mine_2 ).m_iScenarioReq;
+            pRi->m_iNumBldgsRequired  = 0;
+
+            // T1 of this line chains off mine_2 itself (the free base tier); T2-5 off the
+            // previous tier. Every tier also carries one cross-line prereq.
+            int iChain = ( 0 == iOn ) ? (int)mine_2 : aiMoIdx[iOn - 1];
+            int nReq   = 1 + ( aiMoExtra[iOn] >= 0 ? 1 : 0 );
+            pRi->m_iNumRsrchRequired  = nReq;
+            pRi->m_piRsrchRequired    = new int[nReq];
+            pRi->m_piRsrchRequired[0] = iChain;
+            if ( aiMoExtra[iOn] >= 0 )
+                pRi->m_piRsrchRequired[1] = aiMoExtra[iOn];
+
+            pRi->m_sName   = aszMoName[iOn];
+            pRi->m_sDesc   = aszMoDesc[iOn];
+            pRi->m_sResult = aszMoRslt[iOn];
+        }
+    }
+    // Late-game combat/structure tier (in-code): one more Range level, one more Attack
+    // level, and the first Building Armor topic. All three are END-GAME purchases -- each
+    // costs 8x its 248,000-point DAT parent (1,984,000, ~6x the dearest DAT topic) and each
+    // is gated behind the top of two or three other lines, so none of them can be reached
+    // before the rest of the tree is well along. The AI's frozen research path doesn't
+    // pursue them (optional human tiers). Effects: range_4/atk_4 in CUnit::AssignData via
+    // CPlayer::SetRsrch (m_bRange / m_bAttack level 4, diminishing step); bldg_armor in
+    // CUnit::DecDamagePoints via CPlayer::GetBldgArmorMult.
+    {
+        static const int aiLtIdx[3]  = { range_4, atk_4, bldg_armor };
+
+        // Points basis per topic (all three DAT parents cost 248,000) and the multiplier.
+        static const int aiLtBasis[3] = { (int)range_3, (int)atk_3, (int)const_3 };
+        static const int LT_COST_MULT = 8;
+
+        // Prereqs per topic, -1 padded. Every one of these is a top-of-line DAT topic.
+        static const int aiLtReq[3][3] = {
+            { (int)range_3, (int)acc_3,   -1                        },
+            { (int)atk_3,   (int)manf_3,  (int)nuclear              },
+            { (int)fortification, (int)const_3, (int)advanced_facilities } };
+
+        static const char* aszLtName[3] = {
+            "Base-Bleed Shells", "Tandem Warheads", "Blast Shielding" };
+        static const char* aszLtDesc[3] = {
+            "We think we can fit a small gas generator into the base of a shell to fill in the drag behind it. That should buy our guns a little more distance than the turbo ignitors alone.",
+            "If we set a second charge behind the first our shells should defeat armor that stops a single warhead. It should give our units a little more punch.",
+            "With some work we should be able to hang spaced plate on our buildings so a shell breaks up before it reaches the wall behind it. Our structures would take less damage from enemy fire." };
+        static const char* aszLtRslt[3] = {
+            "The base-bleed shells carry a little further than anything we have fired so far. We will stock all new units with them.",
+            "The tandem warheads give our units a little more offensive strength. We are loading these shells on all new units.",
+            "The blast shielding is up. Every building we own takes significantly less damage from enemy fire, not just the ones we build from here on." };
+
+        for ( int iOn = 0; iOn < 3; iOn++ )
+        {
+            CRsrchItem* pRi = &ElementAt( aiLtIdx[iOn] );
+
+            pRi->m_iPtsRequired      = ElementAt( aiLtBasis[iOn] ).m_iPtsRequired * LT_COST_MULT;
+            pRi->m_iNumBldgsRequired = 0;
+
+            // Count the real prereqs, and take the LATEST scenario any of them needs -- the
+            // topic cannot be started before every gate is itself reachable.
+            int nReq  = 0;
+            int iScen = 0;
+            for ( int iReq = 0; iReq < 3; iReq++ )
+                if ( aiLtReq[iOn][iReq] >= 0 )
+                {
+                    nReq++;
+                    if ( ElementAt( aiLtReq[iOn][iReq] ).m_iScenarioReq > iScen )
+                        iScen = ElementAt( aiLtReq[iOn][iReq] ).m_iScenarioReq;
+                }
+            pRi->m_iScenarioReq      = iScen;
+            pRi->m_iNumRsrchRequired = nReq;
+            pRi->m_piRsrchRequired   = new int[nReq];
+            for ( int iReq = 0, iPut = 0; iReq < 3; iReq++ )
+                if ( aiLtReq[iOn][iReq] >= 0 )
+                    pRi->m_piRsrchRequired[iPut++] = aiLtReq[iOn][iReq];
+
+            pRi->m_sName   = aszLtName[iOn];
+            pRi->m_sDesc   = aszLtDesc[iOn];
+            pRi->m_sResult = aszLtRslt[iOn];
+        }
+    }
+    // Nuclear Uprate 1-5 (in-code): each level adds 10 percent to the output of this
+    // player's Nuclear Power Plants. Cost starts at 2x the DAT nuclear topic (296,000) and
+    // DOUBLES per level to 4,736,000. T1 chains nuclear itself; T2-5 chain the previous tier,
+    // and every tier carries one cross-line manufacturing/construction gate, because a
+    // reactor uprate is a materials problem before it is a physics one. The AI's frozen
+    // research path doesn't pursue these (optional human tiers).
+    {
+        static const int aiNkIdx[5] = { nuke_power_1, nuke_power_2, nuke_power_3,
+                                        nuke_power_4, nuke_power_5 };
+        static const int aiNkExtra[5] = {
+            (int)advanced_facilities, (int)manf_1, (int)manf_2, (int)manf_3, (int)const_3 };
+
+        static const char* aszNkName[5] = {
+            "Reactor Uprate", "Improved Control Rods", "Breeder Cycle",
+            "Fast Neutron Core", "Closed Fuel Cycle" };
+        static const char* aszNkDesc[5] = {
+            "Our reactors are run well inside their margins because we did not trust the first cores we cast. Now that we do, we should be able to open them up and draw more power from every plant.",
+            "The control rods we started with are crude and we hold the pile back to stay safe. Finer rods would let us run the reactors hotter without losing the margin.",
+            "The spent fuel we pull out still has most of its energy in it. If we breed it back into fuel we can keep the piles running harder for longer.",
+            "A fast neutron core burns the heavier waste our thermal piles leave behind. It is harder to hold steady but there is a lot more power in it.",
+            "If we close the fuel cycle nothing leaves the plant but electricity. Everything we dig up gets burned, and the piles run harder than we built them to." };
+        static const char* aszNkRslt[5] = {
+            "The uprate is done. Every nuclear plant we own puts out more power than it did, and the ones we build from here on start that way.",
+            "The new control rods are in. Our reactors run hotter and give us more power for the same fuel.",
+            "The breeder cycle is running. We are making fuel faster than we burn it and our nuclear plants give more power again.",
+            "The fast neutron cores are online. They burn what the old piles threw away and our nuclear plants give more power still.",
+            "The fuel cycle is closed. Nothing leaves our nuclear plants but electricity, and they give more power than we thought those piles had in them." };
+
+        long long iPts = ElementAt( nuclear ).m_iPtsRequired;   // basis: the topic that unlocks the plant
+        for ( int iOn = 0; iOn < 5; iOn++ )
+        {
+            CRsrchItem* pRi = &ElementAt( aiNkIdx[iOn] );
+
+            iPts *= 2;                                    // 296,000 .. 4,736,000
+            pRi->m_iPtsRequired      = iPts;
+            pRi->m_iNumBldgsRequired = 0;
+
+            int iChain = ( 0 == iOn ) ? (int)nuclear : aiNkIdx[iOn - 1];
+            pRi->m_iNumRsrchRequired  = 2;
+            pRi->m_piRsrchRequired    = new int[2];
+            pRi->m_piRsrchRequired[0] = iChain;
+            pRi->m_piRsrchRequired[1] = aiNkExtra[iOn];
+
+            int iScen = ElementAt( iChain ).m_iScenarioReq;
+            if ( ElementAt( aiNkExtra[iOn] ).m_iScenarioReq > iScen )
+                iScen = ElementAt( aiNkExtra[iOn] ).m_iScenarioReq;
+            pRi->m_iScenarioReq = iScen;
+
+            pRi->m_sName   = aszNkName[iOn];
+            pRi->m_sDesc   = aszNkDesc[iOn];
+            pRi->m_sResult = aszNkRslt[iOn];
+        }
+    }
+    // Late attack tiers 5-8 and Building Armor tiers 2-3 (in-code). These are the deep end of
+    // the tree: every one carries THREE prerequisites that reach across other lines (accuracy,
+    // range, defense, construction, manufacturing, spotting and the Nuclear Uprate line above),
+    // so they cannot be opened early no matter how the points are spent. Because the benefit
+    // per tier is shrinking, the cost ramp is FLAT rather than doubling -- each tier adds
+    // another 8x the 248,000-point basis, exactly the way Fuel Efficiency behaves past its cap.
+    // Effects: attack in CUnit::AssignData (via CPlayer::SetRsrch, m_bAttack levels 5-8);
+    // building armor in CUnit::DecDamagePoints (via CPlayer::GetBldgArmorMult).
+    // NOTE bldg_armor_3 requires atk_5: we learn what stops a tandem warhead by building one.
+    // That is a one-way link (no attack tier requires a building-armor tier), so no cycle.
+    {
+        static const int aiDpIdx[6]   = { atk_5, atk_6, atk_7, atk_8, bldg_armor_2, bldg_armor_3 };
+        static const int aiDpBasis[6] = { (int)atk_3, (int)atk_3, (int)atk_3, (int)atk_3,
+                                          (int)const_3, (int)const_3 };
+        // Flat cost ramp, in multiples of the 248,000 basis: the attack line continues from
+        // atk_4 (8x) and the armor line continues from bldg_armor (8x).
+        static const int aiDpMult[6]  = { 16, 24, 32, 40, 16, 24 };
+
+        static const int aiDpReq[6][3] = {
+            { (int)atk_4,        (int)acc_3,        (int)advanced_facilities },
+            { (int)atk_5,        (int)range_4,      (int)def_3               },
+            { (int)atk_6,        (int)nuke_power_2, (int)const_3             },
+            { (int)atk_7,        (int)nuke_power_4, (int)spot_5              },
+            { (int)bldg_armor,   (int)def_3,        (int)manf_3              },
+            { (int)bldg_armor_2, (int)nuke_power_3, (int)atk_5               } };
+
+        static const char* aszDpName[6] = {
+            "Shaped Liners", "Kinetic Penetrators", "Thermobaric Cores", "Guided Shells",
+            "Spall Liners", "Reactive Facing" };
+        static const char* aszDpDesc[6] = {
+            "A copper liner pressed into the right cone turns the charge into a jet instead of a blast. It is a small gain on top of the tandem rounds but it is a real one.",
+            "A dense dart carries its energy further into the plate than any explosive we pack behind it. We would be trading blast for penetration and coming out a little ahead.",
+            "A thermobaric core keeps burning after the case opens instead of spending itself at once. The gain is getting small now, but our gunners will take it.",
+            "We can put the radar sights on the shell itself and let it correct on the way in. There is not much left to win in a shell this size, but a round that steers itself will take what there is.",
+            "Shells that fail to hole a wall still knock plate off the inside of it, and that is what hurts the people working in there. A liner catches the fragments.",
+            "Plate that fires back into the jet as it forms will blunt a shaped charge before it reaches the wall. It is heavy and awkward and we would only do it now." };
+        static const char* aszDpRslt[6] = {
+            "The shaped liners are in production. Our shells hit a little harder than the tandem rounds did. We are loading them on all new units.",
+            "The kinetic penetrators work. Our units hit a little harder again, and against armor rather better than the numbers suggest. All new units carry them.",
+            "The thermobaric cores are loaded. The gain is small now but our shells do hit harder. All new units are stocked with them.",
+            "The guided shells are in service. They correct themselves on the way in and our units hit a little harder for it. We are loading them on all new units.",
+            "The spall liners are fitted. Every building we own takes less damage again, and the crews inside come through a shelling in better shape.",
+            "The reactive facing is up on every building we own. Our structures take less damage still, and a shaped charge no longer gets the bite out of a wall it used to." };
+
+        for ( int iOn = 0; iOn < 6; iOn++ )
+        {
+            CRsrchItem* pRi = &ElementAt( aiDpIdx[iOn] );
+
+            pRi->m_iPtsRequired      = ElementAt( aiDpBasis[iOn] ).m_iPtsRequired * aiDpMult[iOn];
+            pRi->m_iNumBldgsRequired = 0;
+
+            // All three prereq slots are real here (no -1 padding), but take the LATEST
+            // scenario any of them needs all the same.
+            int iScen = 0;
+            pRi->m_iNumRsrchRequired = 3;
+            pRi->m_piRsrchRequired   = new int[3];
+            for ( int iReq = 0; iReq < 3; iReq++ )
+            {
+                pRi->m_piRsrchRequired[iReq] = aiDpReq[iOn][iReq];
+                if ( ElementAt( aiDpReq[iOn][iReq] ).m_iScenarioReq > iScen )
+                    iScen = ElementAt( aiDpReq[iOn][iReq] ).m_iScenarioReq;
+            }
+            pRi->m_iScenarioReq = iScen;
+
+            pRi->m_sName   = aszDpName[iOn];
+            pRi->m_sDesc   = aszDpDesc[iOn];
+            pRi->m_sResult = aszDpRslt[iOn];
+        }
+    }
+    // ---- Drive-Core Resonance 1-6 (in-code) ----------------------------------
+    // A late six-tier line whose only effect is the Resonance Sweep edict at the Command
+    // Center (see edicts.h / CPlayer::ResonanceSweep). Tier 1 is a bare contact -- it finds
+    // one enemy rocket and shows the ship itself. Tiers 2-6 turn the ping into REAL VISION,
+    // lighting a 1- to 5-hex ring of ground around whatever it finds for a few seconds.
+    //
+    // Tier 1 is priced at 6x the spot_3 topic (1,488,000: dearer than anything in the DAT,
+    // well short of the end-game combat tiers) and gated behind the top of the sensor line
+    // plus the reactor physics that says what a drive core sounds like and the plant that can
+    // drive the emitter. Tiers 2-6 each cost RESONANCE_COST_MULT x the tier below and chain it,
+    // giving 1.488M / 4.464M / 13.392M / 40.176M / 120.528M / 361.584M.
+    //
+    // CEILING -- read this before raising RESONANCE_COST_MULT. m_iPtsRequired is now 64-bit, so
+    // the cost itself no longer overflows, but the topic still has to be REACHED: the accumulator
+    // CPlayer::Research adds into, CRsrchStatus::m_iPtsDiscovered, is a 32-bit LONG (and is
+    // serialized + sent in CNetSaveInfo at that width, so it cannot be widened without a save and
+    // protocol bump). It therefore tops out near 2^31, and the guaranteed-completion branch needs
+    // it to pass m_iPtsRequired * 2 -- which puts the real ceiling at INT_MAX/2, RSRCH_PTS_CEILING
+    // below. A cost above that can only ever complete through the random branch, and one above
+    // ~2^31 can never complete at all. At 5x this line ran 1.488M .. 4.65 BILLION and sailed past
+    // both, so the multiplier is 3x: the whole ladder lands under the ceiling with the top tier at
+    // ~361M, the same order as the existing end-game techs (atk_8 is 9.92M). The clamp stays as a
+    // backstop so a future retune degrades to a squashed top tier rather than an unwinnable one.
+    // The AI's frozen research path doesn't author these, though its cheapest-available
+    // fallback can still reach them.
+    {
+        const int RESONANCE_TIERS = 6;
+
+        // Cost step per tier. See the CEILING note above before raising this.
+        const long long RESONANCE_COST_MULT = 3;
+
+        // INT_MAX/2, because Research( ) evaluates m_iPtsRequired * 2.
+        const long long RSRCH_PTS_CEILING = 1073741823LL;
+
+        static const int aiIdx[RESONANCE_TIERS] = {
+            drive_core_resonance,   drive_core_resonance_2, drive_core_resonance_3,
+            drive_core_resonance_4, drive_core_resonance_5, drive_core_resonance_6 };
+
+        static char const* aszName[RESONANCE_TIERS] = {
+            "Drive-Core Resonance", "Phase-Locked Return",   "Harmonic Triangulation",
+            "Standing-Wave Imaging", "Core Echo Mapping",    "Full-Spectrum Resonance" };
+        static char const* aszDesc[RESONANCE_TIERS] = {
+            "Every one of those ships came down on the same kind of core. If we hit the right frequency it will ring, and we will hear which way it rang from.",
+            "We hear the ship but we see nothing around it. If we lock onto the phase of the return we could read the ground it is standing on as well.",
+            "One bearing gives us a point. Reading the harmonics off several of our own emitters at once would let us work outward and see a good deal more of the ground.",
+            "The return sets up a standing wave across the whole site. If we can image that wave properly we will see much further out from the ship than we do now.",
+            "The echo off the core carries the shape of everything it passed on the way back. Mapping that echo should open the ground out well past the ship itself.",
+            "If we open the emitter across the full spectrum at once we will get back everything there is to get. It will drink power like nothing we have built, but we will see their whole position." };
+        static char const* aszRslt[RESONANCE_TIERS] = {
+            "We can make their drive cores ring. Our Command Centers can now run a Resonance Sweep and take a bearing on one enemy ship at a time.",
+            "The phase lock holds. A sweep now lights the ground immediately around the ship it finds, not just the ship.",
+            "Harmonic triangulation is working. Our sweeps now open up a good deal more ground around each ship we find.",
+            "We can image the standing wave. Our sweeps now show much more of the ground around the ships they locate.",
+            "The echo mapping is running. A sweep now opens the ground well out past the ship itself.",
+            "Full-spectrum resonance is in service. A sweep now lays open their whole position around the ship, for as long as the emitter can hold it." };
+
+        // Tier 1 reaches across the sensor, reactor and facility lines; tiers 2-6 chain the
+        // tier below. -1 pads the unused slots.
+        static const int aiReq[RESONANCE_TIERS][3] = {
+            { (int)spot_3,                 (int)nuclear, (int)advanced_facilities },
+            { (int)drive_core_resonance,   -1,           -1                       },
+            { (int)drive_core_resonance_2, -1,           -1                       },
+            { (int)drive_core_resonance_3, -1,           -1                       },
+            { (int)drive_core_resonance_4, -1,           -1                       },
+            { (int)drive_core_resonance_5, -1,           -1                       } };
+
+        long long llPts = (long long)ElementAt( spot_3 ).m_iPtsRequired * 6;   // 1,488,000
+
+        for ( int iOn = 0; iOn < RESONANCE_TIERS; iOn++ )
+        {
+            CRsrchItem* pRi = &ElementAt( aiIdx[iOn] );
+
+            if ( iOn > 0 )
+                llPts *= RESONANCE_COST_MULT;
+            pRi->m_iPtsRequired      = ( llPts > RSRCH_PTS_CEILING ) ? RSRCH_PTS_CEILING : llPts;
+            pRi->m_iNumBldgsRequired = 0;
+
+            // Count the real prereqs and take the LATEST scenario any of them needs -- the
+            // topic cannot be started before every gate is itself reachable.
+            int nReq  = 0;
+            int iScen = 0;
+            for ( int iReq = 0; iReq < 3; iReq++ )
+                if ( aiReq[iOn][iReq] >= 0 )
+                {
+                    nReq++;
+                    if ( ElementAt( aiReq[iOn][iReq] ).m_iScenarioReq > iScen )
+                        iScen = ElementAt( aiReq[iOn][iReq] ).m_iScenarioReq;
+                }
+            pRi->m_iScenarioReq      = iScen;
+            pRi->m_iNumRsrchRequired = nReq;
+            pRi->m_piRsrchRequired   = new int[nReq];
+            for ( int iReq = 0, iPut = 0; iReq < 3; iReq++ )
+                if ( aiReq[iOn][iReq] >= 0 )
+                    pRi->m_piRsrchRequired[iPut++] = aiReq[iOn][iReq];
+
+            pRi->m_sName   = aszName[iOn];
+            pRi->m_sDesc   = aszDesc[iOn];
+            pRi->m_sResult = aszRslt[iOn];
+        }
+    }
 #ifdef _DEBUG
     theDataFile.DisableNegativeSeekChecking( );
     theDataFile.EnableNegativeSeekChecking( );

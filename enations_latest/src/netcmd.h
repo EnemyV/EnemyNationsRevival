@@ -154,6 +154,8 @@ class CNetCmd : public VPMsgHdr
         save_info,       // base save info
         research_disc,   // player has discovered research
         edict_toggle,    // player toggled a civ-wide edict (Edicts v1)
+        hex_retype,      // one map hex was retyped at runtime (Slash and Burn clear-cut)
+        bldg_dmg_mult,   // remote owner -> server: its Civil Defence building damage multiplier
 
         last_message  // used for ASSERT
     };
@@ -384,6 +386,9 @@ class CNetToHp : public CNetCmd
     int  m_iNetNum;
     char m_sName[1];  // actually all of it
 };
+
+// Largest save a load-join joiner will accept from the host (real saves are a few MB).
+const int MAX_NET_GAME_FILE = 256 * 1024 * 1024;
 
 class CNetGetFile : public CNetCmd
 {
@@ -1248,6 +1253,19 @@ class CMsgAiMsg : public CNetCmd
     int m_iLen;
 };
 
+// ipc_msg (mail) on the wire: CMsgIPC::ToBuf writes this header, then the message and the
+// subject, each NUL-terminated. CMsgIPC itself is never sent: its two CStrings are std::strings
+// (24 to 40 bytes each by library and config), so its size differs from peer to peer.
+class CMsgIPCWire : public CNetCmd
+{
+  public:
+    int m_iTo;
+    int m_iFrom;
+    int m_iCC;
+    int m_iType;
+    int m_iLen;
+};
+
 // sent when can't shoot at unit anymore
 class CMsgOutOfLos : public CNetCmd
 {
@@ -1512,6 +1530,55 @@ class CNetEdictToggle : public CNetCmd
     int m_iPlyrNum;
     int m_iEdict;
     int m_bOn;       // 0/1 (int for fixed-size serialization)
+
+#ifdef _DEBUG
+  public:
+    void AssertValid( ) const;
+#endif
+};
+
+// One map hex retyped at runtime. Modelled on _CMsgRoad (an existing hex-terrain mutation
+// message), NOT on edict_toggle: terrain is SHARED WORLD STATE, so unlike a per-player edict
+// EVERY receiving client applies this one, with no IsLocal() skip. Sent through
+// theNet.Broadcast, i.e. VP_MUSTDELIVER / reliable, because a dropped terrain edit forks the
+// map permanently on that client -- pathing, LandMult, vision and rendering all diverge from
+// then on, and every later MP save from that client carries the fork. Today the only sender is
+// Slash and Burn's clear-cut and the only type ever sent is CHex::plain; the RX side whitelists
+// exactly that. Three ints after the 12-byte CNetCmd = 24 bytes in BOTH configs (no polymorphic
+// members), pinned by wire_layout_assert.cpp.
+class CNetHexRetype : public CNetCmd
+{
+  public:
+    CNetHexRetype( CHexCoord hex, int iType );
+    int m_iX;
+    int m_iY;
+    int m_iType;
+
+#ifdef _DEBUG
+  public:
+    void AssertValid( ) const;
+#endif
+};
+
+// Civil Defence replication. The edict's building damage reduction is priced from the OWNER's
+// surplus power (CPlayer::ApplySurplusEdicts), which only the owner's machine has, but building
+// damage is applied on the SERVER. So a remote owner sends the server its surplus building
+// damage-taken multiplier (m_fSurplusBldgDmgMult only: Meat Shield rides the replicated edict
+// bits and Blast Shielding the replicated research flags, so neither is in here) as permille,
+// no float on the wire. Sent to the server only, when the value changes (CPlayer::ReportBldgDmgMult);
+// the server accepts it only from that player's own connection (CPlayer::SetRemoteBldgDmgPermille).
+// Two ints after the 12-byte CNetCmd = 20 bytes in BOTH configs, pinned by wire_layout_assert.cpp.
+class CNetBldgDmgMult : public CNetCmd
+{
+  public:
+    CNetBldgDmgMult( CPlayer const* pPlyr, int iPermille );
+    int m_iPlyrNum;
+    int m_iPermille;   // 1000 = no reduction
+
+#ifdef _DEBUG
+  public:
+    void AssertValid( ) const;
+#endif
 };
 
 class CNetNeedSaveInfo : public CNetCmd
@@ -1531,7 +1598,10 @@ class CNetSaveInfo : public CNetCmd
     int m_iFood;
     int m_iGas;
     int m_iRsrchItem;
-    int m_iPtsDiscovered;
+    // 64-bit with CRsrchStatus::m_iPtsDiscovered (save release 9). Takes this message from 40
+    // to 44 bytes under pack(1) -- a wire-layout change, pinned by wire_layout_assert.cpp.
+    // Only the joiner refuses a different VER_RELEASE (see version.h); FitsBuffer drops a short one.
+    LONGLONG m_iPtsDiscovered;
 };
 
 

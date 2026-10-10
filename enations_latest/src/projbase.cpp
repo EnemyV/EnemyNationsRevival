@@ -22,6 +22,7 @@
 #include "building.inl"
 #include "vehicle.inl"
 
+#include "explframe.h"     // EXPL_KILLFRAME - the corpse release point (015 phase 3)
 #include "SDL2Sprites.h"   // GPU tracer streaks (CaptureTrail)
 #include "Perf.h"          // shoot.oor out-of-range-fire probe
 #include "enprobes.h"      // BLDGKILL/UNITKILL war-attribution probes
@@ -532,7 +533,8 @@ CExplosion::CExplosion (CProjectile const * pProj, CUnit * pTarget) : CProjBase 
     m_maploc.Wrap ();
     m_dwIDTarget = pProj->m_dwIDTarget;
     m_dwIDShooter = pProj->m_dwIDShooter;
-    m_iKillFrame = 10000;
+    m_iKillFrame = enexpl::EXPL_NO_KILLFRAME;
+    m_iFrames = 0;
 
     m_fixAlt = m_maploc.CalcAltitude ();
 
@@ -586,8 +588,10 @@ CExplosion::CExplosion (CProjectile const * pProj, CUnit * pTarget) : CProjBase 
     m_psprite = pEd->m_pExpSprite;
 
     // only hide under if dest visible
+    // 015 phase 3: a SIMULATION constant, not half the sprite's frame count, and
+    // installed whether or not m_psprite loaded (explframe.h).
     if (theMap._GetHex ( CHexCoord (m_maploc) )->GetVisible ())
-        m_iKillFrame = AnimCount (CSpriteView::ANIM_FRONT_1) / 2;
+        m_iKillFrame = enexpl::EXPL_KILLFRAME;
 
     // turn on sound
     if (theMusicPlayer.SoundsPlaying ())
@@ -615,6 +619,10 @@ CExplosion::CExplosion (CUnit const * pTarget, CMapLoc const & ml, DWORD dwIDSho
     m_maploc.Wrap ();
     m_dwIDTarget = pTarget->GetID ();
     m_dwIDShooter = dwIDShooter;
+    // Both of these used to be left UNSET on the path where the test below is
+    // false, so the cleanup ran off whatever the pool block held.
+    m_iKillFrame = enexpl::EXPL_NO_KILLFRAME;
+    m_iFrames = 0;
 
     m_fixAlt = m_maploc.CalcAltitude ();
 
@@ -625,9 +633,11 @@ CExplosion::CExplosion (CUnit const * pTarget, CMapLoc const & ml, DWORD dwIDSho
     m_psprite = pEd->m_pExpSprite;
 
     // only hide under if dest visible
+    // 015 phase 3: a SIMULATION constant, not half the sprite's frame count, and
+    // installed whether or not m_psprite loaded (explframe.h).
     if ( (pTarget->GetUnitType () != CUnit::building) || (pTarget->GetOwner()->IsMe ()) ||
                                                                                                         (((CBuilding*)pTarget)->IsLive ()) )
-        m_iKillFrame = AnimCount (CSpriteView::ANIM_FRONT_1) / 2;
+        m_iKillFrame = enexpl::EXPL_KILLFRAME;
 }
 
 //---------------------------------------------------------------------------
@@ -650,6 +660,14 @@ CExplosion::Draw(
         return CRect( 0, 0, 0, 0 );
 
     CSpriteView *pspriteview = GetView();
+
+    // 015 phase 3: an explosion that owns a corpse now lives EXPL_KILLFRAME
+    // frames whatever its art is doing, so a sprite without a usable view is
+    // drawn several times instead of once before Operate removed it. The sprite
+    // check above never covered that case; make it explicit rather than widen
+    // an existing window.
+    if ( pspriteview == NULL )
+        return CRect( 0, 0, 0, 0 );
 
     ptOffset.x -= pspriteview->Width()  >> 1;
     ptOffset.y -= pspriteview->Height();
@@ -689,7 +707,7 @@ void CExplosion::EmitFlash ( const CPoint & ptCenter, int iSprW, int iSprH )
     SDL2Sprites::CaptureFlash ( cx, cy, radius, 255, 235, 190, aCenter );
 }
 
-void CUnit::DecDamagePoints (int iDamage, DWORD dwKiller)
+void CUnit::DecDamagePoints (int iDamage, DWORD dwKiller, BOOL bApplyMults)
 {
 
     // render-side hit flash (area map): timestamp the hit for ANY unit (mine or enemy)
@@ -714,8 +732,10 @@ void CUnit::DecDamagePoints (int iDamage, DWORD dwKiller)
     if (iDamage == 0)
         return;
 
+    // bApplyMults is FALSE only for a server-sent absolute level (UnitSetDamage): the server
+    //   already applied the construction scaling and the owner's multipliers below
     // if we are under construction it hurts more based on % done
-    if ((GetUnitType () == CUnit::building) && (((CBuilding *)this)->m_iConstDone != -1))
+    if (bApplyMults && (GetUnitType () == CUnit::building) && (((CBuilding *)this)->m_iConstDone != -1))
         {
         int iTotalTime = ((CBuilding *)this)->m_iFoundTime + ((CBuilding *)this)->GetData()->GetTimeBuild ();
         int iDone = ((CBuilding *)this)->m_iConstDone;
@@ -728,11 +748,16 @@ void CUnit::DecDamagePoints (int iDamage, DWORD dwKiller)
         }
 
     // Meat Shield edict: this player's buildings take less damage (0.90 = -10%). Live/toggleable.
-    if (GetUnitType () == CUnit::building)
+    if (bApplyMults && (GetUnitType () == CUnit::building))
         {
         float fDmg = GetOwner()->GetEdictBldgDmgMult ();
         if (fDmg < 1.0f)
             iDamage = (int)(iDamage * fDmg + 0.5f);
+
+        // Blast Shielding research (bldg_armor .. bldg_armor_3): damage taken only, never repairs.
+        float fArmor = GetOwner()->GetBldgArmorMult ();
+        if ((fArmor < 1.0f) && (iDamage > 0))
+            iDamage = (int)(iDamage * fArmor + 0.5f);
         }
 
     m_iDamagePoints -= iDamage;
@@ -985,35 +1010,36 @@ void CExplosion::Operate ()
 {
     ASSERT_VALID (this);
 
-    // VTBUGBUG
-    // this shouldnt be nessasary:
-    // 
-    // --- Safety checks to avoid dereferencing NULL sprite/view/ambient ---
-    // Why was this added? Some explosions were crashing the game.
-    CSprite* pSprite = GetSprite( );
-    if ( pSprite == NULL )
-    {
-        // No sprite attached - remove and destroy this explosion to avoid repeated crashes
-        theProjMap.Remove( this );
-        delete this;
-        return;
-    }
+    // 015 phase 3: count OUR OWN frames. The release below used to key off the
+    // animation frame, which made a simulation event a function of the art; a
+    // player may replace sprites (they are not in the gameplay hash), so the
+    // count has to be ours. See explframe.h.
+    m_iFrames++;
 
-    CSpriteView* pView = GetView( );
-    if ( pView == NULL )
-    {
-        // No view available - remove and destroy
-        theProjMap.Remove( this );
-        delete this;
-        return;
-    }
+    // --- No sprite / no view is not fatal any more ---
+    // It used to delete the explosion on the spot, which SKIPPED the cleanup
+    // below: a dying unit whose explosion art was missing never released its hex
+    // or had its terrain rewritten. The explosion now lives out its count with
+    // nothing to draw (CExplosion::Draw already returns an empty rect without a
+    // sprite) and releases on the same frame as any other.
+    CSprite*     pSprite = GetSprite( );
+    CSpriteView* pView   = ( pSprite != NULL ) ? GetView( ) : NULL;
 
+    //  No art left to play reads as "finished": it cannot hold the explosion
+    //  alive, and it cannot end it early either (see MayDelete).
+    BOOL bFinished = TRUE;
+    if ( ( pSprite != NULL ) && ( pView != NULL ) )
+        {
+        // Operate must advance visual animation even when the explosion is
+        // offscreen and Draw never runs. IsOneShotFinished only reads state;
+        // without this update valid art could keep the object alive forever.
+        // Corpse cleanup still uses the independent count below.
+        GetFrame( CSpriteView::ANIM_FRONT_1 );
+        bFinished = GetAmbient( CSpriteView::ANIM_FRONT_1 )->IsOneShotFinished( GetView() );
+        }
 
-    int iOn = GetFrame( CSpriteView::ANIM_FRONT_1 );
-    BOOL	bFinished = GetAmbient( CSpriteView::ANIM_FRONT_1 )->IsOneShotFinished( GetView() );
-
-    // step 1 - if over the half way mark we hide the underlying unit
-    if ( (iOn >= m_iKillFrame) || (bFinished && (m_iKillFrame < 256)) )
+    // step 1 - release the corpse on OUR frame, whatever the animation is doing
+    if ( enexpl::ShouldRelease( m_iFrames, m_iKillFrame ) )
         {
         CUnit * pTarget = ::_GetUnit (m_dwIDTarget);
         if ( (pTarget != NULL) && (pTarget->IsFlag (CUnit::dying)) )
@@ -1045,11 +1071,14 @@ void CExplosion::Operate ()
             }
         }
 
-    // step 2 - delete if on the last frame
+    // step 2 - delete once the animation is done AND our own count has run out.
+    // Waiting for the count is what stops art shorter than EXPL_KILLFRAME (or
+    // missing, which reads as finished) from destroying the explosion before
+    // step 1 ever fires.
 // GG: Ambient rewrite
 //	int iTotal = AnimCount (CSpriteView::ANIM_FRONT_1);
 //	if (iOn >= iTotal-1)
-    if ( bFinished )
+    if ( enexpl::MayDelete( bFinished != FALSE, m_iFrames, m_iKillFrame ) )
         {
         theProjMap.Remove (this);
         delete this;
@@ -1505,7 +1534,26 @@ void CUnit::Shoot (CUnit * pUnit, int iLOS)
 
     // figure the number of shots
 
-    div_t dtShoot = div ( m_dwReloadMod, GetFireRate () * AVG_SPEED_MUL );
+    // #87: GetFireRate() is meant to be > 0 here (callers gate on == 0 to mean "can't
+    // shoot", so Shoot() is only ever reached when it looked nonzero) -- but a NaN
+    // upstream (mainloop.cpp's power/workforce-ratio divide) can cast to a NEGATIVE
+    // fire rate that still isn't exactly 0, slips the caller gates, and then
+    // `iFireRate * AVG_SPEED_MUL` overflows back to exactly 0 here, turning `div` into
+    // a divide by zero. The fire-rate value can never legitimately be <= 0 at this
+    // point, so clamp it at the divide instead of trusting the upstream computation.
+    int iFireRate = GetFireRate ();
+    if ( iFireRate <= 0 )
+        {
+#if EN_GAMEPLAY_PROBES
+        char szFr[128];
+        sprintf_s (szFr, sizeof (szFr), "[SHOOT-FIRERATE] unit=%lu type=%d GetFireRate()=%d clamped to 1\n",
+            GetID (), GetUnitType (), iFireRate);
+        OutputDebugStringA (szFr);
+#endif
+        iFireRate = 1;
+        }
+
+    div_t dtShoot = div ( m_dwReloadMod, iFireRate * AVG_SPEED_MUL );
     m_dwReloadMod = dtShoot.rem;
     if ( dtShoot.quot == 0 )
         {
@@ -1619,7 +1667,8 @@ void CUnit::MsgSetFire (CMsgShootElem * pMsg)
         if ( GetTurret() )
             GetTurret()->DoMuzzleFlash();
 
-        if ( ( GetData()->GetProjectile () != 0 ) && ( theProjMap.GetCount () < MAX_NUM_PROJECTILES ) )
+        if ( ( GetData()->GetProjectile () != 0 ) &&
+             ( theProjMap.GetProjectileHexCount( ) < MAX_NUM_PROJECTILES ) )
             {
             // start the projectile
             CProjectile * pProj = new CProjectile (this, mlDest, pMsg->m_dwIDTarget, pMsg->m_wNumShots);
@@ -1758,6 +1807,31 @@ void CUnit::PrepareToDie (DWORD dwIDKiller)
 
 /////////////////////////////////////////////////////////////////////////////
 // we keep a map (based on CHex) of lists (all proj in a hex)
+
+// Projectile capacity is a simulation decision. Count each occupied hex once
+// when it contains an in-flight projectile; explosion sprites may remain for
+// different lengths (or be missing), but must not switch a later shot between
+// flight/delayed damage and the immediate-damage fallback. Explosion-only hexes
+// therefore no longer consume the firing cap, even when stock art outlives a
+// projectile; saturated fights can keep more shots in flight than before.
+int CProjMap::GetProjectileHexCount( ) const
+{
+    int iCount = 0;
+    POSITION pos = GetStartPosition( );
+    while ( pos != NULL )
+    {
+        DWORD dwHex;
+        CProjBase* pHead = NULL;
+        GetNextAssoc( pos, dwHex, pHead );
+        for ( CProjBase* pOn = pHead; pOn != NULL; pOn = pOn->m_pNext )
+            if ( pOn->GetType( ) == CProjBase::projectile )
+            {
+                ++iCount;
+                break;
+            }
+    }
+    return iCount;
+}
 
 void CProjMap::Add (CProjBase * pProj)
 {

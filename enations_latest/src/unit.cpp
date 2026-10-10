@@ -11,9 +11,13 @@
 //
 
 #include "stdafx.h"
+#include "Perf.h"      // pq.* path-request burst counters
 #include "base.h"
 #include "lastplnt.h"
 #include "cpathmgr.h"
+#include "ennavview.h"
+#include "pathservice.h"
+#include "pathworld.h"
 #include "netapi.h"
 #include "player.h"
 #include "sprite.h"
@@ -215,6 +219,75 @@ CTransportData::TRANS_BASE_TYPE CTransportData::GetBaseType( ) const
     return ( non_combat );
 }
 
+// The travel rule, once, over hex facts the caller has already read. Both
+// CanTravelHex signatures below are this function plus a way of getting the facts.
+template <class TView>
+static BOOL EnCanTravelHexFacts( CTransportData const& td, TView const& view, CHexCoord const& hex, BYTE bUnits,
+                                 int iType, int iAlt )
+{
+    ASSERT_STRICT_VALID( &td );
+
+    // if a building we can travel on it
+    if ( ( bUnits & CHex::bldg ) != 0 )
+        return ( TRUE );
+
+    // handle land units first (most likely)
+    if ( td.GetWheelType( ) != CWheelTypes::water )
+    {
+        // if a completed bridge we can travel on it
+        if ( ( bUnits & CHex::bridge ) != 0 )
+        {
+            // orphaned mark (no bridge unit) = not travelable
+            CEnBridgeFacts const fBridge = view.GetBridge( hex );
+            if ( fBridge.bExists && fBridge.bParentBuilt )
+                return ( TRUE );
+            return ( FALSE );
+        }
+
+        switch ( iType )
+        {
+        case CHex::lake:
+        case CHex::ocean:
+            // Raised water (for example beside a flattened bridge approach)
+            // can have negative calculated depth. It still requires wading:
+            // otherwise zero-depth trucks can drive into water that A* rejects.
+            return ( td.GetWaterDepth( ) > 0 && td.GetWaterDepth( ) > CHex::sea_level - iAlt );
+        case CHex::river:
+            return ( td.GetWaterDepth( ) > 0 );
+        default:
+            if ( view.GetWheelMult( iType, td.GetWheelType( ) ) != 0 )
+                return ( TRUE );
+            return ( FALSE );
+        }
+    }
+
+    // small boats — the motorboat (gun_boat) and the landing craft — are shallow-draft
+    // enough to navigate ALL water: rivers, lakes, ocean, and across the coastline
+    // shores at river mouths / junctions between water bodies (even sloped). Deeper-draft
+    // ships (cargo ship, destroyer, cruiser) fall through to the depth/carrier rules
+    // below, so they still can't use rivers or cross shallow water.
+    if ( ( td.GetType( ) == CTransportData::gun_boat ) || ( td.GetType( ) == CTransportData::landing_craft ) )
+        switch ( iType )
+        {
+        case CHex::river:
+        case CHex::lake:
+        case CHex::ocean:
+        case CHex::coastline:
+            return ( TRUE );
+        }
+
+    //   not water - we can travel on coastline tiles
+    if ( ( iType != CHex::lake ) && ( iType != CHex::ocean ) )
+    {
+        if ( ( td.IsCarrier( ) ) && ( td.GetWaterDepth( ) == 0 ) &&
+             ( view.GetWheelMult( iType, td.GetWheelType( ) ) != 0 ) )
+            return ( TRUE );
+        return ( FALSE );
+    }
+
+    return ( td.GetWaterDepth( ) <= CHex::sea_level - iAlt );
+}
+
 // return TRUE if can enter pHexDest from pHexSrc
 //  this code assumes the hexes are adjoining (diaganol ok)
 //  bStrict == FALSE - can enter sides of buildings/bridge ends
@@ -222,15 +295,22 @@ CTransportData::TRANS_BASE_TYPE CTransportData::GetBaseType( ) const
 BOOL CTransportData::CanEnterHex( CHexCoord const& hexSrc, CHexCoord const& hexDest, BOOL bVehOnWater,
                                   BOOL bStrict ) const
 {
+    return ( CanEnterHex( CEnLiveNavView( ), hexSrc, hexDest, bVehOnWater, bStrict ) );
+}
+
+template <class TView, class>
+BOOL CTransportData::CanEnterHex( TView const& view, CHexCoord const& hexSrc, CHexCoord const& hexDest,
+                                  BOOL bVehOnWater, BOOL bStrict ) const
+{
 #ifdef STRICTER_ASSERTS
-    ASSERT( ( abs( CHexCoord::Diff( hexSrc.X( ) - hexDest.X( ) ) ) <= 1 ) &&
-            ( abs( CHexCoord::Diff( hexSrc.Y( ) - hexDest.Y( ) ) ) <= 1 ) );
+    ASSERT( ( abs( view.Diff( hexSrc.X( ) - hexDest.X( ) ) ) <= 1 ) &&
+            ( abs( view.Diff( hexSrc.Y( ) - hexDest.Y( ) ) ) <= 1 ) );
 #endif
-    CHex* pHexSrc  = theMap.GetHex( hexSrc );
-    CHex* pHexDest = theMap.GetHex( hexDest );
+    CEnHexFacts const fSrc  = view.GetHex( hexSrc );
+    CEnHexFacts const fDest = view.GetHex( hexDest );
 
     // see if we can move to the dest
-    if ( !CanTravelHex( pHexDest ) )
+    if ( !EnCanTravelHexFacts( *this, view, hexDest, fDest.GetUnits( ), fDest.GetType( ), fDest.GetAlt( ) ) )
         return ( FALSE );
 
     // if the same hex we are done
@@ -238,18 +318,18 @@ BOOL CTransportData::CanEnterHex( CHexCoord const& hexSrc, CHexCoord const& hexD
         return ( TRUE );
 
     // if not a bridge or building - leave
-    if ( ( 0 == ( pHexSrc->GetUnits( ) & ( CHex::bldg | CHex::bridge ) ) ) &&
-         ( 0 == ( pHexDest->GetUnits( ) & ( CHex::bldg | CHex::bridge ) ) ) )
+    if ( ( 0 == ( fSrc.GetUnits( ) & ( CHex::bldg | CHex::bridge ) ) ) &&
+         ( 0 == ( fDest.GetUnits( ) & ( CHex::bldg | CHex::bridge ) ) ) )
         return ( TRUE );
 
     // very special case - if dest is a bridge and is not water then it's a single hex island
     // which is a support or end from the water and nothing can enter it.
-    if ( bVehOnWater && ( !pHexDest->IsWater( ) ) && ( pHexDest->GetUnits( ) & CHex::bridge ) )
+    if ( bVehOnWater && ( !fDest.IsWater( ) ) && ( fDest.GetUnits( ) & CHex::bridge ) )
         return ( FALSE );
 
     // movement
-    int xDif = CHexCoord::Diff( hexDest.X( ) - hexSrc.X( ) );
-    int yDif = CHexCoord::Diff( hexDest.Y( ) - hexSrc.Y( ) );
+    int xDif = view.Diff( hexDest.X( ) - hexSrc.X( ) );
+    int yDif = view.Diff( hexDest.Y( ) - hexSrc.Y( ) );
 
     // only if we are not on water do we care about a bridge
     if ( !bVehOnWater )
@@ -258,7 +338,7 @@ BOOL CTransportData::CanEnterHex( CHexCoord const& hexSrc, CHexCoord const& hexD
         // TRAP: ships probing paths near river spans is routine now (soak34
         // 09:29 dump); the refusal is the handling. Warn once per session
         // (hot path - per-hit logging would flood)
-        if ( ( pHexDest->GetUnits( ) & CHex::bridge ) && ( GetWheelType( ) == CWheelTypes::water ) )
+        if ( ( fDest.GetUnits( ) & CHex::bridge ) && ( GetWheelType( ) == CWheelTypes::water ) )
         {
 #ifdef _WIN32
             static BOOL s_bWarnedShipBridge = FALSE;
@@ -271,21 +351,21 @@ BOOL CTransportData::CanEnterHex( CHexCoord const& hexSrc, CHexCoord const& hexD
             return ( FALSE );
         }
 
-        CBridgeUnit* pBuDest = theBridgeHex.GetBridge( hexDest );
+        CEnBridgeFacts const fBuDest = view.GetBridge( hexDest );
 
         // orphaned mark (bit set, no bridge unit) = can't enter
-        if ( ( pHexDest->GetUnits( ) & CHex::bridge ) && pBuDest == NULL )
+        if ( ( fDest.GetUnits( ) & CHex::bridge ) && !fBuDest.bExists )
             return ( FALSE );
 
         // if on a bridge either same bridge or exit
-        if ( pHexSrc->GetUnits( ) & CHex::bridge )
+        if ( fSrc.GetUnits( ) & CHex::bridge )
         {
-            CBridgeUnit* pBuSrc = theBridgeHex.GetBridge( hexSrc );
-            if ( pBuSrc == NULL )
+            CEnBridgeFacts const fBuSrc = view.GetBridge( hexSrc );
+            if ( !fBuSrc.bExists )
                 return ( FALSE );
             // both bridge - same bridge check (or exit one enter other below)
-            if ( pHexDest->GetUnits( ) & CHex::bridge )
-                if ( pBuSrc->GetParent( ) == pBuDest->GetParent( ) )
+            if ( fDest.GetUnits( ) & CHex::bridge )
+                if ( fBuSrc.uParent == fBuDest.uParent )
                     return ( TRUE );
 
             // is our exit direction ok? (if it is we continue in case going to a bridge or bldg)
@@ -302,12 +382,12 @@ BOOL CTransportData::CanEnterHex( CHexCoord const& hexSrc, CHexCoord const& hexD
                     OutputDebugStringA( "[TRAP-REMOVED-1st] CanEnterHex: non-strict bridge-exit probe (once-per-session note)\n" );
                 }
 #endif
-                if ( pBuSrc->GetExit( ) == -1 )
+                if ( fBuSrc.iExit == -1 )
                     return ( FALSE );  // mid-span has no exit
             }
             else
 
-                switch ( pBuSrc->GetExit( ) )
+                switch ( fBuSrc.iExit )
                 {
                 case 0:  // exit up
                     if ( yDif >= 0 )
@@ -331,7 +411,7 @@ BOOL CTransportData::CanEnterHex( CHexCoord const& hexSrc, CHexCoord const& hexD
         }
 
         // if entering a bridge - are we coming from the right direction
-        if ( pHexDest->GetUnits( ) & CHex::bridge )
+        if ( fDest.GetUnits( ) & CHex::bridge )
         {
             // note - we are the reverse of the dir because we are entering
             // only care if strict. 1996 curiosity TRAPs: non-strict passability
@@ -348,12 +428,12 @@ BOOL CTransportData::CanEnterHex( CHexCoord const& hexSrc, CHexCoord const& hexD
                     OutputDebugStringA( "[TRAP-REMOVED-1st] CanEnterHex: non-strict bridge-entry probe (once-per-session note)\n" );
                 }
 #endif
-                if ( pBuDest->GetExit( ) == -1 )
+                if ( fBuDest.iExit == -1 )
                     return ( FALSE );  // mid-span is never enterable
             }
             else
 
-                switch ( pBuDest->GetExit( ) )
+                switch ( fBuDest.iExit )
                 {
                 case 0:  // enter from the down
                     if ( yDif <= 0 )
@@ -378,15 +458,15 @@ BOOL CTransportData::CanEnterHex( CHexCoord const& hexSrc, CHexCoord const& hexD
     }  // bVehOnWater
 
     // if we had bridges above we can leave now if no buildings
-    if ( ( 0 == ( pHexSrc->GetUnits( ) & CHex::bldg ) ) && ( 0 == ( pHexDest->GetUnits( ) & CHex::bldg ) ) )
+    if ( ( 0 == ( fSrc.GetUnits( ) & CHex::bldg ) ) && ( 0 == ( fDest.GetUnits( ) & CHex::bldg ) ) )
         return ( TRUE );
 
     // bridge stuff done - now the building stuff
-    CBuilding* pBldgSrc  = theBuildingHex._GetBuilding( hexSrc );
-    CBuilding* pBldgDest = theBuildingHex._GetBuilding( hexDest );
+    CEnBuildingFacts const fBldgSrc  = view.GetBuilding( hexSrc );
+    CEnBuildingFacts const fBldgDest = view.GetBuilding( hexDest );
 
     // building to building - must be the same
-    if ( ( pHexSrc->GetUnits( ) & CHex::bldg ) && ( pHexDest->GetUnits( ) & CHex::bldg ) && ( pBldgSrc != pBldgDest ) )
+    if ( ( fSrc.GetUnits( ) & CHex::bldg ) && ( fDest.GetUnits( ) & CHex::bldg ) && ( fBldgSrc.uKey != fBldgDest.uKey ) )
         return ( FALSE );
 
     // if not strict we're done
@@ -395,14 +475,14 @@ BOOL CTransportData::CanEnterHex( CHexCoord const& hexSrc, CHexCoord const& hexD
 
     // dest building must be going to the exit/entrance? 
     // (this is where vehicles enter /leave?) 
-    if ( pBldgDest != NULL )
-        if ( hexDest != ( IsBoat( ) ? pBldgDest->GetShipHex( ) : pBldgDest->GetExitHex( ) ) )
+    if ( fBldgDest.bExists )
+        if ( hexDest != ( IsBoat( ) ? fBldgDest.hexShip : fBldgDest.hexExit ) )
             return ( FALSE );
 
     // leaving a building
-    if ( pHexSrc->GetUnits( ) & CHex::bldg )
+    if ( fSrc.GetUnits( ) & CHex::bldg )
     {
-        switch ( IsBoat( ) ? pBldgSrc->GetShipDir( ) : pBldgSrc->GetExitDir( ) )
+        switch ( IsBoat( ) ? fBldgSrc.iShipDir : fBldgSrc.iExitDir )
         {
         case 0:   // exit up
             return ( yDif < 0 );
@@ -418,10 +498,8 @@ BOOL CTransportData::CanEnterHex( CHexCoord const& hexSrc, CHexCoord const& hexD
 #if EN_AI_PROBES_ECON && defined(_WIN32)
             {
                 char szD[128];
-                sprintf( szD, "[BADEXITDIR] leave bldg %lu type %d dir %d at %d,%d\n",
-                         (unsigned long)pBldgSrc->GetID( ), (int)pBldgSrc->GetData( )->GetType( ),
-                         IsBoat( ) ? pBldgSrc->GetShipDir( ) : pBldgSrc->GetExitDir( ),
-                         pBldgSrc->GetHex( ).X( ), pBldgSrc->GetHex( ).Y( ) );
+                sprintf( szD, "[BADEXITDIR] leave bldg dir %d at %d,%d\n",
+                         IsBoat( ) ? fBldgSrc.iShipDir : fBldgSrc.iExitDir, hexSrc.X( ), hexSrc.Y( ) );
                 OutputDebugStringA( szD );
             }
 #endif
@@ -431,7 +509,7 @@ BOOL CTransportData::CanEnterHex( CHexCoord const& hexSrc, CHexCoord const& hexD
     }
 
     // entering a building
-    switch ( IsBoat( ) ? pBldgDest->GetShipDir( ) : pBldgDest->GetExitDir( ) )
+    switch ( IsBoat( ) ? fBldgDest.iShipDir : fBldgDest.iExitDir )
     {
     case 0:  // enter from the top
         return ( yDif > 0 );
@@ -448,10 +526,8 @@ BOOL CTransportData::CanEnterHex( CHexCoord const& hexSrc, CHexCoord const& hexD
 #if EN_AI_PROBES_ECON && defined(_WIN32)
     {
         char szD[128];
-        sprintf( szD, "[BADEXITDIR] bldg %lu type %d dir %d at %d,%d\n",
-                 (unsigned long)pBldgDest->GetID( ), (int)pBldgDest->GetData( )->GetType( ),
-                 IsBoat( ) ? pBldgDest->GetShipDir( ) : pBldgDest->GetExitDir( ),
-                 pBldgDest->GetHex( ).X( ), pBldgDest->GetHex( ).Y( ) );
+        sprintf( szD, "[BADEXITDIR] bldg dir %d at %d,%d\n",
+                 IsBoat( ) ? fBldgDest.iShipDir : fBldgDest.iExitDir, hexDest.X( ), hexDest.Y( ) );
         OutputDebugStringA( szD );
     }
 #endif
@@ -466,63 +542,29 @@ BOOL CTransportData::CanTravelHex( CHex const* pHex ) const
     ASSERT_STRICT_VALID( this );
     ASSERT_STRICT_VALID( pHex );
 
-    // if a building we can travel on it
-    if ( ( pHex->GetUnits( ) & CHex::bldg ) != 0 )
-        return ( TRUE );
-
-    // handle land units first (most likely)
-    if ( m_cWheelType != CWheelTypes::water )
-    {
-        // if a completed bridge we can travel on it
-        if ( ( pHex->GetUnits( ) & CHex::bridge ) != 0 )
-        {
-            // orphaned mark (no bridge unit) = not travelable
-            CBridgeUnit* pBuTrav = theBridgeHex.GetBridge( pHex->GetHex( ) );
-            if ( pBuTrav != NULL && pBuTrav->GetParent( ) != NULL && pBuTrav->GetParent( )->IsBuilt( ) )
-                return ( TRUE );
-            return ( FALSE );
-        }
-
-        switch ( pHex->GetType( ) )
-        {
-        case CHex::lake:
-        case CHex::ocean:
-            return ( GetWaterDepth( ) > CHex::sea_level - pHex->GetAlt( ) );
-        case CHex::river:
-            return ( GetWaterDepth( ) > 0 );
-        default:
-            if ( theTerrain.GetData( pHex->GetType( ) ).GetWheelMult( m_cWheelType ) != 0 )
-                return ( TRUE );
-            return ( FALSE );
-        }
-    }
-
-    // small boats — the motorboat (gun_boat) and the landing craft — are shallow-draft
-    // enough to navigate ALL water: rivers, lakes, ocean, and across the coastline
-    // shores at river mouths / junctions between water bodies (even sloped). Deeper-draft
-    // ships (cargo ship, destroyer, cruiser) fall through to the depth/carrier rules
-    // below, so they still can't use rivers or cross shallow water.
-    if ( ( GetType( ) == gun_boat ) || ( GetType( ) == landing_craft ) )
-        switch ( pHex->GetType( ) )
-        {
-        case CHex::river:
-        case CHex::lake:
-        case CHex::ocean:
-        case CHex::coastline:
-            return ( TRUE );
-        }
-
-    //   not water - we can travel on coastline tiles
-    if ( ( pHex->GetType( ) != CHex::lake ) && ( pHex->GetType( ) != CHex::ocean ) )
-    {
-        if ( ( IsCarrier( ) ) && ( GetWaterDepth( ) == 0 ) &&
-             ( theTerrain.GetData( pHex->GetType( ) ).GetWheelMult( m_cWheelType ) != 0 ) )
-            return ( TRUE );
-        return ( FALSE );
-    }
-
-    return ( GetWaterDepth( ) <= CHex::sea_level - pHex->GetAlt( ) );
+    // pHex->GetHex() is only consulted for the bridge lookup, exactly as it was
+    // when that lookup lived in this body.
+    return ( EnCanTravelHexFacts( *this, CEnLiveNavView( ), pHex->GetHex( ), pHex->GetUnits( ), pHex->GetType( ),
+                                  pHex->GetAlt( ) ) );
 }
+
+template <class TView, class>
+BOOL CTransportData::CanTravelHex( TView const& view, CHexCoord const& hex ) const
+{
+    ASSERT_STRICT_VALID( this );
+
+    CEnHexFacts const f = view.GetHex( hex );
+    return ( EnCanTravelHexFacts( *this, view, hex, f.GetUnits( ), f.GetType( ), f.GetAlt( ) ) );
+}
+
+// One body per view type, both emitted here: cpathmgr.cpp instantiates the search
+// for the live view and for the snapshot view and calls these through it.
+template BOOL CTransportData::CanTravelHex<CEnLiveNavView, void>( CEnLiveNavView const&, CHexCoord const& ) const;
+template BOOL CTransportData::CanTravelHex<CEnSnapNavView, void>( CEnSnapNavView const&, CHexCoord const& ) const;
+template BOOL CTransportData::CanEnterHex<CEnLiveNavView, void>( CEnLiveNavView const&, CHexCoord const&,
+                                                                 CHexCoord const&, BOOL, BOOL ) const;
+template BOOL CTransportData::CanEnterHex<CEnSnapNavView, void>( CEnSnapNavView const&, CHexCoord const&,
+                                                                 CHexCoord const&, BOOL, BOOL ) const;
 
 //-----------------------------C F l a m e S p o t --------------------------
 
@@ -1064,6 +1106,89 @@ void CUnit::DecrementSpotting( )
     }
 }
 
+// A hex just crossed from unseen to seen for pViewer. Extracted verbatim from
+// CUnit::IncrementSpotting so a SECOND caller can reuse it: the Resonance Sweep edict
+// lights a ring of hexes around an enemy rocket and must run exactly the same reveal
+// rules a scouting unit does (road/bridge/slash re-sync, dead-building cleanup, enemy
+// building reveal + state refresh). Duplicating this logic instead would leave the two
+// copies to drift; this is the one place it lives.
+//
+// The CALLER owns the visibility counter: call IncVisible( ) first and only call this
+// when GetVisibility( ) has just become 1.
+void EnHexBecameVisible( CHex* pHex, CHexCoord& hex, CPlayer* pViewer )
+{
+    hex.SetInvalidated( );
+    if ( ( pHex->GetType( ) == CHex::road ) && ( pHex->GetVisibleType( ) != CHex::road ) )
+        pHex->ChangeToRoad( hex );
+
+    // Bridge fog reveal (BUGS #30): mark the bridge as seen (the
+    // persistent IsBridge display bit — road semantics: seen once,
+    // stays shown) and reveal the flattened forest under it that
+    // GrabHex deferred while the hex was unlit.
+    if ( ( pHex->GetUnits( ) & CHex::bridge ) && ( !pHex->IsBridge( ) ) )
+    {
+        pHex->SetBridge( );
+        if ( pHex->GetVisibleType( ) != pHex->GetType( ) )
+        {
+            pHex->SetVisibleType( pHex->GetType( ) );
+            extern void g_enEditHex( int, int );
+            g_enEditHex( hex.X( ), hex.Y( ) );
+        }
+    }
+
+    // Slash and Burn fog reveal (E22). A hex clear-cut while we could not see
+    // it kept its remembered FOREST ground (SlashHex restores the visible
+    // type when the hex is unlit), so without this it would read as forest
+    // forever after we sight it. Runs AFTER the road and bridge clauses above
+    // on purpose: a fogged road-over-forest belongs to ChangeToRoad, and the
+    // bridge clause has already re-synced its own hex.
+    // Deliberately NARROW, not a blanket "visible != type -> sync": visible
+    // forest over non-forest soil can only come from a slash, whereas crop
+    // fields intentionally carry visible `fields` over a different soil type
+    // and a blanket sync would wipe them. SetVisibleType calls g_enEditHex
+    // itself, so no explicit re-mesh is needed here.
+    if ( ( pHex->GetVisibleType( ) == CHex::forest )
+         && ( pHex->GetType( ) != CHex::forest ) )
+        pHex->SetVisibleType( pHex->GetType( ) );
+
+    if ( pHex->GetUnits( ) & CHex::bldg )
+    {
+        CBuilding* pBldg = theBuildingHex._GetBuilding( hex );
+        if ( ( pBldg != NULL ) && ( pBldg->GetOwner( ) != pViewer ) )
+        {
+            // did it die?
+            if ( pBldg->IsFlag( CUnit::dead ) )
+            {
+                if ( theApp.m_pLogFile != NULL )
+                {
+                    TRAP( );
+                    char sBuf[80];
+                    sprintf( sBuf, "Dead building visible %d at %d,%d", pBldg->GetID( ),
+                             pBldg->GetHex( ).X( ), pBldg->GetHex( ).Y( ) );
+                    theApp.Log( sBuf );
+                }
+                delete pBldg;
+            }
+            else
+
+            {
+                if ( !pBldg->IsVisible( ) )
+                    pBldg->MakeBldgVisible( );
+
+                // building just became visible so we update all of this
+                pBldg->SetConstPer( );
+                pBldg->UpdateDamageLevel( );
+                if ( ( !pBldg->IsConstructing( ) ) && ( !pBldg->IsFlag( CUnit::stopped ) ) )
+                {
+                    if ( !pBldg->GetAmbient( CSpriteView::ANIM_FRONT_1 )->IsEnabled( ) )
+                        pBldg->EnableAnimations( TRUE );
+                    pBldg->PauseAnimations( FALSE );
+                }
+            }
+        }
+    }
+}
+
 // we increment the visibility counter for all hexes this unit can see
 void CUnit::IncrementSpotting( CHexCoord const& hex )
 {
@@ -1104,63 +1229,7 @@ void CUnit::IncrementSpotting( CHexCoord const& hex )
 
                     // if just became visible
                     if ( pHex->GetVisibility( ) == 1 )
-                    {
-                        _hex.SetInvalidated( );
-                        if ( ( pHex->GetType( ) == CHex::road ) && ( pHex->GetVisibleType( ) != CHex::road ) )
-                            pHex->ChangeToRoad( _hex );
-
-                        // Bridge fog reveal (BUGS #30): mark the bridge as seen (the
-                        // persistent IsBridge display bit — road semantics: seen once,
-                        // stays shown) and reveal the flattened forest under it that
-                        // GrabHex deferred while the hex was unlit.
-                        if ( ( pHex->GetUnits( ) & CHex::bridge ) && ( !pHex->IsBridge( ) ) )
-                        {
-                            pHex->SetBridge( );
-                            if ( pHex->GetVisibleType( ) != pHex->GetType( ) )
-                            {
-                                pHex->SetVisibleType( pHex->GetType( ) );
-                                extern void g_enEditHex( int, int );
-                                g_enEditHex( _hex.X( ), _hex.Y( ) );
-                            }
-                        }
-
-                        if ( pHex->GetUnits( ) & CHex::bldg )
-                        {
-                            CBuilding* pBldg = theBuildingHex._GetBuilding( _hex );
-                            if ( ( pBldg != NULL ) && ( pBldg->GetOwner( ) != GetOwner( ) ) )
-                            {
-                                // did it die?
-                                if ( pBldg->IsFlag( CUnit::dead ) )
-                                {
-                                    if ( theApp.m_pLogFile != NULL )
-                                    {
-                                        TRAP( );
-                                        char sBuf[80];
-                                        sprintf( sBuf, "Dead building visible %d at %d,%d", pBldg->GetID( ),
-                                                 pBldg->GetHex( ).X( ), pBldg->GetHex( ).Y( ) );
-                                        theApp.Log( sBuf );
-                                    }
-                                    delete pBldg;
-                                }
-                                else
-
-                                {
-                                    if ( !pBldg->IsVisible( ) )
-                                        pBldg->MakeBldgVisible( );
-
-                                    // building just became visible so we update all of this
-                                    pBldg->SetConstPer( );
-                                    pBldg->UpdateDamageLevel( );
-                                    if ( ( !pBldg->IsConstructing( ) ) && ( !pBldg->IsFlag( stopped ) ) )
-                                    {
-                                        if ( !pBldg->GetAmbient( CSpriteView::ANIM_FRONT_1 )->IsEnabled( ) )
-                                            pBldg->EnableAnimations( TRUE );
-                                        pBldg->PauseAnimations( FALSE );
-                                    }
-                                }
-                            }
-                        }
-                    }
+                        EnHexBecameVisible( pHex, _hex, GetOwner( ) );
 
 
                     // check to see if this is a scenario objective
@@ -2356,6 +2425,126 @@ void CBuilding::GetAccepts( int* pVals ) const
     memset( pVals, 0, sizeof( int ) * CMaterialTypes::GetNumTypes( ) );
 }
 
+//---------------------------------------------------------------------------
+// Per-material auto-stock veto.
+//
+// The six HAULABLE materials, in flag-bit order. food and gas never sit in a
+// unit's store at all (farms/refineries credit the player's global pools --
+// mainloop.cpp), and moly/goods are vestigial, so none of the four is ever
+// trucked anywhere and none needs a veto bit. This order is an ON-DISK contract
+// once a save has been written: append only, never reorder.
+//---------------------------------------------------------------------------
+static int const s_aiBlockableMat[] = {
+    CMaterialTypes::lumber, CMaterialTypes::steel, CMaterialTypes::copper,
+    CMaterialTypes::oil,    CMaterialTypes::coal,  CMaterialTypes::iron };
+static int const s_iNumBlockable = sizeof( s_aiBlockableMat ) / sizeof( s_aiBlockableMat[0] );
+
+// The reserved flag window has to be exactly wide enough for the table above --
+// otherwise a seventh entry would silently overrun into whatever flag is added next.
+static_assert( ( ( CUnit::no_stock_base << s_iNumBlockable ) - CUnit::no_stock_base ) == CUnit::no_stock_mask,
+               "no_stock_mask must cover exactly s_aiBlockableMat" );
+
+// Bit for iInd, or 0 if this material has none (never blockable).
+static int MatBlockBit( int iInd )
+{
+    for ( int iBit = 0; iBit < s_iNumBlockable; iBit++ )
+        if ( s_aiBlockableMat[iBit] == iInd )
+            return ( CUnit::no_stock_base << iBit );
+    return ( 0 );
+}
+
+BOOL CBuilding::IsBlockableMat( int iInd )
+{
+    return ( (BOOL)( MatBlockBit( iInd ) != 0 ) );
+}
+
+BOOL CBuilding::IsMatBlocked( int iInd ) const
+{
+    ASSERT_VALID( this );
+
+    int iBit = MatBlockBit( iInd );
+    if ( iBit == 0 )
+        return ( FALSE );
+    return ( (BOOL)( ( (int)m_unitFlags & iBit ) != 0 ) );
+}
+
+void CBuilding::SetMatBlocked( int iInd, BOOL bBlock )
+{
+    ASSERT_VALID( this );
+
+    int iBit = MatBlockBit( iInd );
+    if ( iBit == 0 )
+        return;
+    if ( bBlock )
+        m_unitFlags = (UNIT_FLAGS)( (int)m_unitFlags | iBit );
+    else
+        m_unitFlags = (UNIT_FLAGS)( (int)m_unitFlags & ~iBit );
+}
+
+// Only the two bottomless sinks get the checkboxes (operator 2026-09-13). Every
+// other building's intake is dictated by what it consumes, so a veto there would
+// just be a way to starve yourself by accident.
+BOOL CBuilding::CanBlockMaterials( ) const
+{
+    ASSERT_VALID( this );
+    return ( (BOOL)( GetData( )->GetUnionType( ) == CStructureData::UTwarehouse ) );
+}
+
+//---------------------------------------------------------------------------
+// Automatic-routing membership
+//---------------------------------------------------------------------------
+BOOL CBuilding::IsAutoRouteEnabled( ) const
+{
+    ASSERT_VALID( this );
+    return ( (BOOL)( ( (int)m_unitFlags & (int)CUnit::no_autoroute ) == 0 ) );
+}
+
+void CBuilding::SetAutoRouteEnabled( BOOL bEnable )
+{
+    ASSERT_VALID( this );
+
+    const BOOL bWasEnabled = IsAutoRouteEnabled( );
+
+    if ( bEnable )
+        m_unitFlags = (UNIT_FLAGS)( (int)m_unitFlags & ~(int)CUnit::no_autoroute );
+    else
+        m_unitFlags = (UNIT_FLAGS)( (int)m_unitFlags | (int)CUnit::no_autoroute );
+
+    // Re-enabling must tell the human router, the way AltOutput::SetToggle does: while excluded
+    // the building can drop off CHPRouter's need list (NeedsCommodities( NULL ) only revisits that
+    // list), and a producer that ran dry sent its one out-of-materials event while excluded, so
+    // nothing else would ever ask for its next load. Only on a real OFF -> ON, only for our own.
+    if ( bEnable && !bWasEnabled )
+    {
+        CPlayer* pOwner = GetOwner( );
+        if ( pOwner && pOwner->IsMe( ) && theGame.m_pHpRtr )
+            theGame.m_pHpRtr->MsgOutMat( this );
+    }
+}
+
+// The building classes the router actually moves materials for. The rest
+// (housing, command centre, embassy, fort, research) neither consume nor supply
+// anything haulable, so the toggle would be a no-op switch on their window.
+BOOL CBuilding::CanAutoRoute( ) const
+{
+    ASSERT_VALID( this );
+
+    switch ( GetData( )->GetUnionType( ) )
+    {
+    case CStructureData::UTmaterials:   // smelter, refinery
+    case CStructureData::UTvehicle:     // vehicle plants, barracks
+    case CStructureData::UTshipyard:
+    case CStructureData::UTrepair:
+    case CStructureData::UTpower:       // burns coal/oil
+    case CStructureData::UTwarehouse:   // warehouse, rocket, seaport
+    case CStructureData::UTmine:
+    case CStructureData::UTfarm:        // farm, lumber mill
+        return ( TRUE );
+    default:
+        return ( FALSE );
+    }
+}
+
 CStructureData::BLDG_TYPE CStructureData::GetBldgType( ) const
 {
 
@@ -2578,15 +2767,114 @@ int CShipyardBuilding::GetBldgResReq( int iInd, BOOL bAll ) const
 /////////////////////////////////////////////////////////////////////////////
 // CPowerBuilding - creates power
 
+// ---------------------------------------------------------------------------------------
+// CPowerBuilding's per-building MATERIAL ROLE (see CBuilding::EffInputMat in building.h).
+//
+// A power plant has two roles. Normally it burns its own fuel and hands out no material. With
+// a TIME-DRIVEN AltOutput conversion toggled on it stops burning fuel and instead consumes the
+// def's input material and hands out the def's output. Every consumer -- GetInputs/GetAccepts,
+// GetNextMinuteMat, IsOperating, BuildPower, ShowStatusText and the human router's source rule
+// -- reads these four accessors instead of re-deriving the rule from CBuildPower::GetInput().
+//
+// TimeDrivenDef() is non-NULL only for a plant whose toggle is ON with an eTimeDriven def
+// Available() -- Charcoal on a coal plant, Coal Liquefaction on an oil plant. For every other
+// plant, and for those two with the toggle off, it is NULL and all four answers are exactly the
+// shipped fuel-plant values.
+// ---------------------------------------------------------------------------------------
+
+// Production units CBuilding::GetProd( 1 ) accrues per GAME minute. GetProd adds
+// opersElapsed / AVG_SPEED_MUL per call (building.inl), and game time runs at 384 opers/sec
+// (CPlayer::GetElapsedSeconds) => 23040 opers per game minute => 23040 / AVG_SPEED_MUL.
+static const int PROD_PER_MIN = 23040 / AVG_SPEED_MUL;   // = 1440
+
+AltOutput::AltOutputDef const* CPowerBuilding::TimeDrivenDef( ) const
+{
+    // AltOutput::Available( ) and IsFlag( ) both take a non-const CBuilding* -- the same
+    // const_cast precedent CMaterialBuilding::GetNextMinuteMat above already sets.
+    CPowerBuilding* pThis = const_cast<CPowerBuilding*>( this );
+    if ( !pThis->IsFlag( CUnit::alt_oil ) )
+        return ( NULL );
+    AltOutput::AltOutputDef const* pDef = AltOutput::Available( pThis );
+    if ( !pDef || ( pDef->m_eDrive != AltOutput::EDrive::eTimeDriven ) )
+        return ( NULL );
+    return ( pDef );
+}
+
+int CPowerBuilding::EffInputMat( ) const
+{
+    AltOutput::AltOutputDef const* pDef = TimeDrivenDef( );
+    if ( pDef )
+        return ( pDef->m_iInputMat );
+    // RAW, exactly as every caller read it before: this may be -1 (nuclear) or an out-of-range
+    // sentinel. Deliberately NOT clamped here -- each caller keeps its own existing guard.
+    return ( GetData( )->GetBldPower( )->GetInput( ) );
+}
+
+int CPowerBuilding::EffOutputMat( ) const
+{
+    AltOutput::AltOutputDef const* pDef = TimeDrivenDef( );
+    if ( pDef )
+        return ( pDef->m_iOutputMat );
+    return ( -1 );          // a normal power plant hands out no material at all
+}
+
+int CPowerBuilding::EffInputBatch( ) const
+{
+    AltOutput::AltOutputDef const* pDef = TimeDrivenDef( );
+    if ( pDef )
+        return ( AltOutput::InputRatio( const_cast<CPowerBuilding*>( this ), pDef ) );
+    return ( 1 );           // a fuel plant burns whole units: any fuel at all runs a batch
+}
+
+int CPowerBuilding::EffInputPerMin( ) const
+{
+    // The TRUE consumption rate. Exactly ONE caller wants it (BuildPower's resupply trigger);
+    // everything router-facing keeps the router's own units instead -- see GetNextMinuteMat.
+    CBuildPower* pBp   = GetData( )->GetBldPower( );
+    int          iRate = pBp->GetRate( );
+    if ( iRate <= 0 )
+        return ( 0 );       // power_3 (nuclear) decodes as Input = -1, Rate = 0
+
+    AltOutput::AltOutputDef const* pDef = TimeDrivenDef( );
+    if ( pDef )
+        return ( ( PROD_PER_MIN / iRate ) * AltOutput::InputRatio( const_cast<CPowerBuilding*>( this ), pDef ) );
+
+    if ( pBp->GetInput( ) < 0 )
+        return ( 0 );       // no fuel, nothing consumed
+    return ( PROD_PER_MIN / iRate );
+}
+
+int CPowerBuilding::GetProductionPer( ) const
+{
+    // A time-driven conversion has a real batch cycle, so show it. NOT the alt accumulator:
+    // in this mode m_fAltAccum is always exactly 0 (BuildPower only ever hands Convert a whole
+    // batch's worth of input), so GetAltProgressPer( ) would sit frozen at 0 forever.
+    AltOutput::AltOutputDef const* pDef = TimeDrivenDef( );
+    if ( !pDef )
+        return ( -1 );      // fuel plant: unchanged, the CBuilding base answer
+
+    int iRate = GetData( )->GetBldPower( )->GetRate( );
+    if ( iRate <= 0 )
+        return ( -1 );
+
+    int iPer = (int)( m_iBuildDone * 100 / iRate );
+    return ( iPer < 0 ) ? 0 : ( ( iPer > 100 ) ? 100 : iPer );
+}
+
 void CPowerBuilding::GetInputs( int* pVals ) const
 {
 
     ASSERT_VALID( this );
     memset( pVals, 0, sizeof( int ) * CMaterialTypes::GetNumTypes( ) );
 
-    CBuildPower* pBldPwr = GetData( )->GetBldPower( );
-    if ( pBldPwr->GetInput( ) >= 0 )
-        pVals[pBldPwr->GetInput( )] = 1;
+    // EXCLUSIVELY the one material this plant wants right now -- never an alt-mode input
+    // alongside the fuel. GetInputs doubles as the truck's "the SOURCE consumes this, don't
+    // load it out" mask (vehicle.cpp iCant), so listing both would strand the alt mode's own
+    // output. In fuel mode EffInputMat( ) IS GetBldPower( )->GetInput( ), unclamped, so this is
+    // byte-identical to the code it replaces.
+    int iIn = EffInputMat( );
+    if ( iIn >= 0 )
+        pVals[iIn] = 1;
 }
 
 int CPowerBuilding::GetNextMinuteMat( int iInd ) const
@@ -2594,12 +2882,22 @@ int CPowerBuilding::GetNextMinuteMat( int iInd ) const
 
     int iRtn = GetBldgResReq( iInd, FALSE );
 
-    CBuildPower* pBp = GetData( )->GetBldPower( );
-    if ( pBp->GetInput( ) != iInd )
+    if ( EffInputMat( ) != iInd )
         return ( iRtn );
 
-    // add 1 minute of materials
-    int iNum = 60 / pBp->GetRate( ) + 1;
+    CBuildPower* pBp = GetData( )->GetBldPower( );
+    if ( pBp->GetRate( ) <= 0 )
+        return ( iRtn );    // unreachable today (a Rate == 0 plant has Input == -1, so the test
+                            // above already returned) -- but never assume a non-zero divisor.
+
+    // Add 1 minute of materials in the ROUTER's units, NOT the true consumption rate. The router
+    // multiplies this by iTime (120) for its demand and re-tests it against the store for a +40
+    // priority bump, so feeding it EffInputPerMin( ) here would ask for ~22x too much and pin the
+    // plant's route priority. Keep the legacy expression and scale it by the conversion ratio
+    // instead. In fuel mode the ratio is 1, i.e. character-for-character today's expression.
+    AltOutput::AltOutputDef const* pDef = TimeDrivenDef( );
+    int iRatio = pDef ? AltOutput::InputRatio( const_cast<CPowerBuilding*>( this ), pDef ) : 1;
+    int iNum   = ( 60 / pBp->GetRate( ) + 1 ) * iRatio;
 
     return ( iRtn + iNum );
 }
@@ -2615,10 +2913,83 @@ void CWarehouseBuilding::GetAccepts( int* pVals ) const
 
     for ( int iOn = 0; iOn < CMaterialTypes::GetNumTypes( ); iOn++ )
         if ( ( iOn != CMaterialTypes::food ) && ( iOn != CMaterialTypes::gas ) && ( iOn != CMaterialTypes::moly ) &&
-             ( iOn != CMaterialTypes::goods ) )
+             ( iOn != CMaterialTypes::goods ) &&
+             // player has vetoed this material here -- an "iron only" warehouse
+             ( !IsMatBlocked( iOn ) ) )
             *pVals++ = 1;
         else
             *pVals++ = 0;
+}
+
+// Rocket 5000 / seaport 2000 / warehouse 2000 per material. GetBldgType folds rocket
+// and warehouse together into `warehouse` and a seaport is UTwarehouse as well, so all
+// three have to be told apart by the CONCRETE type.
+int CWarehouseBuilding::GetAutoStockCap( int iInd ) const
+{
+    ASSERT_VALID( this );
+
+    if ( IsMatBlocked( iInd ) )
+        return ( 0 );   // vetoed: haul nothing here
+
+    switch ( GetData( )->GetType( ) )
+    {
+    case CStructureData::rocket:  return ( (int)ROCKET_STOCK_CAP );
+    case CStructureData::seaport: return ( (int)SEAPORT_STOCK_CAP );
+    default:                      return ( (int)WAREHOUSE_STOCK_CAP );
+    }
+}
+
+// STOCK_UNITS times the DEAREST single-unit requirement for iInd across everything
+// this factory can build right now. "Right now" == discovered by this owner, so the
+// ceiling rises as research unlocks costlier units instead of letting a barracks
+// hoard for a heavy tank it cannot build yet. If nothing is discovered (very early
+// game, or no owner) fall back to the full catalogue rather than returning 0, which
+// would starve the factory.
+int CVehicleBuilding::GetAutoStockCap( int iInd ) const
+{
+    ASSERT_VALID( this );
+
+    if ( iInd >= CMaterialTypes::GetNumBuildTypes( ) )
+        return ( 0 );   // a factory consumes only build materials
+
+    // CShipyardBuilding inherits this, and a shipyard's data is UTshipyard, not
+    // UTvehicle -- GetBldVehicle ASSERT_STRICTs on the union type, so pick the right
+    // accessor. CBuildShipyard derives from CBuildVehicle, so the unit catalogue is
+    // reached the same way for both.
+    CStructureData const* pSd = GetData( );
+    CBuildVehicle*        pBv = NULL;
+    if ( pSd->GetUnionType( ) == CStructureData::UTvehicle )
+        pBv = pSd->GetBldVehicle( );
+    else if ( pSd->GetUnionType( ) == CStructureData::UTshipyard )
+        pBv = pSd->GetBldShipyard( );
+    if ( pBv == NULL )
+        return ( -1 );
+
+    CPlayer* pOwner = GetOwner( );
+
+    int iMaxDisc = 0;   // dearest among units we can actually build
+    int iMaxAll  = 0;   // dearest in the whole catalogue (fallback)
+    for ( int iOn = 0; iOn < pBv->GetSize( ); iOn++ )
+    {
+        CBuildUnit const* pBu = pBv->GetUnit( iOn );
+        if ( pBu == NULL )
+            continue;
+
+        int iCost = pBu->GetInput( iInd );
+        if ( iCost > iMaxAll )
+            iMaxAll = iCost;
+
+        int iVehTyp = pBu->GetVehType( );
+        if ( ( pOwner != NULL ) && ( 0 <= iVehTyp ) && ( iVehTyp < theTransports.GetNumTransports( ) ) )
+        {
+            CTransportData const* pTd = theTransports.GetData( iVehTyp );
+            if ( ( pTd != NULL ) && pTd->PlyrIsDiscovered( pOwner ) && ( iCost > iMaxDisc ) )
+                iMaxDisc = iCost;
+        }
+    }
+
+    int iBase = ( iMaxDisc > 0 ) ? iMaxDisc : iMaxAll;
+    return ( iBase * (int)STOCK_UNITS );   // 0 if nothing here uses iInd at all
 }
 
 /////////////////////////////////////////////////////////////////////////////
@@ -3074,7 +3445,7 @@ void CVehicle::InvalidateStatus( ) const
     theApp.m_wndVehicles.m_ListBox.InvalidateRect( &rect, FALSE );
 }
 
-void CVehicle::SetDestAndMode( CSubHex sub, VEH_POS iMode )
+void CVehicle::SetDestAndMode( CSubHex sub, VEH_POS iMode, BOOL bTrafficDetour )
 {
     const int aiAdd[4][2] = { 0, 1, 0, 0, 1, 0, 1, 1 };
 
@@ -3087,6 +3458,11 @@ void CVehicle::SetDestAndMode( CSubHex sub, VEH_POS iMode )
                m_ptHead.y, sub.x, sub.y );
 #endif
     ASSERT_VALID( this );
+    // New order, new generation - including a traffic detour, which is a new
+    // destination for this vehicle whatever its reason.
+    ++m_dwOrderGen;
+    if ( !bTrafficDetour )
+        EndReverse( );
     DeletePath( );
     m_hexLastDest = sub;
 
@@ -3097,8 +3473,21 @@ void CVehicle::SetDestAndMode( CSubHex sub, VEH_POS iMode )
     m_iClosest      = INT_MAX;
     m_iNumClosest   = 0;
     m_iNumRetries   = 0;
+    m_iParkSkip     = 0;
     m_dwTimeBlocked = 0;
     m_iBlockCount   = 0;
+    m_bWaitedForMover = FALSE; // a new destination starts a new bump/wait episode
+    m_subWaitNext.x = m_subWaitNext.y = -1;
+
+    // A replacement order cancels recovery. An internal detour must keep its
+    // movement mode, saved job and hold active while the new route is chosen.
+    if ( !bTrafficDetour )
+    {
+        m_iBackUps       = 0;
+        m_bResume        = FALSE;
+        m_bForwardEscape = FALSE;
+        m_iHoldFrames    = 0;
+    }
     m_bFlags &= ~told_ai_stop;
 
     // for a building there is only one entrance
@@ -3186,7 +3575,10 @@ void CVehicle::SetDestAndMode( CSubHex sub, VEH_POS iMode )
 
     // if we're moving just change the path
     ASSERT( ( m_cMode != moving ) || ( m_iStepsLeft > 0 ) );
-    if ( ( m_cMode == moving ) && ( m_iStepsLeft > 0 ) )
+    // Arrival can leave freshly initialized interpolation with next==head.
+    // That is not an active step: a new detour must start travel, not shrink
+    // the body toward its own head while pretending to finish the old step.
+    if ( ( m_cMode == moving ) && ( m_iStepsLeft > 0 ) && ( m_ptNext != m_ptHead ) )
     {
         ASSERT( m_ptNext != m_ptHead );
         ASSERT( ( abs( CSubHex::Diff( m_ptNext.x - m_ptHead.x ) ) < 2 ) &&
@@ -3216,6 +3608,12 @@ void CVehicle::KickStart( )
 
 void CVehicle::DeletePath( )
 {
+
+    // THE cancellation funnel. Every reason the plan lists for dropping a pending
+    // request - a new destination (SetDestAndMode), a stop (ArrivedDest), a detour
+    // handed off - throws the route away here, and an answer to a question whose
+    // route has been thrown away is not wanted.
+    ClearPathPending( "path" );
 
     delete[] m_phexPath;
     m_phexPath = NULL;
@@ -3253,7 +3651,229 @@ BOOL CVehicle::HavePath( ) const
     return ( FALSE );
 }
 
-void CVehicle::GetPath( BOOL bNoOcc )
+////////////////////////////////////////////////////////////////////////////
+//
+//  Pathfinding ladder, step D: the mover's search runs on a worker and the
+//  answer is installed on the main thread a later tick.
+//
+//  Everything below runs on the MAIN thread. The worker owns nothing but its
+//  request's immutable snapshot; no live object is reachable from it.
+//
+//  Off unless BOTH EN_PATH_WORKER and EN_PATH_ASYNC name a value - with either
+//  absent PathAsyncEligible answers FALSE for every vehicle and the movement
+//  path is byte for byte what it was.
+//
+////////////////////////////////////////////////////////////////////////////
+
+// Bumped once per main-loop tick by the drain, so a wait can be reported in ticks
+// without a second clock.
+static uint64_t g_uPathAsyncTick = 0;
+
+uint64_t EnPathAsyncTick( void )
+{
+    return ( g_uPathAsyncTick );
+}
+
+// The vehicle inside CVehicle::Move right now, or NULL. Main thread only, and set
+// through EnPathAsyncMoveScope so every one of Move's exits restores it.
+static CVehicle const* g_pVehInMove = NULL;
+
+void EnPathAsyncSetInMove( CVehicle const* pVeh )
+{
+    g_pVehInMove = pVeh;
+}
+
+CVehicle const* EnPathAsyncInMove( void )
+{
+    return ( g_pVehInMove );
+}
+
+enum { kPathAsyncMaxRetries = 3 };
+
+//
+// THE eligibility predicate. Widening the scope (human owners, bVehBlock searches -
+// plan section 3, phase 5) is a change here and nowhere else.
+//
+// Phase 5 step 1 IS HERE, behind EN_PATH_ASYNC_HUMAN (default off): a LOCAL human
+// owner's mover is admitted too. "Local" is never optional - ownership is
+// authoritative in MP and a remote owner's vehicle is simulated, not commanded, here.
+//
+// Phase 5 step 2 (bVehBlock searches) is NOT implemented, and the reject below is
+// unconditional on purpose. An occupancy-aware search reads TWO snapshot facts, and
+// neither is maintained to a standard that makes it equivalent to the live search:
+//   * cpathmgr.cpp:1234 only consults the occupancy class at all once
+//     fDest.GetUnits() shows a vehicle sub-hex bit (cpathmgr.cpp:1228), and the
+//     snapshot's bUnits comes from PwEncodeRow (pathworld.cpp:221), which re-encodes
+//     only DIRTY rows. A vehicle's sub-hex bits are written by vehicle.inl:76,81
+//     through CHex::OrUnits / NandUnits, which bump the nav epoch and dirty the row
+//     ONLY for the bldg|bridge bits (terrain.h:226-227) - never for ul/ur/ll/lr.
+//   * PathWorld::PublishTick skips the rebuild outright while the epoch is unchanged
+//     (pathworld.cpp:466-471), and says so in as many words: "Vehicle occupancy is
+//     deliberately OUTSIDE it". So bOcc (pathworld.cpp:438) is not rebuilt either.
+// With bVehBlock == FALSE both facts are inert - the cpathmgr.cpp:1234 branch is a
+// no-op and the bldg bit it is nested under IS dirty-tracked - which is exactly why
+// v1 is sound. Turning bVehBlock on would make arbitrarily stale vehicle bits
+// load-bearing, and neither install-side re-check covers it (PathStepLegalLive tests
+// travelability, not occupancy; the one-step test only fires for pathLen == 1). The
+// prerequisite is dirty-tracking the vehicle sub-hex bits, not a knob.
+//
+static BOOL PathAsyncEligible( CVehicle const* pVeh, BOOL bVehBlock )
+{
+    // Submit, the pending state and the install are all main-thread contracts. The
+    // movement A* is a main-thread caller today; say so here rather than rely on it.
+    if ( !PathService::AsyncEnabled( ) || !thePathService.IsRunning( ) || !Perf::IsMainThread( ) )
+        return ( FALSE );
+
+    // Plan section 1.2 D3: occupancy-aware searches keep their synchronous answer.
+    // See the header comment above for why this one has no switch.
+    if ( bVehBlock )
+    {
+        Perf::CounterInc( "pa.ineligible.vehblock" );
+        return ( FALSE );
+    }
+
+    // Inside its own Move this vehicle cannot afford to wait: Move's completion
+    // invariant (vehmove.cpp, the ASSERT at the Done label - moving implies a real
+    // m_ptNext) has to hold by the time THIS call returns, and a pending vehicle has
+    // no next step. Arrival starting the next leg - ArrivedDest, DetourTo, ResumeJob,
+    // the route's next stop - is the case that reaches it, and StartTravel's pending
+    // return would leave `moving` with m_ptNext == m_ptHead. Search on this thread,
+    // exactly as the game did before the answer could be deferred.
+    if ( pVeh == EnPathAsyncInMove( ) )
+    {
+        Perf::CounterInc( "pa.ineligible.move" );
+        return ( FALSE );
+    }
+
+    std::shared_ptr<const PathWorld> ptrSnap = PathWorld::Current( );
+    if ( !ptrSnap || ( ptrSnap->Generation( ) != EnNavGameGeneration( ) ) )
+    {
+        Perf::CounterInc( "pa.ineligible.snap" );
+        return ( FALSE );
+    }
+
+    // No owner is counted with the remote case: both mean "this seat does not command
+    // this vehicle", and neither is affected by the human switch.
+    CPlayer const* pOwner = pVeh->GetOwner( );
+    if ( ( pOwner == NULL ) || !pOwner->IsLocal( ) )
+    {
+        Perf::CounterInc( "pa.ineligible.owner.remote" );
+        return ( FALSE );
+    }
+
+    const BOOL bAI = pOwner->IsAI( );
+    if ( !bAI && !PathService::AsyncHumanEnabled( ) )
+    {
+        Perf::CounterInc( "pa.ineligible.owner.human" );
+        return ( FALSE );
+    }
+
+    // What the widening - and only the widening - admitted.
+    if ( !bAI )
+        Perf::CounterInc( "pa.eligible.human" );
+
+    Perf::CounterInc( "pa.eligible" );
+    return ( TRUE );
+}
+
+//
+// Build the request exactly as the step-C submit does and hand it to the pool.
+// Returns 0 when the queue refused it, and the caller then searches synchronously.
+//
+static uint64_t EnPathAsyncSubmit( CVehicle* pVeh, CHexCoord const& hexFrom, CHexCoord const& hexTo,
+                                   BOOL bVehBlock )
+{
+    std::shared_ptr<const PathWorld> ptrSnap = PathWorld::Current( );
+    if ( !ptrSnap )
+        return ( 0 );
+
+    PathRequest req;
+    req.gameGeneration  = EnNavGameGeneration( );
+    req.vehicleId       = (uint32_t)pVeh->GetID( );
+    req.orderGeneration = (uint32_t)pVeh->GetOrderGen( );
+    req.from            = hexFrom;
+    req.to              = hexTo;
+    // NOT GetData()->GetType(): the index is the slot in theTransports, which is what
+    // GetTransportData() takes. tests/path/run-pathservice.py pins the round trip.
+    req.iVehType    = theTransports.GetIndex( pVeh->GetData( ) );
+    req.bVehBlock   = bVehBlock;
+    req.bDirectPath = FALSE;   // the mover's thePathMgr.GetPath call takes the default
+    req.tSubmit     = Perf::NowIfEnabled( );
+    req.world       = ptrSnap;
+
+    const uint64_t uId = thePathService.Submit( req );
+    if ( uId == 0 )
+    {
+        Perf::CounterInc( "pa.fallback.submit" );
+        return ( 0 );
+    }
+
+    Perf::CounterInc( "pa.submit" );
+    return ( uId );
+}
+
+//
+// The live-world legality gates a search applies to a step, in the shape
+// CPathMgr::GetCellCosts applies them (cpathmgr.cpp GetCellCosts): the hex must be
+// travelable, coastline is closed to most wheel types short of the destination, and a
+// bridge at either end adds the deck-direction test with the same bOnWater expression.
+//
+static BOOL PathStepLegalLive( CTransportData const* pTD, CEnLiveNavView const& view, CHexCoord const& hexFrom,
+                               CHexCoord const& hexDest, CHexCoord const& hexTo )
+{
+    CEnHexFacts const fDest = view.GetHex( hexDest );
+    if ( !fDest.IsValid( ) )
+        return ( FALSE );
+
+    if ( !pTD->CanTravelHex( view, hexDest ) )
+        return ( FALSE );
+
+    if ( fDest.GetType( ) == CHex::coastline )
+        if ( ( pTD->GetWheelType( ) != CWheelTypes::walk ) && ( pTD->GetWheelType( ) != CWheelTypes::hover ) &&
+             ( pTD->GetType( ) != CTransportData::gun_boat ) &&
+             ( pTD->GetType( ) != CTransportData::landing_craft ) && ( hexDest != hexTo ) )
+            if ( !( fDest.GetUnits( ) & CHex::bridge ) )
+                return ( FALSE );
+
+    CEnHexFacts const fFrom = view.GetHex( hexFrom );
+    if ( !fFrom.IsValid( ) )
+        return ( FALSE );
+
+    if ( ( fDest.GetUnits( ) & CHex::bridge ) || ( fFrom.GetUnits( ) & CHex::bridge ) )
+    {
+        BOOL bOnWater = ( pTD->GetWheelType( ) == CWheelTypes::water ) ||
+                        ( fFrom.IsWater( ) & ( ( fFrom.GetUnits( ) & CHex::bridge ) == 0 ) );
+        if ( !pTD->CanEnterHex( view, hexFrom, hexDest, bOnWater ) )
+            return ( FALSE );
+    }
+
+    return ( TRUE );
+}
+
+void CVehicle::ClearPathPending( char const* pszReason )
+{
+    if ( m_dwPathReqId == 0 )
+        return;
+
+    m_dwPathReqId  = 0;
+    m_uPathReqTick = 0;
+    m_iPathRetries = 0;
+
+#if EN_PATH_PROBES
+    if ( pszReason != NULL )
+    {
+        // One counter per reason, built here rather than at the call sites so the
+        // "pa.cancel." prefix cannot drift between them. Perf copies the name.
+        char szName[48];
+        snprintf( szName, sizeof( szName ), "pa.cancel.%s", pszReason );
+        Perf::CounterInc( szName );
+    }
+#else
+    (void)pszReason;   // names the counter only
+#endif
+}
+
+void CVehicle::GetPath( BOOL bNoOcc, BOOL bAllowAsync )
 {
 
 #ifdef _DEBUG
@@ -3261,17 +3881,23 @@ void CVehicle::GetPath( BOOL bNoOcc )
     ASSERT( theGame.IsNetGame( ) || GetOwner( )->IsLocal( ) );  // MP: client simulates remote units (Task#14)
 #endif
 
+    // An answer to this vehicle's question is already in flight. A second request
+    // would race the first and the loser would be installed over the winner.
+    if ( m_dwPathReqId != 0 )
+    {
+        Perf::CounterInc( "pa.pending.skip" );
+        return;
+    }
+
     CHexCoord _dest;
     if ( ( m_iPathOff >= m_iPathLen ) && ( m_iPathLen > 0 ) )
         _dest = *( m_phexPath + m_iPathLen - 1 );
     else
         _dest = m_hexDest;
 
-    // get the path
-    delete[] m_phexPath;
-    m_iPathOff = 0;
-
-    // for a building we use the exit hex as the src/dest
+    // for a building we use the exit hex as the src/dest. Hoisted above the delete
+    // below - which it does not depend on - so the async submit can build its request
+    // from the same two hexes the synchronous search would have been given.
     CHexCoord  _hexSrc = GetHexHead( );
     CBuilding* pBldg   = theBuildingHex._GetBuilding( _hexSrc );
     if ( ( pBldg != NULL ) && ( pBldg->GetOwner( ) == GetOwner( ) ) )
@@ -3283,28 +3909,74 @@ void CVehicle::GetPath( BOOL bNoOcc )
         _hexDest = pBldg->GetExit( GetData( )->GetWheelType( ) );
 
     // get the path (fake one up if same or adjoining)
-    int xDif = CHexCoord::Diff( _hexDest.X( ) - _hexSrc.X( ) );
-    int yDif = CHexCoord::Diff( _hexDest.Y( ) - _hexSrc.Y( ) );
-    if ( ( abs( xDif ) <= 1 ) && ( abs( yDif ) <= 1 ) )
+    int        xDif      = CHexCoord::Diff( _hexDest.X( ) - _hexSrc.X( ) );
+    int        yDif      = CHexCoord::Diff( _hexDest.Y( ) - _hexSrc.Y( ) );
+    const BOOL bAdjacent = ( ( abs( xDif ) <= 1 ) && ( abs( yDif ) <= 1 ) ) ? TRUE : FALSE;
+
+    // The adjacent case is not a search, so it never goes to a worker.
+    if ( !bAdjacent && bAllowAsync && PathAsyncEligible( this, bNoOcc ) )
     {
-        m_phexPath  = new CHexCoord[3];
-        *m_phexPath = _hexSrc;
-        m_iPathLen  = 1;
+        const uint64_t uId = EnPathAsyncSubmit( this, _hexSrc, _hexDest, bNoOcc );
+        if ( uId != 0 )
+        {
+            // Nothing about this vehicle changes but the fact that it is waiting: the
+            // route, the offset and the route mode are exactly as the caller left them.
+            m_dwPathReqId  = uId;
+            m_uPathReqTick = EnPathAsyncTick( );
+            return;
+        }
+    }
+
+    // get the path
+    delete[] m_phexPath;
+    m_iPathOff = 0;
+
+    CHexCoord* phexNew = NULL;
+    int        iLenNew = 0;
+    if ( bAdjacent )
+    {
+        phexNew  = new CHexCoord[3];
+        *phexNew = _hexSrc;
+        iLenNew  = 1;
         CHexCoord _tmp( _hexSrc.X( ) + xDif, _hexSrc.Y( ) + yDif );
         _tmp.Wrap( );
-        if ( *m_phexPath != _tmp )
+        if ( *phexNew != _tmp )
         {
-            *( m_phexPath + 1 ) = _tmp;
-            m_iPathLen          = 2;
+            *( phexNew + 1 ) = _tmp;
+            iLenNew          = 2;
         }
-        if ( *( m_phexPath + m_iPathLen - 1 ) != _hexDest )
+        if ( *( phexNew + iLenNew - 1 ) != _hexDest )
         {
-            *( m_phexPath + 1 ) = _hexDest;
-            m_iPathLen++;
+            *( phexNew + 1 ) = _hexDest;
+            iLenNew++;
         }
     }
     else
-        m_phexPath = thePathMgr.GetPath( this, _hexSrc, _hexDest, m_iPathLen, 0, bNoOcc );
+    {
+        // BRACES ARE LOAD-BEARING (WinOpus 2026-09-13, defect I introduced in ea56d266
+        // and WinFable's probe audit caught). Without them the counter became the else
+        // body and this GetPath ran UNCONDITIONALLY: the adjacent fast path above still
+        // allocated its 3-element array, then this overwrote the pointer - a leak on
+        // every short move and a full A* on every one-hex step. Every measurement taken
+        // between 03:05Z and this fix was on a build that manufactured searches.
+#if EN_PATH_PROBES
+        Perf::CounterInc( "pq.veh" );   // BURST PROBE: CVehicle::GetPath, ordinary movement route
+#endif
+        phexNew = thePathMgr.GetPath( this, _hexSrc, _hexDest, iLenNew, 0, bNoOcc );
+    }
+
+    ApplyPathResult( phexNew, iLenNew, _hexDest, _dest );
+}
+
+//
+// The post-search half of GetPath, verbatim. The synchronous search and the worker
+// install both come through here, so the two cannot drift.
+//
+void CVehicle::ApplyPathResult( CHexCoord* phexPath, int iPathLen, CHexCoord const& hexDest,
+                                CHexCoord const& hexPrevEnd )
+{
+    m_phexPath = phexPath;
+    m_iPathLen = iPathLen;
 
     // if we have no path we're stuck
     if ( ( m_iPathLen <= 0 ) || ( ( m_iPathLen > 1 ) && ( *m_phexPath == *( m_phexPath + m_iPathLen - 1 ) ) ) )
@@ -3332,7 +4004,7 @@ void CVehicle::GetPath( BOOL bNoOcc )
 
     // is it the same as last time?
     CHexCoord _newDest( *( m_phexPath + m_iPathLen - 1 ) );
-    if ( ( _newDest != _hexDest ) && ( _newDest == m_hexLastDest ) )
+    if ( ( _newDest != hexDest ) && ( _newDest == m_hexLastDest ) )
     {
         delete[] m_phexPath;
         m_phexPath = NULL;
@@ -3341,7 +4013,7 @@ void CVehicle::GetPath( BOOL bNoOcc )
         if ( !m_cOwn && theBuildingHex._GetBuilding( m_ptHead ) != NULL )
         {
             _SetRouteMode( cant_deploy );
-            m_hexLastDest = _dest;
+            m_hexLastDest = hexPrevEnd;
             return;
         }
         _SetRouteMode( blocked );
@@ -3351,13 +4023,278 @@ void CVehicle::GetPath( BOOL bNoOcc )
         logPrintf( LOG_PRI_USEFUL, LOG_VEH_MOVE, "Vehicle %d can't reach dest, same path as 2 ago", GetID( ) );
 #endif
     }
-    m_hexLastDest = _dest;
+    m_hexLastDest = hexPrevEnd;
+}
+
+//
+// One popped worker answer, on the main thread. Validate it, then either install it
+// through ApplyPathResult or free it and let the vehicle's next GetPath re-search.
+// res.path is always disposed of here - either transferred to the vehicle or freed.
+//
+void CVehicle::InstallPathResult( PathResult& res )
+{
+    // Identity first, then the question that was asked, then the world it was
+    // asked about (plan section 2.5).
+    if ( res.gameGeneration != EnNavGameGeneration( ) )
+    {
+        Perf::CounterInc( "pa.reject.gen" );
+        if ( res.requestId == m_dwPathReqId )
+            ClearPathPending( NULL );
+        PathService::FreeResult( res );
+        return;
+    }
+
+    if ( res.requestId != m_dwPathReqId )
+    {
+        // Cancelled, superseded, or evicted: this vehicle is no longer asking.
+        Perf::CounterInc( "pa.reject.id" );
+        PathService::FreeResult( res );
+        return;
+    }
+
+    if ( res.orderGeneration != (uint32_t)m_dwOrderGen )
+    {
+        Perf::CounterInc( "pa.reject.order" );
+        ClearPathPending( NULL );
+        PathService::FreeResult( res );
+        return;
+    }
+
+    // The SAME rule PathAsyncEligible applies, re-asked now: the owner can have changed
+    // while the answer was in flight. Rejection is for leaving the eligible set, not for
+    // changing owner - the route is a function of the two hexes and the world, not of
+    // who owns the vehicle, and identity, order generation, staleness and the live
+    // re-checks above already cover everything an ownership change implies about it.
+    // So with EN_PATH_ASYNC_HUMAN on, an AI -> human takeover INSTALLS (the vehicle is
+    // still local and still eligible); with it off, that takeover leaves the eligible
+    // set and the answer is dropped, exactly as v1 dropped it. Going remote always
+    // rejects: this seat no longer commands the vehicle.
+    CPlayer const* pOwner  = GetOwner( );
+    const BOOL     bEligibleOwner =
+        ( ( pOwner != NULL ) && pOwner->IsLocal( ) &&
+          ( pOwner->IsAI( ) || PathService::AsyncHumanEnabled( ) ) )
+            ? TRUE
+            : FALSE;
+    if ( !bEligibleOwner )
+    {
+        Perf::CounterInc( "pa.reject.owner" );
+        ClearPathPending( NULL );
+        PathService::FreeResult( res );
+        return;
+    }
+
+    // The two hexes the search was given, recomputed the way GetPath computes them.
+    // Neither can have moved while the vehicle was pending: a new destination bumps
+    // m_dwOrderGen, which is rejected above, and a pending vehicle does not advance.
+    CHexCoord  hexSrc = GetHexHead( );
+    CBuilding* pBldg  = theBuildingHex._GetBuilding( hexSrc );
+    if ( ( pBldg != NULL ) && ( pBldg->GetOwner( ) == GetOwner( ) ) )
+        hexSrc = pBldg->GetExit( GetData( )->GetWheelType( ) );
+
+    CHexCoord hexDest = GetHexDest( );
+    pBldg             = theBuildingHex._GetBuilding( hexDest );
+    if ( ( pBldg != NULL ) && ( pBldg->GetOwner( ) == GetOwner( ) ) )
+        hexDest = pBldg->GetExit( GetData( )->GetWheelType( ) );
+
+    const BOOL bStale = ( res.worldEpoch != g_enNavEpoch ) ? TRUE : FALSE;
+    if ( bStale )
+        Perf::CounterInc( "pa.stale" );
+
+    BOOL bHaveRoute = ( res.success && ( res.path != NULL ) && ( res.pathLen > 0 ) ) ? TRUE : FALSE;
+    BOOL bRetry     = FALSE;
+
+    // A stale route is checked step by step against the live world; a stale FAILURE
+    // needs no special rule any more, because no failure is installed at all - see
+    // the live re-search below.
+    if ( bStale && bHaveRoute )
+    {
+        const CEnLiveNavView viewLive;
+        CHexCoord const      hexEnd = res.path[res.pathLen - 1];
+        CHexCoord            hexPrev( hexSrc );
+        for ( int i = 0; i < res.pathLen; ++i )
+        {
+            if ( !PathStepLegalLive( GetData( ), viewLive, hexPrev, res.path[i], hexEnd ) )
+            {
+                bRetry = TRUE;
+                break;
+            }
+            hexPrev = res.path[i];
+        }
+        if ( bRetry )
+            Perf::CounterInc( "pa.stale.illegal" );
+    }
+
+    if ( bRetry )
+    {
+        PathService::FreeResult( res );
+        const int iRetries = m_iPathRetries + 1;
+        ClearPathPending( NULL );
+        if ( iRetries >= (int)kPathAsyncMaxRetries )
+        {
+            // No vehicle starves on retries: search now, on this thread, and let the
+            // ordinary post-search half answer.
+            Perf::CounterInc( "pa.fallback.retries" );
+            GetPath( FALSE, FALSE );
+            KickStart( );
+        }
+        else
+        {
+            m_iPathRetries = iRetries;
+            Perf::CounterInc( "pa.retry" );
+        }
+        return;
+    }
+
+    // Sol F-015: _GetPath's foot rejects a one-step route whose single hex is occupied
+    // or can no longer be travelled, and the worker applied that to the SNAPSHOT. Run
+    // the same test against the live world; failing it drops the route and takes the
+    // live re-search below.
+    if ( bHaveRoute && ( res.pathLen == 1 ) )
+    {
+        const CEnLiveNavView viewLive;
+        CHexCoord const      hexOne( res.path[0].X( ), res.path[0].Y( ) );
+        CEnHexFacts const    fDest = viewLive.GetHex( hexOne );
+        if ( fDest.IsValid( ) )
+        {
+            BYTE bUnits = fDest.GetUnits( );
+            if ( ( bUnits & ( CHex::ul | CHex::ur | CHex::ll | CHex::lr ) ) ||
+                 !GetData( )->CanTravelHex( viewLive, hexOne ) )
+            {
+                Perf::CounterInc( "pa.onestep.reject" );
+                delete[] res.path;
+                res.path    = NULL;
+                res.pathLen = 0;
+                bHaveRoute  = FALSE;
+            }
+        }
+    }
+
+    // A NEGATIVE IS NEVER INSTALLED AS A VERDICT. Failures - nopath, blocked, trivial,
+    // the one-step reject above - are under 0.5% of searches, so confirming every one
+    // against the live world costs nothing and retires the whole "the snapshot said no,
+    // the live world says yes" class at once: occupancy, staleness and anything else.
+    // The synchronous search answers through ApplyPathResult exactly as it would have
+    // had this vehicle never gone to a worker.
+    if ( !bHaveRoute )
+    {
+        PathService::FreeResult( res );
+        ClearPathPending( NULL );
+        Perf::CounterInc( "pa.null.resync" );
+        GetPath( FALSE, FALSE );
+        KickStart( );
+        return;
+    }
+
+    CPathMgr::AsyncVerify( this, hexSrc, hexDest, FALSE, res.path, res.pathLen, bStale );
+
+    CHexCoord hexPrevEnd;
+    if ( ( m_iPathOff >= m_iPathLen ) && ( m_iPathLen > 0 ) )
+        hexPrevEnd = *( m_phexPath + m_iPathLen - 1 );
+    else
+        hexPrevEnd = m_hexDest;
+
+    Perf::CounterInc( "pa.install" );
+    Perf::CounterAdd( "pa.wait.ticks", (int64_t)( g_uPathAsyncTick - m_uPathReqTick ) );
+
+    // Ownership of the route transfers to the vehicle exactly as the synchronous
+    // path's does - the same delete[] and the same m_iPathOff reset GetPath makes.
+    CHexCoord* phexNew = res.path;
+    const int  iLenNew = res.pathLen;
+    res.path           = NULL;
+    res.pathLen        = 0;
+
+    ClearPathPending( NULL );
+
+    delete[] m_phexPath;
+    m_iPathOff = 0;
+    ApplyPathResult( phexNew, iLenNew, hexDest, hexPrevEnd );
+
+    // What the synchronous flow does once GetPath has answered: StartTravel is the
+    // one consumer that turns a route into motion (vehmove.cpp StartTravel), and
+    // KickStart is how the game re-enters it (unit.cpp KickStart). It is a no-op
+    // unless the vehicle is moving, so a route that came back blocked or cant_deploy
+    // is left to HandleBlocked and ExitBuilding, where its own GetPath calls live.
+    KickStart( );
+}
+
+//
+// The main-loop drain, at the snapshot publication point and before the snapshot is
+// replaced, so a result is judged against the world its epoch is compared with.
+//
+void EnPathAsyncDrain( void )
+{
+    ++g_uPathAsyncTick;
+
+    if ( !PathService::AsyncEnabled( ) || !thePathService.IsRunning( ) )
+        return;
+
+    PathResult res;
+    while ( thePathService.PopResult( res ) )
+    {
+        CVehicle* pVeh = theVehicleMap.GetVehicle( (DWORD)res.vehicleId );
+        if ( pVeh == NULL )
+        {
+            Perf::CounterInc( "pa.reject.gone" );
+            PathService::FreeResult( res );
+            continue;
+        }
+
+        pVeh->InstallPathResult( res );
+    }
+}
+
+//
+// Stop / quiesce: nothing may pend across a save, a load or a teardown. Clearing the
+// id is enough - the vehicle's next GetPath re-searches through the ordinary "no
+// path" flow, and any answer still in the queue is rejected by id at the next drain.
+//
+void EnPathAsyncCancelAll( char const* pszReason )
+{
+    POSITION pos = theVehicleMap.GetStartPosition( );
+    while ( pos != NULL )
+    {
+        DWORD     dwID = 0;
+        CVehicle* pVeh = NULL;
+        theVehicleMap.GetNextAssoc( pos, dwID, pVeh );
+        if ( pVeh != NULL )
+            pVeh->ClearPathPending( pszReason );
+    }
 }
 
 void CVehicle::SetLocation( CHexCoord& hex, POSITION pos, int iType )
 {
 
     ASSERT_VALID( this );
+
+    // #38: a movement route and an ORDER queue must never share one list. ArrivedDest
+    // advances to whatever entry is at the head and drives to it as a STOP, then
+    // consumes it - so an order left on a list a movement command has taken over is
+    // driven to, trips the Debug TRAP in ArrivedDest's default branch, and is deleted
+    // unexecuted. This is THE movement-append entry point, so dropping the orders here
+    // covers Shift-queued moves, the route window and the #42 in-flight-dest seed.
+    // ...and the caller's insert-after POSITION must survive that purge. ShiftQueueMove
+    // passes the TAIL, and on a vehicle holding queued orders the tail IS an order node:
+    // ClearOrders frees it, the walk below then runs off the end and trips the TRAP (and
+    // in Release silently AddTails). If pos names an order, re-anchor to the new tail -
+    // "insert after the last entry" still means "append after the remaining stops", and
+    // an emptied list falls into the pos == NULL / AddHead path. A pos that is NOT on
+    // this list is still foreign and still trips the TRAP below.
+    if ( !CRoute::IsOrder( iType ) )
+    {
+        BOOL bPosIsOrder = FALSE;
+        for ( POSITION p = m_route.GetHeadPosition( ); ( p != NULL ) && ( !bPosIsOrder ); )
+        {
+            POSITION cur = p;
+            CRoute*  pRc = m_route.GetNext( p );
+            if ( cur == pos )
+                bPosIsOrder = ( ( pRc != NULL ) && ( CRoute::IsOrder( pRc->GetRouteType( ) ) ) );
+        }
+
+        ClearOrders( );
+
+        if ( bPosIsOrder )
+            pos = m_route.GetTailPosition( );
+    }
 
     // if its a building get it's entrance
     hex.Wrap( );
@@ -3515,7 +4452,9 @@ void CVehicle::CheckExit( )
                 }
                 else if ( x >= pBldg->GetCX( ) )
                 {
-                    TRAP( );
+                    // east-side exit, handled below as the mirror of the x < 0
+                    // case; the 1996 TRAP only marked it as never seen run
+                    EN_TRAP_REMOVED( "CheckExit: new vehicle leaves its building on the east side" );
                     m_ptHead.x = ( pBldg->GetHex( ).X( ) + pBldg->GetCX( ) - 1 ) * 2 + 1;
                     m_ptTail.x = m_ptHead.x - 1;
                     m_ptHead.y = m_ptTail.y = _next.Y( ) * 2;
@@ -3723,6 +4662,15 @@ void CVehicle::TakeOwnership( )
     if ( !m_cOwn )
     {
         ASSERT_VALID( this );
+#ifdef _WIN32
+        // Identify who reclaims ground squares for a carried unit. This is a
+        // diagnostic only: keep the behavior unchanged until its caller is known.
+        if ( m_pTransport != NULL )
+            WaitLog( "[CARGO-CLAIM] veh %lu carrier %lu mode %d head %d,%d next %d,%d caller_rva %llx",
+                     (unsigned long)GetID( ), (unsigned long)m_pTransport->GetID( ), (int)m_cMode,
+                     m_ptHead.x, m_ptHead.y, m_ptNext.x, m_ptNext.y,
+                     (unsigned long long)((ULONG_PTR)_ReturnAddress( ) - (ULONG_PTR)GetModuleHandleW( NULL )) );
+#endif
         m_cOwn = TRUE;
         ASSERT( theVehicleHex.GetVehicle( m_ptHead ) == NULL );
         ASSERT( theVehicleHex.GetVehicle( m_ptTail ) == NULL );
@@ -3790,8 +4738,46 @@ void CVehicle::StopUnit( )
 
     CUnit::StopUnit( );
 
+    EndReverse( );
+    // #38: a dispatched order whose job the Stop cancels - travelling with its event
+    // armed, a queued move, or a road being laid - is handed back to the queue, so
+    // ResumeUnit's idle poll re-dispatches it. Left order_sent / order_road with the
+    // event cleared below, nothing ever ends it and NextOrder refuses for ever. A
+    // build request already sent (event none) still waits for the server's answer.
+    if ( ( m_pBldg == NULL ) &&
+         ( ( m_iOrderState == order_road ) ||
+           ( ( m_iOrderState == order_sent ) &&
+             ( ( m_iEvent != CVehicle::none ) || ( m_iOrderKind == CRoute::move ) ) ) ) )
+        m_iOrderState = order_none;
     SetEvent( CVehicle::none );
     SetDest( GetPtNext( ) );
+}
+
+// #38: TRUE while this list still holds a MOVEMENT stop. An order queue and a movement
+// route share the one list, so "non-empty" no longer means "on a route".
+BOOL CVehicle::HasMoveStops( ) const
+{
+    for ( POSITION p = m_route.GetHeadPosition( ); p != NULL; )
+    {
+        CRoute* pR = m_route.GetNext( p );
+        if ( ( pR != NULL ) && ( !CRoute::IsOrder( pR->GetRouteType( ) ) ) )
+            return ( TRUE );
+    }
+    return ( FALSE );
+}
+
+// #38: TRUE while this list still holds a queued ORDER. The mirror of HasMoveStops, and
+// the question ShiftQueueMove has to ask before it decides a Shift-move starts a route:
+// a list of orders is a work queue, and turning it into a route deletes every one of them.
+BOOL CVehicle::HasOrders( ) const
+{
+    for ( POSITION p = m_route.GetHeadPosition( ); p != NULL; )
+    {
+        CRoute* pR = m_route.GetNext( p );
+        if ( ( pR != NULL ) && ( CRoute::IsOrder( pR->GetRouteType( ) ) ) )
+            return ( TRUE );
+    }
+    return ( FALSE );
 }
 
 void CVehicle::ResumeUnit( )
@@ -3799,7 +4785,12 @@ void CVehicle::ResumeUnit( )
 
     CUnit::ResumeUnit( );
 
-    if ( GetRouteList( ).GetCount( ) > 0 )
+    // A list holding ONLY queued orders is not a route: arming `route` there sends the
+    // vehicle driving at the first order's hex (SetEvent's case route -> SetDestAndMode),
+    // trips ArrivedDest's default TRAP on arrival, and makes ShiftQueueMove read the
+    // event as "already routing" - which is how a Shift-move after queued roads reached
+    // SetLocation with an ORDER node as its insert-after position.
+    if ( HasMoveStops( ) )
         SetEvent( CVehicle::route );
 }
 
@@ -4101,15 +5092,18 @@ BOOL CPowerBuilding::IsOperating( ) const
     if ( !CBuilding::IsOperating( ) )
         return FALSE;
 
-    CBuildPower* pBp = GetData( )->GetBldPower( );
+    // What this plant needs on hand to run: its fuel normally, a time-driven conversion def's
+    // input in alt mode. In fuel mode EffInputMat( ) IS GetInput( ) and EffInputBatch( ) is 1,
+    // so "< 1" is exactly the old "<= 0".
+    int iIn = EffInputMat( );
 
-    if ( pBp->GetInput( ) < 0 )
+    if ( iIn < 0 )
         return TRUE;
 
     CBuildMaterials const* pBm = GetData( )->GetBldMaterials( );
 
     // materials to run it?
-    if ( GetStore( pBp->GetInput( ) ) <= 0 )
+    if ( GetStore( iIn ) < EffInputBatch( ) )
         return FALSE;
 
     return TRUE;

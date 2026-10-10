@@ -122,12 +122,18 @@ void SDL2FileBrowser::OnInit() {
     }
     y += 28;
 
-    // File list
-    int listH = m_height - 180;  // leave room for edit + buttons
+    // File list. The slot is m_height - 180 (leaving room for edit + buttons),
+    // but a list box only ever paints floor(h / rowHeight) whole rows, so snap
+    // the box to a whole number of rows — otherwise the leftover pixels show as
+    // a blank strip under the last row that looks like a truncated list. The
+    // leftover is handed to the gap below, so every widget after this keeps its
+    // exact previous y.
+    int listSlotH = m_height - 180;
+    int listH = listSlotH - (listSlotH % SDL2Listbox::RowHeight());
     m_listFiles = AddWidget<SDL2Listbox>(lx, y, innerW, listH,
         [this](int idx) { OnFileSelected(idx); },
         [this](int idx) { OnFileDblClick(idx); });
-    y += listH + 6;
+    y += listSlotH + 6;
 
     // Filename label + edit + extension suffix label.
     // In Save mode we pre-fill with just the base name (extension stripped)

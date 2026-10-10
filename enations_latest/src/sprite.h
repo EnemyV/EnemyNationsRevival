@@ -668,7 +668,7 @@ public:
 	int	GetID() 			const	{ return m_iID; }
 	void	SetID( int iID )		{ m_iID = iID; }
 
-	int	GetNumViews() 		 const { return m_ptrspritehdr->m_nViews; 	  }
+	int	GetNumViews() 		 const { return m_ptrspritehdr.Value() ? m_ptrspritehdr->m_nViews : 0; }
 	int	GetNumSuperviews() const { return m_ptrspritehdr->m_nSuperViews; }
 
 	// Hot spots

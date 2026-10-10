@@ -15,6 +15,7 @@
 #include "research.h"
 #include "vpxfer.h"
 #include "mem_pool.h"
+#include <vector>
 
 class CNetCmd;
 class CUnit;
@@ -166,8 +167,18 @@ class CPlayer : public CObject
 
     void StartGame( );
     void StartLoop( );
+    // Surplus-scaled edicts: one per-player pass, run at the END of StartLoop (after the
+    // need/have counters are snapshotted and cleared) so every such edict reads the SAME
+    // "as if we were not running" spare and none of them depends on building iteration
+    // order. See the long comment on the definition in player.cpp.
+    void ApplySurplusEdicts( );
     void PeopleAndFood( int iNumSec );
     void Research( int iNumSec );
+    // Resonance Sweep edict: recharge, ping, and age out the lit ring using active real
+    // milliseconds from the unscaled frame clock in mainloop.cpp.
+    void ResonanceSweep( int iElapsedMillis );
+    void SweepLight( CBuilding* pRocket );   // light the ring around a pinged rocket
+    void SweepUnlight( );                    // release it (safe to call when nothing is lit)
     void CPlayer::CitizenConstruction( );
 
     void UpdateRacialAttributes( int iRsrch );
@@ -199,7 +210,9 @@ class CPlayer : public CObject
         // cost (e.g. Mining Subsidy +25% power). StartLoop applies the same pct to the raw
         // member transiently for the m_fPwrMult drag, but resets it before render — so
         // without this the displayed need never moved. See player.cpp StartLoop.
-        return ( m_iPwrNeed + (int)( m_iPwrNeed * m_fEdictEnergyUpkeepPct ) );
+        // The flat edict draw is ABSOLUTE, so it is added outside the pct scaling above --
+        // scaling it by the base need would make one emitter cost more in a big colony.
+        return ( m_iPwrNeed + (int)( m_iPwrNeed * m_fEdictEnergyUpkeepPct ) + GetEdictFlatPwrNeed( ) );
     }
     int GetPwrHave( ) const
     {
@@ -241,10 +254,20 @@ class CPlayer : public CObject
         ASSERT_STRICT_VALID( this );
         m_iPplNeedBldg += iAdd;
     }
+    // Desperate Measures: the worker draft for THIS pump. Computed once per pump per player by
+    // ApplySurplusEdicts (called at the end of StartLoop) and cached — the rocket's Operate and
+    // the rocket info window both read this same number, so the sim and the readout cannot
+    // disagree, and the draft does not depend on where the rocket falls in the building
+    // iteration order. See CPlayer::ApplySurplusEdicts for why it must be computed there.
+    int  GetDesperateDraft( ) const
+    {
+        ASSERT_STRICT_VALID( this );
+        return ( m_iDespDraft );
+    }
     void AddPplBldg( int iAdd )
     {
         ASSERT_STRICT_VALID( this );
-        m_iPplBldg += iAdd;
+        m_iPplBldg = __max( 1, m_iPplBldg + iAdd );   // always at least 1, as PplBldgToVeh
     }
     void AddPplVeh( int iAdd )
     {
@@ -348,8 +371,9 @@ class CPlayer : public CObject
     float GetConstProd( ) const
     {
         ASSERT_STRICT_VALID( this );
-        // civ-wide edict bonuses: per-category (Const) + global (Overclocked Grid).
-        return ( m_fConstProd * m_fEdictConstMult * m_fEdictGlobalProdMult );
+        // civ-wide edict bonuses: per-category (Const) + surplus-scaled (Public Works) +
+        // global (Overclocked Grid).
+        return ( m_fConstProd * m_fEdictConstMult * m_fSurplusConstMult * m_fEdictGlobalProdMult );
     }
     float GetMtrlsProd( ) const
     {
@@ -389,19 +413,30 @@ class CPlayer : public CObject
     float GetRsrchMult( ) const
     {
         ASSERT_STRICT_VALID( this );
-        return ( m_fRsrchProd * m_fEdictRsrchMult * m_fEdictGlobalProdMult );   // Research Subsidy + Overclocked Grid (RG-1)
+        // Research Subsidy's static half * its surplus half (seconded idle workers) * Overclocked Grid (RG-1)
+        return ( m_fRsrchProd * m_fEdictRsrchMult * m_fSurplusRsrchMult * m_fEdictGlobalProdMult );
     }
     // --- Edicts v1 (civ-wide policy toggles; see edicts.h / RecomputeEdictMults) ---
     bool  IsEdictActive( int edictId ) const { return ( m_dwEdicts & ( 1u << edictId ) ) != 0; }
     DWORD GetEdicts( ) const { return ( m_dwEdicts ); }
-    float GetEdictFortBuildMult( ) const { return ( m_fEdictFortBuildMult ); }
+    // Fortify Border * Civil Defence (the surplus half is recomputed each pump).
+    float GetEdictFortBuildMult( ) const { return ( m_fEdictFortBuildMult * m_fSurplusFortMult ); }
     float GetEdictFarmWorkerMult( ) const { return ( m_fEdictFarmWorkerMult ); } // BuildFarm worker-need scale
     float GetEdictMineEnergyMult( ) const { return ( m_fEdictMineEnergyMult ); }  // BuildMine power-need scale
     float GetEdictMineWorkerMult( ) const { return ( m_fEdictMineWorkerMult ); }  // BuildMine worker-need scale
-    float GetEdictBldgDmgMult( ) const { return ( m_fEdictBldgDmgMult ); }         // Meat Shield: building damage-taken (projbase.cpp)
+    float GetEdictBldgDmgMult( ) const;  // Meat Shield * Civil Defence: building damage-taken (projbase.cpp)
+    void  ReportBldgDmgMult( );                       // remote owner -> server: Civil Defence value
+    void  SetRemoteBldgDmgPermille( int iPermille );  // server: store what the remote owner reported
     float GetEdictMoveMult( ) const { return ( m_fEdictMoveMult ); }       // Turbochargers (vehmove.cpp, != walk)
     float GetEdictVisionMult( ) const { return ( m_fEdictVisionMult ); }   // Total Surveillance (AssignData spotting)
-    float GetEdictInfBuildMult( ) const { return ( m_fEdictInfBuildMult ); } // The Draft (infantry build speed)
+    float GetEdictInfBuildMult( ) const { return ( m_fEdictInfBuildMult * m_fSurplusInfBuildMult ); } // The Draft * War Footing (infantry build speed)
+    // --- surplus-scaled edicts: this pump's cached numbers (UI readout + harness `pstats`) ---
+    int         GetSurplusSparePpl( ) const { return ( (int)m_iSurplusSparePpl ); }
+    int         GetSurplusSparePwr( ) const { return ( (int)m_iSurplusSparePwr ); }
+    int         GetEdictDraftPpl( int edictId ) const;   // workers this edict drafted this pump
+    int         GetEdictDraftPwr( int edictId ) const;   // power it drew/cost this pump
+    float       GetEdictScale( int edictId ) const;      // its effect scale (0..1; Desperate: draft/RATE_PER)
+    std::string GetEdictEffectText( int edictId ) const; // live effect clause for the (i) tooltip ("" = nothing to say)
     float GetEdictInfPopMult( ) const { return ( m_fEdictInfPopMult ); }   // The Draft (infantry population cost)
     void  ToggleEdict( int edictId, bool bOn );   // flips the bit, then RecomputeEdictMults (local only)
     void  ToggleEdictNet( int edictId, bool bOn );// user-initiated toggle: local + broadcast (MP sync)
@@ -478,6 +513,48 @@ class CPlayer : public CObject
     int           GetExists( int iIndex ) const { return m_piBldgExists[iIndex]; }
     void          AddExists( int iIndex, int iNum ) { m_piBldgExists[iIndex] += iNum; }
     CRsrchStatus& GetRsrch( int iInd ) { return ( m_aRsrch.ElementAt( iInd ) ); }
+
+    // Bounds-checked "have we researched this?". GetRsrch above is an unchecked ElementAt, and
+    // m_aRsrch is NOT guaranteed to be num_types long for every player -- a net game saved
+    // early leaves some players short until the load path resizes them (see Serialize, and the
+    // GetRsrchSize guard in netapi.cpp's research_disc). Every high-index reader in this header
+    // hand-rolls the same size test; this is that test, once, for callers that index the TAIL
+    // of the enum where the in-code topics live.
+    BOOL HasRsrch( int iInd ) const
+    {
+        return ( ( iInd >= 0 ) && ( iInd < (int)m_aRsrch.GetSize( ) ) &&
+                 ( m_aRsrch.GetAt( iInd ).m_bDiscovered != 0 ) );
+    }
+
+    // --- Drive-Core Resonance / Resonance Sweep (see edicts.h) ---
+    // Highest tier researched, 0 (none) .. 6. The six topics are contiguous at the enum tail and
+    // form a strict chain, so this stops at the first gap.
+    int GetResonanceTier( ) const
+    {
+        int iTier = 0;
+        for ( int iOn = 0; iOn < 6; iOn++ )
+        {
+            if ( !HasRsrch( (int)CRsrchArray::drive_core_resonance + iOn ) )
+                break;
+            iTier = iOn + 1;
+        }
+        return ( iTier );
+    }
+    // Hexes of ground lit around a pinged rocket: none at tier 1 (the ship only), then one more
+    // per tier to 5 at tier 6.
+    int GetSweepRings( ) const
+    {
+        int iTier = GetResonanceTier( );
+        return ( ( iTier >= 2 ) ? ( iTier - 1 ) : 0 );
+    }
+    // Game-seconds to recharge a ping. Scales INVERSELY with how much of our power demand is
+    // actually being met: full power is the base, half power doubles it, and so on, capped so a
+    // blackout stalls the sweep instead of dividing by zero.
+    int GetSweepReloadSecs( ) const;
+    // Flat (absolute, non-pct) power drawn by the active civ-wide edicts. Computed live rather
+    // than cached, because the Resonance Sweep's draw grows with the tier researched and a
+    // cached copy would go stale the moment a tier completed with the edict already on.
+    int GetEdictFlatPwrNeed( ) const;
     int           GetRsrchSize( ) const { return ( (int)m_aRsrch.GetSize( ) ); }
     BOOL          CanRsrch( int iIndex );
 
@@ -542,10 +619,76 @@ class CPlayer : public CObject
         return ( iBonus );
     }
 
+    // Blast Shielding (bldg_armor, bldg_armor_2, bldg_armor_3): damage taken by our
+    // BUILDINGS as a fraction of base -- 80 / 78 / 76 percent by tier, i.e. a 20 / 22 / 24
+    // percent reduction, or 1.25x / 1.28x / 1.32x effective building hit points. Tier 1 is
+    // the entry grant; tiers 2-3 add a flat 2 points each, matching the attack line's floor.
+    // These are TOTALS -- the tier is a single lookup, not a stack. Read straight off the
+    // research flags and applied at damage time in
+    // CUnit::DecDamagePoints (projbase.cpp), alongside the Meat Shield edict, so it protects
+    // buildings that ALREADY EXIST -- unlike the range/attack techs, which bake into a unit
+    // once in CUnit::AssignData. Tier 1 sits far from tiers 2-3 in the enum (they were
+    // appended in different batches), so each needs its OWN size guard: an old save whose
+    // research array predates tiers 2-3 must still read tier 1 correctly.
+    float GetBldgArmorMult( )
+    {
+        int iTier = 0;
+        if ( ( m_aRsrch.GetSize( ) > CRsrchArray::bldg_armor ) &&
+             GetRsrch( CRsrchArray::bldg_armor ).m_bDiscovered )
+            iTier = 1;
+        if ( m_aRsrch.GetSize( ) > CRsrchArray::bldg_armor_3 )
+        {
+            if ( GetRsrch( CRsrchArray::bldg_armor_2 ).m_bDiscovered )
+                iTier = 2;
+            if ( GetRsrch( CRsrchArray::bldg_armor_3 ).m_bDiscovered )
+                iTier = 3;
+        }
+        static const float afArmor[4] = { 1.00f, 0.80f, 0.78f, 0.76f };
+        if ( iTier < 0 ) iTier = 0;
+        if ( iTier > 3 ) iTier = 3;
+        return ( afArmor[iTier] );
+    }
+
+    // Nuclear Uprate (nuke_power_1..5): output of this player's NUCLEAR power plants
+    // (CStructureData::power_3) as a percent of base -- +10 per level, 100 at none to 150 at
+    // level 5. Consumed in CPowerBuilding::BuildPower. Coal plants, oil plants and the rocket
+    // generate exactly as before. The five levels are contiguous at the enum end, so one
+    // size guard covers the whole line for pre-line saves.
+    int GetNukePowerPct( )
+    {
+        int iLevels = 0;
+        if ( m_aRsrch.GetSize( ) > CRsrchArray::nuke_power_5 )
+            for ( int iOn = CRsrchArray::nuke_power_1; iOn <= CRsrchArray::nuke_power_5; iOn++ )
+                if ( GetRsrch( iOn ).m_bDiscovered )
+                    iLevels++;
+        static const int aiNukePct[6] = { 100, 110, 120, 130, 140, 150 };
+        if ( iLevels < 0 ) iLevels = 0;
+        if ( iLevels > 5 ) iLevels = 5;
+        return ( aiNukePct[iLevels] );
+    }
+
+    // Research points earned as a percent of base by highest Research Speed level
+    // researched: +10% per level, 100% at none to 150% at level 5. Consumed in
+    // CPlayer::Research (the single points-accrual site). The five levels are
+    // contiguous at the enum end; the GetSize guard keeps pre-line saves safe.
+    int GetRsrchSpeedPct( )
+    {
+        int iLevels = 0;
+        if ( m_aRsrch.GetSize( ) > CRsrchArray::rsrch_speed_5 )
+            for ( int iOn = CRsrchArray::rsrch_speed_1; iOn <= CRsrchArray::rsrch_speed_5; iOn++ )
+                if ( GetRsrch( iOn ).m_bDiscovered )
+                    iLevels++;
+        static const int aiRsrchPct[6] = { 100, 110, 120, 130, 140, 150 };
+        if ( iLevels < 0 ) iLevels = 0;
+        if ( iLevels > 5 ) iLevels = 5;
+        return ( aiRsrchPct[iLevels] );
+    }
+
     // Gas consumption as a percent of base by highest Fuel Efficiency level researched.
-    // Diminishing to 70% (30% saving) at level 10, then +1% per level to 62% (38%) at 18.
-    // Unlocked after gas_turbine; see CPlayer::Operate. Levels 1-10 contiguous; 11-12, 13-16
-    // and 17-18 were appended at the enum end for save parity, so they're counted separately.
+    // Diminishing to 70% (30% saving) at level 10, then +1% per level to 62% (38%) at 18,
+    // then +2% per level to 52% (48%) at 23. Unlocked after gas_turbine; see CPlayer::Operate.
+    // Levels 1-10 contiguous; 11-12, 13-16, 17-18 and 19-23 were appended at the enum end for
+    // save parity, so they're counted separately.
     int GetFuelPct( )
     {
         int iLevels = 0;
@@ -565,10 +708,16 @@ class CPlayer : public CObject
             iLevels++;
         if ( m_aRsrch.GetSize( ) > CRsrchArray::fuel_efficiency_18 && GetRsrch( CRsrchArray::fuel_efficiency_18 ).m_bDiscovered )
             iLevels++;
-        // Cumulative gas% by level (5/4/4/3/3/3/2/2/2/2 to level 10, then +1 each to 18).
-        static const int aiGasPct[19] = { 100, 95, 91, 87, 84, 81, 78, 76, 74, 72, 70, 69, 68, 67, 66, 65, 64, 63, 62 };
+        if ( m_aRsrch.GetSize( ) > CRsrchArray::fuel_efficiency_23 )
+            for ( int iOn = CRsrchArray::fuel_efficiency_19; iOn <= CRsrchArray::fuel_efficiency_23; iOn++ )
+                if ( GetRsrch( iOn ).m_bDiscovered )
+                    iLevels++;
+        // Cumulative gas% by level (5/4/4/3/3/3/2/2/2/2 to level 10, then +1 each to 18,
+        // then +2 each to 23).
+        static const int aiGasPct[24] = { 100, 95, 91, 87, 84, 81, 78, 76, 74, 72, 70, 69, 68, 67, 66, 65, 64, 63, 62,
+                                          60, 58, 56, 54, 52 };
         if ( iLevels < 0 )  iLevels = 0;
-        if ( iLevels > 18 ) iLevels = 18;
+        if ( iLevels > 23 ) iLevels = 23;
         return ( aiGasPct[iLevels] );
     }
 
@@ -613,7 +762,9 @@ class CPlayer : public CObject
                 iTier = iOn - CRsrchArray::fracking_1 + 1;   // highest discovered (tiers chain)
         if ( m_aRsrch.GetSize( ) > CRsrchArray::fracking_6 && GetRsrch( CRsrchArray::fracking_6 ).m_bDiscovered )
             iTier = 6;   // tier 6 sits at the enum end (unrelated topics between fracking_5 and it)
-        static const int aiOil[7] = { 0, 5, 7, 9, 11, 13, 15 };
+        if ( m_aRsrch.GetSize( ) > CRsrchArray::fracking_7 && GetRsrch( CRsrchArray::fracking_7 ).m_bDiscovered )
+            iTier = 7;   // tier 7 likewise appended separately -- test it on its own too
+        static const int aiOil[8] = { 0, 5, 7, 9, 11, 13, 15, 17 };
         return ( aiOil[iTier] );
     }
 
@@ -649,29 +800,49 @@ class CPlayer : public CObject
     }
 
     // Charcoal kiln researched? Gates whether the per-building Charcoal alt-output toggle
-    // shows on a lumber mill (the sawmill) and whether its kiln runs. See Charcoal (#44).
+    // shows on a COAL POWER PLANT and whether its kiln runs. See Charcoal (#44).
     BOOL CanCharcoal( ) { return ( m_aRsrch.GetSize( ) > CRsrchArray::charcoal_1 && GetRsrch( CRsrchArray::charcoal_1 ).m_bDiscovered ); }
 
-    // Moho Mining: gates the per-building toggle on an EXHAUSTED iron mine (Fracking-style
-    // iron trickle). Tech-gated on the existing mine_2 topic. Flat ~10 iron/min (no tiers).
-    BOOL CanMoho( )          { return ( m_aRsrch.GetSize( ) > CRsrchArray::mine_2 && GetRsrch( CRsrchArray::mine_2 ).m_bDiscovered ); }
-    int  GetMohoIronPerMin( ) { return ( CanMoho( ) ? 10 : 0 ); }
+    // Slash and Burn researched? Gates whether the per-building Slash and Burn alt-output toggle
+    // shows on a lumber mill (the sawmill) and whether its 250% harvest applies. Mirrors
+    // CanCharcoal exactly, size guard included (old/short save research arrays).
+    BOOL CanSlashBurn( ) { return ( m_aRsrch.GetSize( ) > CRsrchArray::slash_and_burn && GetRsrch( CRsrchArray::slash_and_burn ).m_bDiscovered ); }
 
-    // Charcoal kiln THROUGHPUT -- the percent of harvested lumber fed into the kiln, then
-    // converted at the fixed 2 lumber -> 1 coal. Operator steer (2026-06-28): charcoal is
-    // "free coal" (lumber is harvested for free), so keep it deliberately INEFFICIENT. Base
-    // ~30:1 (33 lumber -> 1 coal) at the first Charcoal tech, easing toward ~17:1 at max tech.
-    // coal% = feed%/2 (the 2:1 kiln halves the feed), so feed { 0, 6, 8, 10, 12 }% by highest
-    // tier -> coal output { 0, 3, 4, 5, 6 }% of harvest (effective 33:1 / 25:1 / 20:1 / 16.7:1
-    // lumber-per-coal). The 2:1 kiln ratio is fixed; only throughput scales with research.
-    // Guarded for older/short save research arrays. See Charcoal (#44).
-    int GetCharcoalPct( )
+    // Moho Mining: gates the per-building toggle on an EXHAUSTED iron mine (Fracking-style
+    // iron trickle). The BASE capability is still granted by the DAT mine_2 topic at 10
+    // iron/min -- conceptually tier 1, unchanged, so existing saves keep what they had.
+    // moho_2..moho_6 are the paid upgrade line: +1 iron/min each, to 15 at the top.
+    BOOL CanMoho( )          { return ( m_aRsrch.GetSize( ) > CRsrchArray::mine_2 && GetRsrch( CRsrchArray::mine_2 ).m_bDiscovered ); }
+    int  GetMohoIronPerMin( )
+    {
+        if ( !CanMoho( ) )
+            return ( 0 );
+        int iTier = 1;   // mine_2 on its own = the base tier (10 iron/min)
+        // The five upgrades are contiguous at the enum end, so the highest discovered one
+        // wins by simple subtraction. Guarded on GetSize so pre-line saves stay at tier 1.
+        if ( m_aRsrch.GetSize( ) > CRsrchArray::moho_6 )
+            for ( int iOn = CRsrchArray::moho_2; iOn <= CRsrchArray::moho_6; iOn++ )
+                if ( GetRsrch( iOn ).m_bDiscovered )
+                    iTier = iOn - CRsrchArray::moho_2 + 2;
+        static const int aiIron[7] = { 0, 10, 11, 12, 13, 14, 15 };
+        if ( iTier < 1 ) iTier = 1;
+        if ( iTier > 6 ) iTier = 6;
+        return ( aiIron[iTier] );
+    }
+
+    // Charcoal kiln input ratio: LUMBER consumed per 1 coal, by the owner's highest Charcoal
+    // tier. The kiln lives on the COAL POWER PLANT and is fed TRUCKED lumber, so the tier ladder
+    // scales the recipe itself -- the old GetCharcoalPct scaled a slice of a lumber-mill HARVEST,
+    // and there is no harvest at a power plant. Top tier is 2:1 (one plant absorbs two fertility-8
+    // mills); tier 1 needs four. Wired into the Charcoal def's m_pfnRatioIn. Guarded for
+    // older/short save research arrays. See Charcoal (#44).
+    int GetCharcoalRatio( )
     {
         int iTier = 0;
         // Tiers 1-4 are CONTIGUOUS; tier 5 sits at the enum end (unrelated topics in between),
         // so scan the 1-4 block then test tier 5 on its own -- never walk the gap. Clamp the
         // block scan to what the array actually holds (ElementAt is unchecked; old/short saves)
-        // so a player with just charcoal_1 still gets the tier-1 throughput, not a silent 0.
+        // so a player with just charcoal_1 still gets the tier-1 ratio, not a silent 0.
         int iTop = CRsrchArray::charcoal_4;
         if ( m_aRsrch.GetSize( ) <= iTop )
             iTop = m_aRsrch.GetSize( ) - 1;
@@ -680,8 +851,8 @@ class CPlayer : public CObject
                 iTier = iOn - CRsrchArray::charcoal_1 + 1;   // highest discovered (tiers chain)
         if ( m_aRsrch.GetSize( ) > CRsrchArray::charcoal_5 && GetRsrch( CRsrchArray::charcoal_5 ).m_bDiscovered )
             iTier = 5;   // tier 5 sits at the enum end (unrelated topics between charcoal_4 and it)
-        static const int aiPct[6] = { 0, 6, 8, 10, 12, 14 };   // coal output 3/4/5/6/7% (base ~33 lumber:1 coal; free coal = stingy)
-        return ( aiPct[iTier] );
+        static const int aiRatio[6] = { 0, 4, 3, 3, 2, 2 };   // lumber per 1 coal by tier (0 = untechhed)
+        return ( aiRatio[iTier] );
     }
 
     BOOL CanMultiArea( ) { return ( GetRsrch( CRsrchArray::radio ).m_bDiscovered ); }
@@ -718,8 +889,6 @@ class CPlayer : public CObject
     int m_iNumAiGpfs;  // how many times this AI player has GPFed
 
     CVPTransfer* m_pXferToClient;  // from server to this player
-
-    BOOL m_bPauseMsgs;
 
     BOOL m_bMsgDead;  // displayed message it is dead
 
@@ -813,6 +982,33 @@ class CPlayer : public CObject
     LONG  m_iPwrNeed;      // power needed by all buildings
     LONG  m_iPwrHave;      // power presently generated
     LONG  m_iPplNeedBldg;  // people needed by all buildings
+    // A surplus-scaled edict needs to know the SPARE workforce, which the live m_iPplNeedBldg
+    // above cannot answer: mid-tick it is a partial sum (its value depends on where a building
+    // falls in the iteration order), and it already contains the edicts' own drafts, so a
+    // percentage of it would feed back on itself. All runtime-only, snapshotted in StartLoop
+    // where the tick's total is final; -1 = no finished total yet (fresh game / just-loaded
+    // save), which ApplySurplusEdicts reads as "no spare".
+    LONG  m_iPplNeedLast;    // last tick's FINISHED m_iPplNeedBldg (-1 = none yet)
+    LONG  m_iSurplusPplLast; // workers ALL surplus edicts drafted last tick (added back as spare)
+    LONG  m_iSurplusPplTick; // same, accumulating for this tick (ApplySurplusEdicts)
+    // The power half of the same machinery. m_iPwrNeedLast == -1 is the same "no finished pump
+    // yet" sentinel. Only SURPLUS draws are summed into m_iSurplusPwrTick: War Footing's power,
+    // for one, is a flat cost, not a cut of the surplus, so adding it back would inflate the spare.
+    LONG  m_iPwrHaveLast;    // last tick's FINISHED m_iPwrHave
+    LONG  m_iPwrNeedLast;    // last tick's FINISHED m_iPwrNeed (-1 = none yet)
+    LONG  m_iSurplusPwrLast; // surplus power ALL surplus edicts drew last tick (added back)
+    LONG  m_iSurplusPwrTick; // same, accumulating for this tick (ApplySurplusEdicts)
+    // Per-edict results for THIS pump -- what the sim charged and what the UI/harness quote, so
+    // the two cannot disagree. All 0 when the edict is inactive.
+    LONG  m_iDespDraft;      // Desperate Measures draft (GetDesperateDraft)
+    LONG  m_iPubWorksDraft;  // Public Works draft
+    LONG  m_iCivDefDraft;    // Civil Defence draft / power draw
+    LONG  m_iCivDefPower;
+    LONG  m_iWarFootDraft;   // War Footing draft / power draw
+    LONG  m_iWarFootPower;
+    LONG  m_iRsrchSubDraft;  // Research Subsidy's seconded idle workers (its surplus half)
+    LONG  m_iSurplusSparePpl;  // the spare this pump was cut from (harness `pplspare`)
+    LONG  m_iSurplusSparePwr;  // ditto for power (harness `pwrspare`)
     LONG  m_iPplBldg;      // people presently have EXCEPT in vehicles
     LONG  m_iPplVeh;       // people in vehicles (Have+Veh == Total)
     LONG  m_iFood;         // food on hand
@@ -870,10 +1066,41 @@ class CPlayer : public CObject
     float m_fEdictMineEnergyMult;  // mine-only power need (mainloop.cpp BuildMine)
     float m_fEdictMineWorkerMult;  // mine-only worker need (mainloop.cpp BuildMine)
     float m_fEdictBldgDmgMult;     // building damage-taken (Meat Shield; projbase.cpp)
+    // Surplus-edict multipliers — DYNAMIC, recomputed from scratch every pump by
+    // ApplySurplusEdicts (they scale with the draft, so they are not derivable from g_aEdicts
+    // the way the m_fEdict* fields above are). Neutral 1.0 when no surplus edict is active.
+    // Each is folded into the SAME accessor as its static twin, so every existing consumer
+    // picks it up with no call-site change.
+    float m_fSurplusConstMult;     // Public Works   → GetConstProd
+    float m_fSurplusFortMult;      // Civil Defence  → GetEdictFortBuildMult
+    float m_fSurplusBldgDmgMult;   // Civil Defence  → GetEdictBldgDmgMult
+    // Civil Defence replication (CNetBldgDmgMult), all runtime-only (not serialized, reset by ctor):
+    int   m_iRemoteBldgDmgPermille;  // server: a REMOTE owner's reported m_fSurplusBldgDmgMult (1000 = none)
+    int   m_iSentBldgDmgPermille;    // owner client: last value sent to the server (-1 = none yet)
+    DWORD m_dwSentBldgDmgTime;       // owner client: timeGetTime( ) of that send
+    float m_fSurplusInfBuildMult;  // War Footing    → GetEdictInfBuildMult
+    float m_fSurplusRsrchMult;     // Research Subsidy (surplus half) → GetRsrchMult
     float m_fEdictFuelCarry;       // runtime-only: fractional gas-surcharge carry (not serialized)
     BOOL  m_bAutoRsrchPending;     // runtime-only: AutoResearch edict posted a set_rsrch, awaiting it (not serialized)
+    // Resonance Sweep edict state. Both runtime-only and deliberately NOT serialized: they carry
+    // nothing but the phase of a real-time recharge timer and the position of a private RNG, so a reload
+    // simply restarts the cycle. Nothing the sweep produces lives here -- what it reveals is
+    // recorded in the buildings' own visibility, which already persists.
+    int   m_iSweepMillis;            // active real milliseconds banked toward the next ping
+    unsigned int m_uSweepRand;     // private LCG state -- never MyRand (see ResonanceSweep)
+    // The lit ring. Store the exact coordinates incremented (some rocket footprints are skipped)
+    // so release remains balanced even if the building map changes before the ring expires.
+    // Hex visibility is NOT serialized (CHex::Serialize writes type/alt/unit/sprite only; it is
+    // rebuilt from our own units on load), so a save taken mid-ping cannot leak one.
+    BOOL      m_bSweepLit;         // a ring is currently up
+    int       m_iSweepLitMillis;     // active real milliseconds left before it is released
+    CHexCoord m_hexSweepLit;       // origin of the lit rect
+    int       m_iSweepLitCX;       // its extent
+    int       m_iSweepLitCY;
+    std::vector<CHexCoord> m_aSweepLitHexes; // exact hexes whose visibility count this ring raised
     // Upkeep — recurring cost (sum of active edicts' pct), applied as extra per-loop demand:
     float m_fEdictEnergyUpkeepPct;     // added to m_iPwrNeed in StartLoop (pre-throttle)
+
     float m_fEdictWorkforceUpkeepPct;  // added to m_iPplNeedBldg in StartLoop (pre-throttle)
     float m_fEdictFoodUpkeepPct;       // added to m_iFoodNeed in PeopleAndFood
 
@@ -1057,6 +1284,14 @@ class CGame : public CObject
     }
     void SetMessagesPaused( BOOL bPause );
     void ResetPauseTimer( ) { m_uTimer = 0; }
+
+    // Host: remote connections that asked us to stop high-volume sends
+    // (pause_messages). Keyed by the sender's vdmplay net id, which is fixed for
+    // the life of its connection; its plyr num is not (a Load Network Game joiner
+    // goes lobby number -> claimed saved player between a pause and its unpause).
+    void NetPauseRequest( VPPLAYERID idNet, BOOL bPause );
+    void NetPauseDrop( VPPLAYERID idNet );   // that connection is gone
+    void NetPauseClearAll( ) { m_aPausedNet.clear( ); }
 
     BOOL ShouldPause( ) const { return m_bShouldPause; }
     void SetShouldPause( ) { m_bShouldPause = TRUE; }
@@ -1257,6 +1492,11 @@ class CGame : public CObject
     WORD  m_wDbg;
     WORD  m_wCht;
 
+    //  The gameplay data hash (015 phase 3, datahash.h). A RUNTIME value:
+    //  computed once at startup, carried in the join and publish messages, and
+    //  never serialised - the save format does not change for it.
+    DWORD m_dwDataHash;
+
     // for joining a game (load/in progress)
     CVPTransfer* m_pXferFromServer;  // from server to me
     void*        m_pGameFile;        // game file we are sending/receiving
@@ -1291,6 +1531,7 @@ class CGame : public CObject
     BOOL m_bShouldNetPause;   // net told me to stop posting
     BOOL m_bUnPauseMe;  // unpause me next oppo
     UINT m_uTimer;
+    std::vector<VPPLAYERID> m_aPausedNet;  // host: net ids with a pause outstanding
 
     BOOL  m_bMessages;        // process messages
     BOOL  m_bAnimate;         // animate the screen

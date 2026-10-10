@@ -17,6 +17,8 @@
 #include "netcmd.h"
 #include "enprobes.h"
 
+#include <stdint.h>
+
 
 class CWndRoute;
 class SDL2RouteWindow;
@@ -25,9 +27,72 @@ class SDL2LoadTruckDialog;
 class CTransportData;
 class CVehicle;
 class CBridgeUnit;
+class CEnNavView;
+struct PathResult;   // pathservice.h - one worker's answer, installed by CVehicle
 
+
+int  TrafficOpts ();   // EN_TRAFFIC bitmask: which traffic rules are live
+#ifndef EN_TRAFFIC_PROBES
+#define EN_TRAFFIC_PROBES 1
+#endif
+#if EN_TRAFFIC_PROBES
+void WaitLog (const char *fmt, ...);   // wait/resume probe, inert unless EN_WAIT_LOG is set
+BOOL WaitLogEnabled ();                // same one-time EN_WAIT_LOG lookup as WaitLog; guard diagnostic work with this, not just the WaitLog call
+#else
+#define WaitLog(...) ((void)0)
+#define WaitLogEnabled() (FALSE)
+#endif
 
 const int MAX_NUM_RETRIES = 25;
+const int MAX_BACK_UPS    = 2;      // per destination, so a stuck pair cannot ping-pong forever
+// Adjacent-truck clearance ("panic"), per WinAstra's 015-winastra-adjacent-clearance
+// plan. A truck stuck this long asks the trucks TOUCHING it to make space for a brief
+// window; each recipient re-offers it to touching neighbours, carrying the REMAINING
+// window rather than a fresh one, so an adjacency cycle cannot refresh itself forever.
+// No manager, no group object, no recursion, no requester-chosen direction.
+const int JAM_STUCK_FRAMES  = 24 * 30;   // stagnation before a truck may raise a request
+const int JAM_WINDOW_FRAMES = 24 * 30;   // how long the shared make-space priority lasts.
+                                    // FIVE seconds could not work: the trucks at the front
+                                    // need the ones BEHIND them to clear first, and the
+                                    // window expired long before a vacancy could travel in.
+                                    // The panic has to outlast the queue it is unwinding.
+const int JAM_FWD_EVERY     = 24 * 2;    // ...and re-offer it, so trucks that drift into the
+                                    // cluster later are recruited instead of being missed
+const int JAM_STAGGER_FRAMES = 24 * 8;   // spread of per-truck expiry, so a whole cluster
+                                    // does not come off its clearance window in one frame
+                                    // and pile straight back into the knot together
+const int JAM_COOL_FRAMES   = 24 * 10;   // cooldown after participating - short enough that a
+                                    // corridor which is still jammed panics again soon
+const int JAM_MOVE_SUBS     = 2;         // body-centre travel that counts as real progress
+const int MAX_BACK_UPS_JAM = 12;    // ...but inside a packed corridor a walled-in truck must be
+                                    // able to keep trying, or the cluster cannot drain from the rear
+const int PARK_SEARCH_SUBS = 16;    // how far a nudged vehicle will look for somewhere off-road to park
+const int CORRIDOR_LOOK_HEXES = 12; // how far ahead to look when sizing a narrow corridor
+const int CORRIDOR_MIN_HEXES  = 3;  // shorter than this is a pinch, not a corridor worth fleeing
+const int CORRIDOR_MIN_VEHS   = 3;  // ...and an empty corridor is not a jam, so do not flee it
+const int BACK_UP_SUBS    = 40;     // how far back to look for somewhere useful to reverse to.
+                                    // Reversing ONE hex on a long bridge just moves the wedge one
+                                    // hex, so we back up until we are off the span.
+const int GIVEUP_HOLD_FRAMES = 24 * 30;  // after GIVING UP and parking off-road, stay parked this
+                                    // long before letting the router have the truck back. Measured:
+                                    // 14 trucks leave the bridge region in 8 minutes and 13-14 of
+                                    // them are back inside it minutes later, because parking with no
+                                    // job reports "stopped" and the router re-sends them to the same
+                                    // destination at once. Departures that return immediately cannot
+                                    // drain a corridor.
+const int HOLD_FRAMES     = 240;    // after a retreat, wait this long before rejoining the haul,
+                                    // so the trucks we backed off for can actually use the gap.
+                                    // GAME FRAMES, 24 to the second: timeGetTime is wall clock and
+                                    // would keep running while the game is paused. Each truck adds
+                                    // 0-3s of its own so a queue that retreated together does not
+                                    // pile back in together.
+
+// Traffic waits, in game frames (24 frames = 1 second).
+//   MSG   - the 1996 wait used by the network position-conflict paths (unchanged at 1s)
+//   MOVER - hold this long behind a vehicle that is itself moving before we
+//           give up on it and start looking for a way around
+const DWORD TRAFFIC_WAIT_MSG   = 24;
+const DWORD TRAFFIC_WAIT_MOVER = 24;
 const int NUM_SUBS_OWNED = 4;
 
 
@@ -138,6 +203,17 @@ public:
 			BOOL		CanTravelHex (CHex const * pHex) const;
 			BOOL		CanEnterHex (CHexCoord const & hexSrc, CHexCoord const & hexDest, BOOL bOnWater, BOOL bStrict = TRUE) const;
 
+			// Same two rules, read through the navigation seam instead of the live
+			// globals. The two signatures above are the live-view calls of these.
+			// Templated on the view so the A* body compiles once per view type with
+			// no indirect call; instantiated for CEnLiveNavView and CEnSnapNavView at
+			// the foot of unit.cpp.
+			template <class TView, class = typename TView::EnNavViewTag>
+			BOOL		CanTravelHex (TView const & view, CHexCoord const & hex) const;
+			template <class TView, class = typename TView::EnNavViewTag>
+			BOOL		CanEnterHex (TView const & view, CHexCoord const & hexSrc, CHexCoord const & hexDest,
+			                         BOOL bOnWater, BOOL bStrict = TRUE) const;
+
 
 			int			GetSetupFire () const;
 			int			GetPeopleCarry () const;
@@ -207,11 +283,26 @@ public:
 class CRoute : public CObject
 {
 public:
-		enum { waypoint, unload, load };
+		// waypoint/unload/load are the 1996 movement STOPS. build (and the kinds added
+		// after it) are ORDERS: the vehicle does a job at the hex instead of only
+		// stopping there. Both kinds live on the one list, CVehicle::m_route.
+		// move: drive to the hex, then the order is complete - a movement that waits its
+		// turn behind queued jobs (a waypoint STOP would be a route, and routes and orders
+		// do not mix on one list).
+		// APPEND ONLY: these values are serialized (CRoute::Serialize), so nothing here
+		// may be renumbered.
+		enum { waypoint, unload, load, build, build_road, repair, move };
 
-		CRoute () {}
-		CRoute (CHexCoord & hex, int iType) { ASSERT ((0 <= iType) && (iType <= 2));
-											m_hex = hex; m_iType = (BYTE) iType; }
+		CRoute () : m_iType (waypoint), m_iBldgType (0), m_iDir (0) {}
+		CRoute (CHexCoord & hex, int iType) { ASSERT ((0 <= iType) && (iType <= load));
+													m_hex = hex; m_hexEnd = hex; m_iType = (BYTE) iType;
+													m_iBldgType = 0; m_iDir = 0; }
+		// order form: the payload names WHICH building and which way round it faces;
+		// a build_road order uses m_hex / m_hexEnd as the segment's two ends instead.
+		CRoute (CHexCoord const & hex, int iType, int iBldgType, int iDir)
+												{ ASSERT ((0 <= iType) && (iType <= move));
+													m_hex = hex; m_hexEnd = hex; m_iType = (BYTE) iType;
+													m_iBldgType = (BYTE) iBldgType; m_iDir = (BYTE) iDir; }
 		~CRoute () {}
 
 		BOOL operator== (CRoute & src ) const
@@ -221,12 +312,24 @@ public:
 
 		CHexCoord const & GetCoord () const { return (m_hex); }
 		int				GetRouteType () const { return (m_iType); }
+		int				GetBldgType () const { return (m_iBldgType); }
+		int				GetBldgDir () const { return (m_iDir); }
+		CHexCoord const & GetEndCoord () const { return (m_hexEnd); }
+		void			SetEndCoord (CHexCoord const & hex) { m_hexEnd = hex; }
+
+		// TRUE for the ORDER kinds (a job to do at the hex), FALSE for the 1996 stops.
+		// The order dispatcher owns the former; ArrivedDest still owns the latter.
+		static BOOL		IsOrder (int iType) { return (iType >= build); }
 
 		void 					Serialize (CArchive & ar);
 
 protected:
 		CHexCoord		m_hex;			// where to go
 		BYTE				m_iType;		// enum values above of what to do at this location
+		BYTE				m_iBldgType;	// order payload: building type (0 on a movement stop)
+		BYTE				m_iDir;			// order payload: build direction (0 on a movement stop)
+		CHexCoord		m_hexEnd;		// order payload: far end of a build_road segment
+												//   (== m_hex on every other kind)
 };
 
 
@@ -268,6 +371,10 @@ public:
 
 		enum VEH_EVENT { none, route, build, build_road, attack, load, repair_self, repair_bldg, num_event };		// m_iEvent
 
+		// TRUE if this vehicle is actually driving, so anything planning a route
+		// through its hex will find it gone by the time it arrives.
+		BOOL					IsOnTheMove () const	{ return ((m_cMode == moving) || (m_cMode == traffic)); }
+
 									CVehicle () { ctor (); }
 									~CVehicle ();
 									// FIXIT: Once all calls are located, default iTurretID to -1
@@ -289,6 +396,13 @@ public:
 		void					Move ();
 		BOOL					MoveInHex ();
 		void					ArrivedDest ();
+		BOOL					ResumeJob ();		// back onto the job a traffic detour interrupted
+		BOOL					ClearOfRoad (CSubHex const &_sub);	// off the span AND off the pavement
+		BOOL                    FinishClearDetour (); // failed parking reached a safe resting pose
+		int						CorridorAhead (int &iVehs);	// hexes of NARROW corridor ahead, 0 if none
+		void					JamWatch ();		// stagnation watch + raise a clearance request
+		void					JamForward ();		// re-offer remaining request time to touching trucks
+		BOOL					JamEligible () const;
 		BOOL					FindNextHex ();
 		void					ArrivedNextHex ();
 		BOOL					GetNextHex (BOOL bNew);
@@ -308,6 +422,11 @@ public:
 		void					SetFromMsg (CMsgVehLoc * pMsg, BOOL bWorld);
 		void					StopUnit ();
 		void					ResumeUnit ();
+		BOOL					HasMoveStops () const;		// #38: list holds a MOVEMENT stop (not just orders)
+		BOOL					HasOrders () const;			// #38: list holds a queued ORDER
+		// #38: TRUE from a dispatch until the order it started is consumed, whatever
+		// kind it is - the half of "this vehicle has a job" that m_iEvent cannot carry.
+		BOOL					IsRunningOrder () const { return (m_iOrderState != order_none); }
 
 		void					EnterBuilding ();
 		void					ExitBuilding ();
@@ -367,6 +486,7 @@ public:
 		int						GetBldgType () const { return (m_iBldgType); }
 		void					SetBldgType (int iType) { m_iBldgType = iType; }
 		CHexCoord const & GetHexBldg () const { return (m_hexBldg); }
+		int						GetBuildDir () const { return ( (int) m_iBuildDir ); }
 		void					SetBuilding (CHexCoord const & hex, int iBldgType, int iBldgDir);
 		void					SetEvent (VEH_EVENT iEvent);
 
@@ -378,18 +498,77 @@ public:
 		void					SetRoad ( const CHexCoord & hexSrc, const CHexCoord & hexDest);
 		void					SetRoadHex (CHexCoord const & hex) { m_hexStart = m_hexEnd = hex; }
 		void					SetRoadHex (CHexCoord const & hexStart, CHexCoord const & hexEnd) { m_hexStart = hexStart; m_hexEnd = hexEnd; }
+		CHexCoord const & GetRoadStart () const { return (m_hexStart); }	// #38 road ghost: SetRoad's two ends
+		CHexCoord const & GetRoadEnd () const { return (m_hexEnd); }
 		void					SetBridgeHex (CHexCoord const & hexStart, CHexCoord const & hexEnd, DWORD dwID, int iAlt);
 
-		void					GetPath (BOOL bNoOcc);
+		// #38 ROAD GHOST: the one step _NextRoadHex advances by, pulled out to a pure
+		// static so the queued/in-flight road indicator (SDL2Terrain.cpp) can walk the
+		// exact same chain the crane will actually lay - it cannot drift from NextRoadHex,
+		// because NextRoadHex calls this too (vehicle.cpp).
+		static CHexCoord	RoadStepToward (CHexCoord const & hexFrom, CHexCoord const & hexEnd);
+
+		// bAllowAsync == FALSE forces the synchronous search at a call site that cannot
+		// tolerate a deferred answer (see CVehicle::GetNextHex).
+		void					GetPath (BOOL bNoOcc, BOOL bAllowAsync = TRUE);
+
+		// The post-search half of GetPath, shared by the synchronous search and the
+		// worker install so the two can never drift. Takes ownership of phexPath.
+		void					ApplyPathResult (CHexCoord * phexPath, int iPathLen,
+		                                     CHexCoord const & hexDest, CHexCoord const & hexPrevEnd);
+
+		// An answer is outstanding: this vehicle has no path yet, and "no path" must
+		// not be read as "no route exists".
+		BOOL					PathPending () const { return ((m_dwPathReqId != 0) ? TRUE : FALSE); }
+		void					ClearPathPending (char const * pszReason);
+
+		// Main thread, from the drain. Validates one worker answer and either installs
+		// it through ApplyPathResult or frees it; res.path is disposed of either way.
+		void					InstallPathResult (PathResult & res);
+
 		BOOL					HavePath () const;
 		BOOL					HavePathOrNext () const;
 		void					PathNextHex ();
 		void					DeletePath ();
 		void					SetLocation (CHexCoord & hex, POSITION pos, int iType);
+
+		// ORDER QUEUE (#38). Orders live on m_route, the same list as the movement stops,
+		// but the two NEVER COEXIST on one vehicle. ArrivedDest advances to whatever entry
+		// is at the head and drives to it as a STOP, then consumes it, so an order sharing
+		// a list with a live movement route is driven to, trips ArrivedDest's Debug TRAP
+		// and is deleted unexecuted. The rule is enforced at both input edges: a movement
+		// append (SetLocation) calls ClearOrders first, and the first order appended onto a
+		// vehicle that is running stops takes the list over (CWndArea::StopRoute).
+		void					AddOrder (CHexCoord const & hex, int iType, int iBldgType, int iDir,
+													CHexCoord const * pHexEnd = NULL);
+		void					ClearOrders ();
+		BOOL					NextOrder ();
+		void					OrderComplete ();
+		void					OrderEnded ();
+		void					OrderFailed (CHexCoord const & hex, int iBldgType);
+		BOOL					RepairTargetLives (CHexCoord const & hex) const;
+		// Finding 3: rebuild m_hexOrder/m_iOrderKind for a job re-established WITHOUT a
+		// dispatch (a crane loaded from a save mid-build / mid-road / mid-repair), from
+		// the crane's own site or road ends, and only when they match the cursor entry.
+		void					ReestablishOrderIdentity ();
+		// BUG #114: an order that was dispatched but whose arrival never happened.
+		// Polled from the idle branch; may re-drive the order or give it up.
+		void					CheckOrderStall ();
+		// Finding 4: a movement give-up that stops the vehicle SHORT of its destination
+		// tells the order layer at once, instead of leaving it to the watchdog's dwell.
+		void					OrderArrivalFailed ();
+		BOOL					ArmedForOrder () const;
+		// the warning a given-up order raises - EVENT_CONST_CANT only for a build order
+		int						OrderGiveUpEvent () const;
+#if EN_GAMEPLAY_PROBES
+		// one dispatch-trace line, carrying every field NextOrder's busy test reads
+		void					OrderProbe (char const * pszWhat, char const * pszWhy = NULL) const;
+#endif
 		CList <CRoute *, CRoute *> &	GetRouteList () { ASSERT_STRICT_VALID (this); return (m_route); }
 		// Looping vs one-shot route. TRUE (default) = the legacy behavior (cycle back to
-		// the first stop at the end); FALSE = stop at the last stop. Runtime-only (not
-		// serialized — defaults to looping on load to preserve save compatibility).
+		// the first stop at the end); FALSE = stop at the last stop. Serialized from save
+		// release 8 (BUGS #95); a pre-8 save does not carry it, so such a route still
+		// comes back looping - the ctor default.
 		BOOL				GetRouteLoop () const { return (m_bRouteLoop); }
 		void				SetRouteLoop (BOOL b) { m_bRouteLoop = b; }
 		POSITION			GetRoutePos () const { ASSERT_STRICT_VALID (this); return (m_pos); }
@@ -422,7 +601,8 @@ public:
 		void					SetDestAndMode (CHexCoord const & hex, VEH_POS iMode)
 													{ CSubHex _sub (hex.X () * 2, hex.Y () * 2);
 														SetDestAndMode (_sub, iMode); }
-		void					SetDestAndMode (CSubHex sub, VEH_POS iMode);
+		void					SetDestAndMode (CSubHex sub, VEH_POS iMode, BOOL bTrafficDetour = FALSE);
+		DWORD					GetOrderGen () const { return (m_dwOrderGen); }
 		void					KickStart ();
 
 		void					SetEventAndRoute (VEH_EVENT iEvent, VEH_MODE iMode) { SetEvent (iEvent); SetRouteMode (iMode); }
@@ -508,10 +688,24 @@ protected:
 		void					AssignNextHex ();
 		BOOL					TestStuck ();
 		void					HandleBlocked ();
+		BOOL					BlockedLaneStep (CSubHex &blockedStep);
+		BOOL					MustKeepLane (CSubHex &blockedStep);
+		BOOL					WaitForMover ();
+		BOOL					ResumeWaitedStep ();
+		BOOL					AskToMove (CVehicle *pAsker);
+		BOOL					BackUp ();
+		BOOL					LeaveRoad ();
+		BOOL					OnPavement (CSubHex const &_sub);
+		void					DetourTo (CSubHex const &_sub, BOOL bResume);
+		BOOL					FindOffRoadSpot (CSubHex &_found, CVehicle *pAsker);
+		BOOL					IsShoreline (CHexCoord const &_hex);
 		BOOL					TryNewSub (BOOL bNoNewPath);
 		BOOL					FindSub (BOOL bCloser = FALSE);
+		BOOL					FindSubEx (BOOL bCloser, BOOL bLane);
+		BOOL					InLane (CSubHex const &_next);
 		CSubHex				Rotate (int iDir);
 		void					Turn180 ();
+		void                    EndReverse ();
 		BOOL					IsPassable (CSubHex const & _sub, BOOL bStrict = TRUE);
 		BOOL					CanEnter (CSubHex const & _sub, BOOL bStrict = TRUE);
 		int		GetTiltIndex( BOOL bOnBridge ) 		const;
@@ -536,6 +730,27 @@ protected:
 		CList <CRoute *, CRoute *> m_route;		// route its travelling
 		BOOL				m_bRouteLoop;						// TRUE = loop the route (legacy); FALSE = stop at the end
 		POSITION			m_pos;									// element we are travelling to
+
+		// #38 order queue. m_iEvent CANNOT say whether a job is under way: BuildBldg
+		// clears it at SEND (1996), so "event none, stopped" is both "waiting for the
+		// server" and "idle". This is the bit that tells them apart. Runtime only,
+		// deliberately not serialized - a loaded crane picks its queue up from idle.
+		enum ORDER_STATE { order_none, order_sent, order_work, order_road, order_done };
+		BYTE				m_iOrderState;					// ORDER_STATE of the order being run
+		CHexCoord		m_hexOrder;						// identity of the order dispatched - the
+		BYTE				m_iOrderKind;					//   list can change while the job runs
+		// BUG #114 stall watch. A dispatched order is consumed by the vehicle ARRIVING:
+		// ArrivedDest is the only caller of BuildBldg / StartConst. Several 1996 give-up
+		// exits (vehmove.cpp FindNextHex ~990 and ~1094, HandleBlocked) stop a vehicle
+		// SHORT of its destination with _SetRouteMode(stop) + PostArrivedOrBlocked - not
+		// ArrivedDest - so the arming event is never consumed and m_iOrderState stays
+		// order_sent. Both halves of NextOrder's busy test then refuse for ever. These two
+		// give that state a dwell and a bounded re-drive. Runtime only, like the state.
+		DWORD				m_dwOrderStall;				// ms the idle-but-armed state was first seen (0 = not watching)
+		BYTE				m_iOrderRetry;					// re-drives spent on the order at the cursor
+#if EN_GAMEPLAY_PROBES
+		DWORD				m_dwOrderLog;					// last refused-poll trace line (probe only)
+#endif
 		CSubHex				m_ptDest;								// final sub-hex we are going to
 		CHexCoord			m_hexDest;							// final hex we are going to
 		CHexCoord			m_hexLastDest;					// to stop back and forth
@@ -552,12 +767,52 @@ protected:
 		int						m_iClosest;							// closest we got to the dest
 
 		DWORD					m_dwTimeBlocked;				// we only wait 1.2 * hex transit time when blocked
+		DWORD					m_dwTrafficWait;				// frames to hold in traffic mode before falling through to blocked
+		BOOL					m_bWaitedForMover;			// TRUE once we have spent our wait on this block (one wait per bump)
+		CSubHex				m_subWaitNext;					// the step we are holding for while in traffic mode (x -1 = none)
+		int						m_iBackUps;							// back-ups taken for this destination (capped)
+		int                     m_iParkSkip; // transient continuation of bounded parking search
+		DWORD					m_dwAskedToMove;				// last time we were nudged out of the way (0 = never)
+		DWORD					m_dwLeftRoad;						// last time we pulled off the road on giving up (0 = never)
+		CSubHex				m_subResume;						// destination to go back to once a detour finishes.
+																		// the SUB-hex, not its hex: a lane-sensitive job names an
+																		// exact sub and rounding it to hex*2 moves the goal
+		int						m_iResumeMode;					// its VEH_POS
+		BOOL					m_bResume;							// TRUE if m_subResume is armed
+		DWORD					m_dwCensus;							// last bridge-census line (probe only)
+		DWORD					m_dwLaneLog;						// last lane-occupancy line (probe only)
+		int						m_iJamAnchorX;						// body-centre (doubled) when the stuck watch began
+		int						m_iJamAnchorY;						// - centre, not head: a head/tail relabel must not reset it
+		int						m_iJamWatch;						// frames stagnant; 0 = not watching
+		int						m_iJamClear;						// frames left making space for a clearance request
+		int						m_iJamCool;							// frames until we may take part again
+		int						m_iJamFwd;							// frames until we pass the request on again
+		BOOL					m_bConfined;						// last blocked check: no room to manoeuvre here
+		int						m_iCorrLen;							// ...and how far the corridor ran along OUR axis
+		DWORD					m_dwBlockLog;						// last blocked-step line (probe only)
+		BOOL					m_bReversing;						// backing up: hold the facing while the body moves
+		BOOL					m_bForwardEscape;                  // committed forward yield after opposing retreats meet
+		int						m_iHoldFrames;						// game frames left in the post-retreat hold; 0 = not holding
 		LONG					m_iBlockCount;					// number of consecutive times blocked
 		CHexCoord			m_hexStagnant;					// blocked-stagnation watch: last hex seen blocked at (transient, not saved)
 		DWORD					m_dwStagnantSince;			// real ms when we first saw it blocked at that hex (0 = not watching)
+		int						m_iDiagRunLen;					// [ROAD-DIAG] probe: consecutive on-pavement diagonal sub-hex steps (transient, not saved)
 #if EN_PATH_PROBES
 		CHexCoord			m_hexLastClamp;					// mpath.reclamp probe: hex of last clamped path, (-1,-1) = none (transient, not saved)
 #endif
+		// Bumped by every SetDestAndMode. An async path answer that comes back against
+		// an older value is answering a question this vehicle no longer asks.
+		// Transient, NOT serialized - it is only ever compared with itself within one
+		// process, so a save that restored it would say nothing a fresh 0 does not.
+		DWORD					m_dwOrderGen;
+
+		// Outstanding worker search (plan section 2.4). All three are transient and NOT
+		// serialized: quiesce clears every pending id before a save, so no save can
+		// contain one, and a request id is only ever compared against ids minted by this
+		// process anyway.
+		uint64_t			m_dwPathReqId;					// 0 = nothing outstanding
+		uint64_t			m_uPathReqTick;					// drain tick the request was submitted on
+		int						m_iPathRetries;					// discarded answers for the CURRENT order
 
 		DWORD					m_dwTimeJump;						// for AI trucks & cranes we transport if can't get there by this time
 

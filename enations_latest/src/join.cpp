@@ -78,6 +78,10 @@ void CJoinMulti::CloseAll( )
 
     ClosePick( );
 
+    for ( CNetPlyrJoin* pData : m_loadPlyrs )
+        delete[] (char*)pData;
+    m_loadPlyrs.clear( );
+
     CCreateNewBase::CloseAll( );
     CCreateLoadBase::CloseAll( );
     CMultiBase::CloseAll( );
@@ -121,6 +125,16 @@ void CJoinMulti::OnSessionEnum( LPCVPSESSIONINFO pSi )
         return;
     }
 
+    // 015 phase 3: the gameplay data hash is CARRIED, not filtered on. A game
+    // whose unit/research/text tables differ from ours stays in the browser and
+    // is refused at Join, with both numbers shown - dropping the row here would
+    // leave the player looking at "No games found" with a host running in front
+    // of them and no way to tell why. Enforcement is the host's (netapi.cpp
+    // OnMsgJoin); the browser only carries the number to the join path.
+    if ( s_log && ( pPub->m_dwDataHash != theGame.m_dwDataHash ) )
+        fprintf( stderr, "[join-enum] LISTED '%s' with a DIFFERENT data hash %08lx (ours %08lx) - refused at Join\n",
+                 pPub->GetGameName(), (unsigned long)pPub->m_dwDataHash, (unsigned long)theGame.m_dwDataHash );
+
     // Skip in-progress games (not joinable from lobby)
     if ( pPub->m_cFlags & CNetPublish::finprogress ) {
         if ( s_log )
@@ -141,6 +155,8 @@ void CJoinMulti::OnSessionEnum( LPCVPSESSIONINFO pSi )
             s.worldSize    = pPub->m_iWorldSize;
             s.startPos     = pPub->m_iPos;
             s.cFlags       = pPub->m_cFlags;
+            s.dataHash     = pPub->m_dwDataHash;
+            s.verRelease   = pPub->m_cVerRelease;
             return;
         }
     }
@@ -154,6 +170,8 @@ void CJoinMulti::OnSessionEnum( LPCVPSESSIONINFO pSi )
     e.worldSize    = pPub->m_iWorldSize;
     e.startPos     = pPub->m_iPos;
     e.cFlags       = pPub->m_cFlags;
+    e.dataHash     = pPub->m_dwDataHash;
+    e.verRelease   = pPub->m_cVerRelease;
     m_sessions.push_back( e );
 }
 
@@ -195,7 +213,7 @@ void CJoinMulti::GameLoaded( void* pBuf, int iLen )
     // decompress the file
     int   iDecompLen;
     void* pDeComp = CoDec::Decompress( pBuf, iLen, iDecompLen );
-    free( pBuf );
+    delete[] (char*)pBuf;   // CmdGetFile allocated it with new char[]
 
     // put it in a CMemFile
     CMemFile filMem;
@@ -247,6 +265,16 @@ void CJoinMulti::GameLoaded( void* pBuf, int iLen )
             }
         }
 
+        // Serialize put every player the SAVE had as AI in the AI list. A player
+        // this join made human (above all us, when we claimed a saved AI) must
+        // leave it, or PostToAllAi keeps routing AI traffic to it (ASSERT IsAI).
+        if ( !pPlr->IsAI( ) )
+        {
+            POSITION posAi = theGame.GetAi( ).Find( pPlr, NULL );
+            if ( posAi != NULL )
+                theGame.GetAi( ).RemoveAt( posAi );
+        }
+
         // new list box
         if ( pPlr->GetNetNum( ) != 0 )
             m_wndPlyrList.AddPlayer( pPlr );
@@ -262,6 +290,7 @@ void CJoinMulti::GameLoaded( void* pBuf, int iLen )
 
     CNetInitDone msg( theGame.GetMe( ) );
     theGame.PostToServer( &msg, sizeof( msg ) );
+    m_bGameLoaded = TRUE;
 
     // done
     pDlg = theApp.m_pCreateGame->GetDlgStatus( );

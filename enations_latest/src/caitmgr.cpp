@@ -11,6 +11,7 @@
 
 #include "caitmgr.hpp"
 
+#include "aicargo.h"  // carrier capacity by cargo weight
 #include "aisnap.h"  // Tier-B world snapshot (lock-free AI reads)
 #include "caidata.hpp"
 #include "cpathmgr.h"
@@ -18,6 +19,10 @@
 #include "logging.h"  // dave's logging system
 #include "stdafx.h"
 
+
+// aicargo.h mirrors base.h's MAX_CARGO; keep them in step
+static_assert( enaicargo::kSlotsPerVehicle == MAX_CARGO,
+               "enaicargo::kSlotsPerVehicle is out of step with base.h MAX_CARGO" );
 
 #define new DEBUG_NEW
 
@@ -1101,9 +1106,26 @@ void CAITaskMgr::CheckFactorys( void )
                     continue;
                 }
                 BOOL bPaused = pBldg->IsPaused( );
+                // idle: not paused, not being built, not waiting, nothing in production
+                BOOL bIdle = FALSE;
+                if ( !bPaused && !pBldg->IsConstructing( ) )
+                {
+                    int iUnion = pBldg->GetData( )->GetUnionType( );
+                    CBuildUnit const* pBU = NULL;
+                    if ( iUnion == CStructureData::UTshipyard )
+                        pBU = ( (CShipyardBuilding*)pBldg )->GetBldUnt( );
+                    else if ( iUnion == CStructureData::UTvehicle )
+                        pBU = ( (CVehicleBuilding*)pBldg )->GetBldUnt( );
+
+                    if ( !pBldg->IsWaiting( ) )
+                        bIdle = ( pBU == NULL );
+                }
                 LeaveCriticalSection( &cs );
 
-                if ( !bPaused )
+                // idle factories too: one that missed its one-shot "built" offer is
+                // otherwise never asked again. Below is the same ClearTaskUnit +
+                // AssignProductionTask pair the "built" path runs.
+                if ( !bPaused && !bIdle )
                     continue;
 
                 // make sure unit is doing nothing
@@ -2273,6 +2295,24 @@ void CAITaskMgr::GenerateTaskOrder( CAIUnit* pUnit )
         }
     }
 
+    // An IDLE, EMPTY landing craft belongs back in the lift pool.
+    // Nothing else returns one once it is off IDT_PREPAREWAR (the only task
+    // GetNavyTask offers it). Gated on such a task existing, so it cannot churn.
+    if ( pUnit->GetType( ) == CUnit::vehicle && pUnit->GetTypeUnit( ) == CTransportData::landing_craft &&
+         pUnit->GetTask( ) != IDT_PREPAREWAR )
+    {
+        AiVehSnap snapLC;
+        if ( AiSnap::ReadVeh( pUnit->GetID( ), snapLC ) && snapLC.iCargoCount <= 0 )
+        {
+            if ( m_pGoalMgr->m_plTasks->GetNavyTask( CTransportData::landing_craft ) != NULL )
+            {
+                ClearTaskUnit( pUnit );
+                AssignTask( pUnit );
+                return;
+            }
+        }
+    }
+
     // determine if this task needs another order
     // to be issued to the unit, if not clear the
     // task/goal of the unit and return
@@ -2611,6 +2651,59 @@ void CAITaskMgr::AttackUnit( CAIUnit* pUnit, CAITask* /* pTask */ )
 void CAITaskMgr::SeekOpfor( CAIUnit* pUnit, CAITask* pTask )
 {
     CHexCoord hexDest, hexSeek;
+
+    // A unit StageUnit switched off sea-invasion staging to fight returns to it
+    // once nothing is in spotting range (the test that switched it out); the
+    // scan below searches its whole block, so it would never come back.
+    if ( ( pUnit->GetStatus( ) & CAI_TASKSWITCH ) && pUnit->GetGoal( ) == IDG_SEAINVADE &&
+         pUnit->GetParam( CAI_UNASSIGNED ) == IDT_PREPAREWAR && pUnit->GetType( ) == CUnit::vehicle )
+    {
+        AiVehSnap snapSw;
+        if ( AiSnap::ReadVeh( pUnit->GetID( ), snapSw ) )
+        {
+            CHexCoord hexSw( snapSw.iHeadX, snapSw.iHeadY );
+            if ( !InRange( hexSw, snapSw.iSpotting ) )
+            {
+                WORD wStatus = pUnit->GetStatus( );
+                pUnit->SetTask( IDT_PREPAREWAR );
+                wStatus &= ~( CAI_TASKSWITCH | CAI_IN_COMBAT );
+                pUnit->SetStatus( wStatus );
+                pUnit->ClearParam( );
+                pUnit->SetDataDW( 0 );
+                return;
+            }
+        }
+    }
+
+    // A LOADED landing craft first sails to its wave's hex (CAI_ROUTE_X/Y, set by
+    // UpdateTaskForce), else the seek below re-aims it at the nearest enemy. Held
+    // until within 8 hexes (crowded beach) or stuck 60s (unreachable hex).
+    if ( pUnit->GetTypeUnit( ) == CTransportData::landing_craft &&
+         ( pUnit->GetParam( CAI_ROUTE_X ) || pUnit->GetParam( CAI_ROUTE_Y ) ) &&
+         !( pUnit->GetStatus( ) & CAI_LANDING ) )
+    {
+        CHexCoord hexInv( pUnit->GetParam( CAI_ROUTE_X ), pUnit->GetParam( CAI_ROUTE_Y ) );
+        AiVehSnap snapInv;
+        if ( AiSnap::ReadVeh( pUnit->GetID( ), snapInv ) && snapInv.iCargoCount > 0 )
+        {
+            CHexCoord   hexAt( snapInv.iHeadX, snapInv.iHeadY );
+            const BOOL  bFar    = pGameData->GetRangeDistance( hexAt, hexInv ) > 8;
+            const DWORD dwStill = bFar ? pUnit->NoteClaimStill( MAKELPARAM( snapInv.iHeadX, snapInv.iHeadY ),
+                                                                theGame.GettimeGetTime( ) )
+                                       : 0;
+            if ( bFar && dwStill < 60 * 1000 )
+            {
+                // re-order only when the engine is not already taking it there,
+                // and once per hex, so a stopped craft is not re-ordered per event
+                if ( dwStill == 0 && ( snapInv.iDestX != hexInv.X( ) || snapInv.iDestY != hexInv.Y( ) ) )
+                    pUnit->SetDestination( hexInv );
+                return;
+            }
+        }
+        pUnit->SetParam( CAI_ROUTE_X, 0 );
+        pUnit->SetParam( CAI_ROUTE_Y, 0 );
+        pUnit->ClearClaimProgress( );
+    }
 
 #ifdef _LOGOUT
     int iTargetType     = 0;
@@ -4159,20 +4252,21 @@ BOOL CAITaskMgr::IsStagingCompete( CAITask* pTask, int iType /*=0*/ )
                 hexDest.Y( snapV.iDestY );
 
                 // the unit is awaiting a load or to be loaded
-                if ( pUnit->GetStatus( ) & CAI_IN_USE )
-                    continue;
-
                 // unit not arriving at destination within area yet
                 // could mean that it is trying to load another unit
                 // or be loaded by another unit
-                if ( hex != hexDest )
-                    continue;
-
                 // consider the unit based on it being in an area
                 // BOOL CAIMapUtil::IsHexInArea(
                 // CHexCoord& hcStart, CHexCoord& hcEnd, CHexCoord& hex )
-                if ( !m_pGoalMgr->m_pMap->m_pMapUtil->IsHexInArea( hcFrom, hcTo, hex ) )
+                // A sea-invasion unit ABOARD a craft is staged (units embark
+                // only at staging); its head is the craft's, so the hex/area
+                // tests below would never pass for it.
+                const BOOL bAboard = snapV.bCarried && pTask->GetGoalID( ) == IDG_SEAINVADE;
+                if ( !bAboard && ( ( pUnit->GetStatus( ) & CAI_IN_USE ) || hex != hexDest ||
+                                   !m_pGoalMgr->m_pMap->m_pMapUtil->IsHexInArea( hcFrom, hcTo, hex ) ) )
+                {
                     continue;
+                }
             }
 
             // now, based on the type of assault that will be
@@ -4229,6 +4323,9 @@ BOOL CAITaskMgr::IsStagingCompete( CAITask* pTask, int iType /*=0*/ )
                 case CTransportData::landing_craft:
                     iCounts[1] += 1;
                     break;
+                // escort bucket = all three escort hulls (CAI_TF_SHIPS)
+                case CTransportData::destroyer:
+                case CTransportData::cruiser:
                 case CTransportData::gun_boat:
                     iCounts[2] += 1;
                     break;
@@ -4300,6 +4397,8 @@ BOOL CAITaskMgr::IsStagingCompete( CAITask* pTask, int iType /*=0*/ )
             case CTransportData::landing_craft:
                 iTypeChecking = 1;
                 break;
+            case CTransportData::destroyer:
+            case CTransportData::cruiser:
             case CTransportData::gun_boat:
                 iTypeChecking = 2;
                 break;
@@ -4441,6 +4540,8 @@ BOOL CAITaskMgr::ContinueStaging( CAIUnit* pStagingVeh, CAITask* pTask )
         case CTransportData::landing_craft:
             iStagingType = 1;
             break;
+        case CTransportData::destroyer:
+        case CTransportData::cruiser:
         case CTransportData::gun_boat:
             iStagingType = 2;
             break;
@@ -4550,6 +4651,9 @@ BOOL CAITaskMgr::ContinueStaging( CAIUnit* pStagingVeh, CAITask* pTask )
                 case CTransportData::landing_craft:
                     iCounts[1] += 1;
                     break;
+                // escort bucket = all three escort hulls (CAI_TF_SHIPS)
+                case CTransportData::destroyer:
+                case CTransportData::cruiser:
                 case CTransportData::gun_boat:
                     iCounts[2] += 1;
                     break;
@@ -6676,6 +6780,9 @@ void CAITaskMgr::LoadLandingCraft( CAIUnit* pUnit, CAITask* pTask )
     CSubHex subhexHead( 0, 0 );
     CSubHex subhexTail( 0, 0 );
     int     iCnt = 0;
+    // this function only loads rangers: room for one infantry slot
+    const int iCost    = enaicargo::CargoCost( true );
+    BOOL      bHasRoom = FALSE;
 
     EnterCriticalSection( &cs );
     CVehicle* pVehicle = theVehicleMap.GetVehicle( pUnit->GetID( ) );
@@ -6685,15 +6792,17 @@ void CAITaskMgr::LoadLandingCraft( CAIUnit* pUnit, CAITask* pTask )
         return;
     }
     iCnt = pVehicle->GetCargoCount( );
-    if ( iCnt < MAX_CARGO )
+    // by cargo weight, the engine's own load gate, not by object count
+    bHasRoom = enaicargo::HasRoomFor( pVehicle->GetCargoSize( ), pVehicle->GetEffPeopleCarry( ), iCost );
+    if ( bHasRoom )
     {
         subhexHead = pVehicle->GetPtHead( );
         subhexTail = pVehicle->GetPtTail( );
     }
     LeaveCriticalSection( &cs );
 
-    // carrier is too full
-    if ( !subhexHead.x && !subhexHead.y )
+    // carrier is too full (the flag, not a zeroed subhex: a craft can be at 0,0)
+    if ( !bHasRoom )
         return;
 
 #ifdef _LOGOUT
@@ -6753,14 +6862,17 @@ void CAITaskMgr::LoadIFV( CAIUnit* pUnit, CAITask* pTask )
         LeaveCriticalSection( &cs );
         return;
     }
-    if ( pVehicle->GetCargoCount( ) < MAX_CARGO )
+    // infantry carrier: its cargo is infantry, one slot each (enaicargo).
+    BOOL bHasRoom = enaicargo::HasRoomFor( pVehicle->GetCargoSize( ), pVehicle->GetEffPeopleCarry( ),
+                                           enaicargo::CargoCost( true ) );
+    if ( bHasRoom )
     {
         subhexUnit = pVehicle->GetPtTail( );
     }
     LeaveCriticalSection( &cs );
 
-    // carrier is too full
-    if ( !subhexUnit.x && !subhexUnit.y )
+    // carrier is too full (flag, not a zeroed subhex -- see LoadLandingCraft)
+    if ( !bHasRoom )
         return;
 
 #ifdef _LOGOUT
@@ -6935,6 +7047,12 @@ void CAITaskMgr::LoadTroops( CAIUnit* puCargo, CAITask* pTask )
     else  // infantry only
         iCarrierType = CTransportData::infantry_carrier;
 
+    // this cargo unit's weight in carrier slots (static type data, no lock)
+    int                   iCargoCost = enaicargo::CargoCost( false );
+    CTransportData const* pCargoData = pGameData->GetTransportData( puCargo->GetTypeUnit( ) );
+    if ( pCargoData != NULL )
+        iCargoCost = enaicargo::CargoCost( pCargoData->IsPeople( ) ? true : false );
+
     if ( m_pGoalMgr->m_plUnits != NULL )
     {
         CHexCoord hexCargo, hexCarrier, hexCarrierDest;
@@ -7017,7 +7135,9 @@ void CAITaskMgr::LoadTroops( CAIUnit* puCargo, CAITask* pTask )
                     LeaveCriticalSection( &cs );
                     continue;
                 }
-                if ( pVehicle->GetCargoCount( ) >= MAX_CARGO )
+                // room for THIS cargo unit's weight
+                if ( !enaicargo::HasRoomFor( pVehicle->GetCargoSize( ), pVehicle->GetEffPeopleCarry( ),
+                                             iCargoCost ) )
                 {
                     LeaveCriticalSection( &cs );
                     continue;
@@ -7150,15 +7270,35 @@ void CAITaskMgr::UnloadCargo( CAIUnit* pUnit )
     }
 
     if ( !bIsLoaded )
+    {
+        pUnit->SetStatus( pUnit->GetStatus( ) & ~CAI_LANDING );
         return;
+    }
 
     // landing craft must be adjacent to land to unload
     if ( pUnit->GetTypeUnit( ) == CTransportData::landing_craft )
     {
-        if ( !m_pGoalMgr->m_pMap->m_pMapUtil->IsWaterAdjacent( hexHead, 1, 1 ) )
+        // At a shore = the same test FindLandingHex uses to pick one.
+        if ( !m_pGoalMgr->m_pMap->m_pMapUtil->IsLandingArea( hexHead ) )
         {
-            m_pGoalMgr->m_pMap->m_pMapUtil->FindLandingHex( hexHead );
-            pUnit->SetDestination( hexHead );
+            CHexCoord hexLand = hexHead;
+            m_pGoalMgr->m_pMap->m_pMapUtil->FindLandingHex( hexLand );
+            if ( hexLand != hexHead )
+            {
+                pUnit->SetDestination( hexLand );
+                // flag it so the arrival unloads (DestinationResponse) instead
+                // of re-running its task, which would sail it back out
+                pUnit->SetStatus( pUnit->GetStatus( ) | CAI_LANDING );
+                // not at a shore yet, so no unload here
+                return;
+            }
+            // no shore here and none found nearby: nothing to unload onto
+            pUnit->SetStatus( pUnit->GetStatus( ) & ~CAI_LANDING );
+            return;
+        }
+        else
+        {
+            pUnit->SetStatus( pUnit->GetStatus( ) & ~CAI_LANDING );
         }
     }
 

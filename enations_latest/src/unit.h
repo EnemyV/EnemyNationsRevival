@@ -40,6 +40,16 @@ class CProjMap;
 class CUnit;
 
 
+// A hex just crossed from unseen to seen for pViewer: re-sync the remembered ground
+// (road / bridge / slash-and-burn), drop a building that died out of sight, and reveal +
+// refresh an enemy building standing on it. Lives in unit.cpp, lifted out of
+// CUnit::IncrementSpotting so the Resonance Sweep edict can light a ring of hexes around an
+// enemy rocket under exactly the same reveal rules a scouting unit uses.
+// The CALLER owns the visibility counter: IncVisible( ) first, and call this only on the
+// transition (GetVisibility( ) has just become 1).
+void EnHexBecameVisible( CHex* pHex, CHexCoord& hex, CPlayer* pViewer );
+
+
 // this is so we don't have to keep allocating & sizing CDib on each call
 class CUnitShowStat
 {
@@ -517,7 +527,37 @@ class CUnit : public CUnitTile
         // flag was added and went stale once serialization covered the flags word. The
         // stale note cost an investigation and nearly a needless save-format change on
         // 2026-08-02; verified against the serialize code before rewriting it.)
-        alt_oil         = 0x0800
+        alt_oil         = 0x0800,
+
+        // Per-material auto-stock veto, one bit per HAULABLE material, in the order
+        // given by CBuilding's kBlockableMat table (unit.cpp): lumber, steel, copper,
+        // oil, coal, iron. SET = "the auto-router must not bring me this", so a zeroed
+        // flags word -- every existing building, and every building loaded out of a
+        // save written before this existed -- means "accept everything", i.e. exactly
+        // the old behaviour. That is what lets this ship with NO save-format bump:
+        // CUnit::Serialize already writes the flags word as a full DWORD
+        // (new_unit.cpp), so these bits round-trip and read back 0 from old saves.
+        // Only warehouses and the rocket expose the checkboxes (CanBlockMaterials).
+        no_stock_base   = 0x1000,
+        no_stock_mask   = 0x3F000,    // 6 materials, 0x1000 .. 0x20000
+
+        // Player has taken this building OUT of the automatic truck network entirely:
+        // the router will neither deliver to it nor collect from it, and it stops
+        // contributing surplus to warehouse demand. Manual routes and hand-loading are
+        // unaffected. Same inverted sense as the veto bits above -- SET = excluded --
+        // so a zeroed flags word (and therefore every older save) means "in the
+        // network", which is the pre-existing behaviour.
+        no_autoroute    = 0x40000,
+
+        // The OR of every flag above -- kept last, derived, so CUnit::AssertValid's
+        // flag-mask check (new_unit.cpp) can assert against ~all_flags instead of a
+        // hand-written mask that silently goes stale each time a flag is added
+        // (BUGS #89: alt_oil shipped without the mask being widened, so the assert
+        // rejected a valid, in-use flag under STRICTER_ASSERTS). Never remove the
+        // assert -- if a new flag is added, add it here and the assert stays correct.
+        all_flags       = dying | selected | stopped | event | destroying | scenario
+                        | repair_stop | abandoned | dead | unit_set_damage | show_bldg
+                        | alt_oil | no_stock_mask | no_autoroute
     };
     void         SetFlag( UNIT_FLAGS fl ) { m_unitFlags = (UNIT_FLAGS)( (int)m_unitFlags | (int)fl ); }
     void         ClrFlag( UNIT_FLAGS fl ) { m_unitFlags = (UNIT_FLAGS)( (int)m_unitFlags & ~(int)fl ); }
@@ -580,7 +620,7 @@ class CUnit : public CUnitTile
     int   GetLastShowDamagePer( ) const;
     float GetDamageMult( ) const;
     float GetDamPerfMult( ) const;
-    void  DecDamagePoints( int iDamage, DWORD dwKiller = 0 );
+    void  DecDamagePoints( int iDamage, DWORD dwKiller = 0, BOOL bApplyMults = TRUE );
     void  UpdateDamageLevel( );
     void  MsgSetFire( CMsgShootElem* pMsg );
     void  PrepareToDie( DWORD dwIDKiller );
@@ -900,7 +940,11 @@ class CExplosion : public CProjBase
     CRect Draw( const CHexCoord& );
     void  EmitFlash( const CPoint& ptCenter, int iSprW, int iSprH );  // additive impact pop
 
-    int m_iKillFrame;  // on or after this frame kill the building
+    int m_iKillFrame;  // on or after this frame of OUR OWN life, release the corpse
+                       // (enexpl::EXPL_KILLFRAME, or EXPL_NO_KILLFRAME = no corpse)
+    int m_iFrames;     // frames this explosion has lived. Counted here and not read
+                       // off the animation, so a replaced sprite cannot move a
+                       // simulation event (015 phase 3, explframe.h).
 };
 
 const int PROJ_BASE_ALLOC_SIZE = __max(sizeof(CProjectile), sizeof(CExplosion));
@@ -923,6 +967,9 @@ class CProjMap : public CMap<DWORD, DWORD, CProjBase*, CProjBase*>
 
     CProjBase*        GetFirst( CHexCoord _hex ) const;
     static CProjBase* GetNext( CProjBase* pOn );
+    // Count occupied hex buckets containing at least one in-flight projectile.
+    // Visual explosion lifetimes are deliberately excluded from the firing cap.
+    int GetProjectileHexCount( ) const;
 
   protected:
     DWORD ToArg( CMapLoc const& ml ) const;

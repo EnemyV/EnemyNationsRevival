@@ -93,15 +93,15 @@ void SDL2Mail_HandleIncoming(CMsgIPC* pMsg) {
     if (!pMsg) return;
 
     // The wire buffer is laid out by CMsgIPC::ToBuf as:
-    //   [ sizeof(CMsgIPC) bytes of the struct ][ message\0 ][ subject\0 ]
-    // The scalar header fields (m_iType/m_iFrom/m_iTo) are valid in place; the
-    // CString members in the header are garbage pointers and must NOT be touched
-    // ??? the actual text lives in the appended tail.
-    int type = pMsg->m_iType;
-    int from = pMsg->m_iFrom;
-    int to   = pMsg->m_iTo;
+    //   [ CMsgIPCWire header ][ message\0 ][ subject\0 ]
+    // It is not a CMsgIPC: that class holds CStrings, whose size depends on the
+    // peer's compiler and config, so read only the fixed-width wire header.
+    const CMsgIPCWire* pWire = reinterpret_cast<const CMsgIPCWire*>(pMsg);
+    int type = pWire->m_iType;
+    int from = pWire->m_iFrom;
+    int to   = pWire->m_iTo;
 
-    const char* tail   = reinterpret_cast<const char*>(pMsg) + sizeof(CMsgIPC);
+    const char* tail   = reinterpret_cast<const char*>(pWire + 1);
     std::string message = tail;
     std::string subject = tail + message.size() + 1;
 
@@ -222,10 +222,12 @@ static int ResearchCurrentPercent() {
     if (!pMe) return 0;
     int iSel = pMe->GetRsrchItem();
     if (iSel <= 0) return 0;
-    int disc = pMe->GetRsrch(iSel).m_iPtsDiscovered;
-    int req  = theRsrch.ElementAt(iSel).m_iPtsRequired;
+    // 64-bit throughout: req is now a long long, and disc * 50 overflows an int well before
+    // disc reaches its own 2^31 ceiling.
+    long long disc = pMe->GetRsrch(iSel).m_iPtsDiscovered;
+    long long req  = theRsrch.ElementAt(iSel).m_iPtsRequired;
     if (req <= 0) return 0;
-    int per = (disc * 50) / req;
+    int per = (int)((disc * 50) / req);
     per = __min(per, 99);
     per = __max(1, per);
     return per;
@@ -1073,6 +1075,16 @@ void SDL2UnitInfoPanel::Show(CUnit* pUnit, int screenX, int screenY) {
     }
     SDL_SetWindowPosition(m_window, screenX, screenY);
     SDL_ShowWindow(m_window);
+#ifdef __APPLE__
+    // The detached Area/World map panels are ALSO SDL_WINDOW_ALWAYS_ON_TOP on mac
+    // (SDL2Panel.cpp), so this tooltip shares their window-server band and the map
+    // covered it entirely: the panel opens under the cursor, and the cursor is inside
+    // the area map whenever a unit is being clicked. Measured on the shipped 3.00.014
+    // build: correctly positioned, reported "shown", and not visible anywhere on
+    // screen. Lift it one level so it is above the panels without taking focus.
+    extern void EnMacLiftWindowAbovePanels(SDL_Window*);
+    EnMacLiftWindowAbovePanels(m_window);
+#endif
     Render();
 }
 

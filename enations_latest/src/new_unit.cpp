@@ -14,7 +14,9 @@
 #include "SDL2BuildStructure.h"
 #include "SDL2BuildTransport.h"
 #include "SDL2BuildingWindow.h"
+#include "SDL2RouteWindow.h"
 #include "altoutput.h"   // Coal-Liq mode-aware power-plant status text (#43)
+#include "econprod.h"    // #13 input-starvation gate for the production bar (display only)
 #include "event.h"
 #include "lastplnt.h"
 #include "player.h"
@@ -29,6 +31,7 @@
 #include "area.h"
 #include "relation.h"
 #include "sfx.h"
+#include "netapi.h"      // theNet.Broadcast (Slash and Burn terrain replication; CNetHexRetype via player.h -> netcmd.h)
 
 #include "terrain.inl"
 #include "minerals.inl"
@@ -196,8 +199,31 @@ void CMaterialBuilding::ShowStatusText( std::string& str )
 // CBuilding::BuildMaterials / CMineBuilding::BuildMine / CFarmBuilding::BuildFarm).
 int CMaterialBuilding::GetProductionPer( ) const
 {
-    int iTime = GetData( )->GetBldMaterials( )->GetTime( );
+    CBuildMaterials const* pBm   = GetData( )->GetBldMaterials( );
+    int                    iTime = pBm->GetTime( );
     if ( iTime <= 0 ) return ( -1 );
+
+    // #13 (DISPLAY ONLY -- the sim is deliberately untouched): CBuilding::BuildMaterials
+    // advances m_iBuildDone off power+people with NO input gate (mainloop.cpp:2686-2690),
+    // so an iron-starved smelter swept this bar to 100% and then produced NOTHING: at
+    // batch completion iNum = GetStore( i ) / GetInput( i ) truncates to 0, bOut fires and
+    // the whole batch is thrown away (mainloop.cpp:2717-2790). Whenever a required input
+    // store cannot fund ONE batch the honest progress is therefore 0 -- the same input rule
+    // as this class's ShowStatusText "Idle" gate above, so the label and the bar now agree
+    // instead of contradicting each other.
+    // The sim keeps advancing on purpose: reaching the completion branch starved is what
+    // raises EVENT_MANUF_HALTED and MsgOutMat (the resupply request to the router/AI), and
+    // it is what keeps an intermittently-fed converter's throughput unchanged.
+    // Exception, mirroring the sim's own bBioFuel skip (mainloop.cpp:2677): with an
+    // alt-output conversion active the building does not consume its primary inputs at all,
+    // so the gate must not apply there.
+    CBuilding* self = (CBuilding*)this;   // IsFlag / AltOutput::Available are non-const
+    if ( !( self->IsFlag( CUnit::alt_oil ) && AltOutput::Available( self ) ) )
+        if ( enecon::MatBarStalled( CMaterialTypes::GetNumTypes( ),
+                                    [pBm]( int iIn ) { return pBm->GetInput( iIn ); },
+                                    [this]( int iIn ) { return GetStore( iIn ); } ) )
+            return ( 0 );
+
     int iPer = (int)( ( (long long)m_iBuildDone * 100 ) / iTime );
     return ( iPer > 100 ? 100 : iPer );
 }
@@ -262,25 +288,17 @@ void CFarmBuilding::ShowStatusText( std::string& str )
 
     CBuildFarm* pBf = GetData( )->GetBldFarm( );
 
-    // Charcoal (#44): a lumber mill with the kiln ON credits NO player lumber — the harvest
-    // feeds the kiln and only the coal trickle comes out (BuildFarm's lumber branch). The
-    // harvest-rate line below would claim full lumber output; say what it actually does.
-    // Same gate expression as the sim's kiln branch.
-    if ( pBf->GetTypeFarm( ) == CMaterialTypes::lumber && IsFlag( CUnit::alt_oil ) )
-    {
-        const AltOutput::AltOutputDef* pDef = AltOutput::Available( this );
-        if ( pDef )
-        {
-            str = "Converting " + CMaterialTypes::GetDesc( pDef->m_iInputMat ) +
-                  " to " + CMaterialTypes::GetDesc( pDef->m_iOutputMat );
-            return;
-        }
-    }
+    // (No conversion branch here any more: Charcoal moved off the lumber mill to the coal power
+    // plant. Slash and Burn is an eModifier def -- it produces nothing, it just multiplies the
+    // harvest, so the plain harvest line below is still the right thing to show.)
 
     // Operator: actual rate, not theoretical — 0 while the sim has the farm halted.
+    // Slash and Burn multiplies the harvest in CFarmBuilding::BuildFarm, so apply the SAME
+    // multiplier through the SAME predicate here or the readout under-reports by 2.5x.
+    float fSlash = SlashBurnActive( ) ? AltOutput::SLASH_BURN_MULT : 1.0f;
     int iFarmRate = ( m_unitFlags & ( stopped | abandoned | event | dying ) )
                         ? 0
-                        : (int)GetFrameProd( GetOwner( )->GetFarmProd( ) * m_iTerMult *
+                        : (int)GetFrameProd( GetOwner( )->GetFarmProd( ) * m_iTerMult * fSlash *
                                              float( 24 * 60 * pBf->GetQuantity( ) ) /
                                              float( pBf->GetTimeToFarm( ) ) );
     std::string sNum = IntToStr( iFarmRate, 10, true );
@@ -296,26 +314,33 @@ void CPowerBuilding::ShowStatusText( std::string& str )
         return;
     }
 
-    CBuildPower* pBp = GetData( )->GetBldPower( );
-    int iFuel = pBp ? pBp->GetInput( ) : -1;
+    // The material this plant actually needs on hand right now: its fuel normally, a time-driven
+    // conversion def's input in alt mode (CPowerBuilding::EffInputMat). In fuel mode this IS
+    // GetBldPower( )->GetInput( ) and EffInputBatch( ) is 1, so the idle test is unchanged.
+    int iFuel = EffInputMat( );
     // CRASH-HARDEN (newwin, sibling of the #51 C5 crash mac2 found): GetInput() returns the raw
     // m_iInput, which for a fuel-less plant can be a sentinel/garbage index >= num_types (not just
     // -1). GetStore() only ASSERT_STRICTs the range (ignored in this build) -> OOB read. Bound it.
     if ( iFuel >= 0 && iFuel < CMaterialTypes::GetNumTypes( ) )
-        if ( GetStore( iFuel ) <= 0 )
+        if ( GetStore( iFuel ) < EffInputBatch( ) )
         {
             str = EnLoadStdString( IDS_STAT_IDLE );
             return;
         }
 
-    // Coal Liquefaction mode (#43): when the alt-output toggle is ON (and the tech is
-    // researched), this coal plant converts coal -> oil instead of generating power
-    // (BuildPower suppresses AddPwrHave in this mode). Reflect that in the status text
-    // rather than the misleading "Generating N units power" line.
-    if ( IsFlag( CUnit::alt_oil ) && ( AltOutput::Available( this ) != nullptr ) )
+    // Alt-output conversion mode: when the toggle is ON (and the tech is researched), this
+    // plant converts instead of generating power (BuildPower suppresses AddPwrHave). Name the
+    // def's OWN materials -- the host is the oil plant for Coal Liquefaction and the coal plant
+    // for the Charcoal kiln, so a hard-coded "coal to oil" is wrong for half of them.
+    if ( IsFlag( CUnit::alt_oil ) )
     {
-        str = "Converting coal to oil";
-        return;
+        const AltOutput::AltOutputDef* pDef = AltOutput::Available( this );
+        if ( pDef )
+        {
+            str = "Converting " + CMaterialTypes::GetDesc( pDef->m_iInputMat ) +
+                  " to " + CMaterialTypes::GetDesc( pDef->m_iOutputMat );
+            return;
+        }
     }
 
     std::string sNum  = IntToStr( (int)( GetFrameProd( 1 ) * (float)GetData( )->GetBldPower( )->GetPower( ) ) );
@@ -1142,9 +1167,10 @@ void InitColors( )
 /////////////////////////////////////////////////////////////////////////////
 // CMaterial - a food, steel, etc.
 
-void CMaterialTypes::ctor( )
+// The material names (LANG/MTRL). Split out of ctor so a dialog shown before any
+// world is loaded (the Load Network Game joiner's Pick Your Player) can read them.
+void CMaterialTypes::InitDesc( )
 {
-
     CMmio* pMmio = theDataFile.OpenAsMMIO( NULL, "LANG" );
 
     pMmio->DescendRiff( 'L', 'A', 'N', 'G' );
@@ -1159,6 +1185,11 @@ void CMaterialTypes::ctor( )
     }
     pMmio->AscendList( );
     delete pMmio;
+}
+
+void CMaterialTypes::ctor( )
+{
+    InitDesc( );
 
     CWindowDC dc( (CWnd*)NULL );
     m_rgb[0]  = dc.GetNearestColor( PALETTERGB( 230, 154, 108 ) );
@@ -1312,7 +1343,23 @@ void CUnit::AssignData( CUnitData const* pData )
         else                 spBonus = ( spB >> 1 ) + ( spB >> 3 ) + ( spB >> 4 ) + ( spB >> 5 ) + ( spB >> 6 ); // spot_7: +73.4375%
         m_iSpottingRange = __min( MAX_SPOTTING, spB + spBonus );
     }
-    m_iRange = GetData( )->_GetRange( ) + ( GetData( )->_GetRange( ) >> ( 4 - GetOwner( )->GetRangeLevel( ) ) );
+    // Weapon range: same shape as spotting above. range_1..3 double the bonus per level
+    // (>>3,>>2,>>1); range_4 has to DIMINISH (+62.5%) because >> ( 4 - lvl ) would shift by 0
+    // at level 4 — a full doubling — which is what ran the effective range past the width
+    // table (heavy_art 17 -> 34 with only 27 rows). See research.h range_4 / player.cpp SetRsrch.
+    {
+        int rB = GetData( )->_GetRange( );
+        int rL = GetOwner( )->GetRangeLevel( );
+        int rBonus;
+        if ( rL <= 3 ) rBonus = rB >> ( 4 - rL );             // none..range_3: /16 /8 /4 /2
+        else           rBonus = ( rB >> 1 ) + ( rB >> 3 );    // range_4: +62.5%
+        m_iRange = rB + rBonus;
+        // m_iRange indexes CVehicle::m_apiWid, whose rows are 0..m_iMaxRange-1 (CVehicle::DetermineOppo
+        // vehoppo.cpp, CBuilding::DetermineOppo unit.cpp — AssignData runs for buildings too).
+        // Debug traps so a data/tuning error is caught at the source; Release never runs off the table.
+        ASSERT( m_iRange < CVehicle::m_iMaxRange );
+        m_iRange = __min( m_iRange, CVehicle::m_iMaxRange - 1 );
+    }
     for ( int iInd = 0; iInd < CUnitData::num_attacks; iInd++ )
         m_iAttack[iInd] =
             (int)( 0.5f + GetOwner( )->GetAttackMult( ) *
@@ -3934,6 +3981,7 @@ void CFarmBuilding::ctor( )
 
     m_iTerMult   = 0;
     m_iFieldStage = -1;
+    m_fSlashAccum = 0.0f;   // transient (see building.h) -- reset on construct AND on load
 }
 
 CFarmBuilding::~CFarmBuilding( )
@@ -3960,22 +4008,197 @@ static int fnLumberFromGround( CHex* pHex, CHexCoord, void* pData )
     return ( FALSE );
 }
 
-int CFarmBuilding::LandMult( CHexCoord _hex, int iTyp, int iDir )
+// The lumber mill's LandMult box: the footprint grown by 3 hexes on every side. Extracted so
+// the yield scan (LandMult, below) and the Slash and Burn slash scan CANNOT diverge -- if they
+// did, a mill would destroy trees outside the box its own m_iTerMult averages over, the yield
+// would never drop, and the feature would be a silent visual-only no-op. The `iDir & 1` swap is
+// the load-bearing part: without it exactly that happens on every mill built at an odd rotation,
+// i.e. roughly half of them, with no error and no crash.
+// On return _hex is the box's TOP-LEFT corner and ex/ey are its extents.
+static void LumberBox( CHexCoord& _hex, int& ex, int& ey, CStructureData const* pData, int iDir )
+{
+    int cx = iDir & 1 ? pData->GetCY( ) : pData->GetCX( );
+    int cy = iDir & 1 ? pData->GetCX( ) : pData->GetCY( );
+
+    _hex.X( _hex.X( ) - 3 );
+    _hex.Y( _hex.Y( ) - 3 );
+    ex = cx + 6;
+    ey = cy + 6;
+}
+
+// Forest coverage around a building of type iTyp placed at _hex (0..10, 10 = every hex in the
+// ring is forest). The lumber mill's half of LandMult, split out so a NON-farm building can ask
+// the same question about its own footprint -- the Scrounging warehouse scrounges wood from the
+// trees it sits among. Ring: the footprint grown by 3 hexes on every side.
+int CFarmBuilding::ForestMultAt( CHexCoord _hex, int iTyp, int iDir, int iScale )
+{
+
+    CStructureData const* pData = theStructures.GetData( iTyp );
+
+    // get the number of forest hexes.  The box comes from LumberBox so this scan and the Slash
+    // and Burn slash scan CANNOT diverge: if they did, a mill would destroy trees outside the
+    // box its own m_iTerMult averages over and the yield would never drop.  That helper also
+    // carries the `iDir & 1` swap, which is the load-bearing part on odd-rotation mills.
+    int iRtn = 0;
+    int ex, ey;
+    LumberBox( _hex, ex, ey, pData, iDir );   // == the old -3/-3 corner and cx+6 / cy+6
+    theMap.EnumHexes( _hex, ex, ey, fnLumberFromGround, &iRtn );
+    // iScale defaults to 1, so the mill/farm callers get the historic 0..10. Scrounging asks for
+    // 100 and divides once at the end instead -- see the note on ScrapMultsAt.
+    return ( ( iRtn * iScale ) / ( ex * ey ) );
+}
+
+// Broken ground -- rough, hill, mountain (rock) and desert (sand) -- around a building of type
+// iTyp placed at _hex. This is what Scrounging picks scrap iron and coal out of, so it is a TYPE
+// test, not a fertility test: rough ground has FarmMult 6 (more fertile than forest), while road
+// and city sit at 0 along with all the water, so "fertility == 0" would select pavement and lakes
+// and reject the one tile we most want.
+//
+// Iron and coal ride SEPARATE scales -- they used to share one, but city yields iron only and
+// road yields coal only (operator), so one number cannot carry both. Same ring, same pass, two
+// accumulators.
+//
+// Scale is 0..20, NOT 0..10 like the forest and soil scans: bare mountain rock is worth DOUBLE
+// (operator's call), so a ring of solid mountain returns 20 and scrounges the full 4 iron + 4
+// coal, while ordinary broken ground tops out at 10 for 3 + 3 and forest at 5 for 2 + 1. Nothing
+// clamps this -- the 20 is the point. Keep MultiLinesFor's /10 in step with the 10 used here.
+//
+// Forest at HALF weight is the closest this pipeline can get to the half-unit the operator asked
+// for: AltMat::m_iPerMin is an int, so 0.5/min cannot be credited. Half the MULTIPLIER can, and
+// with the perfect-site base at 2 a solid forest ring lands on exactly 1 iron + 1 coal -- half of
+// what rough ground gives. If a true 0.5/min is ever wanted, m_iPerMin has to become a float.
+//
+// City 6 / road 6 are the salvage lines: a warehouse walled in by its own colony strips 1 iron
+// out of the rubble, one on a road network scrapes 1 coal off the traffic, and neither is enough
+// to matter next to real ground -- 2 on a ring of nothing else, 1 on the mixed city/road ground
+// a real town warehouse actually stands in. They were capped at 1 until the iron/coal base went
+// 2 -> 3; a pure road ring scores 6 * 32/36 = 5.33, and 3 * 5.33 / 10 = 1.6, which ROUNDS UP.
+// That is deliberate now (operator asked for a warehouse in a road network to be worth more than
+// 1), but note what it means: road and city are the only PLAYER-PLACEABLE terrain in this whole
+// system -- every other weight is whatever the map generator gave you. So these two are the only
+// ones a player can farm by building, and paving a ring is cheap and unlimited. If that ever
+// reads as an exploit, drop both to 4: that restores the 1 cap under the base-3 rates without
+// touching any natural terrain.
+//
+// They shipped at 3 and that was a BUG, reported from a live game as "Nothing here to scrounge"
+// on a perfectly ordinary town warehouse. 3 is the least weight that clears the 1-unit threshold,
+// so it only paid out on a ring of 100% city or 100% road -- and a real town warehouse sits in a
+// MIX of the two, where each line averages ~1.8, truncates to 1, and scores nothing. Every line
+// then read zero and the toggle declared the site barren. The lesson generalises: a weight sitting
+// exactly ON its threshold is unreachable in practice, because no real ring is pure.
+//
+// NOTE the building's own footprint turns to CHex::city on completion (fnBuildOnHex), so every
+// warehouse carries a few city hexes. Still far too few to reach the bar alone (a 3x3 pad is 9 of
+// 49 -> 6*9/49 = 1), so this does not quietly hand every site in the game a free iron.
+struct ScrapAccum { int iIron; int iCoal; };
+
+static int fnScrapFromGround( CHex* pHex, CHexCoord, void* pData )
+{
+
+    ScrapAccum* pAcc  = (ScrapAccum*)pData;
+    int         iType = pHex->GetType( );
+    if ( iType == CHex::mountain )
+    {
+        pAcc->iIron += 20;           // bare rock -- twice the scrap of any other broken ground
+        pAcc->iCoal += 20;
+    }
+    else if ( ( iType == CHex::rough ) || ( iType == CHex::hill ) || ( iType == CHex::desert ) )
+    {
+        pAcc->iIron += 10;
+        pAcc->iCoal += 10;
+    }
+    else if ( iType == CHex::forest )
+    {
+        pAcc->iIron += 5;            // deadfall and bog iron -- half a scrap tile
+        pAcc->iCoal += 5;
+    }
+    else if ( iType == CHex::city )
+        pAcc->iIron += 6;            // salvage: scrap metal out of the built-up ground
+    else if ( iType == CHex::road )
+        pAcc->iCoal += 6;            // salvage: coal dust and cinders off the roadbed
+    return ( FALSE );
+}
+
+// Soil as SCROUNGING sees it: the farm's fertility, overridden for the two kinds of ground a
+// FORAGER can eat off but a plough cannot -- bog and water, which read 6 here against a true
+// fertility of 2 and 0. Kept separate from SoilMultAt on purpose: that one is the FARM's, and it
+// feeds farm output, the placement preview and the AI's site ratings, none of which should shift
+// because a warehouse learned to forage.
+//
+// 6, not the 3 this shipped with. 3 was chosen as the least value that clears the 1-food
+// threshold -- which meant it only ever cleared it on a ring of NOTHING BUT marsh. Mix in a
+// single dry hex and the average fell under the bar and paid zero. Every weight here needs
+// headroom against dilution, because real ground is mixed; see fnScrapFromGround, which had the
+// same defect and produced "Nothing here to scrounge" on an ordinary town warehouse.
+static int fnScroungeSoilFromGround( CHex* pHex, CHexCoord, void* pData )
+{
+
+    int iType = pHex->GetType( );
+    int iMult;
+    if ( ( iType == CHex::swamp ) || ( iType == CHex::lake ) || ( iType == CHex::ocean )
+         || ( iType == CHex::river ) || ( iType == CHex::coastline ) )
+        iMult = 6;                   // forage the marsh / fish the water
+    else
+        iMult = theTerrain.GetData( iType ).GetFarmMult( );
+    *( (int*)pData ) += iMult;
+    return ( FALSE );
+}
+
+// Ring: footprint+2, matching the scrap scan. NOT the farm's footprint+1, which this used to
+// copy and which quietly crippled the food line: the ring is squared, so at +1 a 2x2 warehouse
+// gets 4x4 = 16 hexes of which its own 4-hex pad is FOUR -- 25% of the food scan reading the
+// building's own concrete, against 11% for scrap (+2) and 6% for forest (+3). The food line was
+// taxed four times harder than lumber purely by ring geometry, and it cost a real tile: a hill
+// ring scored 3 * 12/16 = 2.25, just under the 2.5 bar, so hills fed nobody. At +2 it is 36
+// hexes, the pad is 11%, and hills feed 1 as intended.
+//
+// The farm keeps SoilMultAt at +1 -- a farm works the soil it stands on, a forager ranges wider.
+int CFarmBuilding::ScroungeSoilMultAt( CHexCoord _hex, int iTyp, int iDir, int iScale )
 {
 
     CStructureData const* pData = theStructures.GetData( iTyp );
     int                   cx    = iDir & 1 ? pData->GetCY( ) : pData->GetCX( );
     int                   cy    = iDir & 1 ? pData->GetCX( ) : pData->GetCY( );
 
-    if ( iTyp == CStructureData::lumber )
-    {
-        // get the number of forest hexes
-        int iRtn = 0;
-        _hex.X( _hex.X( ) - 3 );
-        _hex.Y( _hex.Y( ) - 3 );
-        theMap.EnumHexes( _hex, cx + 6, cy + 6, fnLumberFromGround, &iRtn );
-        return ( iRtn / ( ( cx + 6 ) * ( cy + 6 ) ) );
-    }
+    int iRtn = 0;
+    _hex.X( _hex.X( ) - 2 );
+    _hex.Y( _hex.Y( ) - 2 );
+    theMap.EnumHexes( _hex, cx + 4, cy + 4, fnScroungeSoilFromGround, &iRtn );
+    return ( ( iRtn * iScale ) / ( ( cx + 4 ) * ( cy + 4 ) ) );
+}
+
+// Ring: the footprint grown by 2 hexes per side -- wider than the soil scan (scrap is scavenged,
+// not farmed) and tighter than the forest scan (you cannot drag rubble in from 3 hexes out).
+// Fills BOTH scales in one pass; either may be null if a caller only wants the other.
+void CFarmBuilding::ScrapMultsAt( CHexCoord _hex, int iTyp, int iDir, int* piIron, int* piCoal,
+                                  int iScale )
+{
+
+    CStructureData const* pData = theStructures.GetData( iTyp );
+    int                   cx    = iDir & 1 ? pData->GetCY( ) : pData->GetCX( );
+    int                   cy    = iDir & 1 ? pData->GetCX( ) : pData->GetCY( );
+
+    ScrapAccum acc = { 0, 0 };
+    _hex.X( _hex.X( ) - 2 );
+    _hex.Y( _hex.Y( ) - 2 );
+    theMap.EnumHexes( _hex, cx + 4, cy + 4, fnScrapFromGround, &acc );
+
+    int iHexes = ( cx + 4 ) * ( cy + 4 );
+    if ( piIron )
+        *piIron = ( acc.iIron * iScale ) / iHexes;
+    if ( piCoal )
+        *piCoal = ( acc.iCoal * iScale ) / iHexes;
+}
+
+// Soil fertility around a building of type iTyp placed at _hex (the average per-hex FarmMult;
+// the placement preview calls < 2 unusable and < 5 poor). The food farm's half of LandMult,
+// split out for the same reason as ForestMultAt. Ring: the footprint grown by 1 hex per side.
+int CFarmBuilding::SoilMultAt( CHexCoord _hex, int iTyp, int iDir )
+{
+
+    CStructureData const* pData = theStructures.GetData( iTyp );
+    int                   cx    = iDir & 1 ? pData->GetCY( ) : pData->GetCX( );
+    int                   cy    = iDir & 1 ? pData->GetCX( ) : pData->GetCY( );
 
     // get the terrain multiplier
     int iRtn = 0;
@@ -3985,10 +4208,342 @@ int CFarmBuilding::LandMult( CHexCoord _hex, int iTyp, int iDir )
     return ( iRtn / ( ( cx + 2 ) * ( cy + 2 ) ) );
 }
 
+int CFarmBuilding::LandMult( CHexCoord _hex, int iTyp, int iDir )
+{
+
+    // a mill harvests trees, a farm works the soil
+    if ( iTyp == CStructureData::lumber )
+        return ( ForestMultAt( _hex, iTyp, iDir ) );
+    return ( SoilMultAt( _hex, iTyp, iDir ) );
+}
+
 void CFarmBuilding::UpdateFarm( )
 {
 
     m_iTerMult = LandMult( m_hex, GetData( )->GetType( ), GetDir( ) );
+}
+
+// Scrounging (AltOutput): the site a warehouse scrounges from, on the same two 0..10 scales the
+// farm/mill placement preview uses, but measured over the WAREHOUSE's own footprint. Scanned
+// on demand and cached. The cache is runtime-only and refills itself on first use after a
+// load -- like the farm's field plots, there is nothing here worth serializing.
+//
+// This used to be cached on the premise that terrain never changes at runtime. Slash and Burn
+// falsifies that premise, so the cache is INVALIDATED (see InvalidateScrounge, called from
+// CFarmBuilding::ApplySlash) instead of written once. Do not reintroduce a write-once
+// assumption here.
+void CWarehouseBuilding::UpdateScrounge( )
+{
+
+    // HUNDREDTHS (0..1000 for the 0..10 scales, 0..2000 for the scrap ones). The scans used to
+    // hand back a truncated whole number and MultiLinesFor rounded a second time on top, so every
+    // site lost up to a full point of signal before the rate was even computed -- a systematic
+    // downward bias, and the reason a mixed ring could score zero on every line. Carry the
+    // precision here and round ONCE, in MultiLinesFor.
+    m_iScrForest = CFarmBuilding::ForestMultAt( m_hex, GetData( )->GetType( ), GetDir( ), 100 );
+    m_iScrSoil   = CFarmBuilding::ScroungeSoilMultAt( m_hex, GetData( )->GetType( ), GetDir( ), 100 );
+    int iIron = 0, iCoal = 0;
+    CFarmBuilding::ScrapMultsAt( m_hex, GetData( )->GetType( ), GetDir( ), &iIron, &iCoal, 100 );
+    m_iScrIron = iIron;
+    m_iScrCoal = iCoal;
+}
+
+// Drop all four cached multipliers so the next getter re-scans. Invalidate rather than re-scan in
+// place: the getters are already gated on the negative sentinel, so the work happens once, on the
+// next production tick that actually asks -- a warehouse nobody queries pays nothing, and several
+// slashes inside one tick cost one rescan, not one per cut. UpdateScrounge is three whole hex
+// enumerations and ApplySlash runs this over every warehouse in reach of the cut.
+//
+// ALL FOUR, not just the forest one. A forest hex carries weight in three of the four scans:
+// fnLumberFromGround (10), fnScrapFromGround (5 iron AND 5 coal), and fnScroungeSoilFromGround,
+// which reads the hex's FarmMult -- and forest's differs from that of the plain SlashHex leaves
+// behind. Invalidating only m_iScrForest would leave the iron, coal and food lines paying the
+// pre-cut rate forever.
+void CWarehouseBuilding::InvalidateScrounge( )
+{
+    m_iScrForest = -1;
+    m_iScrSoil   = -1;
+    m_iScrIron   = -1;
+    m_iScrCoal   = -1;
+}
+
+int CWarehouseBuilding::GetScroungeForestMult( )
+{
+
+    if ( m_iScrForest < 0 )
+        UpdateScrounge( );
+    return ( (int)m_iScrForest );
+}
+
+int CWarehouseBuilding::GetScroungeIronMult( )
+{
+
+    if ( m_iScrIron < 0 )
+        UpdateScrounge( );
+    return ( (int)m_iScrIron );
+}
+
+int CWarehouseBuilding::GetScroungeCoalMult( )
+{
+
+    if ( m_iScrCoal < 0 )
+        UpdateScrounge( );
+    return ( (int)m_iScrCoal );
+}
+
+int CWarehouseBuilding::GetScroungeSoilMult( )
+{
+
+    if ( m_iScrSoil < 0 )
+        UpdateScrounge( );
+    return ( (int)m_iScrSoil );
+}
+
+BOOL CFarmBuilding::SlashBurnActive( ) const
+{
+    // Lumber mills only -- a food farm can never match, so the old "does this multiplier leak
+    // onto farms?" hazard cannot arise.
+    if ( GetData( )->GetBldFarm( )->GetTypeFarm( ) != CMaterialTypes::lumber )
+        return ( FALSE );
+
+    // AltOutput::Available( ) and IsFlag( ) take a non-const CBuilding* -- the same const_cast
+    // precedent as CMaterialBuilding::GetNextMinuteMat and CPowerBuilding::TimeDrivenDef.
+    CFarmBuilding* pThis = const_cast<CFarmBuilding*>( this );
+    if ( !pThis->IsFlag( CUnit::alt_oil ) )
+        return ( FALSE );
+
+    const AltOutput::AltOutputDef* pDef = AltOutput::Available( pThis );
+    return ( pDef && ( pDef->m_eMode == AltOutput::eModifier ) ) ? TRUE : FALSE;
+}
+
+// ---------------------------------------------------------------------------------------
+// Slash and Burn: the deforestation.
+// ---------------------------------------------------------------------------------------
+
+// Candidate collection for one slash: the forest hex nearest the mill, ties broken by (x, y).
+struct SlashPickCtx
+{
+    CHexCoord m_hexCentre;
+    CHexCoord m_hexBest;
+    int       m_iBestDist;
+    BOOL      m_bFound;
+};
+
+static int fnPickSlash( CHex* pHex, CHexCoord hex, void* pData )
+{
+    SlashPickCtx* pCtx = (SlashPickCtx*)pData;
+
+    if ( pHex->GetType( ) != CHex::forest )
+        return ( FALSE );
+
+    // E21 -- MANDATORY, and a memory-corruption guard rather than tidiness: the tree index and
+    // the building DIRECTION share m_bType bits 4-7 (terrain.h), and SetTree( 0 ) writes
+    // m_bType & 0x8F, so clearing a hex under a building or bridge would silently rewrite that
+    // building's direction. Mirrors fnCollectField's skip.
+    if ( pHex->GetUnits( ) & ( CHex::bldg | CHex::bridge ) )
+        return ( FALSE );
+
+    // Wrap-safe distance (the box can straddle the map seam). Chebyshev, which is enough to
+    // order candidates; no MyRand / RandNum anywhere in the selection, so the choice is a pure
+    // function of the map state.
+    int dx = abs( CHexCoord::Diff( hex.X( ) - pCtx->m_hexCentre.X( ) ) );
+    int dy = abs( CHexCoord::Diff( hex.Y( ) - pCtx->m_hexCentre.Y( ) ) );
+    int d  = ( dx > dy ) ? dx : dy;
+
+    BOOL bBetter = !pCtx->m_bFound || ( d < pCtx->m_iBestDist );
+    if ( !bBetter && ( d == pCtx->m_iBestDist ) )
+        bBetter = ( hex.X( ) < pCtx->m_hexBest.X( ) )
+                  || ( ( hex.X( ) == pCtx->m_hexBest.X( ) ) && ( hex.Y( ) < pCtx->m_hexBest.Y( ) ) );
+
+    if ( bBetter )
+    {
+        pCtx->m_bFound    = TRUE;
+        pCtx->m_hexBest   = hex;
+        pCtx->m_iBestDist = d;
+    }
+    return ( FALSE );
+}
+
+// Choose the next hex this mill clears, or FALSE when its box holds no cuttable forest.
+static BOOL PickSlashHex( CFarmBuilding* pMill, CHexCoord& out )
+{
+    CStructureData const* pData = pMill->GetData( );
+
+    CHexCoord    hexBox( pMill->GetHex( ).X( ), pMill->GetHex( ).Y( ) );
+    int          ex, ey;
+    LumberBox( hexBox, ex, ey, pData, pMill->GetDir( ) );   // the SAME box LandMult averages over
+    hexBox.Wrap( );
+
+    SlashPickCtx ctx;
+    ctx.m_hexCentre = CHexCoord( hexBox.X( ) + ex / 2, hexBox.Y( ) + ey / 2 );
+    ctx.m_hexCentre.Wrap( );
+    ctx.m_hexBest   = ctx.m_hexCentre;
+    ctx.m_iBestDist = 0;
+    ctx.m_bFound    = FALSE;
+
+    theMap.EnumHexes( hexBox, ex, ey, fnPickSlash, &ctx );
+
+    if ( !ctx.m_bFound )
+        return ( FALSE );
+    out = ctx.m_hexBest;
+    return ( TRUE );
+}
+
+// Retype ONE hex forest -> plain. Returns FALSE if it did not (and must not) change.
+static BOOL SlashHex( CHexCoord hex )
+{
+    CHex* p = theMap._GetHex( hex );
+
+    // Idempotent. The RX path may see a hex an earlier message already cleared, and
+    // theNet.Broadcast( ..., bLocal = TRUE ) loops the message back to the sender.
+    if ( p->GetType( ) != CHex::forest )
+        return ( FALSE );
+
+    // E21 again -- re-checked HERE and not only in the picker, because the RX side never ran
+    // the picker. See fnPickSlash for why this is a corruption guard, not tidiness.
+    if ( p->GetUnits( ) & ( CHex::bldg | CHex::bridge ) )
+        return ( FALSE );
+
+    // Order matters: SetType preserves the high nibble of m_bType, so the tree bits would
+    // survive it. Drop the tree FIRST -- the CHex::ChangeToRoad precedent.
+    p->SetTree( 0 );
+    p->SetType( CHex::plain );
+
+    // Read the type BACK rather than assuming plain: SetType re-derives hill/mountain on slope.
+    // In practice it is always plain here (a hex can only BE forest where SetType already
+    // accepted forest, which needs the same slope), but do not design around the assumption.
+    int t = p->GetType( );
+
+    // FOG. SetType has ALREADY overwritten the visible type on every one of its exit paths, so
+    // gating SetVisibleType on visibility AFTER it would be dead code -- the gate has to RESTORE
+    // the fogged ground instead (the bridge.cpp shape). The reveal clause in CUnit's spotting
+    // loop (unit.cpp) re-syncs it the moment the player next sees the hex.
+    // ACCEPTED, NOT FIXED (operator 2026-09-06): the tree SPRITES still disappear through
+    // explored-but-currently-unlit fog, because every tree draw path tests the REAL type and the
+    // ++g_enStaticDirtyGen below forces a recapture that omits them. Roads and bridges already
+    // leak exactly this way in shipped code. Do NOT build a remembered-appearance layer here.
+    if ( !p->GetVisibility( ) )
+        p->SetVisibleType( CHex::forest );
+
+    int n = theTerrain.GetCount( t );
+    p->m_psprite = theTerrain.GetSprite( t, n <= 1 ? 0 : ( ( hex.X( ) * 2 + hex.Y( ) ) % n ) );
+
+    // Trees are STATIC GPU sprites (E5): without this the tree floats over bare ground until a
+    // zoom or direction change forces a recapture. Same reason CHex::ChangeToRoad bumps it.
+    extern unsigned g_enStaticDirtyGen;
+    ++g_enStaticDirtyGen;
+
+    hex.SetInvalidated( );
+    return ( TRUE );
+}
+
+BOOL CFarmBuilding::ApplySlash( CHexCoord hex )
+{
+    if ( !SlashHex( hex ) )
+        return ( FALSE );
+
+    // Refresh EVERY lumber mill whose box covers this hex, not just the one that cut it: boxes
+    // overlap, and a stale m_iTerMult would keep paying the old yield and keep showing the old
+    // fertility percentage. Both the local path and the netapi hex_retype RX path come through
+    // here, so no client can be left holding a stale multiplier.
+    //
+    // The SAME walk invalidates the Scrounging terrain cache on every warehouse in reach. That
+    // cache was written on the assumption that terrain never changes at runtime, and THIS
+    // function is what falsifies it, so this is the one place that has to answer for it. One
+    // walk, two building kinds -- no periodic manager and no second sweep of theBuildingMap.
+    POSITION pos = theBuildingMap.GetStartPosition( );
+    while ( pos != NULL )
+    {
+        DWORD      dwID;
+        CBuilding* pBldg = NULL;
+        theBuildingMap.GetNextAssoc( pos, dwID, pBldg );
+        if ( pBldg == NULL )
+            continue;
+
+        CStructureData const* pData = pBldg->GetData( );
+        const BOOL bMill = ( ( pData->GetUnionType( ) == CStructureData::UTfarm )
+                             && ( pData->GetType( ) == CStructureData::lumber ) ) ? TRUE : FALSE;
+        const BOOL bWhse = ( pData->GetUnionType( ) == CStructureData::UTwarehouse ) ? TRUE : FALSE;
+        if ( !bMill && !bWhse )
+            continue;
+
+        // Wrap-safe and deliberately OVER-inclusive: max(cx,cy)+6 is at least the true box on
+        // both axes whatever the rotation, so a mill may be refreshed that did not need it.
+        // UpdateFarm is a cheap re-scan and slashes are rare, so over-refreshing is the safe
+        // direction to err in -- under-refreshing is the bug.
+        //
+        // The same +6 covers the warehouse, and covers ALL FOUR of its multipliers: its widest
+        // scan is the forest one, which goes through LumberBox -- literally the mill's box
+        // (footprint+3 per side). The scrap and scrounge-soil scans are footprint+2, strictly
+        // inside it. So one reach test cannot miss a warehouse whose iron, coal or food ring
+        // covers this hex while its forest ring does not.
+        int iReach = ( ( pData->GetCX( ) > pData->GetCY( ) ) ? pData->GetCX( ) : pData->GetCY( ) ) + 6;
+        int dx     = abs( CHexCoord::Diff( hex.X( ) - pBldg->GetHex( ).X( ) ) );
+        int dy     = abs( CHexCoord::Diff( hex.Y( ) - pBldg->GetHex( ).Y( ) ) );
+        if ( ( dx > iReach ) || ( dy > iReach ) )
+            continue;
+
+        if ( bMill )
+            ( (CFarmBuilding*)pBldg )->UpdateFarm( );
+        else
+            ( (CWarehouseBuilding*)pBldg )->InvalidateScrounge( );
+    }
+    return ( TRUE );
+}
+
+void CFarmBuilding::SlashTick( )
+{
+    // Accrue on TIME, mirroring AltOutput::Convert's eFlatTrickle branch exactly: a per-GAME-
+    // minute rate scaled by the opers elapsed this call, with a float accumulator carrying the
+    // sub-unit remainder. 23040 = 384 opers/sec * 60 (see CPlayer::GetElapsedSeconds).
+    const float OPERS_PER_MINUTE = 384.0f * 60.0f;   // = 23040 (matches Convert)
+
+    m_fSlashAccum += ( AltOutput::SLASH_HEXES_PER_MINUTE * (float)theGame.GetOpersElapsed( ) )
+                     / OPERS_PER_MINUTE;
+
+    while ( m_fSlashAccum >= 1.0f )
+    {
+        m_fSlashAccum -= 1.0f;
+
+        CHexCoord hex( 0, 0 );
+        if ( !PickSlashHex( this, hex ) )
+        {
+            // Nothing cuttable left in our own box. DISCARD the remainder rather than banking
+            // it: a finished mill would otherwise build an unbounded debt that fired as a burst
+            // the moment a hex became forest again.
+            m_fSlashAccum = 0.0f;
+            break;
+        }
+
+        const BOOL bCut = ApplySlash( hex );
+
+        if ( bCut && theGame.IsNetGame( ) )
+        {
+            // BuildFarm runs only on the owner's client, but terrain is SHARED world state, so
+            // the edit must be replicated or the map forks (pathing, LandMult, vision,
+            // rendering). Same TX shape as CPlayer::ToggleEdictNet; theNet.Broadcast is the
+            // reliable (VP_MUSTDELIVER) path, which a terrain edit requires -- one dropped
+            // message forks that client's map permanently.
+            CNetHexRetype msg( hex, CHex::plain );
+            theNet.Broadcast( &msg, sizeof( msg ), TRUE );
+        }
+
+        // STOP AT FERTILITY ZERO, re-checked INSIDE the loop. ApplySlash -> UpdateFarm has just
+        // recomputed m_iTerMult, so this is current. The productivity gate in BuildFarm is
+        // evaluated ONCE, before this call, so it cannot stop iterations 2..n of a catch-up
+        // tick: one long frame (this engine has documented multi-second stalls -- see the
+        // message-drain budget in CConquerApp::ProcessAllMessages) delivers a whole game-minute
+        // of opers at once, and the loop would keep cutting straight past the stopping point.
+        // Measured by an external review on an extracted fixture: 8 forest hexes in a 72-hex box
+        // (fertility 1), one tick of 23040 opers -> all 8 cleared, though fertility hit 0 after
+        // the FIRST cut. Discard the remaining accumulator rather than banking it, exactly as
+        // the no-hex-found branch above does.
+        if ( bCut && ( m_iTerMult <= 0 ) )
+        {
+            m_fSlashAccum = 0.0f;
+            break;
+        }
+    }
 }
 
 // Record one hex of the ring as a crop plot, if it is farmable and unoccupied.
@@ -4958,10 +5513,19 @@ void CVehicle::ctor( )
     m_cMode    = stop;
     m_pos      = NULL;
     m_bRouteLoop = TRUE;   // legacy default; F1 lets the player set one-shot routes
+    m_iOrderState = order_none;   // #38 order queue: nothing under way
+    m_iOrderKind  = CRoute::waypoint;
+    m_hexOrder    = CHexCoord( 0, 0 );
+    m_dwOrderStall = 0;           // #114 stall watch: not watching, full re-drive budget
+    m_iOrderRetry  = 0;
+#if EN_GAMEPLAY_PROBES
+    m_dwOrderLog = 0;
+#endif
     m_phexPath = NULL;
     m_iPathOff = 0;
     m_iPathLen = 0;
     m_pBldg    = NULL;
+    m_iBldgType = 0;   // read by EVENT_CONST_CANT's text; a never-built crane had garbage
 
     m_iBuildDone = -1;
     m_lOperMod   = 0;
@@ -4969,9 +5533,38 @@ void CVehicle::ctor( )
 
     m_hexStagnant     = CHexCoord( 0, 0 );
     m_dwStagnantSince = 0;
+    m_iDiagRunLen     = 0;  // [ROAD-DIAG] probe: no run under way yet
+    m_dwTrafficWait    = TRAFFIC_WAIT_MSG;
+    m_bWaitedForMover  = FALSE;
+    m_subWaitNext.x    = m_subWaitNext.y = -1;
+    m_iBackUps         = 0;
+    m_iParkSkip        = 0;
+    m_dwAskedToMove    = 0;
+    m_dwLeftRoad       = 0;
+    m_subResume        = CSubHex( 0, 0 );
+    m_iResumeMode      = 0;
+    m_bResume          = FALSE;
+    m_dwCensus         = 0;
+    m_dwLaneLog        = 0;
+    m_iJamAnchorX      = 0;
+    m_iJamAnchorY      = 0;
+    m_iJamWatch        = 0;
+    m_iJamClear        = 0;
+    m_iJamCool         = 0;
+    m_iJamFwd          = 0;
+    m_bConfined        = FALSE;
+    m_iCorrLen         = 0;
+    m_dwBlockLog       = 0;
+    m_bReversing       = FALSE;
+    m_bForwardEscape   = FALSE;
+    m_iHoldFrames      = 0;
 #if EN_PATH_PROBES
     m_hexLastClamp    = CHexCoord( -1, -1 );  // no prior clamp
 #endif
+    m_dwOrderGen      = 0;
+    m_dwPathReqId     = 0;
+    m_uPathReqTick    = 0;
+    m_iPathRetries    = 0;
 
     m_iStepsLeft = 0;
     m_iSpeed     = 0;
@@ -5335,6 +5928,9 @@ CVehicle::~CVehicle( )
 
     DestroyAllWindows( );
 
+    // Before the id leaves the map: a late answer then finds no vehicle rather than
+    // this address (pa.reject.gone), and the counter says a death cancelled it.
+    ClearPathPending( "die" );
     theVehicleMap.Remove( this );
 
     if ( theApp.m_wndVehicles.m_hWnd != NULL )
@@ -5469,6 +6065,12 @@ void CVehicle::DestroyRouteWindow( )
     }
 
     m_pWndRoute = NULL;
+
+    // The SDL route window holds this vehicle and derefs it from every button, so it
+    // must not outlive us. Close() nulls m_pSdlRoute, takes an area window out of
+    // veh_route for us, and deletes the window (which leaves s_openRouteWindows).
+    if ( m_pSdlRoute != NULL )
+        m_pSdlRoute->Close( );
 }
 
 void CVehicle::DestroyBuildWindow( )
@@ -5727,6 +6329,24 @@ void CVehicle::StopConstruction( CBuilding* pBldg )
         {
             pVeh->m_pBldg = NULL;
             pVeh->SetEvent( none );
+
+            // BUG #114. told_ai_stop says "this vehicle's owner has already been told it
+            // is parked". The crane was told that when it ARRIVED at the site, and
+            // nothing between arrival and completion clears it (StartConst and
+            // ConstructBuilding never call SetDestAndMode, which is what normally
+            // clears it). A crane welded INSIDE the building comes out of ExitBuilding
+            // below in cant_deploy, and cant_deploy's only escape - the 30-second
+            // "backup method" that forces stop and re-notifies - is gated on
+            // !told_ai_stop (vehicle.cpp, case cant_deploy). With the flag still set
+            // from the arrival, that escape can never fire: a crane that cannot step
+            // straight out of the building it just finished stays in cant_deploy, the
+            // idle branch never runs, and its order queue is dead. The job it was
+            // reported parked for is over, so the report is stale: drop it and let the
+            // ordinary stop/deploy machinery notify again. Same reasoning, and the same
+            // one-line shape, as the hold expiry in CVehicle::Operate.
+            if ( pVeh->GetOwner( ) != NULL && pVeh->GetOwner( )->IsLocal( ) )
+                pVeh->m_bFlags &= ~told_ai_stop;
+
             pVeh->ExitBuilding( );
             pVeh->MaterialChange( );
         }
@@ -5872,6 +6492,11 @@ void CUnit::Serialize( CArchive& ar )
 
         ar >> m_iSpottingRange;
         ar >> m_iRange;
+        // m_iRange is SAVED, so it is not re-derived by AssignData on load — a save written
+        // before the range_4 fix carries the un-diminished value (heavy_art 34) and would index
+        // CVehicle::m_apiWid past its last row. Re-apply the AssignData clamp on the way in.
+        // No ASSERT here: a stale save is not a code error, and the level-4 bake is fixed above.
+        m_iRange = __min( m_iRange, CVehicle::m_iMaxRange - 1 );
         for ( int iInd = 0; iInd < CUnitData::num_attacks; iInd++ ) ar >> m_iAttack[iInd];
         ar >> m_iDefense;
         ar >> m_iAccuracy;
@@ -5950,6 +6575,11 @@ void CBuilding::Serialize( CArchive& ar )
         WORD w;
         ar >> w;
         m_pUnitData = theStructures.GetData( w );
+
+        // Before release 8, alt_oil on a lumber mill / coal plant meant a mode that has since
+        // moved (see AltOutput::ClearRelocatedMode). Drop it instead of reinterpreting it.
+        if ( theGame.m_dwVer < 8 )
+            AltOutput::ClearRelocatedMode( this );
 
         if ( 0 <= m_iSpriteID )
             m_psprite = theStructures.GetSprite( m_iSpriteID );
@@ -6156,6 +6786,13 @@ void CFlag::Serialize( CArchive& ar )
     }
 }
 
+// BUGS #99 (save format Release 8): the "no cursor" sentinel for the serialized route
+// cursor. The cursor index goes on the wire as a WORD, and so does the route count, so
+// the largest index a real cursor can take is 0xFFFE - 0xFFFF is out of range for every
+// possible route and is therefore safe as a sentinel. It is (WORD)-1, and it round-trips
+// byte-for-byte through CArchive's raw WORD write/read.
+static const WORD wROUTE_POS_NONE = (WORD)-1;
+
 void CVehicle::Serialize( CArchive& ar )
 {
 
@@ -6170,16 +6807,44 @@ void CVehicle::Serialize( CArchive& ar )
         ar << (WORD)m_route.GetCount( );
         POSITION pos  = m_route.GetHeadPosition( );
         int      iPos = 0, iOn = 0;
-        TRAP( m_route.GetCount( ) > 0 );
+        // was TRAP( m_route.GetCount( ) > 0 ) - a pre-queue invariant ("a saved
+        // vehicle has no route"). 014 made queued waypoints a feature, so every
+        // Debug save of a routed vehicle broke into the debugger. The condition is
+        // now the NORMAL case; keep the signal, drop the halt.
+        if ( m_route.GetCount( ) > 0 )
+            EN_TRAP_REMOVED( "CVehicle::Serialize: saving a queued route - normal since 014" );
         while ( pos != NULL )
         {
-            CRoute* pR = m_route.GetNext( pos );
-            pR->Serialize( ar );
+            // BUGS #88: compare the cursor BEFORE GetNext advances pos. The shipped
+            // post-advance compare stored a cursor sitting on element k as k-1; only
+            // the head (k == 0) came out right, and only by accident - the shipped
+            // compare never matched there and iPos starts at 0. A stale non-NULL
+            // cursor (in no list node) matches nothing either way and still stores 0.
             if ( pos == m_pos )
                 iPos = iOn;
+            CRoute* pR = m_route.GetNext( pos );
+            pR->Serialize( ar );
             iOn++;
         }
+        // BUGS #88 / #99: the ONE case the pre-advance compare changes that is not a
+        // cursor sitting on an element - a NULL cursor. The shipped post-advance compare
+        // matched on the final iteration (GetNext leaves pos NULL, and NULL == NULL), so
+        // a NULL cursor on an N-element route stored N-1; pre-advance it stores 0. #88
+        // restored N-1 explicitly and left the policy question open as BUGS #99. #99
+        // decides it here: a NULL cursor means NO cursor, not "the last stop", so store
+        // the out-of-range sentinel. Written unconditionally - this build always stamps
+        // save counter 8 - and the loader below honours it only on a counter >= 8 save,
+        // so counter <= 7 saves keep the shipped N-1 rule exactly.
+        if ( m_pos == NULL )
+            iPos = (int)wROUTE_POS_NONE;
         ar << (WORD)iPos;
+
+        // Save release 8+: the one-shot/loop flag (BUGS #95). Before it the flag was
+        // never written, so every loaded route came back LOOPING - the ctor default -
+        // and a one-shot Shift queue turned into a loop across a save. Same v8 gate
+        // as the order payload, for the same reason (VER_RELEASE is still 7).
+        if ( theGame.m_dwVer >= 8 )
+            ar << (BYTE)( m_bRouteLoop ? 1 : 0 );
 
         ar << m_ptDest;
         ar << m_hexDest;
@@ -6231,6 +6896,16 @@ void CVehicle::Serialize( CArchive& ar )
         ar << (LONG)m_iPathLen;
         ar << m_iPathOff;
         for ( int iInd = 0; iInd < m_iPathLen; iInd++ ) ar << *( m_phexPath + iInd );
+
+        // The current destination can be a temporary parking spot. Preserve the
+        // original job and movement sense as well as the already-saved geometry.
+        ar << (BYTE)m_bResume << m_subResume << (BYTE)m_iResumeMode;
+        ar << (BYTE)m_bReversing << (BYTE)m_bForwardEscape;
+        ar << m_iHoldFrames << m_iBackUps << m_iJamClear << m_iJamCool;
+        if ( m_bResume || m_bReversing || m_bForwardEscape || m_iHoldFrames > 0 )
+            WaitLog("[RECOVERY-SAVE] veh %d resume %d job %d,%d mode %d reverse %d forward %d hold %d backups %d clear %d cool %d",
+                    GetID(), (int)m_bResume, m_subResume.x, m_subResume.y, m_iResumeMode,
+                    (int)m_bReversing, (int)m_bForwardEscape, m_iHoldFrames, m_iBackUps, m_iJamClear, m_iJamCool);
     }
 
     else
@@ -6256,7 +6931,15 @@ void CVehicle::Serialize( CArchive& ar )
         // get m_pos
         ar >> wNR;
         m_pos = NULL;
-        if ( m_route.GetCount( ) > 0 )
+        // BUGS #99: on a counter >= 8 save the sentinel means "no cursor" - leave m_pos
+        // NULL and skip the walk entirely. Counter <= 7 saves cannot carry it (their
+        // writer stored N-1 for a NULL cursor), so they take the walk unchanged and a
+        // stored N-1 still restores the last entry, exactly as today. If a sentinel ever
+        // did arrive in a counter <= 7 save it still would not crash: wNR is unsigned, so
+        // the walk below never satisfies wNR <= 0 within a route of N < 0xFFFF entries -
+        // it runs off the tail and leaves m_pos NULL, the same answer the slow way.
+        const bool bNoRoutePos = ( theGame.m_dwVer >= 8 ) && ( wNR == wROUTE_POS_NONE );
+        if ( !bNoRoutePos && ( m_route.GetCount( ) > 0 ) )
         {
             POSITION pos = m_route.GetHeadPosition( );
             while ( pos != NULL )
@@ -6269,6 +6952,13 @@ void CVehicle::Serialize( CArchive& ar )
                 wNR--;
                 m_route.GetNext( pos );
             }
+        }
+
+        if ( theGame.m_dwVer >= 8 )
+        {
+            BYTE bLoop;
+            ar >> bLoop;
+            m_bRouteLoop = bLoop ? TRUE : FALSE;
         }
 
         ar >> m_ptDest;
@@ -6333,6 +7023,28 @@ void CVehicle::Serialize( CArchive& ar )
         {
             m_phexPath = new CHexCoord[m_iPathLen];
             for ( int iInd = 0; iInd < m_iPathLen; iInd++ ) ar >> *( m_phexPath + iInd );
+        }
+
+        if ( theGame.m_dwVer >= 8 )
+        {
+            ar >> b;
+            m_bResume = b != 0;
+            ar >> m_subResume >> b;
+            m_iResumeMode = b;
+            ar >> b;
+            m_bReversing = b != 0;
+            ar >> b;
+            m_bForwardEscape = b != 0;
+            ar >> m_iHoldFrames >> m_iBackUps >> m_iJamClear >> m_iJamCool;
+            m_subResume.Wrap( );
+            // The ordinary load path clears m_bFlags. A restored hold must stay
+            // silent until it expires, just like ArrivedDest's live hold.
+            if ( m_iHoldFrames > 0 && m_cMode == stop )
+                m_bFlags |= told_ai_stop;
+            if ( m_bResume || m_bReversing || m_bForwardEscape || m_iHoldFrames > 0 )
+                WaitLog("[RECOVERY-LOAD] veh %d resume %d job %d,%d mode %d reverse %d forward %d hold %d backups %d clear %d cool %d",
+                        GetID(), (int)m_bResume, m_subResume.x, m_subResume.y, m_iResumeMode,
+                        (int)m_bReversing, (int)m_bForwardEscape, m_iHoldFrames, m_iBackUps, m_iJamClear, m_iJamCool);
         }
 
         m_ptDest.Wrap( );
@@ -6428,10 +7140,29 @@ void CRoute::Serialize( CArchive& ar )
     {
         ASSERT_STRICT_VALID( this );
         ar << m_hex << m_iType;
+
+        // Save release 8+ carries the ORDER PAYLOAD (building type + direction).
+        // Gated on the WRITER as well as the reader, which is not the house pattern
+        // (elsewhere the writer always writes the current format and only the reader
+        // gates): VER_RELEASE is still 7 and the bump is coordinated separately, so
+        // while it is 7 nothing extra is written and a v7 save stays byte-for-byte
+        // what it is today. When the counter moves to 8 this starts writing and
+        // reading the payload with no further change here.
+        if ( theGame.m_dwVer >= 8 )
+            ar << m_iBldgType << m_iDir << m_hexEnd;
     }
 
     else
+    {
         ar >> m_hex >> m_iType;
+        if ( theGame.m_dwVer >= 8 )
+            ar >> m_iBldgType >> m_iDir >> m_hexEnd;
+        else
+        {
+            m_iBldgType = m_iDir = 0;   // pre-8 saves hold movement stops only
+            m_hexEnd    = m_hex;
+        }
+    }
 }
 
 void SerializeElements( CArchive& ar, CBuilding** ppBldg, int iCount )
@@ -6744,8 +7475,10 @@ void CUnit::AssertValid( ) const
     ASSERT( ( 0 <= m_fDamageMult ) && ( m_fDamageMult <= 1 ) );
     ASSERT( ( 0.5 <= m_fDamPerfMult ) && ( m_fDamPerfMult <= 1 ) );
 #ifdef STRICTER_ASSERTS
-    // was ~0x1F, however, based on UNIT_FLAGS in unit.h i think ~0x07FF includes all valid states?
-    ASSERT( ( m_unitFlags & ~0x07FF ) == 0 ); // this was failing for loaded games, but went away eventually...
+    // Bound derived from the UNIT_FLAGS enum itself (unit.h), not hand-written, so it
+    // cannot go stale again the way the old ~0x07FF mask did (BUGS #89: it predated
+    // alt_oil = 0x0800 and rejected any unit with an AltOutput toggle ON).
+    ASSERT( ( m_unitFlags & ~all_flags ) == 0 );
 #endif
 }
 
@@ -7019,7 +7752,12 @@ void CVehicle::AssertValidAndLoc( ) const
 #ifndef _GG
 #if STRICTER_ASSERTS2
             // triggers on every vehicle spawn (and building completed?)
-            ASSERT( m_iDir == aiDir[GetDirIndex( m_ptHead, m_ptTail )] )
+            // A REVERSING vehicle is the deliberate exception: backing up swaps the
+            // head/tail LABELS while the hull keeps pointing the way it came, so its
+            // facing is derived from tail->head. Widen the invariant rather than drop
+            // it - the assert is still the thing that catches a genuinely wrong hull.
+            ASSERT( m_iDir == aiDir[GetDirIndex( m_bReversing ? m_ptTail : m_ptHead,
+                                                 m_bReversing ? m_ptHead : m_ptTail )] )
 #endif
 #endif
                 ;

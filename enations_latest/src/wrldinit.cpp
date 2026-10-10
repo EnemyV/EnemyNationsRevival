@@ -61,6 +61,9 @@ void CHex::SetType( int iType )
 
     ASSERT_STRICT( ( 0 <= iType ) && ( iType < CHex::num_types ) );
 
+    // Both m_bType exits below are covered from here (terrain.h g_enNavEpoch).
+    EnNavTouchHexAt( this );
+
     // NOTE: do NOT bump g_enTerrainEditGen here. Every path out of SetType calls
     // SetVisibleType (line ~72 for water/city/road, line ~119 for land), and
     // SetVisibleType already routes through g_enEditHex(x,y) — which both bumps the
@@ -406,6 +409,13 @@ void CGameMap::Init( int iSide, int iSideSize, int iScenario )
     m_eX        = iSide * iSideSize;
     m_eY        = iSide * iSideSize;
     m_iSideSize = iSideSize;
+
+    // BUGS #65: CHexCoord::Wrap (terrain.inl) masks BOTH axes with the single width mask
+    // m_iHexMask, and CGameMap::GetHex/_GetHex apply it to x and y alike -- safe only
+    // because the map is always square. This assert pins that invariant at its one
+    // creation site so a future non-square map size fails loudly here instead of as an
+    // out-of-array AI-thread access violation down in _GetHex.
+    ASSERT( m_eX == m_eY );
 
     int iTmp     = m_eX;
     m_iSideShift = 0;

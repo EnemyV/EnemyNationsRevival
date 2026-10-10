@@ -288,6 +288,35 @@ int CAIData::GetCHexData( CAIHex* pHex )
 }
 
 //
+// Fill n hexes (m_iX/m_iY set by the caller) with ONE cs hold. Per hex the
+// result is identical to n GetCHexData() calls; UpdateMap's full rescan uses
+// this so it locks per chunk, not per hex. Keep n small: the main thread takes
+// cs every frame. The setup-cache fast path is served hex by hex exactly as in
+// GetCHexData (including its live fallback for coords outside the cache).
+//
+int CAIData::GetCHexDataRun( CAIHex* aHex, int n )
+{
+    ASSERT_VALID( this );
+
+    if ( n <= 0 )
+        return 0;
+
+    if ( s_pHexCache != NULL )
+    {
+        for ( int k = 0; k < n; ++k )
+            GetCHexData( &aHex[k] );
+        return 0;
+    }
+
+    EnterCriticalSection( &cs );
+    for ( int k = 0; k < n; ++k )
+        AiFillHexLiveNoLock( &aHex[k] );
+    LeaveCriticalSection( &cs );
+
+    return 0;
+}
+
+//
 // BUGBUG CGame NEAR theGame does not appear to have an ineration by number
 //
 // CPlayer const * CAIData::GetNextPlayer (int iPlyrNum) const
@@ -916,6 +945,26 @@ BOOL CAIData::IsCombatVehicle( int iVehType )
     case CTransportData::infantry:
     case CTransportData::rangers:
     case CTransportData::marines:
+        bRet = TRUE;
+    default:
+        break;
+    }
+    return ( bRet );
+}
+
+//
+// determines if the vehicle type passed is a combat SHIP. Kept separate from
+// IsCombatVehicle, which land-routing code relies on. landing_craft is a
+// transport, sized by CAI_TF_LANDING, so it is not a combat ship.
+//
+BOOL CAIData::IsCombatShip( int iVehType )
+{
+    BOOL bRet = FALSE;
+    switch ( iVehType )
+    {
+    case CTransportData::gun_boat:
+    case CTransportData::destroyer:
+    case CTransportData::cruiser:
         bRet = TRUE;
     default:
         break;

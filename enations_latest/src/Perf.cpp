@@ -52,6 +52,7 @@ namespace
     double   g_perfFreq      = 1.0;        // ticks per second
     LONGLONG g_intervalStart = 0;          // QPC at start of current interval
     DWORD    g_startTickMs   = 0;          // GetTickCount at Init (match time)
+    DWORD    g_mainTid       = 0;          // thread that called Init = the main loop
 
     unsigned g_frames        = 0;
     double   g_frameSumMs    = 0.0;
@@ -59,12 +60,19 @@ namespace
     LONGLONG g_lastFrameQpc  = 0;
 
     LONGLONG g_secTicks[Perf::SEC_COUNT] = { 0 };
+    LONGLONG g_prevFrameSec[Perf::SEC_COUNT] = { 0 };   // per-FRAME baseline for the spike catcher
 
     // match-second at which to dump the leak attribution (EN_PERF_LEAKDUMP).
     long         g_leakDumpAtSec = 0;
 
     // ---- named counters ----------------------------------------------------
-    const int  MAX_COUNTERS = 160;
+    // RAISED FROM 160 (WinFable re-audit, 2026-09-13). At 160 the probe branch
+    // registered EXACTLY 160 names and FindOrAdd then returned NULL, so every
+    // counter whose FIRST touch came after the table filled silently no-opped and
+    // read as "never fired" - which is indistinguishable from "the code never ran".
+    // That voided several of my own results. 512 costs 24 KB and the overflow is
+    // now visible instead of silent: see g_countersDropped below.
+    const int  MAX_COUNTERS = 512;
     struct Counter
     {
         const char* name;
@@ -72,6 +80,7 @@ namespace
         bool        isGauge;   // gauges aren't reset each interval
     };
     Counter g_counters[MAX_COUNTERS];
+    long    g_countersDropped = 0;   // distinct names refused because the table was full
     int     g_numCounters = 0;
 
     CRITICAL_SECTION g_counterCs;
@@ -99,7 +108,19 @@ namespace
                  ( g_counters[i].name && strcmp( g_counters[i].name, name ) == 0 ) )
                 return &g_counters[i];
         if ( g_numCounters >= MAX_COUNTERS )
+        {
+            // Make the drop LOUD. A silent NULL here is a zero no reader can
+            // distinguish from a real one.
+            static bool s_warned = false;
+            if ( !s_warned )
+            {
+                s_warned = true;
+                fprintf( stderr, "[PERF] counter table FULL at %d - '%s' and later names are DROPPED; "
+                                 "zeros for them are NOT results\n", MAX_COUNTERS, name );
+            }
+            g_countersDropped++;
             return NULL;
+        }
         Counter* c = &g_counters[g_numCounters++];
         // COPY the name (never freed — process-lifetime registry, <=160 x 48 bytes).
         // Storing the caller's pointer let stack-temporary names rot into garbage in
@@ -431,6 +452,7 @@ void Init()
     g_intervalStart = c.QuadPart;
     g_lastFrameQpc  = c.QuadPart;
     g_startTickMs   = GetTickCount();
+    g_mainTid       = GetCurrentThreadId();
 
     const char* env = getenv( "EN_PERF" );
     if ( env && env[0] && env[0] != '0' )
@@ -449,6 +471,87 @@ void Init()
         g_leakDumpAtSec = atol( envL );   // match-second at which to dump leaks
 
     AllocProfInit();                      // arms operator new/delete if EN_PERF_ALLOC set
+}
+
+bool IsMainThread()
+{
+    return ( g_mainTid != 0 && GetCurrentThreadId() == g_mainTid );
+}
+
+namespace { const int kFrameMsgTypes = 128;
+           uint64_t g_frameMsgUs[kFrameMsgTypes] = {0};
+           int      g_frameMsgTop = -1;
+           int      g_frameInvalHexes = -1;
+           uint64_t g_frameInvalUs    = 0;
+           int      g_frameSearches   = 0;
+           uint64_t g_frameSearchUs   = 0;
+           uint64_t g_frameSearchMax  = 0;
+           int      g_frameSlackMs    = 0;
+           bool     g_frameSlackSet   = false;
+           uint64_t g_frameSleptUs    = 0;
+           uint64_t g_frameMsgTailUs = 0; }
+
+// The TAIL drain sits inside SEC_SIM but OUTSIDE SEC_MSG, so the [SLOWFRAME] msg=
+// field is the HEAD drain only. Without this the per-frame drain share cannot be
+// computed at all - msg.tail.us is a ScopeNamed counter and never reaches this line,
+// which is why a "redo the table per frame" request was unanswerable on 2026-09-13.
+void NoteFrameMsgTail( uint64_t us )
+{
+    if ( !g_enabled ) return;
+    g_frameMsgTailUs += us;
+}
+
+void NoteFrameSleep( int slackMs, uint64_t sleptUs )
+{
+    if ( !g_enabled ) return;
+    g_frameSlackMs  = slackMs;
+    g_frameSlackSet = true;
+    g_frameSleptUs += sleptUs;
+}
+
+// Sizes the "budget/amortise the A* per frame" fix candidate. Budgeting can only
+// help if a slow frame holds MANY searches to spread across later frames. If the
+// frame is dominated by ONE expensive search, budgeting defers work rather than
+// smoothing it, and that single search's cost is the floor no budget can go under.
+void NoteFrameSearch( uint64_t us )
+{
+    if ( !g_enabled ) return;
+    g_frameSearches++;
+    g_frameSearchUs += us;
+    if ( us > g_frameSearchMax ) g_frameSearchMax = us;
+}
+
+// The render-bound slow frames are 54% of the judder burden and their mechanism is
+// dirty-hex VOLUME (7.03x per frame) with per-hex cost flat. What is NOT established
+// is the direction: a long frame simulates more movement, so a big dirty set may be
+// the CONSEQUENCE of a slow frame rather than its cause. Per-second aggregates cannot
+// separate those. Pairing the dirty count with the frame time on the same line can.
+void NoteFrameInval( int dirtyHexes, uint64_t invalUs )
+{
+    if ( !g_enabled ) return;
+    g_frameInvalHexes = dirtyHexes;
+    g_frameInvalUs    = invalUs;
+}
+
+void NoteMsgUs( int msgType, uint64_t us )
+{
+    if ( !g_enabled || msgType < 0 || msgType >= kFrameMsgTypes ) return;
+    g_frameMsgUs[msgType] += us;
+    if ( g_frameMsgTop < 0 || g_frameMsgUs[msgType] > g_frameMsgUs[g_frameMsgTop] )
+        g_frameMsgTop = msgType;
+}
+
+unsigned long MatchSec()
+{
+    return (unsigned long)( ( GetTickCount() - g_startTickMs ) / 1000 );
+}
+
+uint64_t ElapsedUs( uint64_t startTicks )
+{
+    if ( !g_enabled || startTicks == 0 ) return 0;
+    LARGE_INTEGER c;
+    QueryPerformanceCounter( &c );
+    return (uint64_t)( ( (double)( (uint64_t)c.QuadPart - startTicks ) / g_perfFreq ) * 1000000.0 );
 }
 
 uint64_t Now()
@@ -519,10 +622,83 @@ void FrameMark()
     double frameMs = ( (double)( c.QuadPart - g_lastFrameQpc ) / g_perfFreq ) * 1000.0;
     g_lastFrameQpc = c.QuadPart;
 
+    // SPIKE CATCHER. perf.log aggregates per SECOND, so a single 276ms frame is
+    // invisible in per-second sums - at t=148 the whole second held only 82ms of
+    // pathfinding yet one frame took 276ms. Section counters are cumulative, so
+    // diffing them against the previous frame gives PER-FRAME attribution. When a
+    // frame exceeds the threshold, write one line naming where THAT frame went.
+    // File sink, not OutputDebugString: a dead listener drops lines and stalls the
+    // caller. Threshold via EN_SLOWFRAME_MS (default 80).
+    {
+        static double   s_thresh = -1.0;
+        static FILE*    s_fp     = NULL;
+        if ( s_thresh < 0.0 )
+        {
+            s_thresh = 80.0;
+            const char* e = getenv( "EN_SLOWFRAME_MS" );
+            if ( e && e[0] ) { double v = atof( e ); if ( v >= 5.0 ) s_thresh = v; }
+        }
+        if ( frameMs > s_thresh )
+        {
+            // audit (4): relative path wrote beside the exe, not the launch dir, unlike
+            // every other probe sink. Through EnLogPath like perf.log and leakstacks.
+            if ( s_fp == NULL ) s_fp = fopen( EnLogPath( "slowframe.log" ).c_str( ), "a" );
+            if ( s_fp != NULL )
+            {
+                static const char* kName[SEC_COUNT] =
+                    { "pump", "sim", "render", "present", "msg", "sleep", "operB", "operV", "operP" };
+                fprintf( s_fp, "[SLOWFRAME] %.1f ms  t=%lu", frameMs,
+                         (unsigned long)( ( GetTickCount() - g_startTickMs ) / 1000 ) );
+                for ( int i = 0; i < SEC_COUNT; ++i )
+                {
+                    double d = ( (double)( g_secTicks[i] - g_prevFrameSec[i] ) / g_perfFreq ) * 1000.0;
+                    if ( d >= 0.5 ) fprintf( s_fp, "  %s=%.1f", kName[i], d );
+                }
+                if ( g_frameMsgTop >= 0 && g_frameMsgUs[g_frameMsgTop] > 0 )
+                    fprintf( s_fp, "  topmsg=%d/%.1fms", g_frameMsgTop,
+                             (double)g_frameMsgUs[g_frameMsgTop] / 1000.0 );
+                if ( g_frameMsgTailUs > 0 )
+                    fprintf( s_fp, "  msgtail=%.1f", (double)g_frameMsgTailUs / 1000.0 );
+                if ( g_frameInvalHexes >= 0 )
+                    fprintf( s_fp, "  invalhex=%d  invalms=%.1f", g_frameInvalHexes,
+                             (double)g_frameInvalUs / 1000.0 );
+                if ( g_frameSearches > 0 )
+                    fprintf( s_fp, "  srch=%d  srchms=%.1f  srchmax=%.1f", g_frameSearches,
+                             (double)g_frameSearchUs / 1000.0,
+                             (double)g_frameSearchMax / 1000.0 );
+                if ( g_frameSlackSet )
+                    fprintf( s_fp, "  slack=%d  slept=%.1f", g_frameSlackMs,
+                             (double)g_frameSleptUs / 1000.0 );
+                fprintf( s_fp, "\n" );
+                fflush( s_fp );
+            }
+        }
+        for ( int i = 0; i < SEC_COUNT; ++i ) g_prevFrameSec[i] = g_secTicks[i];
+        for ( int i = 0; i < kFrameMsgTypes; ++i ) g_frameMsgUs[i] = 0;
+        g_frameMsgTop     = -1;
+        g_frameMsgTailUs  = 0;
+        g_frameInvalHexes = -1;
+        g_frameInvalUs    = 0;
+        g_frameSearches   = 0;
+        g_frameSearchUs   = 0;
+        g_frameSearchMax  = 0;
+        g_frameSlackMs    = 0;
+        g_frameSlackSet   = false;
+        g_frameSleptUs    = 0;
+    }
+
     g_frames++;
     g_frameSumMs += frameMs;
     if ( frameMs > g_frameMaxMs )
         g_frameMaxMs = frameMs;
+
+    // SHAPE, not just avg/max: "avg 35 max 76" is equally consistent with one
+    // hitch and with constant 20/70ms alternation - different bugs, same two
+    // numbers. Buckets straddle the 41ms animation quantum (1000/FRAME_RATE).
+    CounterInc( frameMs <  20.0 ? "frame.lt20"
+              : ( frameMs <  41.0 ? "frame.20_41"
+              : ( frameMs <  60.0 ? "frame.41_60"
+              : ( frameMs < 100.0 ? "frame.60_100" : "frame.ge100" ) ) ) );
 
     double elapsedMs = ( (double)( c.QuadPart - g_intervalStart ) / g_perfFreq ) * 1000.0;
     if ( elapsedMs < (double)g_intervalMs )
@@ -570,6 +746,12 @@ void FrameMark()
         GaugeSet( "alloc.liveKB", (int64_t)( liveSum / 1024 ) );
     }
 
+    // Table occupancy, on every line, so a reader can never again mistake a dropped
+    // counter for a measured zero. These two go through GaugeSet like anything else -
+    // they are registered on the first interval, long before the table could fill.
+    GaugeSet( "perf.counters", g_numCounters );
+    GaugeSet( "perf.counters.dropped", g_countersDropped );
+
     // One-shot: dump the top leaking allocation call stacks (symbolized) once we
     // reach EN_PERF_LEAKDUMP seconds. This is the real attribution — file:line of
     // the call sites holding the most still-live bytes.
@@ -603,7 +785,10 @@ void FrameMark()
     g_frameSumMs = 0.0;
     g_frameMaxMs = 0.0;
     for ( int i = 0; i < SEC_COUNT; ++i )
-        g_secTicks[i] = 0;
+    {
+        g_secTicks[i]     = 0;
+        g_prevFrameSec[i] = 0;   // keep the per-frame baseline in lockstep with the reset
+    }
     g_intervalStart = c.QuadPart;
 }
 

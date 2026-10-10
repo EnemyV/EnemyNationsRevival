@@ -15,7 +15,7 @@
 #include <string.h>    // strerror
 #endif
 #include "GameWindow.h"
-#include "en_harness.h"   // in-process LLM-driving harness (all platforms; EN_HARNESS-gated)
+#include "en_hangdump.h"   // EnHangWatchdogStop (exit) + EnHangModalScope (native boxes)
 #include "SDL2Compositor.h"
 #include "SDL2Video.h"
 #include "SDL2MainMenu.h"
@@ -29,10 +29,12 @@
 #include "chat.h"
 #include "creatmul.inl"
 #include "creatsin.h"
+#include "datahash.h"
 //#include "dlgflic.h"
 #include "error.h"
 #include "join.h"
 #include "license.h"
+#include "pathservice.h"
 #include "racedata.h"
 #include "scenario.h"
 #include "sfx.h"
@@ -205,7 +207,10 @@ void CatchSE( SE_Exception e )
     for ( int iOn = 0; iOn < 5; iOn++ ) itoa( e.m_stack[iOn], sNumS[iOn], 16 );
     sDumpText = strPrintf( sDumpText.c_str(), VER_STRING, sNum1, sNum2,
                            sNumS[0], sNumS[1], sNumS[2], sNumS[3], sNumS[4] );
-    ::MessageBoxA( NULL, sDumpText.c_str(), "Enemy Nations - Exception", MB_OK | MB_ICONSTOP );
+    {
+        EnHangModalScope modal;
+        ::MessageBoxA( NULL, sDumpText.c_str(), "Enemy Nations - Exception", MB_OK | MB_ICONSTOP );
+    }
 
     bDoSubclass = TRUE;
 }
@@ -495,6 +500,7 @@ BOOL CConquerApp::InitInstance( )
     SetLocateDataFileHandler( []( const char* pszWanted, char* pszOut, int cbOut ) -> bool
     {
 #ifdef _WIN32
+        EnHangModalScope modal;   // the box + OS picker below run their own loops
         // Ask first: an unattended/harness run must not block on a modal dialog.
         CString sMsg;
         sMsg.Format( "ENations.dat could not be found.\n\nLooked for:\n%s\n\n"
@@ -1076,18 +1082,24 @@ BOOL CConquerApp::InitInstance( )
         }
     } while ( bErr );
 
-    // if .dat < 400M then it's shareware (anti-pirate) — Phase 5c: Win32 file-size check
+    // 015 phase 3: fingerprint the gameplay data now that the loader is up, so
+    // the join and publish messages can carry it. Printed once so QA can compare
+    // two machines by eye; art, sound and text outside the gameplay tables do not
+    // change it.
+    theGame.m_dwDataHash = EnComputeGameplayDataHash( );
     {
-        WIN32_FILE_ATTRIBUTE_DATA wfad;
-        if ( ::GetFileAttributesExA( theDataFile.GetName(), GetFileExInfoStandard, &wfad ) )
-        {
-            ULARGE_INTEGER size;
-            size.HighPart = wfad.nFileSizeHigh;
-            size.LowPart  = wfad.nFileSizeLow;
-            if ( size.QuadPart < 400000000ULL )
-                m_bShareware = TRUE;
-        }
+        char szHash[64];
+        sprintf( szHash, "[DATAHASH] %08lx", (unsigned long)theGame.m_dwDataHash );
+        Log( szHash );
+        OutputDebugStringA( szHash );
+        OutputDebugStringA( "\n" );
     }
+
+    // 015 phase 2: the "< 400 MB .dat means shareware" size check is gone. It read
+    // the size of the CONTAINER, and a loose-only install has no container at all
+    // (theDataFile.GetName() is empty), so the anti-pirate heuristic could only
+    // misfire there. m_bShareware still comes from version.rif above, which is the
+    // authoritative flag and travels with the data whether it is packed or loose.
 
     // warn on 16-bit
     if ( !m_bUse8Bit )
@@ -1591,12 +1603,6 @@ BOOL CConquerApp::InitInstance( )
             // Non-fatal: fall back to MFC rendering
         }
 
-        // Start the in-process LLM-driving harness (screenshot/click/keys/state
-        // queries) once the SDL window exists. All platforms. No-op unless
-        // EN_HARNESS is set in the env — no socket, no thread, no cost.
-        if ( m_gameWindow )
-            EnHarness_Start( m_gameWindow->GetWindow(), m_gameWindow->GetRenderer() );
-
         // Load the compositor's WL tile wallpaper NOW that the window exists. The
         // earlier attempt (right after theBitmaps.Init above) is guarded by
         // m_gameWindow — which is only created HERE, so it always silently skipped
@@ -2027,6 +2033,11 @@ void CConquerApp::CloseDlgChat( )
 
 int CConquerApp::ExitInstance( )
 {
+    // Teardown is not a hang: the WM_QUIT path runs this from INSIDE Run(), before
+    // WinMain's own EnHangWatchdogStop(), so a long teardown wrote a hang dump.
+    // Stop is a one-way atomic store - idempotent, and harmless if never started.
+    EnHangWatchdogStop( );
+
     // Idempotent: ExitInstance is reached from TWO paths on quit — the message
     // loop calls it on WM_QUIT (mainloop.cpp `return ExitInstance()`), then WinMain
     // calls it again unconditionally after Run() returns. Running the full teardown
@@ -2040,12 +2051,27 @@ int CConquerApp::ExitInstance( )
 
     CGlobalSubClass::UnSubClass( );
 
+    // The path workers go the same way the AI threads do below, and before them: a
+    // worker owns a CPathMgr and must be joined before any static teardown. DestroyWorld
+    // is conditional on m_wndBar here, so it cannot be relied on to have stopped them.
+    EnPathWorkerStop( );
+
     // Stop and join the AI worker threads FIRST — before ANY game data is
     // torn down. They scan the live world (GetCHexData/AiFillHexLiveNoLock,
     // pathing) right up until they exit; closing sprites/terrain/world under
     // them was the exit-time 0xC0000005 on every quit (2026-06-11). With the
     // AiThread bEndThreads check this join completes in ~100ms per worker.
     myThreadClose( (THREADEXITFUNC)AiExit );
+
+    // Delete the world while the unit-type data it points at still exists: every building
+    // and vehicle reads its CStructureData/CTransportData in its destructor (a mine's
+    // UpdateGround does), and the sprite Close()s below free that data. Quitting through
+    // the window (SDL_QUIT -> ExitInstance) used to run them first = a read of freed data
+    // on every building, an access violation at quit on large saves. The in-game menu
+    // quit (CloseWorld) already tears the world down in this order.
+    DestroyExceptMain( );  // if in create
+    if ( m_wndBar.IsCreated() )
+        DestroyWorld( );  // game
 
     // close out sprites
     theTransports.Close( );
@@ -2066,9 +2092,6 @@ int CConquerApp::ExitInstance( )
     delete m_pdlgPause;
     m_pdlgPause = NULL;
 
-    DestroyExceptMain( );  // if in create
-    if ( m_wndBar.IsCreated() )
-        DestroyWorld( );  // game
     DestroyMain( );       // main window (dialog)
 
     // draw black so no palette uglyness

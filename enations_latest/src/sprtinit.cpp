@@ -615,8 +615,18 @@ void CStructure::InitSprites() {
         theApp.BaseYield();
 
         CStructureData *pSd = _GetData(i);
-        if (GetSprite(i, 0, TRUE) != NULL)
-            pSd->m_udFlags = (CUnitData::UNIT_DATA_FLAGS) (pSd->m_udFlags | CUnitData::FLhaveArt);
+        // 015 phase 3: a building is discoverable because it exists in the
+        // GAMEPLAY data (units.rif), not because art for it happened to load.
+        // This used to be `if (GetSprite(i, 0, TRUE) != NULL)`, and FLhaveArt
+        // gates PlyrIsDiscovered (new_unit.cpp:1093), so dropping one sprite
+        // from an art mod silently removed a building from the game - a
+        // simulation change made by a file that is deliberately NOT in the
+        // gameplay hash. A building with no sprite of its own now draws a
+        // placeholder instead: every draw-time lookup is the NON-strict
+        // GetSprite (bridge.cpp:236, new_unit.cpp:2101/5977), and
+        // CSpriteCollectionInfo::MapID's non-strict path already falls back to
+        // the first structure sprite that did load (sprite.cpp:3271).
+        pSd->m_udFlags = (CUnitData::UNIT_DATA_FLAGS) (pSd->m_udFlags | CUnitData::FLhaveArt);
     }
 
 #ifdef _CHEAT
@@ -779,8 +789,10 @@ void CTransport::InitData() {
         // Artillery range +35% (light/med/heavy_art), computed from the RAW .dat range —
         // ReadUnitData clamps m_iRange to 10 before this ran, which silently neutered the
         // buff to 12->13 (verifier-caught; operator: "fix it"). True values now: light
-        // 7->9, med 9->12, heavy 13->17 (clamp 19). MAX_SPOTTING 31 covers it:
-        // m_iMaxRange = 17 + 17/2 + 2 = 27 <= 31. Frigate (cruiser) +25% is unaffected
+        // 7->9, med 9->12, heavy 13->17 (clamp 19). MAX_SPOTTING 31 covers it: the width
+        // table is now sized for the biggest EFFECTIVE range, i.e. including the level-4
+        // range research bonus (+62.5%, CUnit::AssignData), so
+        // m_iMaxRange = 17 + (17>>1) + (17>>3) + 2 = 29 <= 31. Frigate (cruiser) +25% is unaffected
         // by the raw switch (its own clamp 12 binds either way).
         if (pTd->m_iType == CTransportData::light_art ||
             pTd->m_iType == CTransportData::med_art ||
@@ -828,21 +840,28 @@ void CTransport::InitData() {
             CVehicle::m_iMaxRange = pTd->_GetSpottingRange();
         if (pTd->_GetRange() > CVehicle::m_iMaxRange)
             CVehicle::m_iMaxRange = pTd->_GetRange();
+        // must match the table growth below (effective range = data range + the level-4 bonus + 2)
         ASSERT_STRICT ((0 < CVehicle::m_iMaxRange) &&
-                       (CVehicle::m_iMaxRange + CVehicle::m_iMaxRange / 2 <= MAX_SPOTTING));
+                       (CVehicle::m_iMaxRange + (CVehicle::m_iMaxRange >> 1) +
+                        (CVehicle::m_iMaxRange >> 3) + 2 <= MAX_SPOTTING));
 
         ptrMmio->AscendChunk();
     }
 
     ptrMmio->AscendList();
 
-    // create the spotting range table
-    CVehicle::m_iMaxRange += CVehicle::m_iMaxRange / 2 + 2;
+    // create the spotting range table -- size it for the biggest EFFECTIVE range, not the
+    // biggest range in the data: research multiplies a unit's range/spotting, and at level 4
+    // the range bonus is +62.5% (CUnit::AssignData). heavy_art 17 -> 17+8+2+2 = 29 <= 31.
+    {
+        int iMax = CVehicle::m_iMaxRange;
+        CVehicle::m_iMaxRange = iMax + (iMax >> 1) + (iMax >> 3) + 2;
+    }
 
     ASSERT_STRICT ((0 < CVehicle::m_iMaxRange) && (CVehicle::m_iMaxRange <= MAX_SPOTTING));
     ASSERT_STRICT (CVehicle::m_apiWid == NULL);
     CVehicle::m_apiWid = new int *[CVehicle::m_iMaxRange + 1];
-    memset(CVehicle::m_apiWid, 0, sizeof(int *) * CVehicle::m_iMaxRange);
+    memset(CVehicle::m_apiWid, 0, sizeof(int *) * (CVehicle::m_iMaxRange + 1));
 
     for (int iRange = 0; iRange < CVehicle::m_iMaxRange; iRange++) {
         int *piOn = CVehicle::m_apiWid[iRange] = new int[iRange * 2 + 2];
@@ -935,7 +954,13 @@ void CTransport::InitSprites() {
         theApp.BaseYield();
 
         CTransportData *pTd = _GetData(i);
-        if (CSpriteStore<CVehicleSprite>::GetSprite(i, 0, TRUE) != NULL)
+        // Vehicle availability also comes from units.rif. PlyrIsDiscovered
+        // checks this flag for both structures and transports, so a missing
+        // vehicle sprite must use the non-strict fallback without removing
+        // the vehicle from build menus or research discovery. The retired
+        // marines type is unsupported by CVehicle::Create and has no stock
+        // sprite; keep it unavailable through this explicit gameplay rule.
+        if (i != CTransportData::marines)
             pTd->m_udFlags = (CUnitData::UNIT_DATA_FLAGS) (pTd->m_udFlags | CUnitData::FLhaveArt);
 
         if (pTd->GetUnitFlags() & (CUnitData::FLflash1 | CUnitData::FLflash2)) {

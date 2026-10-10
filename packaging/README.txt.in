@@ -1,13 +1,12 @@
 Enemy Nations @EN_VERSION@ - @EN_PLATFORM@
 
-Unzip anywhere and run @EN_RUN@. @EN_INCLUDED@; the game reads
-its data from the files next to the executable, so keep them together.
+Unzip anywhere and run @EN_RUN@. @EN_INCLUDED@; keep the files together.
 
 REQUIREMENTS
 @EN_REQS@
 
 RUN
-  @EN_RUN@   (run from this folder so it finds ./data and ./ENations.dat)
+  @EN_RUN@   (@EN_DATA_RUN@)
 
 @EN_CONTENTS_HEADING@
 @EN_CONTENTS@
