@@ -4,6 +4,7 @@
 #include <string>
 #include <vector>
 #include <SDL.h>
+#include "SDL2DisplayMetrics.h"
 #include "../input/InputHandler.h"
 
 union SDL_Event;
@@ -65,6 +66,7 @@ public:
      * Get SDL window pointer
      */
     SDL_Window* GetWindow() const { return m_window; }
+    SDL2DisplayMetrics GetDisplayMetrics();
 
     /**
      * Swap buffers and present frame
@@ -85,6 +87,7 @@ public:
     // window surface (unchanged behavior); renderer mode returns the persistent
     // offscreen surface (recreated to match output size on resize). May be null.
     SDL_Surface* GetPresentSurface();
+    SDL_Surface* GetDrawableSurface(); // converted UI paints at native raster resolution
 
     // Present whatever was drawn into GetPresentSurface() to the main window.
     // Software: SDL_UpdateWindowSurface. Renderer: upload + RenderCopy + Present.
@@ -324,6 +327,9 @@ private:
     std::string m_gameMode;     // "Single Player", "Multiplayer", etc.
 
     SDL_Window* m_window = nullptr;
+    SDL2DisplayMetrics m_displayMetrics;
+    SDL_Surface* m_compatSurface = nullptr;
+    bool m_presentCompat = false;
     SDL_Renderer* m_renderer = nullptr;  // T0: main-window GPU present (null in software mode)
     bool m_useRenderer = false;          // T0: [Advanced] Renderer flag, read once at init
     struct SDL_Surface* m_backBuffer = nullptr;  // T0: offscreen draw target (renderer mode)

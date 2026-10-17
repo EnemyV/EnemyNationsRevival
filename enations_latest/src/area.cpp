@@ -2589,7 +2589,7 @@ void CWndArea::Draw( )
     // Sync area static bar position and z-order to area panel
     // Resize the bar panel surface to match the area panel width
     if ( m_aa.m_sdlPanel && m_WndStatic.m_sdlPanel ) {
-        int staticH = m_WndStatic.m_iYmin;
+        int staticH = m_WndStatic.m_sdlPanel->GetHeight();
         m_WndStatic.m_sdlPanel->SetSize(
             m_aa.m_sdlPanel->GetWidth(), staticH );
     }
@@ -2606,8 +2606,8 @@ void CWndArea::Draw( )
                 int barOffY = m_aa.m_sdlPanel->GetHeight() - m_WndStatic.m_sdlPanel->GetHeight();
                 if ( barOffY >= 0 )
                 {
-                    SDL_Rect dst = { 0, barOffY, barSurf->w, barSurf->h };
-                    SDL_BlitSurface( barSurf, nullptr, areaSurf, &dst );
+                    SDL_Rect dst = { 0, barOffY, m_aa.m_sdlPanel->GetWidth(), m_WndStatic.m_sdlPanel->GetHeight() };
+                    SDL_BlitScaled( barSurf, nullptr, areaSurf, &dst );
                     m_aa.m_sdlPanel->SetDirty();
                 }
             }
@@ -3568,7 +3568,8 @@ int CWndArea::OnCreate( LPCREATESTRUCT lpCreateStruct )
                     int barOffY = areaH - barH;
                     if ( localY >= barOffY )
                         return pThis->m_WndStatic.m_sdl2Bar->HandleEvent(
-                            event, localX, localY - barOffY );
+                            event, pThis->m_WndStatic.m_sdlPanel->LayoutLocalX(localX),
+                            pThis->m_WndStatic.m_sdlPanel->LayoutLocalY(localY - barOffY) );
                 }
 
                 UINT flags = SDLModToMFC();
@@ -3709,7 +3710,7 @@ int CWndArea::OnCreate( LPCREATESTRUCT lpCreateStruct )
                 // Reposition the static button bar at the bottom of the area
                 if ( pThis->m_WndStatic.m_sdlPanel ) {
                     SDL2Panel* areaPanel = pThis->m_aa.m_sdlPanel;
-                    int staticH = pThis->m_WndStatic.m_iYmin;
+                    int staticH = pThis->m_WndStatic.m_sdlPanel->GetHeight();
                     pThis->m_WndStatic.m_sdlPanel->SetPosition(
                         areaPanel->GetX(),
                         areaPanel->GetY() + newH - staticH );

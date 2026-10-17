@@ -59,6 +59,8 @@ public:
     // default on-screen layout. Wired to the "Reset Windows" button in the
     // Game Options dialog.
     void ResetWindowLayout();
+    void PaintNativeUi(SDL_Surface* output);
+    void ResetPresentationResources();
 
     // True if any panel is currently being dragged or resized by the user.
     bool AnyPanelInteracting() const;

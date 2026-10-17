@@ -15,6 +15,7 @@ endif ()
 # Turn on deliberately with -DEN_CHEAT=ON (needed for the in-dev End-key
 # spectator mode). See the _CHEAT note in target_compile_definitions below.
 option(EN_CHEAT "Compile the dev cheat surface (_CHEAT): map reveal, research grants, Max*, AI unit grants, End-key spectator, debug overlays" OFF)
+set(EN_DPI_SMOKE_DIR "" CACHE PATH "Directory holding dpi_smoke_driver.cpp; empty (default) builds nothing")
 
 # 015 phase 2 (.dat cleanup): directory holding a loose data/ set to stage beside
 # the binary so the game can run with no ENations.dat. Empty = stage nothing, which
@@ -121,6 +122,8 @@ set(enations_sources
         Perf.cpp
         Perf.h
         GameWindow.cpp
+        SDL2DisplayMetrics.cpp
+        SDL2UiCanvas.cpp
         framecap.cpp
         framecap.h
         RenderingAdapter.cpp
@@ -280,6 +283,11 @@ endif ()
 # The WIN32 keyword is a no-op on non-Windows (CMake ignores it), so it is
 # harmless to leave for the Linux build.
 add_executable(enations WIN32 ${enations_sources})
+if (EN_DPI_SMOKE_DIR)
+    target_sources(enations PRIVATE "${EN_DPI_SMOKE_DIR}/dpi_smoke_driver.cpp")
+    target_include_directories(enations PRIVATE "${EN_DPI_SMOKE_DIR}" "${CMAKE_CURRENT_SOURCE_DIR}")
+    target_compile_definitions(enations PRIVATE EN_DPI_SMOKE=1)
+endif ()
 target_compile_definitions(enations PRIVATE
     EN_TRAFFIC_PROBES=${_EN_TRAFFIC_DEF})
 
@@ -692,6 +700,15 @@ string(REGEX MATCH "VER_STRING[ \t]+\"([0-9]+\\.[0-9]+\\.[0-9]+)\"" _en_ver_matc
 set(EN_VERSION "${CMAKE_MATCH_1}")
 if (NOT EN_VERSION)
     message(FATAL_ERROR "packaging: could not parse VER_STRING from version.h")
+endif ()
+
+if (APPLE)
+    # Releases currently ship a standalone Mach-O binary, not an .app bundle.
+    # Embed the metadata so high-DPI support does not depend on a Finder wrapper.
+    configure_file("${CMAKE_CURRENT_SOURCE_DIR}/../../packaging/Info.plist.in"
+                   "${CMAKE_CURRENT_BINARY_DIR}/Info.plist" @ONLY)
+    set_property(TARGET enations APPEND PROPERTY LINK_OPTIONS
+        "-Wl,-sectcreate,__TEXT,__info_plist,${CMAKE_CURRENT_BINARY_DIR}/Info.plist")
 endif ()
 
 # Default wording; Windows overrides below because its exe is built /MD and

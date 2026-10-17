@@ -2,6 +2,9 @@
 #include "en_logpath.h"   // EnLogPath - logs to the launch dir, not the exe dir
 #include "en_hangdump.h"   // EnHangHeartbeat() - hang-watchdog liveness beat
 #include "GameWindow.h"
+#ifdef EN_DPI_SMOKE
+#include "dpi_smoke_driver.h"
+#endif
 #include "framecap.h"   // #45 frame-capture debug mode
 #include "SDL2UI.h"
 #include "lastplnt.h"
@@ -127,11 +130,12 @@ static const int RESIZE_GRIP = 8;  // pixels along each edge/corner
 static SDL_HitTestResult SDLCALL BorderHitTest(SDL_Window* win, const SDL_Point* pt, void*) {
     int w, h;
     SDL_GetWindowSize(win, &w, &h);
-
-    bool left   = pt->x < RESIZE_GRIP;
-    bool right  = pt->x >= w - RESIZE_GRIP;
-    bool top    = pt->y < RESIZE_GRIP;
-    bool bottom = pt->y >= h - RESIZE_GRIP;
+    void* gripData = SDL_GetWindowData(win, "EN_resizeGrip");
+    int grip = gripData ? (int)(intptr_t)gripData - 1 : RESIZE_GRIP;
+    bool left   = pt->x < grip;
+    bool right  = pt->x >= w - grip;
+    bool top    = pt->y < grip;
+    bool bottom = pt->y >= h - grip;
 
     if (top && left)     return SDL_HITTEST_RESIZE_TOPLEFT;
     if (top && right)    return SDL_HITTEST_RESIZE_TOPRIGHT;
@@ -141,6 +145,12 @@ static SDL_HitTestResult SDLCALL BorderHitTest(SDL_Window* win, const SDL_Point*
     if (bottom)          return SDL_HITTEST_RESIZE_BOTTOM;
     if (left)            return SDL_HITTEST_RESIZE_LEFT;
     if (right)           return SDL_HITTEST_RESIZE_RIGHT;
+
+    if (EnDpi::IsWayland()) {
+        int title = (int)(intptr_t)SDL_GetWindowData(win, "EN_titleBarHeight");
+        int reserve = (int)(intptr_t)SDL_GetWindowData(win, "EN_titleButtonsWidth");
+        if (pt->y < title && pt->x < w - reserve) return SDL_HITTEST_DRAGGABLE;
+    }
 
     return SDL_HITTEST_NORMAL;
 }
@@ -281,11 +291,16 @@ static void DisableMacWindowShadow(SDL_Window* win);
 #endif
 
 SDL_Window* GameWindow::CreateSDLWindow(const char* title, int x, int y, int w, int h, Uint32 flags) {
+    flags |= SDL_WINDOW_ALLOW_HIGHDPI;
 #ifdef _WIN32
     // Protect against MFC's CBT hook corrupting the new SDL window
     HHOOK hook = ::SetWindowsHookEx(WH_CBT, SdlCbtFilterHook, NULL, ::GetCurrentThreadId());
 #endif
     SDL_Window* win = SDL_CreateWindow(title, x, y, w, h, flags);
+    if (win && EnDpi::IsWayland()) {
+        SDL_SetWindowData(win, "EN_resizeGrip", (void*)(intptr_t)1);
+        SDL_SetWindowHitTest(win, BorderHitTest, nullptr);
+    }
 #if defined(__linux__)
     // Every game window is opened by a user action; stamp _NET_WM_USER_TIME so
     // Mutter focuses it instead of toasting "<title> is ready" (BUGS #33).
@@ -603,7 +618,7 @@ bool GameWindow::InitializeSDL() {
 
     // Create SDL window — borderless, positioned at the primary-display origin so
     // it fills the screen (and is a known anchor for the floating panels).
-    Uint32 winFlags = SDL_WINDOW_SHOWN | SDL_WINDOW_BORDERLESS;
+    Uint32 winFlags = SDL_WINDOW_SHOWN | SDL_WINDOW_BORDERLESS | SDL_WINDOW_ALLOW_HIGHDPI;
     int winX = 0, winY = 0;
 #ifndef _WIN32
 #ifdef __APPLE__
@@ -794,7 +809,16 @@ bool GameWindow::EnsureBackBuffer() {
     return true;
 }
 
-SDL_Surface* GameWindow::GetPresentSurface() {
+SDL2DisplayMetrics GameWindow::GetDisplayMetrics() {
+    // Cache by object, not by SDL window ID (IDs may be recycled).
+    if (m_displayMetrics.Refresh(m_window, m_useRenderer ? m_renderer : nullptr) && m_compositor)
+        m_compositor->InvalidateAll(); // Display moves may recreate the surface even at the same size.
+    SDL_SetWindowData(m_window, "EN_resizeGrip", (void*)(intptr_t)(m_displayMetrics.WindowY(8) + 1));
+    return m_displayMetrics;
+}
+
+SDL_Surface* GameWindow::GetDrawableSurface() {
+    m_presentCompat = false;
     if (m_useRenderer) {
         EnsureBackBuffer();
         return m_backBuffer;
@@ -802,9 +826,34 @@ SDL_Surface* GameWindow::GetPresentSurface() {
     return m_window ? SDL_GetWindowSurface(m_window) : nullptr;
 }
 
+SDL_Surface* GameWindow::GetPresentSurface() {
+    SDL_Surface* output = GetDrawableSurface();
+    if (!output) return nullptr;
+    int w, h; SDL_GetWindowSize(m_window, &w, &h);
+    if (w == output->w && h == output->h) return output;
+    // Legacy gameplay/CPU rasterization stays in SDL window coordinates. Its
+    // projection and native cursor bridges therefore remain numerically aligned.
+    if (!m_compatSurface || m_compatSurface->w != w || m_compatSurface->h != h) {
+        if (m_compatSurface) SDL_FreeSurface(m_compatSurface);
+        m_compatSurface = SDL_CreateRGBSurfaceWithFormat(0, w, h, 32, SDL_PIXELFORMAT_ARGB8888);
+        if (m_compositor) m_compositor->InvalidateAll();
+    }
+    m_presentCompat = true;
+    return m_compatSurface;
+}
+
 void GameWindow::PresentSurface(const SDL_Rect* dirty) {
     if (!m_window)
         return;
+
+    if (m_presentCompat && m_compatSurface) {
+        SDL_Surface* output = GetDrawableSurface();
+        if (!output) return;
+        SDL_Rect full = { 0, 0, output->w, output->h };
+        SDL_BlitScaled(m_compatSurface, nullptr, output, &full);
+        if (m_compositor) m_compositor->PaintNativeUi(output);
+        dirty = nullptr; // compatibility dirty bounds are in window units
+    }
 
     // A freshly (re)created back-buffer's texture holds garbage everywhere except a
     // dirty rect, so the first present after a (re)alloc must upload the whole surface.
@@ -853,6 +902,7 @@ void GameWindow::Cleanup() {
 
     if (m_backTex) { SDL_DestroyTexture(m_backTex); m_backTex = nullptr; }
     if (m_backBuffer) { SDL_FreeSurface(m_backBuffer); m_backBuffer = nullptr; }
+    if (m_compatSurface) { SDL_FreeSurface(m_compatSurface); m_compatSurface = nullptr; }
     if (m_renderer) {
         SDL_DestroyRenderer(m_renderer);
         m_renderer = nullptr;
@@ -959,6 +1009,9 @@ bool GameWindow::PollEvents() {
         return false;
     }
     m_pollingEvents = true;
+#ifdef EN_DPI_SMOKE
+    EnDpiSmokeRun(this, m_mainMenu);
+#endif
 
     // #47 / Cluster-A global capture safety net (mac2) — complements the per-drag-site
     // local heal in SDL2UI.cpp/SDL2Panel.cpp (@c49873f7). A missed SDL_MOUSEBUTTONUP can
@@ -982,7 +1035,7 @@ bool GameWindow::PollEvents() {
     //                  many events one frame drains (a burst is the obvious suspect)
     {
         Perf::ScopeNamed _pc( "poll.capture.us" );
-        Uint32 mouseButtons = SDL_GetGlobalMouseState(nullptr, nullptr);
+        Uint32 mouseButtons = EnDpi::MouseButtons();
         if (!(mouseButtons & (SDL_BUTTON_LMASK | SDL_BUTTON_MMASK | SDL_BUTTON_RMASK)))
             SDL_CaptureMouse(SDL_FALSE);
     }
@@ -1062,6 +1115,10 @@ bool GameWindow::PollEvents() {
                                                             : "SDL_RENDER_TARGETS_RESET");
             SDL2Terrain::NotifyTargetsLost();
             SDL2Sprites::NotifyTargetsLost();
+            if (m_backTex) { SDL_DestroyTexture(m_backTex); m_backTex = nullptr; }
+            if (m_backBuffer) { SDL_FreeSurface(m_backBuffer); m_backBuffer = nullptr; }
+            m_backW = m_backH = 0;
+            if (m_compositor) m_compositor->ResetPresentationResources();
         }
 
         // Do NOT dispatch gameplay input while the network session is tearing down.

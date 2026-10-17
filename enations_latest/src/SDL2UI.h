@@ -2,6 +2,7 @@
 
 #include <SDL.h>
 #include <SDL_ttf.h>
+#include "SDL2DisplayMetrics.h"
 #include "SDL2Scrollbar.h"   // EnSb:: shared scrollbar geometry/chrome/hit-test
 #include <string>
 #include <vector>
@@ -114,6 +115,7 @@ private:
     std::string  m_cacheText;
     SDL_Color    m_cacheColor = {0, 0, 0, 0};
     TTF_Font*    m_cacheFont = nullptr;
+    double m_cacheScale = 0;
     int          m_cacheWrapW = -1;     // rect.w used for the cached wrap, or -1
     bool         m_cacheWrapped = false;
     bool         m_cacheWrapNL = false;
@@ -606,6 +608,7 @@ protected:
     void ClearWidgets() {
         m_widgets.clear();
         m_focusIndex = -1;
+        m_pointerWidget = -1;
     }
 
     // Convenience: add OK and Cancel buttons at the bottom
@@ -686,6 +689,7 @@ private:
 
     std::vector<std::unique_ptr<SDL2Widget>> m_widgets;
     int m_focusIndex = -1;  // Index of currently focused widget, -1 = none
+    int m_pointerWidget = -1; // Keep a press routed through body/footer boundaries.
     int m_result = 0;
     bool m_running = false;
     int m_widgetFontSize = 13;  // default widget text size (see SetWidgetFontSize)
@@ -714,6 +718,13 @@ private:
     // Dedicated SDL_Window for this dialog (ALWAYS_ON_TOP so it floats above
     // the Area View and World View detached panels).
     SDL_Window*  m_dlgWindow = nullptr;
+    SDL2DisplayMetrics m_displayMetrics;
+    double m_windowScale = 0;
+    int m_scrollX = 0, m_scrollY = 0;
+    void RefreshDisplayMetrics();
+    void EnsureFocusVisible();
+    int FooterTop() const;
+    int FooterScrollX(int viewW) const;
 
     // Set by DismissModalNow(): the window is gone and Render() must be a no-op
     // (otherwise the final Render() in DoModal's loop would paint this dialog onto
@@ -739,6 +750,7 @@ private:
     // Background snapshot (captured when dialog opens; only used when rendering
     // to the main window as a fallback)
     SDL_Surface* m_background = nullptr;
+    SDL_Surface* m_frameArt = nullptr; // one baseline artwork frame; glyphs use native raster fonts
 
     // Font cache
     std::string m_fontPath;

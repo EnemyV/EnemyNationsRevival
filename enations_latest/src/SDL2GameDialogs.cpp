@@ -1,4 +1,5 @@
 #include "stdafx.h"
+#include "SDL2UiCanvas.h"
 #include <SDL_syswm.h>   // SDL_GetWindowWMInfo — WS_EX_NOACTIVATE on the tooltip window (Win)
 
 #include "SDL2GameDialogs.h"
@@ -203,7 +204,7 @@ public:
             if (x + m_cx > iEnd) break;
             SDL_Rect sr = { 0, 0, m_cx, m_cy };   // m_iBaseOn == 0 (base flask)
             SDL_Rect dr = { x, top, m_cx, m_cy };
-            SDL_BlitSurface(m_sheet, &sr, dst, &dr);
+            EnUiCanvas::BlitSurface(m_sheet, &sr, dst, &dr);
         }
     }
 
@@ -260,9 +261,9 @@ SDL2ResearchDialog::SDL2ResearchDialog(GameWindow* gw)
 }
 
 SDL2ResearchDialog::~SDL2ResearchDialog() {
-    if (m_bkgnd)      SDL_FreeSurface(m_bkgnd);
-    if (m_btnSheet)   SDL_FreeSurface(m_btnSheet);
-    if (m_flaskSheet) SDL_FreeSurface(m_flaskSheet);
+    if (m_bkgnd)      EnUiCanvas::FreeSurface(m_bkgnd);
+    if (m_btnSheet)   EnUiCanvas::FreeSurface(m_btnSheet);
+    if (m_flaskSheet) EnUiCanvas::FreeSurface(m_flaskSheet);
 }
 
 void SDL2ResearchDialog::OnInit() {
@@ -960,13 +961,13 @@ SDL2UnitInfoPanel::SDL2UnitInfoPanel() {
 SDL2UnitInfoPanel::~SDL2UnitInfoPanel() {
     Hide();
     if (m_window) { SDL_DestroyWindow(m_window); m_window = nullptr; }
-    if (m_bgGold) SDL_FreeSurface(m_bgGold);
-    if (m_borderH) SDL_FreeSurface(m_borderH);
-    if (m_borderV) SDL_FreeSurface(m_borderV);
-    if (m_matIcons) SDL_FreeSurface(m_matIcons);
-    if (m_vehIcons) SDL_FreeSurface(m_vehIcons);
+    if (m_bgGold) EnUiCanvas::FreeSurface(m_bgGold);
+    if (m_borderH) EnUiCanvas::FreeSurface(m_borderH);
+    if (m_borderV) EnUiCanvas::FreeSurface(m_borderV);
+    if (m_matIcons) EnUiCanvas::FreeSurface(m_matIcons);
+    if (m_vehIcons) EnUiCanvas::FreeSurface(m_vehIcons);
     for (auto& p : m_fontCache)
-        if (p.second) TTF_CloseFont(p.second);
+        if (p.second) { EnUiCanvas::ForgetFont(p.second); TTF_CloseFont(p.second); }
 }
 
 void SDL2UnitInfoPanel::LoadArt() {
@@ -1007,12 +1008,13 @@ void SDL2UnitInfoPanel::LoadArt() {
 }
 
 TTF_Font* SDL2UnitInfoPanel::GetFont(int size) {
+    size = EnUiCanvas::RasterSize(size);
     if (m_fontPath.empty()) return nullptr;
     auto it = m_fontCache.find(size);
-    if (it != m_fontCache.end()) return it->second;
+    if (it != m_fontCache.end()) return EnUiCanvas::Font(it->second);
     TTF_Font* f = EnOpenUiFont(m_fontPath.c_str(), size);
     m_fontCache[size] = f;
-    return f;
+    return EnUiCanvas::Font(f);
 }
 
 // screenX/screenY are GLOBAL desktop coordinates (the click's cursor position).
@@ -1031,6 +1033,7 @@ void SDL2UnitInfoPanel::Show(CUnit* pUnit, int screenX, int screenY) {
     int w = 240;
     int h = borderH * 2 + 8;
     for (auto& line : m_lines) h += LineHeight(line);
+    m_layoutH = h; m_layoutW = w; m_windowScale = 0;
 
     // Clamp onto the display that the cursor is on (keeps it fully on-screen; no
     // main-window-relative math, so it can't get stuck at a wrong window's edge).
@@ -1104,6 +1107,7 @@ void SDL2UnitInfoPanel::Update() {
     int borderH = m_borderH ? m_borderH->h : 3;
     int w = 240, h = borderH * 2 + 8;
     for (auto& line : m_lines) h += LineHeight(line);
+    m_layoutH = h; m_layoutW = w; m_windowScale = 0;
     int cw = 0, ch = 0; SDL_GetWindowSize(m_window, &cw, &ch);
     if (cw != w || ch != h) SDL_SetWindowSize(m_window, w, h);
     Render();
@@ -1215,10 +1219,19 @@ void SDL2UnitInfoPanel::BuildContent() {
 
 void SDL2UnitInfoPanel::Render() {
     if (!m_window) return;
+    m_displayMetrics.Refresh(m_window);
+    if (!m_displayMetrics.valid) return;
+    if (std::abs(m_windowScale - m_displayMetrics.WindowScaleY()) > 0.001) {
+        m_windowScale = m_displayMetrics.WindowScaleY();
+        SDL_SetWindowSize(m_window, m_displayMetrics.WindowX(m_layoutW), m_displayMetrics.WindowY(m_layoutH));
+        EnDpi::ClampWindow(m_window);
+        m_displayMetrics.Refresh(m_window);
+    }
     SDL_Surface* dst = SDL_GetWindowSurface(m_window);
     if (!dst) return;
 
-    int w = dst->w, h = dst->h;
+    EnUiCanvas::Scope canvas(dst, m_displayMetrics.pixelScale);
+    int w = m_layoutW, h = m_layoutH;
     int borderH = m_borderH ? m_borderH->h : 3;
     int borderV = m_borderV ? m_borderV->w : 3;
 
@@ -1226,9 +1239,9 @@ void SDL2UnitInfoPanel::Render() {
     if (m_bgGold) {
         SDL_Rect sr = {0, 0, m_bgGold->w, m_bgGold->h};
         SDL_Rect dr = {0, 0, w, h};
-        SDL_BlitScaled(m_bgGold, &sr, dst, &dr);
+        EnUiCanvas::BlitScaled(m_bgGold, &sr, dst, &dr);
     } else {
-        SDL_FillRect(dst, nullptr, SDL_MapRGB(dst->format, 160, 140, 90));
+        EnUiCanvas::FillRect(dst, nullptr, SDL_MapRGB(dst->format, 160, 140, 90));
     }
 
     // --- Carved-gold frame (shared corner-correct routine) ---
@@ -1241,7 +1254,7 @@ void SDL2UnitInfoPanel::Render() {
     int textX = borderV + 4;
     int y = borderH + 4;
 
-    int fontH = TTF_FontHeight(font);
+    int fontH = EnUiCanvas::FontHeight(font);
 
     for (auto& line : m_lines) {
         int rowHt = LineHeight(line);
@@ -1258,7 +1271,7 @@ void SDL2UnitInfoPanel::Render() {
             SDL_Rect isr = {line.matIdx * m_matIconW, 0, m_matIconW, m_matIconH};
             SDL_Rect idr = {textX, textY + (fontH - m_matIconH) / 2, m_matIconW, m_matIconH};
             SDL_SetSurfaceBlendMode(m_matIcons, SDL_BLENDMODE_BLEND);
-            SDL_BlitSurface(m_matIcons, &isr, dst, &idr);
+            EnUiCanvas::BlitSurface(m_matIcons, &isr, dst, &idr);
             lineTextX = textX + m_matIconW + 4;
         } else if (line.vehIcon >= 0 && m_vehIcons && m_vehTileW > 0) {
             // Vehicle icon: scale the 64px tile down into a square box, preserving
@@ -1271,7 +1284,7 @@ void SDL2UnitInfoPanel::Render() {
                 SDL_Rect isr = {0, srcY, m_vehTileW, m_vehTileH};
                 SDL_Rect idr = {textX + (VEH_ICON_SZ - dw) / 2, y + (rowHt - dh) / 2, dw, dh};
                 SDL_SetSurfaceBlendMode(m_vehIcons, SDL_BLENDMODE_BLEND);
-                SDL_BlitScaled(m_vehIcons, &isr, dst, &idr);
+                EnUiCanvas::BlitScaled(m_vehIcons, &isr, dst, &idr);
             }
             lineTextX = textX + VEH_ICON_SZ + 4;
         }
@@ -1280,19 +1293,19 @@ void SDL2UnitInfoPanel::Render() {
         SDL_Color shadow = {128, 128, 128, 255};
         SDL_Color fg = line.red ? SDL_Color{255, 50, 27, 255} : SDL_Color{0, 0, 0, 255};
 
-        SDL_Surface* ts = TTF_RenderUTF8_Blended(font, line.text.c_str(), shadow);
+        SDL_Surface* ts = EnUiCanvas::Text(font, line.text.c_str(), shadow);
         if (ts) {
-            SDL_Rect sr = {0, 0, __min(ts->w, lineMaxW), ts->h};
+            SDL_Rect sr = {0, 0, __min(EnUiCanvas::Width(ts), lineMaxW), EnUiCanvas::Height(ts)};
             SDL_Rect dr = {lineTextX + 1, textY + 1, sr.w, sr.h};
-            SDL_BlitSurface(ts, &sr, dst, &dr);
-            SDL_FreeSurface(ts);
+            EnUiCanvas::BlitSurface(ts, &sr, dst, &dr);
+            EnUiCanvas::FreeSurface(ts);
         }
-        ts = TTF_RenderUTF8_Blended(font, line.text.c_str(), fg);
+        ts = EnUiCanvas::Text(font, line.text.c_str(), fg);
         if (ts) {
-            SDL_Rect sr = {0, 0, __min(ts->w, lineMaxW), ts->h};
+            SDL_Rect sr = {0, 0, __min(EnUiCanvas::Width(ts), lineMaxW), EnUiCanvas::Height(ts)};
             SDL_Rect dr = {lineTextX, textY, sr.w, sr.h};
-            SDL_BlitSurface(ts, &sr, dst, &dr);
-            SDL_FreeSurface(ts);
+            EnUiCanvas::BlitSurface(ts, &sr, dst, &dr);
+            EnUiCanvas::FreeSurface(ts);
         }
         y += rowHt;
     }

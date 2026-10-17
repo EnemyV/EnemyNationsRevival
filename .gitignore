@@ -59,3 +59,7 @@ __pycache__/
 # macOS port build + run dirs (local)
 /build-mac/
 /run-mac/
+
+# DPI verification outputs (source tests live under tests/ui/).
+/cmakeBuild-dpi-tests/
+/dpi-smoke-evidence*/

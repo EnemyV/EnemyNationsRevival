@@ -1,5 +1,6 @@
 #include "stdafx.h"
-#include "SDL2UI.h"   // EnOpenUiFont (hinted font open)
+#include "SDL2UI.h"
+#include "SDL2UiCanvas.h"   // EnOpenUiFont (hinted font open)
 
 #include "SDL2Toolbar.h"
 #include "SDL2Panel.h"
@@ -45,7 +46,7 @@ namespace TBColors {
 }
 
 static void FillR(SDL_Surface* s, SDL_Rect r, SDL_Color c) {
-    SDL_FillRect(s, &r, SDL_MapRGB(s->format, c.r, c.g, c.b));
+    EnUiCanvas::FillRect(s, &r, SDL_MapRGB(s->format, c.r, c.g, c.b));
 }
 
 static const char* s_btnLabels[8] = {
@@ -62,20 +63,22 @@ SDL2Toolbar::SDL2Toolbar() {
 
 SDL2Toolbar::~SDL2Toolbar() {
     for (auto& p : m_fontCache)
-        if (p.second) TTF_CloseFont(p.second);
+        if (p.second) { EnUiCanvas::ForgetFont(p.second); TTF_CloseFont(p.second); }
 }
 
 TTF_Font* SDL2Toolbar::GetFont(int size) {
+    size = EnUiCanvas::RasterSize(size);
     if (m_fontPath.empty()) return nullptr;
     auto it = m_fontCache.find(size);
-    if (it != m_fontCache.end()) return it->second;
+    if (it != m_fontCache.end()) return EnUiCanvas::Font(it->second);
     TTF_Font* f = EnOpenUiFont(m_fontPath.c_str(), size);
     m_fontCache[size] = f;
-    return f;
+    return EnUiCanvas::Font(f);
 }
 
 void SDL2Toolbar::Init(SDL2Panel* panel, GameWindow* gw) {
     m_panel = panel;
+    if (m_panel) { m_panel->EnableUiScaling(); m_panel->RefreshDisplayMetrics(); }
     m_gw = gw;
 
     // Load toolbar background tile from game data
@@ -164,11 +167,24 @@ void SDL2Toolbar::SetButtonHelpText(int index, const std::string& text) {
 
 void SDL2Toolbar::Render() {
     if (!m_panel) return;
+    m_panel->RefreshDisplayMetrics();
+    const int designW = m_panel->GetLayoutWidth();
+    const int buttonWidth = m_btnSpriteW > 0 ? m_btnSpriteW : 50;
+    const int columns = std::max(1, std::min(NUM_BUTTONS, (designW - 8) / (buttonWidth + 4)));
+    const int buttonRows = (NUM_BUTTONS + columns - 1) / columns;
+    const bool separateStats = columns < NUM_BUTTONS || designW < 8 + NUM_BUTTONS * (buttonWidth + 4) + 240;
+    const int textRowY = separateStats ? (buttonRows + 1) * BTN_ROW_HT : BTN_ROW_HT;
+    const int desiredHeight = m_panel->WindowHeightForLayout(textRowY + TEXT_ROW_HT);
+    if (m_panel->GetHeight() != desiredHeight) {
+        m_panel->SetSize(m_panel->GetWidth(), desiredHeight);
+        if (m_gw) m_panel->SetPosition(0, m_gw->GetHeight() - desiredHeight);
+    }
     SDL_Surface* dst = m_panel->GetSurface();
     if (!dst) return;
+    EnUiCanvas::Scope canvas(dst, m_panel->GetUiPixelScale());
 
-    int w = m_panel->GetWidth();
-    int h = m_panel->GetHeight();
+    int w = m_panel->GetLayoutWidth();
+    int h = m_panel->GetLayoutHeight();
 
     // Tile background from DIB_TOOLBAR
     if (m_bgTile) {
@@ -179,7 +195,7 @@ void SDL2Toolbar::Render() {
                 if (tx + sr.w > w) sr.w = w - tx;
                 if (ty + sr.h > h) sr.h = h - ty;
                 dr.w = sr.w; dr.h = sr.h;
-                SDL_BlitSurface(m_bgTile, &sr, dst, &dr);
+                EnUiCanvas::BlitSurface(m_bgTile, &sr, dst, &dr);
             }
         }
     } else {
@@ -205,15 +221,18 @@ void SDL2Toolbar::Render() {
 
     // Buttons
     for (int i = 0; i < NUM_BUTTONS; i++) {
-        int x = btnGap + i * (btnW + btnGap);
-        RenderButton(dst, i, x, btnY, btnW, btnH);
+        int x = btnGap + (i % columns) * (btnW + btnGap);
+        int y = btnY + (i / columns) * BTN_ROW_HT;
+        m_buttonRects[i] = {x, y, btnW, btnH};
+        RenderButton(dst, i, x, y, btnW, btnH);
     }
-    int afterBtns = btnGap + NUM_BUTTONS * (btnW + btnGap) + btnGap;
+    int afterBtns = separateStats ? btnGap : btnGap + NUM_BUTTONS * (btnW + btnGap) + btnGap;
+    m_statY = separateStats ? buttonRows * BTN_ROW_HT + 2 : 2;
 
     // Clock ??? fixed width on far right
     int clockW = 75;
     int clockX = w - clockW - btnGap;
-    RenderClock(dst, clockX, 2, clockW, BTN_ROW_HT - 4);
+    RenderClock(dst, clockX, m_statY, clockW, BTN_ROW_HT - 4);
 
     // Resource bars ??? fill space between buttons and clock, divided into 4
     int statSpace = clockX - afterBtns;
@@ -224,7 +243,7 @@ void SDL2Toolbar::Render() {
     m_statBarW = statW;
 
     for (int i = 0; i < NUM_STATS; i++) {
-        RenderStatBar(dst, i, afterBtns + i * statW, 2, statW - 4, BTN_ROW_HT - 4);
+        RenderStatBar(dst, i, afterBtns + i * statW, m_statY, statW - 4, BTN_ROW_HT - 4);
     }
 
     // Poll mouse position BEFORE drawing text so hover is immediate.
@@ -244,8 +263,8 @@ void SDL2Toolbar::Render() {
         SDL2Compositor* comp = m_gw ? m_gw->GetCompositor() : nullptr;
         int cursorX = comp ? comp->GetMouseX() : -1;
         int cursorY = comp ? comp->GetMouseY() : -1;
-        int lx = cursorX - m_panel->GetX();
-        int ly = cursorY - m_panel->GetY();
+        int lx = m_panel->LayoutLocalX(cursorX - m_panel->GetX());
+        int ly = m_panel->LayoutLocalY(cursorY - m_panel->GetY());
 
         // Default: mirror what the world last set
         m_statusText[1] = m_externalText[1];
@@ -256,9 +275,9 @@ void SDL2Toolbar::Render() {
             // matches, the empty line is appropriate (cursor over dead toolbar
             // space, not over the world).
             m_statusText[1].clear();
-            if (ly < BTN_ROW_HT) {
+            if (ly < textRowY) {
                 // Check resource bars
-                if (m_statBarW > 0 && lx >= m_statBarX) {
+                if (ly >= m_statY && ly < m_statY + BTN_ROW_HT - 4 && m_statBarW > 0 && lx >= m_statBarX) {
                     int si = (lx - m_statBarX) / m_statBarW;
                     CPlayer* pMe2 = theGame.GetMe();
                     if (pMe2 && si >= 0 && si < NUM_STATS) {
@@ -279,8 +298,8 @@ void SDL2Toolbar::Render() {
                     int btnW2 = (m_btnSpriteW > 0) ? m_btnSpriteW : 50;
                     int btnGap2 = 4;
                     for (int i = 0; i < NUM_BUTTONS; i++) {
-                        int bx = btnGap2 + i * (btnW2 + btnGap2);
-                        if (lx >= bx && lx < bx + btnW2) {
+                        SDL_Rect r = m_buttonRects[i];
+                        if (lx >= r.x && lx < r.x + r.w && ly >= r.y && ly < r.y + r.h) {
                             m_statusText[1] = m_buttons[i].helpText.empty()
                                 ? m_buttons[i].label
                                 : m_buttons[i].helpText;
@@ -293,7 +312,7 @@ void SDL2Toolbar::Render() {
     }
 
     // Status text lines (row 2)
-    int textY = BTN_ROW_HT + 2;
+    int textY = textRowY + 2;
     int halfW = w / 2;
     RenderTextLine(dst, 0, 4, textY, halfW - 8, TEXT_ROW_HT - 4);
 
@@ -304,8 +323,8 @@ void SDL2Toolbar::Render() {
     bool cursorOnToolbar = false;
     {
         SDL2Compositor* comp2 = m_gw ? m_gw->GetCompositor() : nullptr;
-        int lx2 = ( comp2 ? comp2->GetMouseX() : -1 ) - m_panel->GetX();
-        int ly2 = ( comp2 ? comp2->GetMouseY() : -1 ) - m_panel->GetY();
+        int lx2 = m_panel->LayoutLocalX(( comp2 ? comp2->GetMouseX() : -1 ) - m_panel->GetX());
+        int ly2 = m_panel->LayoutLocalY(( comp2 ? comp2->GetMouseY() : -1 ) - m_panel->GetY());
         cursorOnToolbar = (lx2 >= 0 && lx2 < w && ly2 >= 0 && ly2 < h);
     }
     // Liveness check: m_statusUnit is a raw hover-time pointer and the unit
@@ -345,7 +364,7 @@ void SDL2Toolbar::RenderButton(SDL_Surface* dst, int idx, int x, int y, int w, i
 
         SDL_Rect srcRect = {srcX, srcY, m_btnSpriteW, m_btnSpriteH};
         SDL_Rect dstRect = {x, y, m_btnSpriteW, m_btnSpriteH};
-        SDL_BlitSurface(m_btnSheet, &srcRect, dst, &dstRect);
+        EnUiCanvas::BlitSurface(m_btnSheet, &srcRect, dst, &dstRect);
     } else {
         // Fallback: solid color button with text
         SDL_Color face = btn.pressed ? TBColors::BtnPress : TBColors::BtnFace;
@@ -362,11 +381,11 @@ void SDL2Toolbar::RenderButton(SDL_Surface* dst, int idx, int x, int y, int w, i
         TTF_Font* font = GetFont(10);
         if (font) {
             SDL_Color tc = btn.enabled ? TBColors::Text : TBColors::TextDim;
-            SDL_Surface* ts = TTF_RenderText_Blended(font, btn.label.c_str(), tc);
+            SDL_Surface* ts = EnUiCanvas::Text(font, btn.label.c_str(), tc);
             if (ts) {
-                SDL_Rect dr = {x + (w - ts->w) / 2, y + (h - ts->h) / 2, ts->w, ts->h};
-                SDL_BlitSurface(ts, nullptr, dst, &dr);
-                SDL_FreeSurface(ts);
+                SDL_Rect dr = {x + (w - EnUiCanvas::Width(ts)) / 2, y + (h - EnUiCanvas::Height(ts)) / 2, EnUiCanvas::Width(ts), EnUiCanvas::Height(ts)};
+                EnUiCanvas::BlitSurface(ts, nullptr, dst, &dr);
+                EnUiCanvas::FreeSurface(ts);
             }
         }
     }
@@ -396,7 +415,7 @@ void SDL2Toolbar::RenderStatBar(SDL_Surface* dst, int idx, int x, int y, int w, 
         if (icon.cxLeft > 0) {
             SDL_Rect sr = {0, bgSrcY, icon.cxLeft, icon.cyBack};
             SDL_Rect dr = {x, y, icon.cxLeft, icon.cyBack};
-            SDL_BlitSurface(icon.sheet, &sr, dst, &dr);
+            EnUiCanvas::BlitSurface(icon.sheet, &sr, dst, &dr);
         }
 
         // Middle tile
@@ -407,7 +426,7 @@ void SDL2Toolbar::RenderStatBar(SDL_Surface* dst, int idx, int x, int y, int w, 
                 int bw = std::min(icon.cxBack, midW - tx);
                 SDL_Rect sr = {icon.cxLeft, bgSrcY, bw, icon.cyBack};
                 SDL_Rect dr = {midX + tx, y, bw, icon.cyBack};
-                SDL_BlitSurface(icon.sheet, &sr, dst, &dr);
+                EnUiCanvas::BlitSurface(icon.sheet, &sr, dst, &dr);
             }
         }
 
@@ -415,7 +434,7 @@ void SDL2Toolbar::RenderStatBar(SDL_Surface* dst, int idx, int x, int y, int w, 
         if (icon.cxRight > 0) {
             SDL_Rect sr = {icon.cxLeft + icon.cxBack, bgSrcY, icon.cxRight, icon.cyBack};
             SDL_Rect dr = {x + w - icon.cxRight, y, icon.cxRight, icon.cyBack};
-            SDL_BlitSurface(icon.sheet, &sr, dst, &dr);
+            EnUiCanvas::BlitSurface(icon.sheet, &sr, dst, &dr);
         }
     } else {
         FillR(dst, {x, y, w, h}, TBColors::BarBg);
@@ -464,13 +483,13 @@ void SDL2Toolbar::RenderStatBar(SDL_Surface* dst, int idx, int x, int y, int w, 
             if (ix + icon.cxIcon > barRight) break;
             SDL_Rect sr = {0, 0, icon.cxIcon, icon.cyIcon};
             SDL_Rect dr = {ix, iconY, icon.cxIcon, icon.cyIcon};
-            SDL_BlitSurface(icon.sheet, &sr, dst, &dr);
+            EnUiCanvas::BlitSurface(icon.sheet, &sr, dst, &dr);
         }
         for (; ix < barRight; ix += iStep) {
             if (ix + icon.cxIcon > barRight) break;
             SDL_Rect sr = {needSrcX, 0, icon.cxIcon, icon.cyIcon};
             SDL_Rect dr = {ix, iconY, icon.cxIcon, icon.cyIcon};
-            SDL_BlitSurface(icon.sheet, &sr, dst, &dr);
+            EnUiCanvas::BlitSurface(icon.sheet, &sr, dst, &dr);
         }
     }
 
@@ -485,7 +504,7 @@ void SDL2Toolbar::RenderClock(SDL_Surface* dst, int x, int y, int w, int h) {
         if (icon.cxLeft > 0) {
             SDL_Rect sr = {0, bgSrcY, icon.cxLeft, icon.cyBack};
             SDL_Rect dr = {x, y, icon.cxLeft, icon.cyBack};
-            SDL_BlitSurface(icon.sheet, &sr, dst, &dr);
+            EnUiCanvas::BlitSurface(icon.sheet, &sr, dst, &dr);
         }
         if (icon.cxBack > 0) {
             int midX = x + icon.cxLeft;
@@ -494,13 +513,13 @@ void SDL2Toolbar::RenderClock(SDL_Surface* dst, int x, int y, int w, int h) {
                 int bw = std::min(icon.cxBack, midW - tx);
                 SDL_Rect sr = {icon.cxLeft, bgSrcY, bw, icon.cyBack};
                 SDL_Rect dr = {midX + tx, y, bw, icon.cyBack};
-                SDL_BlitSurface(icon.sheet, &sr, dst, &dr);
+                EnUiCanvas::BlitSurface(icon.sheet, &sr, dst, &dr);
             }
         }
         if (icon.cxRight > 0) {
             SDL_Rect sr = {icon.cxLeft + icon.cxBack, bgSrcY, icon.cxRight, icon.cyBack};
             SDL_Rect dr = {x + w - icon.cxRight, y, icon.cxRight, icon.cyBack};
-            SDL_BlitSurface(icon.sheet, &sr, dst, &dr);
+            EnUiCanvas::BlitSurface(icon.sheet, &sr, dst, &dr);
         }
     } else {
         FillR(dst, {x, y, w, h}, TBColors::BarBg);
@@ -516,11 +535,11 @@ void SDL2Toolbar::RenderClock(SDL_Surface* dst, int x, int y, int w, int h) {
 
     TTF_Font* clockFont = GetFont(11);
     if (clockFont) {
-        SDL_Surface* ts = TTF_RenderText_Blended(clockFont, buf, TBColors::Text);
+        SDL_Surface* ts = EnUiCanvas::Text(clockFont, buf, TBColors::Text);
         if (ts) {
-            SDL_Rect dr = {x + (w - ts->w) / 2, y + (h - ts->h) / 2, ts->w, ts->h};
-            SDL_BlitSurface(ts, nullptr, dst, &dr);
-            SDL_FreeSurface(ts);
+            SDL_Rect dr = {x + (w - EnUiCanvas::Width(ts)) / 2, y + (h - EnUiCanvas::Height(ts)) / 2, EnUiCanvas::Width(ts), EnUiCanvas::Height(ts)};
+            EnUiCanvas::BlitSurface(ts, nullptr, dst, &dr);
+            EnUiCanvas::FreeSurface(ts);
         }
     }
 }
@@ -539,7 +558,7 @@ void SDL2Toolbar::RenderTextLine(SDL_Surface* dst, int line, int x, int y, int w
         if (icon.cxLeft > 0) {
             SDL_Rect sr = {0, bgSrcY, icon.cxLeft, bgH};
             SDL_Rect dr = {x, bgY, icon.cxLeft, bgH};
-            SDL_BlitSurface(icon.sheet, &sr, dst, &dr);
+            EnUiCanvas::BlitSurface(icon.sheet, &sr, dst, &dr);
         }
         if (icon.cxBack > 0) {
             int midX = x + icon.cxLeft;
@@ -548,13 +567,13 @@ void SDL2Toolbar::RenderTextLine(SDL_Surface* dst, int line, int x, int y, int w
                 int bw = std::min(icon.cxBack, midW - tx);
                 SDL_Rect sr = {icon.cxLeft, bgSrcY, bw, bgH};
                 SDL_Rect dr = {midX + tx, bgY, bw, bgH};
-                SDL_BlitSurface(icon.sheet, &sr, dst, &dr);
+                EnUiCanvas::BlitSurface(icon.sheet, &sr, dst, &dr);
             }
         }
         if (icon.cxRight > 0) {
             SDL_Rect sr = {icon.cxLeft + icon.cxBack, bgSrcY, icon.cxRight, bgH};
             SDL_Rect dr = {x + w - icon.cxRight, bgY, icon.cxRight, bgH};
-            SDL_BlitSurface(icon.sheet, &sr, dst, &dr);
+            EnUiCanvas::BlitSurface(icon.sheet, &sr, dst, &dr);
         }
     }
 
@@ -570,13 +589,13 @@ void SDL2Toolbar::RenderTextLine(SDL_Surface* dst, int line, int x, int y, int w
 
     TTF_Font* font = GetFont(15);  // Large font for readability
     if (font) {
-        SDL_Surface* ts = TTF_RenderText_Blended(font, text.c_str(), color);
+        SDL_Surface* ts = EnUiCanvas::Text(font, text.c_str(), color);
         if (ts) {
             int maxW = w - icon.leftOff - icon.rightOff;
-            SDL_Rect sr = {0, 0, std::min(ts->w, maxW), std::min(ts->h, h)};
+            SDL_Rect sr = {0, 0, std::min(EnUiCanvas::Width(ts), maxW), std::min(EnUiCanvas::Height(ts), h)};
             SDL_Rect dr = {x + icon.leftOff, y + (h - sr.h) / 2, sr.w, sr.h};
-            SDL_BlitSurface(ts, &sr, dst, &dr);
-            SDL_FreeSurface(ts);
+            EnUiCanvas::BlitSurface(ts, &sr, dst, &dr);
+            EnUiCanvas::FreeSurface(ts);
         }
     }
 }
@@ -587,10 +606,10 @@ bool SDL2Toolbar::HandleEvent(SDL_Event& event, int localX, int localY) {
 
     switch (event.type) {
     case SDL_MOUSEBUTTONDOWN:
-        if (event.button.button == SDL_BUTTON_LEFT && localY < BTN_ROW_HT) {
+        if (event.button.button == SDL_BUTTON_LEFT) {
             for (int i = 0; i < NUM_BUTTONS; i++) {
-                int bx = 4 + i * (btnW + btnGap);
-                if (localX >= bx && localX < bx + btnW && m_buttons[i].enabled) {
+                SDL_Rect r = m_buttonRects[i];
+                if (localX >= r.x && localX < r.x + r.w && localY >= r.y && localY < r.y + r.h && m_buttons[i].enabled) {
                     m_buttons[i].pressed = true;
                     m_pressedBtn = i;
                     // Match the original CMyButton::OnLButtonDown click feedback.
@@ -608,8 +627,8 @@ bool SDL2Toolbar::HandleEvent(SDL_Event& event, int localX, int localY) {
             m_buttons[i].pressed = false;
             m_pressedBtn = -1;
             // Check if still over the button
-            int bx = 4 + i * (btnW + btnGap);
-            if (localX >= bx && localX < bx + btnW && localY < BTN_ROW_HT) {
+            SDL_Rect r = m_buttonRects[i];
+            if (localX >= r.x && localX < r.x + r.w && localY >= r.y && localY < r.y + r.h) {
                 if (m_buttons[i].handler)
                     m_buttons[i].handler();
             }
@@ -634,7 +653,7 @@ bool SDL2Toolbar::HandleEvent(SDL_Event& event, int localX, int localY) {
 // Software StretchBlt: scale srcSurf(srcRect) to dstSurf(dstRect)
 static void TB_StretchBlit(SDL_Surface* src, SDL_Rect sr, SDL_Surface* dst, SDL_Rect dr) {
     if (!src || !dst || dr.w <= 0 || dr.h <= 0 || sr.w <= 0 || sr.h <= 0) return;
-    SDL_BlitScaled(src, &sr, dst, &dr);
+    EnUiCanvas::BlitScaled(src, &sr, dst, &dr);
 }
 
 int SDL2Toolbar::GetNumStatusBars(CUnit* pUnit) {
@@ -698,7 +717,7 @@ void SDL2Toolbar::Render3PieceBg(SDL_Surface* dst, int iconIdx, int x, int y, in
         if (icon.cxLeft > 0) {
             SDL_Rect sr = {0, bgSrcY, icon.cxLeft, icon.cyBack};
             SDL_Rect dr = {x, y, icon.cxLeft, icon.cyBack};
-            SDL_BlitSurface(icon.sheet, &sr, dst, &dr);
+            EnUiCanvas::BlitSurface(icon.sheet, &sr, dst, &dr);
         }
         if (icon.cxBack > 0) {
             int midX = x + icon.cxLeft;
@@ -707,13 +726,13 @@ void SDL2Toolbar::Render3PieceBg(SDL_Surface* dst, int iconIdx, int x, int y, in
                 int bw = std::min(icon.cxBack, midEnd - tx);
                 SDL_Rect sr = {icon.cxLeft, bgSrcY, bw, icon.cyBack};
                 SDL_Rect dr = {tx, y, bw, icon.cyBack};
-                SDL_BlitSurface(icon.sheet, &sr, dst, &dr);
+                EnUiCanvas::BlitSurface(icon.sheet, &sr, dst, &dr);
             }
         }
         if (icon.cxRight > 0) {
             SDL_Rect sr = {icon.cxLeft + icon.cxBack, bgSrcY, icon.cxRight, icon.cyBack};
             SDL_Rect dr = {x + w - icon.cxRight, y, icon.cxRight, icon.cyBack};
-            SDL_BlitSurface(icon.sheet, &sr, dst, &dr);
+            EnUiCanvas::BlitSurface(icon.sheet, &sr, dst, &dr);
         }
     } else if (icon.typBack == 0) {  // full_back: stretch entire background
         SDL_Rect sr = {0, bgSrcY, icon.cxBack, icon.cyBack};
@@ -724,7 +743,7 @@ void SDL2Toolbar::Render3PieceBg(SDL_Surface* dst, int iconIdx, int x, int y, in
             int bw = std::min(icon.cxBack, w - tx);
             SDL_Rect sr = {0, bgSrcY, bw, icon.cyBack};
             SDL_Rect dr = {x + tx, y, bw, icon.cyBack};
-            SDL_BlitSurface(icon.sheet, &sr, dst, &dr);
+            EnUiCanvas::BlitSurface(icon.sheet, &sr, dst, &dr);
         }
     }
 }
@@ -779,7 +798,7 @@ void SDL2Toolbar::RenderIconDone(SDL_Surface* dst, int iconIdx, int percent,
         if (ix + icon.cxIcon > iEnd) break;
         SDL_Rect sr = {0, 0, icon.cxIcon, icon.cyIcon};
         SDL_Rect dr = {ix, iconY, icon.cxIcon, icon.cyIcon};
-        SDL_BlitSurface(icon.sheet, &sr, dst, &dr);
+        EnUiCanvas::BlitSurface(icon.sheet, &sr, dst, &dr);
     }
 }
 
@@ -801,16 +820,16 @@ void SDL2Toolbar::RenderIconText(SDL_Surface* dst, int iconIdx, const char* text
     if (textW <= 0) return;
 
     int th = 0;
-    TTF_SizeText(font, text, nullptr, &th);
+    EnUiCanvas::SizeText(font, text, nullptr, &th);
     int textY = y + (h - th) / 2;
 
     SDL_Color white = {255, 255, 255, 255};
-    SDL_Surface* ts = TTF_RenderText_Blended(font, text, white);
+    SDL_Surface* ts = EnUiCanvas::Text(font, text, white);
     if (ts) {
-        SDL_Rect sr = {0, 0, std::min(ts->w, textW), ts->h};
+        SDL_Rect sr = {0, 0, std::min(EnUiCanvas::Width(ts), textW), EnUiCanvas::Height(ts)};
         SDL_Rect dr = {textX, textY, sr.w, sr.h};
-        SDL_BlitSurface(ts, &sr, dst, &dr);
-        SDL_FreeSurface(ts);
+        EnUiCanvas::BlitSurface(ts, &sr, dst, &dr);
+        EnUiCanvas::FreeSurface(ts);
     }
 }
 
@@ -838,7 +857,7 @@ void SDL2Toolbar::RenderCarrierCargo(SDL_Surface* dst, CVehicle* pVeh, int iconI
             SDL_Rect sr = {srcX, 0, icon.cxIcon, icon.cyIcon};
             SDL_Rect dr = {drawX, iconY, icon.cxIcon, icon.cyIcon};
             SDL_SetSurfaceBlendMode(icon.sheet, SDL_BLENDMODE_BLEND);
-            SDL_BlitSurface(icon.sheet, &sr, dst, &dr);
+            EnUiCanvas::BlitSurface(icon.sheet, &sr, dst, &dr);
         }
         drawX += icon.cxIcon;
     }
@@ -890,7 +909,7 @@ void SDL2Toolbar::RenderContainedUnits(SDL_Surface* dst, CBuilding* pBldg, int i
             SDL_Rect sr = {srcX, 0, icon.cxIcon, icon.cyIcon};
             SDL_Rect dr = {drawX, iconY, icon.cxIcon, icon.cyIcon};
             SDL_SetSurfaceBlendMode(icon.sheet, SDL_BLENDMODE_BLEND);
-            SDL_BlitSurface(icon.sheet, &sr, dst, &dr);
+            EnUiCanvas::BlitSurface(icon.sheet, &sr, dst, &dr);
         }
         drawX += icon.cxIcon;
     }
@@ -962,7 +981,7 @@ void SDL2Toolbar::RenderMaterialsBar(SDL_Surface* dst, CUnit* pUnit, int iconIdx
             if (cursor > iRight) break;
             SDL_Rect sr = {srcX, 0, icon.cxIcon, icon.cyIcon};
             SDL_Rect dr = {cursor, iconY, icon.cxIcon, icon.cyIcon};
-            SDL_BlitSurface(icon.sheet, &sr, dst, &dr);
+            EnUiCanvas::BlitSurface(icon.sheet, &sr, dst, &dr);
             iLen -= iIconAdd;
         }
     }
@@ -1113,15 +1132,15 @@ void SDL2Toolbar::RenderStatusBars(SDL_Surface* dst, CUnit* pUnit, int x, int y,
                         TTF_Font* font = GetFont(14);
                         if (font && !name.empty()) {
                             SDL_Color white = {255, 255, 255, 255};
-                            SDL_Surface* ts = TTF_RenderText_Blended(font, name.c_str(), white);
+                            SDL_Surface* ts = EnUiCanvas::Text(font, name.c_str(), white);
                             if (ts) {
                                 // Clip to the bar width (long names would otherwise
                                 // bleed into the neighbouring bar / off the toolbar).
-                                SDL_Rect sr = { 0, 0, std::min(ts->w, renderW), ts->h };
-                                SDL_Rect dr = { renderX + std::max(0, (renderW - ts->w) / 2),
-                                                y + (barH - ts->h) / 2, sr.w, sr.h };
-                                SDL_BlitSurface(ts, &sr, dst, &dr);
-                                SDL_FreeSurface(ts);
+                                SDL_Rect sr = { 0, 0, std::min(EnUiCanvas::Width(ts), renderW), EnUiCanvas::Height(ts) };
+                                SDL_Rect dr = { renderX + std::max(0, (renderW - EnUiCanvas::Width(ts)) / 2),
+                                                y + (barH - EnUiCanvas::Height(ts)) / 2, sr.w, sr.h };
+                                EnUiCanvas::BlitSurface(ts, &sr, dst, &dr);
+                                EnUiCanvas::FreeSurface(ts);
                             }
                         }
                     }

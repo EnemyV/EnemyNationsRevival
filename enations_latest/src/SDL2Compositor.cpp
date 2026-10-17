@@ -102,6 +102,7 @@ void SDL2Compositor::SetWallpaperSurface(SDL_Surface* wallpaper) {
 
 SDL2Panel* SDL2Compositor::AddPanel(const std::string& name, int x, int y, int w, int h, int zOrder) {
     auto panel = std::make_unique<SDL2Panel>(name, x, y, w, h, zOrder);
+    panel->SetHostGameWindow(m_window);
     SDL2Panel* raw = panel.get();
     m_panels.push_back(std::move(panel));
     SortPanels();
@@ -111,6 +112,7 @@ SDL2Panel* SDL2Compositor::AddPanel(const std::string& name, int x, int y, int w
 }
 
 void SDL2Compositor::RemovePanel(SDL2Panel* panel) {
+    for (auto& p : m_panels) p->ForgetRelatedPanel(panel);
     // A panel removed mid-drag must drop the active-panel latch, or the next
     // mouse event dereferences the freed panel (RouteEventInner line ~510).
     if (m_activePanel == panel)
@@ -174,7 +176,8 @@ void SDL2Compositor::ResetWindowLayout() {
 
     const int W = m_window ? m_window->GetWidth()  : 1280;
     const int H = m_window ? m_window->GetHeight() : 720;
-    const int tb = SDL2Panel::TITLE_BAR_HT;
+    const SDL2DisplayMetrics metrics = m_window ? m_window->GetDisplayMetrics() : SDL2DisplayMetrics();
+    const int tb = metrics.WindowY(SDL2Panel::TITLE_BAR_HT);
     const int margin = 8;
 
     // Default geometry mirrors the original Enemy Nations startup arrangement:
@@ -182,7 +185,7 @@ void SDL2Compositor::ResetWindowLayout() {
     // lists stacked below it, and the area map fills the remaining width on the
     // RIGHT. (The shipped game put the world map at x=0 over the left ~1/5 of the
     // screen and the area map from there to the right edge.)
-    const int leftW    = 320;
+    const int leftW    = metrics.WindowX(320);
     const int leftX    = margin;
     const int topY     = tb + margin;
     const int mapH     = 300;
@@ -233,6 +236,17 @@ void SDL2Compositor::ResetWindowLayout() {
     InvalidateAll();
 }
 
+void SDL2Compositor::PaintNativeUi(SDL_Surface* output) {
+    for (auto& panel : m_panels)
+        if (panel->IsVisible() && !panel->IsDetached() && panel->HasUiScaling())
+            panel->RenderNativeUi(output);
+}
+
+void SDL2Compositor::ResetPresentationResources() {
+    for (auto& panel : m_panels) panel->ResetPresentationResources();
+    m_backgroundDirty = true;
+}
+
 // Full window-space footprint a non-detached panel's Render() touches: content rect
 // plus its optional title bar (above m_y) and 1px raised border, clamped to the window.
 // Used to upload only the changed strip instead of the whole 2560x1440 surface.
@@ -249,6 +263,7 @@ static SDL_Rect PanelFootprint(SDL2Panel* p, SDL_Surface* ws) {
 void SDL2Compositor::Composite() {
     if (!m_window || !m_window->GetWindow())
         return;
+    for (auto& p : m_panels) p->RefreshDisplayMetrics();
 
     SDL_Surface* windowSurface = m_window->GetPresentSurface();  // T0: software surface or renderer back-buffer
     if (!windowSurface)
@@ -472,6 +487,7 @@ bool SDL2Compositor::RouteEventInner(SDL_Event& event) {
     if (eventWindowID) {
         for (auto& p : m_panels) {
             if (p->IsDetached() && p->GetOwnWindowID() == eventWindowID) {
+                p->RefreshDisplayMetrics();
                 // Manual edge/corner resize takes priority over content + drag.
                 if ((event.type == SDL_MOUSEMOTION || event.type == SDL_MOUSEBUTTONDOWN) &&
                     p->HandleDetachedResize(event))
@@ -486,9 +502,10 @@ bool SDL2Compositor::RouteEventInner(SDL_Event& event) {
                 // Handle window resize/close events from the detached window
                 if (event.type == SDL_WINDOWEVENT) {
                     if (event.window.event == SDL_WINDOWEVENT_SIZE_CHANGED) {
-                        int newW = event.window.data1;
-                        int newH = event.window.data2 - p->GetTitleBarHeight();
-                        if (newW > 0 && newH > 0) {
+                        int newW, newH;
+                        SDL_GetWindowSize(p->GetOwnWindow(), &newW, &newH);
+                        newH -= p->GetTitleBarHeight();
+                        if (newW > 0 && newH > 0 && (newW != p->GetWidth() || newH != p->GetHeight())) {
                             p->SetSize(newW, newH);
                             p->InvokeResizeCallback(newW, newH);
                         }

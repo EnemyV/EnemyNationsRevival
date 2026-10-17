@@ -3,9 +3,10 @@
 #include "SDL2Dialogs.h"
 #include "lastplnt.h"
 #include "sfx.h"
+#include "SDL2DisplayMetrics.h"
 
 SDL2OptionsDialog::SDL2OptionsDialog(GameWindow* gameWindow)
-    : SDL2Dialog(gameWindow, "Options", 420, 320) {
+    : SDL2Dialog(gameWindow, "Options", 480, 450) {
 }
 
 void SDL2OptionsDialog::OnInit() {
@@ -33,6 +34,15 @@ void SDL2OptionsDialog::OnInit() {
                                         0, 100,
                                         EnGetProfileInt("Game", "Music", 50));
 
+    AddWidget<SDL2Label>(lx, startY + 3*rowH, 110, rowH, "UI Scale:");
+    m_uiScale = AddWidget<SDL2Listbox>(sx, startY + 3*rowH, 200, 132);
+    static const int scales[] = { 0, 100, 125, 150, 175, 200 };
+    const char* labels[] = { "Auto", "100%", "125%", "150%", "175%", "200%" };
+    for (int i = 0; i < 6; ++i) m_uiScale->AddItem(labels[i]);
+    int selected = 0;
+    for (int i = 0; i < 6; ++i) if (scales[i] == EnDpi::Setting()) selected = i;
+    m_uiScale->SetSelected(selected);
+
     // Buttons
     int btnW = 90, btnH = 30;
     int btnY = m_y + m_height - btnH - 15;
@@ -59,6 +69,9 @@ void SDL2OptionsDialog::OnInit() {
 }
 
 void SDL2OptionsDialog::OnOK() {
+    static const int scales[] = { 0, 100, 125, 150, 175, 200 };
+    const int selected = m_uiScale->GetSelected();
+    if (selected >= 0 && selected < 6) EnDpi::CommitSetting(scales[selected]);
     int iSpeed = m_sldSpeed->GetValue();
     int iSound = m_sldSound->GetValue();
     int iMusic = m_sldMusic->GetValue();

@@ -1,6 +1,11 @@
 #include "stdafx.h"
 #include "en_hangdump.h"   // EnHangHeartbeat() - hang-watchdog liveness beat
 #include "SDL2UI.h"
+#include "SDL2DisplayMetrics.h"
+#include "SDL2UiCanvas.h"
+#ifdef EN_DPI_SMOKE
+#include "dpi_smoke_driver.h"
+#endif
 #include "GameWindow.h"
 #include "SDL2MainMenu.h"
 #include "bitmaps.h"
@@ -92,7 +97,7 @@ namespace UIColors {
 
 // Helper: draw a filled rect
 static void FillRect(SDL_Surface* dst, SDL_Rect r, SDL_Color c) {
-    SDL_FillRect(dst, &r, SDL_MapRGB(dst->format, c.r, c.g, c.b));
+    EnUiCanvas::FillRect(dst, &r, SDL_MapRGB(dst->format, c.r, c.g, c.b));
 }
 
 // Helper: draw a bevel (raised or sunken)
@@ -120,7 +125,7 @@ static void FillGradientSymH(SDL_Surface* dst, SDL_Rect r, SDL_Color edge, SDL_C
         Uint8 gc = (Uint8)(edge.g + (center.g - edge.g) * t);
         Uint8 bc = (Uint8)(edge.b + (center.b - edge.b) * t);
         SDL_Rect col = { r.x + i, r.y, 1, r.h };
-        SDL_FillRect(dst, &col, SDL_MapRGB(dst->format, rc, gc, bc));
+        EnUiCanvas::FillRect(dst, &col, SDL_MapRGB(dst->format, rc, gc, bc));
     }
 }
 
@@ -132,7 +137,7 @@ static void RenderText(SDL_Surface* dst, TTF_Font* font, const char* text,
     // UTF8 variant: dialog labels/titles embed UTF-8 punctuation (em-dash etc.).
     // The Latin-1 TTF_RenderText_* path renders each byte as its own glyph, so a
     // 3-byte em-dash shows up as garbage "text artifacts".
-    SDL_Surface* surf = TTF_RenderUTF8_Blended(font, text, color);
+    SDL_Surface* surf = EnUiCanvas::Text(font, text, color);
     if (!surf) return;
 
     // Shrink-to-fit: when the text is wider OR TALLER than the slot, scale it
@@ -141,35 +146,35 @@ static void RenderText(SDL_Surface* dst, TTF_Font* font, const char* text,
     // the height case covers short widgets like the 10m/1h/6h/24h/7d graph
     // buttons whose 15px row is smaller than the UI font — operator-reported
     // clipped labels).
-    if (shrinkToFit && rect.w > 0 && rect.h > 0 && (surf->w > rect.w || surf->h > rect.h)) {
+    if (shrinkToFit && rect.w > 0 && rect.h > 0 && (EnUiCanvas::Width(surf) > rect.w || EnUiCanvas::Height(surf) > rect.h)) {
         // Uniform downscale to fit BOTH axes (never upscale).
-        double sc = std::min((double)rect.w / surf->w, (double)rect.h / surf->h);
+        double sc = std::min((double)rect.w / EnUiCanvas::Width(surf), (double)rect.h / EnUiCanvas::Height(surf));
         if (sc > 1.0) sc = 1.0;
-        int dw = (int)(surf->w * sc);
-        int dh = (int)(surf->h * sc);
+        int dw = (int)(EnUiCanvas::Width(surf) * sc);
+        int dh = (int)(EnUiCanvas::Height(surf) * sc);
         if (dw < 1) dw = 1;
         if (dh < 1) dh = 1;
-        SDL_Rect srcRect = { 0, 0, surf->w, surf->h };
+        SDL_Rect srcRect = { 0, 0, EnUiCanvas::Width(surf), EnUiCanvas::Height(surf) };
         SDL_Rect dstRect = rect;
         if (centerH && dw < rect.w) dstRect.x += (rect.w - dw) / 2;
         if (centerV && dh < rect.h) dstRect.y += (rect.h - dh) / 2;
         dstRect.w = dw;
         dstRect.h = dh;
         SDL_SetSurfaceBlendMode(surf, SDL_BLENDMODE_BLEND);
-        SDL_BlitScaled(surf, &srcRect, dst, &dstRect);
-        SDL_FreeSurface(surf);
+        EnUiCanvas::BlitScaled(surf, &srcRect, dst, &dstRect);
+        EnUiCanvas::FreeSurface(surf);
         return;
     }
 
     // Clip source rect to not exceed destination rect bounds
-    SDL_Rect srcRect = { 0, 0, std::min(surf->w, rect.w), std::min(surf->h, rect.h) };
+    SDL_Rect srcRect = { 0, 0, std::min(EnUiCanvas::Width(surf), rect.w), std::min(EnUiCanvas::Height(surf), rect.h) };
     SDL_Rect dstRect = rect;
-    if (centerH && surf->w < rect.w) dstRect.x += (rect.w - surf->w) / 2;
-    if (centerV && surf->h < rect.h) dstRect.y += (rect.h - surf->h) / 2;
+    if (centerH && EnUiCanvas::Width(surf) < rect.w) dstRect.x += (rect.w - EnUiCanvas::Width(surf)) / 2;
+    if (centerV && EnUiCanvas::Height(surf) < rect.h) dstRect.y += (rect.h - EnUiCanvas::Height(surf)) / 2;
     dstRect.w = srcRect.w;
     dstRect.h = srcRect.h;
-    SDL_BlitSurface(surf, &srcRect, dst, &dstRect);
-    SDL_FreeSurface(surf);
+    EnUiCanvas::BlitSurface(surf, &srcRect, dst, &dstRect);
+    EnUiCanvas::FreeSurface(surf);
 }
 
 // Helper: render wrapped text (multi-line, clipped to rect, vertically centered)
@@ -186,7 +191,7 @@ static void RenderTextWrapped(SDL_Surface* dst, TTF_Font* font, const char* text
     else if (centerH)
         TTF_SetFontWrappedAlign(font, TTF_WRAPPED_ALIGN_CENTER);
 
-    SDL_Surface* surf = TTF_RenderUTF8_Blended_Wrapped(font, text, color, rect.w);
+    SDL_Surface* surf = EnUiCanvas::Wrapped(font, text, color, rect.w);
 
     // Restore original alignment
     TTF_SetFontWrappedAlign(font, oldAlign);
@@ -194,17 +199,17 @@ static void RenderTextWrapped(SDL_Surface* dst, TTF_Font* font, const char* text
     if (!surf) return;
 
     // Clip to the available rect height
-    SDL_Rect srcRect = { 0, 0, std::min(surf->w, rect.w), std::min(surf->h, rect.h) };
+    SDL_Rect srcRect = { 0, 0, std::min(EnUiCanvas::Width(surf), rect.w), std::min(EnUiCanvas::Height(surf), rect.h) };
     SDL_Rect dstRect = rect;
     // Vertically center the text block within the rect (unless top-aligned)
-    if (!topAligned && surf->h < rect.h)
-        dstRect.y += (rect.h - surf->h) / 2;
+    if (!topAligned && EnUiCanvas::Height(surf) < rect.h)
+        dstRect.y += (rect.h - EnUiCanvas::Height(surf)) / 2;
     // For right-aligned single short lines, the wrapped surface still spans rect.w
     // so blitting at dstRect.x is correct — the right-align lives inside surf.
     dstRect.w = srcRect.w;
     dstRect.h = srcRect.h;
-    SDL_BlitSurface(surf, &srcRect, dst, &dstRect);
-    SDL_FreeSurface(surf);
+    EnUiCanvas::BlitSurface(surf, &srcRect, dst, &dstRect);
+    EnUiCanvas::FreeSurface(surf);
 }
 
 static bool PointInRect(int x, int y, SDL_Rect r) {
@@ -216,6 +221,7 @@ static bool PointInRect(int x, int y, SDL_Rect r) {
 // glyph down (which looks mushy) — used to shrink long listbox names readably.
 static TTF_Font* GetUiFont(int pt) {
     if (pt < 6) pt = 6;
+    pt = EnUiCanvas::RasterSize(pt);
     static std::string s_path;
     static std::unordered_map<int, TTF_Font*> s_cache;
     if (s_path.empty()) {
@@ -236,10 +242,10 @@ static TTF_Font* GetUiFont(int pt) {
     }
     if (s_path == "?") return nullptr;
     auto it = s_cache.find(pt);
-    if (it != s_cache.end()) return it->second;
+    if (it != s_cache.end()) return EnUiCanvas::Font(it->second);
     TTF_Font* f = EnOpenUiFont(s_path.c_str(), pt);
     s_cache[pt] = f;
-    return f;
+    return EnUiCanvas::Font(f);
 }
 
 // Render one row of text, shrinking to a smaller CRISP font size when it's too wide
@@ -255,7 +261,7 @@ static void RenderTextShrinkFont(SDL_Surface* dst, TTF_Font* fallback, int baseP
         return;
     }
     int tw = 0, th = 0;
-    TTF_SizeUTF8(base, text, &tw, &th);
+    EnUiCanvas::SizeUTF8(base, text, &tw, &th);
     TTF_Font* use = base;
     if (tw > rect.w && rect.w > 0 && tw > 0) {
         int fitPt = basePt * rect.w / tw;
@@ -274,7 +280,7 @@ SDL2Label::SDL2Label(int x, int y, int w, int h, const std::string& text, SDL_Co
     : SDL2Widget(x, y, w, h), m_text(text), m_color(color) {}
 
 SDL2Label::~SDL2Label() {
-    if (m_cache) SDL_FreeSurface(m_cache);
+    if (m_cache) EnUiCanvas::FreeSurface(m_cache);
 }
 
 void SDL2Label::Render(SDL_Surface* dst, TTF_Font* font) {
@@ -287,28 +293,29 @@ void SDL2Label::Render(SDL_Surface* dst, TTF_Font* font) {
     // every frame visibly drags the game's framerate down while a dialog is open.
     bool colorChanged = (color.r != m_cacheColor.r || color.g != m_cacheColor.g ||
                          color.b != m_cacheColor.b || color.a != m_cacheColor.a);
-    bool needRegen = !m_cache || m_cacheText != m_text || m_cacheFont != font ||
+    bool needRegen = !m_cache || m_cacheText != m_text || m_cacheFont != font || m_cacheScale != EnUiCanvas::Scale() ||
                      m_cacheWrapped != m_wrapped || m_cacheEnabled != m_enabled ||
                      m_cacheWrapNL != m_wrapNewlineOnly ||
                      colorChanged || (m_wrapped && m_cacheWrapW != m_rect.w);
 
     if (needRegen) {
-        if (m_cache) { SDL_FreeSurface(m_cache); m_cache = nullptr; }
+        if (m_cache) { EnUiCanvas::FreeSurface(m_cache); m_cache = nullptr; }
         if (m_wrapped) {
             int oldAlign = TTF_GetFontWrappedAlign(font);
             if (m_rightAligned)    TTF_SetFontWrappedAlign(font, TTF_WRAPPED_ALIGN_RIGHT);
             else if (m_centered)   TTF_SetFontWrappedAlign(font, TTF_WRAPPED_ALIGN_CENTER);
             // wrapLength 0 = break on '\n' only (SDL_ttf contract) — table
             // columns must never width-wrap or their 1:1 row alignment shears.
-            m_cache = TTF_RenderUTF8_Blended_Wrapped(font, m_text.c_str(), color,
+            m_cache = EnUiCanvas::Wrapped(font, m_text.c_str(), color,
                                                      m_wrapNewlineOnly ? 0 : m_rect.w);
             TTF_SetFontWrappedAlign(font, oldAlign);
         } else {
-            m_cache = TTF_RenderUTF8_Blended(font, m_text.c_str(), color);
+            m_cache = EnUiCanvas::Text(font, m_text.c_str(), color);
         }
         m_cacheText    = m_text;
         m_cacheColor   = color;
         m_cacheFont    = font;
+        m_cacheScale   = EnUiCanvas::Scale();
         m_cacheWrapped = m_wrapped;
         m_cacheWrapNL  = m_wrapNewlineOnly;
         m_cacheEnabled = m_enabled;
@@ -329,22 +336,22 @@ void SDL2Label::Render(SDL_Surface* dst, TTF_Font* font) {
     // tall, so a 20px ROW_H label lost the bottom of every line (operator:
     // "the bottom of other text is cut off too") — scale down instead.
     if (!m_wrapped && m_rect.w > 0 && m_rect.h > 0 &&
-        (surf->w > m_rect.w || surf->h > m_rect.h)) {
-        double sc = std::min((double)m_rect.w / surf->w, (double)m_rect.h / surf->h);
+        (EnUiCanvas::Width(surf) > m_rect.w || EnUiCanvas::Height(surf) > m_rect.h)) {
+        double sc = std::min((double)m_rect.w / EnUiCanvas::Width(surf), (double)m_rect.h / EnUiCanvas::Height(surf));
         if (sc > 1.0) sc = 1.0;
-        int dw = (int)(surf->w * sc);
-        int dh = (int)(surf->h * sc);
+        int dw = (int)(EnUiCanvas::Width(surf) * sc);
+        int dh = (int)(EnUiCanvas::Height(surf) * sc);
         if (dw < 1) dw = 1;
         if (dh < 1) dh = 1;
-        SDL_Rect srcAll = { 0, 0, surf->w, surf->h };
+        SDL_Rect srcAll = { 0, 0, EnUiCanvas::Width(surf), EnUiCanvas::Height(surf) };
         SDL_Rect dr = m_rect;
         if (m_rightAligned)  dr.x += (m_rect.w - dw);
         else if (m_centered) dr.x += (m_rect.w - dw) / 2;
         if (!m_topAligned)   dr.y += (m_rect.h - dh) / 2;
         dr.w = dw; dr.h = dh;
         SDL_SetSurfaceBlendMode(surf, SDL_BLENDMODE_BLEND);
-        SDL_BlitScaled(surf, &srcAll, dst, &dr);
-        if (m_bold) { SDL_Rect dr2 = dr; dr2.x += 1; SDL_BlitScaled(surf, &srcAll, dst, &dr2); }
+        EnUiCanvas::BlitScaled(surf, &srcAll, dst, &dr);
+        if (m_bold) { SDL_Rect dr2 = dr; dr2.x += 1; EnUiCanvas::BlitScaled(surf, &srcAll, dst, &dr2); }
         return;
     }
 
@@ -353,34 +360,34 @@ void SDL2Label::Render(SDL_Surface* dst, TTF_Font* font) {
     // the single-line guard below — honoring right/center alignment when the
     // surface does fit.
     if (m_wrapped && m_wrapNewlineOnly) {
-        SDL_Rect full = { 0, 0, surf->w, std::min(surf->h, m_rect.h) };
+        SDL_Rect full = { 0, 0, EnUiCanvas::Width(surf), std::min(EnUiCanvas::Height(surf), m_rect.h) };
         SDL_Rect dr = m_rect;
         dr.h = full.h;
         if (!m_topAligned && full.h < m_rect.h) dr.y += (m_rect.h - full.h) / 2;
-        if (surf->w > m_rect.w) {
+        if (EnUiCanvas::Width(surf) > m_rect.w) {
             dr.w = m_rect.w;                       // condense to the column width
         } else {
-            dr.w = surf->w;
-            if (m_rightAligned)  dr.x += (m_rect.w - surf->w);
-            else if (m_centered) dr.x += (m_rect.w - surf->w) / 2;
+            dr.w = EnUiCanvas::Width(surf);
+            if (m_rightAligned)  dr.x += (m_rect.w - EnUiCanvas::Width(surf));
+            else if (m_centered) dr.x += (m_rect.w - EnUiCanvas::Width(surf)) / 2;
         }
         SDL_SetSurfaceBlendMode(surf, SDL_BLENDMODE_BLEND);
-        SDL_BlitScaled(surf, &full, dst, &dr);
-        if (m_bold) { SDL_Rect d2 = dr; d2.x += 1; SDL_BlitScaled(surf, &full, dst, &d2); }
+        EnUiCanvas::BlitScaled(surf, &full, dst, &dr);
+        if (m_bold) { SDL_Rect d2 = dr; d2.x += 1; EnUiCanvas::BlitScaled(surf, &full, dst, &d2); }
         return;
     }
 
     // Positioning mirrors the original RenderText / RenderTextWrapped helpers.
-    SDL_Rect srcRect = { 0, 0, std::min(surf->w, m_rect.w), std::min(surf->h, m_rect.h) };
+    SDL_Rect srcRect = { 0, 0, std::min(EnUiCanvas::Width(surf), m_rect.w), std::min(EnUiCanvas::Height(surf), m_rect.h) };
     SDL_Rect dstRect = m_rect;
     if (m_wrapped) {
-        if (!m_topAligned && surf->h < m_rect.h) dstRect.y += (m_rect.h - surf->h) / 2;
+        if (!m_topAligned && EnUiCanvas::Height(surf) < m_rect.h) dstRect.y += (m_rect.h - EnUiCanvas::Height(surf)) / 2;
     } else if (m_rightAligned) {
-        if (surf->w < m_rect.w) dstRect.x += (m_rect.w - surf->w);
-        if (!m_topAligned && surf->h < m_rect.h) dstRect.y += (m_rect.h - surf->h) / 2;
+        if (EnUiCanvas::Width(surf) < m_rect.w) dstRect.x += (m_rect.w - EnUiCanvas::Width(surf));
+        if (!m_topAligned && EnUiCanvas::Height(surf) < m_rect.h) dstRect.y += (m_rect.h - EnUiCanvas::Height(surf)) / 2;
     } else {
-        if (m_centered && surf->w < m_rect.w) dstRect.x += (m_rect.w - surf->w) / 2;
-        if (!m_topAligned && surf->h < m_rect.h) dstRect.y += (m_rect.h - surf->h) / 2;
+        if (m_centered && EnUiCanvas::Width(surf) < m_rect.w) dstRect.x += (m_rect.w - EnUiCanvas::Width(surf)) / 2;
+        if (!m_topAligned && EnUiCanvas::Height(surf) < m_rect.h) dstRect.y += (m_rect.h - EnUiCanvas::Height(surf)) / 2;
     }
     // Generic overflow guard (all info windows / dialogs use SDL2Label): a single-line
     // label whose rendered text is WIDER than its widget used to clip at the right edge —
@@ -388,21 +395,21 @@ void SDL2Label::Render(SDL_Surface* dst, TTF_Font* font) {
     // pop) and words got cut ("desks"->"desk"). Condense the glyphs horizontally to fit
     // the field instead of clipping/overflowing. Labels that already fit take the normal
     // 1:1 path below (no scaling, no quality change).
-    if (!m_wrapped && surf->w > m_rect.w) {
-        SDL_Rect full = { 0, 0, surf->w, std::min(surf->h, m_rect.h) };
+    if (!m_wrapped && EnUiCanvas::Width(surf) > m_rect.w) {
+        SDL_Rect full = { 0, 0, EnUiCanvas::Width(surf), std::min(EnUiCanvas::Height(surf), m_rect.h) };
         SDL_Rect fit  = m_rect; fit.w = m_rect.w; fit.h = full.h;
         if (!m_topAligned && full.h < m_rect.h) fit.y += (m_rect.h - full.h) / 2;
-        SDL_BlitScaled(surf, &full, dst, &fit);
-        if (m_bold) { SDL_Rect f2 = fit; f2.x += 1; SDL_BlitScaled(surf, &full, dst, &f2); }
+        EnUiCanvas::BlitScaled(surf, &full, dst, &fit);
+        if (m_bold) { SDL_Rect f2 = fit; f2.x += 1; EnUiCanvas::BlitScaled(surf, &full, dst, &f2); }
         return;
     }
     dstRect.w = srcRect.w;
     dstRect.h = srcRect.h;
-    SDL_BlitSurface(surf, &srcRect, dst, &dstRect);
+    EnUiCanvas::BlitSurface(surf, &srcRect, dst, &dstRect);
     if (m_bold) {
         // second pass shifted +1px in x = faux bold (local; no shared-font mutation)
         SDL_Rect dr2 = dstRect; dr2.x += 1;
-        SDL_BlitSurface(surf, &srcRect, dst, &dr2);
+        EnUiCanvas::BlitSurface(surf, &srcRect, dst, &dr2);
     }
 }
 
@@ -428,7 +435,7 @@ void SDL2Button::Render(SDL_Surface* dst, TTF_Font* font) {
             frameIdx = 1;  // pressed
         SDL_Rect src = { frameIdx * frameW, 0, frameW, frameH };
         SDL_Rect dstR = m_rect;
-        SDL_BlitScaled(m_btnSheet, &src, dst, &dstR);
+        EnUiCanvas::BlitScaled(m_btnSheet, &src, dst, &dstR);
     } else if (m_rect.h < 32) {
         // SMALL buttons (e.g. the 10m/1h/6h/24h/7d graph-range row): the
         // symmetric gradient's bright center overpowers a short face and reads
@@ -436,7 +443,7 @@ void SDL2Button::Render(SDL_Surface* dst, TTF_Font* font) {
         // bevel instead.
         SDL_Color fc = showPressed ? UIColors::BtnPressed : UIColors::BtnFace;
         SDL_Rect fr = m_rect;
-        SDL_FillRect(dst, &fr, SDL_MapRGB(dst->format, fc.r, fc.g, fc.b));
+        EnUiCanvas::FillRect(dst, &fr, SDL_MapRGB(dst->format, fc.r, fc.g, fc.b));
         if (showPressed)
             DrawBevel(dst, m_rect, 1, UIColors::BtnDark, UIColors::BtnLight);
         else
@@ -488,7 +495,7 @@ void SDL2Button::Render(SDL_Surface* dst, TTF_Font* font) {
             dstY + shift,
             dstW, dstH
         };
-        SDL_BlitScaled(m_iconSheet, &m_iconSrc, dst, &dr);
+        EnUiCanvas::BlitScaled(m_iconSheet, &m_iconSrc, dst, &dr);
     }
 
     // Text rect: overlays the bottom of the face (on top of icon) or full face if no icon
@@ -510,7 +517,7 @@ void SDL2Button::Render(SDL_Surface* dst, TTF_Font* font) {
 
     if (m_rect.h >= 32 && font) {
         int textW = 0, textH = 0;
-        TTF_SizeText(font, m_text.c_str(), &textW, &textH);
+        EnUiCanvas::SizeText(font, m_text.c_str(), &textW, &textH);
         if (textW > textRect.w) {
             // Too wide. Wrapping only helps if every WORD fits the button width; a
             // single word wider than the button (e.g. "Manufacturing" in the Linux
@@ -523,7 +530,7 @@ void SDL2Button::Render(SDL_Surface* dst, TTF_Font* font) {
                 size_t len = (sp == std::string::npos) ? std::string::npos : sp - s;
                 std::string w = m_text.substr(s, len);
                 if (!w.empty()) {
-                    int ww = 0, wh = 0; TTF_SizeText(font, w.c_str(), &ww, &wh);
+                    int ww = 0, wh = 0; EnUiCanvas::SizeText(font, w.c_str(), &ww, &wh);
                     if (ww > widestWord) widestWord = ww;
                 }
                 if (sp == std::string::npos) break;
@@ -764,11 +771,11 @@ void SDL2InfoIcon::RenderOverlay(SDL_Surface* dst, TTF_Font* font, const SDL_Rec
     int wrapW = dlgRect.w - 2 * padX - 8;   // keep the box within the dialog width
     if (wrapW < 120) wrapW = 120;           // floor for very narrow dialogs
     if (wrapW > 300) wrapW = 300;           // cap so tooltips stay readable, not full-width
-    SDL_Surface* txt = TTF_RenderUTF8_Blended_Wrapped(font, m_tip.c_str(), txtCol, (Uint32)wrapW);
+    SDL_Surface* txt = EnUiCanvas::Wrapped(font, m_tip.c_str(), txtCol, (Uint32)wrapW);
     if (!txt) return;
 
     SDL_Rect box = { m_rect.x + m_rect.w + 4, m_rect.y - 2,
-                     txt->w + 2 * padX, txt->h + 2 * padY };
+                     EnUiCanvas::Width(txt) + 2 * padX, EnUiCanvas::Height(txt) + 2 * padY };
     // Keep the box inside the DIALOG's content rect, not just the screen: the
     // dialog blits only dlgRect into its own window, so a tooltip painted past
     // the dialog's right edge (the (i) icon is pinned there) is never copied
@@ -780,9 +787,9 @@ void SDL2InfoIcon::RenderOverlay(SDL_Surface* dst, TTF_Font* font, const SDL_Rec
     if (box.y < dlgRect.y)                     box.y = dlgRect.y;
     FillRect(dst, box, SDL_Color{20, 24, 40, 255});
     DrawBevel(dst, box, 1, SDL_Color{200, 165, 70, 255}, SDL_Color{200, 165, 70, 255});
-    SDL_Rect dr = { box.x + padX, box.y + padY, txt->w, txt->h };
-    SDL_BlitSurface(txt, nullptr, dst, &dr);
-    SDL_FreeSurface(txt);
+    SDL_Rect dr = { box.x + padX, box.y + padY, EnUiCanvas::Width(txt), EnUiCanvas::Height(txt) };
+    EnUiCanvas::BlitSurface(txt, nullptr, dst, &dr);
+    EnUiCanvas::FreeSurface(txt);
 }
 
 bool SDL2InfoIcon::HandleEvent(const SDL_Event& event) {
@@ -901,12 +908,12 @@ void SDL2Listbox::AddItemWrapped(const std::string& text) {
     if (!font || avail <= 0 || text.empty()) { AddItem(text); return; }
 
     int tw = 0, th = 0;
-    TTF_SizeUTF8(font, text.c_str(), &tw, &th);
+    EnUiCanvas::SizeUTF8(font, text.c_str(), &tw, &th);
     if (tw <= avail) { AddItem(text); return; }
 
     const std::string indent = "  ";   // marks continuation rows
     int indentW = 0;
-    TTF_SizeUTF8(font, indent.c_str(), &indentW, &th);
+    EnUiCanvas::SizeUTF8(font, indent.c_str(), &indentW, &th);
 
     std::string rest = text;
     bool first = true;
@@ -918,7 +925,7 @@ void SDL2Listbox::AddItemWrapped(const std::string& text) {
         size_t lo = 1, hi = rest.size(), fit = 1;
         while (lo <= hi) {
             size_t mid = lo + (hi - lo) / 2;
-            TTF_SizeUTF8(font, rest.substr(0, mid).c_str(), &tw, &th);
+            EnUiCanvas::SizeUTF8(font, rest.substr(0, mid).c_str(), &tw, &th);
             if (tw <= lineAvail) { fit = mid; lo = mid + 1; }
             else { if (mid <= 1) break; hi = mid - 1; }
         }
@@ -1067,7 +1074,7 @@ void SDL2Listbox::Render(SDL_Surface* dst, TTF_Font* font) {
     // whose button-up went to another window — otherwise the list would keep
     // scrolling with nothing held down.
     if (m_sbRepeat.Active()) {
-        if (!(SDL_GetGlobalMouseState(nullptr, nullptr) & SDL_BUTTON_LMASK))
+        if (!(EnDpi::MouseButtons() & SDL_BUTTON_LMASK))
             m_sbRepeat.End();
         else
             ScrollBy(m_sbRepeat.Steps(SDL_GetTicks()) * m_sbRepeat.dir);
@@ -1252,8 +1259,11 @@ bool SDL2Listbox::HandleEvent(const SDL_Event& event) {
     if (event.type == SDL_MOUSEWHEEL) {
         int mx = event.wheel.mouseX, my = event.wheel.mouseY;
         if (PointInRect(mx, my, m_rect)) {
-            ScrollBy(-event.wheel.y * 2);
-            return true;
+            const int previous = m_scrollOffset;
+            const int dy = event.wheel.direction == SDL_MOUSEWHEEL_FLIPPED ? -event.wheel.y : event.wheel.y;
+            ScrollBy(-dy * 2);
+            // Let an oversized dialog scroll when the inner list is at its limit.
+            return m_scrollOffset != previous;
         }
     }
 
@@ -1272,7 +1282,7 @@ int SDL2EditBox::CharIndexToX(int index) const {
     if (m_cachedFont && !m_text.empty() && index > 0) {
         int tw, th;
         std::string sub = m_text.substr(0, index);
-        TTF_SizeText(m_cachedFont, sub.c_str(), &tw, &th);
+        EnUiCanvas::SizeText(m_cachedFont, sub.c_str(), &tw, &th);
         x += tw;
     }
     return x;
@@ -1285,14 +1295,14 @@ int SDL2EditBox::XToCharIndex(int pixelX) const {
     for (int i = 1; i <= (int)m_text.size(); i++) {
         int tw, th;
         std::string sub = m_text.substr(0, i);
-        TTF_SizeText(m_cachedFont, sub.c_str(), &tw, &th);
+        EnUiCanvas::SizeText(m_cachedFont, sub.c_str(), &tw, &th);
         int charRight = textX + tw;
         // If click is before the midpoint of this character, place cursor before it
         int prevTw = 0;
         if (i > 1) {
             int dummy;
             std::string prevSub = m_text.substr(0, i - 1);
-            TTF_SizeText(m_cachedFont, prevSub.c_str(), &prevTw, &dummy);
+            EnUiCanvas::SizeText(m_cachedFont, prevSub.c_str(), &prevTw, &dummy);
         }
         int charMid = textX + prevTw + (tw - prevTw) / 2;
         if (pixelX < charMid) return i - 1;
@@ -1312,7 +1322,7 @@ void SDL2EditBox::DeleteSelection() {
 // ---- Multi-line helpers (used only when m_multiline) ----
 
 int SDL2EditBox::LineHeight() const {
-    return m_cachedFont ? TTF_FontLineSkip(m_cachedFont) : 16;
+    return m_cachedFont ? EnUiCanvas::FontLineSkip(m_cachedFont) : 16;
 }
 
 void SDL2EditBox::ComputeLineStarts(std::vector<int>& starts) const {
@@ -1348,7 +1358,7 @@ int SDL2EditBox::XYToCharIndex(int px, int py) const {
     int prevTw = 0;
     for (int c = 1; c <= end - start; c++) {
         int tw, th;
-        TTF_SizeText(m_cachedFont, m_text.substr(start, c).c_str(), &tw, &th);
+        EnUiCanvas::SizeText(m_cachedFont, m_text.substr(start, c).c_str(), &tw, &th);
         int charMid = textX + prevTw + (tw - prevTw) / 2;
         if (px < charMid) { col = c - 1; break; }
         prevTw = tw;
@@ -1385,8 +1395,8 @@ void SDL2EditBox::Render(SDL_Surface* dst, TTF_Font* font) {
                 int hi = std::min(selHi, end);
                 if (hi > lo) {
                     int tw, th, x0 = m_rect.x + 4, x1 = m_rect.x + 4;
-                    TTF_SizeText(font, m_text.substr(start, lo - start).c_str(), &tw, &th); x0 += tw;
-                    TTF_SizeText(font, m_text.substr(start, hi - start).c_str(), &tw, &th); x1 += tw;
+                    EnUiCanvas::SizeText(font, m_text.substr(start, lo - start).c_str(), &tw, &th); x0 += tw;
+                    EnUiCanvas::SizeText(font, m_text.substr(start, hi - start).c_str(), &tw, &th); x1 += tw;
                     SDL_Rect sr = { x0, ly, x1 - x0, lh };
                     FillRect(dst, sr, { 80, 120, 160, 255 });
                 }
@@ -1404,7 +1414,7 @@ void SDL2EditBox::Render(SDL_Surface* dst, TTF_Font* font) {
             int line, col;
             IndexToLineCol(m_cursorPos, line, col);
             int cx = m_rect.x + 4, tw, th;
-            TTF_SizeText(font, m_text.substr(starts[line], col).c_str(), &tw, &th); cx += tw;
+            EnUiCanvas::SizeText(font, m_text.substr(starts[line], col).c_str(), &tw, &th); cx += tw;
             int cy = m_rect.y + 3 + line * lh;
             bool darkBg = (bg.r + bg.g + bg.b) < 256;
             if (cy + lh - 4 <= m_rect.y + m_rect.h)   // don't draw a caret past the box (no scroll)
@@ -1663,7 +1673,7 @@ void SDL2GroupBox::Render(SDL_Surface* dst, TTF_Font* font) {
     // Measure label text so we can cut a gap in the top border line
     int labelW = 0, labelH = 0;
     if (font && !m_label.empty())
-        TTF_SizeText(font, m_label.c_str(), &labelW, &labelH);
+        EnUiCanvas::SizeText(font, m_label.c_str(), &labelW, &labelH);
 
     const int textPadX = 4;   // gap between border end and text
     const int textOffX = 8;   // distance from left edge to start of text
@@ -1702,17 +1712,17 @@ SDL2Image::SDL2Image(int x, int y, int w, int h)
     : SDL2Widget(x, y, w, h) {}
 
 SDL2Image::~SDL2Image() {
-    if (m_owned && m_surface) SDL_FreeSurface(m_surface);
+    if (m_owned && m_surface) EnUiCanvas::FreeSurface(m_surface);
 }
 
 void SDL2Image::SetSurface(SDL_Surface* surf, bool takeOwnership) {
-    if (m_owned && m_surface) SDL_FreeSurface(m_surface);
+    if (m_owned && m_surface) EnUiCanvas::FreeSurface(m_surface);
     m_surface = surf;
     m_owned = takeOwnership;
 }
 
 void SDL2Image::Clear() {
-    if (m_owned && m_surface) SDL_FreeSurface(m_surface);
+    if (m_owned && m_surface) EnUiCanvas::FreeSurface(m_surface);
     m_surface = nullptr;
     m_owned = false;
 }
@@ -1733,7 +1743,7 @@ void SDL2Image::Render(SDL_Surface* dst, TTF_Font* font) {
     int dstY = m_rect.y + (m_rect.h - dstH) / 2;
 
     SDL_Rect dstRect = { dstX, dstY, dstW, dstH };
-    SDL_BlitScaled(m_surface, nullptr, dst, &dstRect);
+    EnUiCanvas::BlitScaled(m_surface, nullptr, dst, &dstRect);
 }
 
 // ============================================================================
@@ -1786,21 +1796,21 @@ void SDL2ProgressBar::Render(SDL_Surface* dst, TTF_Font* font) {
         int fillRight = r.x + 2 + fillW;   // x where the blue fill ends
 
         SDL_Rect oldClip;
-        SDL_GetClipRect(dst, &oldClip);
+        EnUiCanvas::GetClipRect(dst, &oldClip);
 
         // Filled (left) part: white text on the blue fill.
         SDL_Rect leftClip = { r.x, r.y, fillRight - r.x, r.h };
         SDL_IntersectRect(&leftClip, &oldClip, &leftClip);
-        SDL_SetClipRect(dst, &leftClip);
+        EnUiCanvas::SetClipRect(dst, &leftClip);
         RenderText(dst, font, buf, r, {255, 255, 255, 255}, true, true);
 
         // Unfilled (right) part: dark navy text on the light track.
         SDL_Rect rightClip = { fillRight, r.y, (r.x + r.w) - fillRight, r.h };
         SDL_IntersectRect(&rightClip, &oldClip, &rightClip);
-        SDL_SetClipRect(dst, &rightClip);
+        EnUiCanvas::SetClipRect(dst, &rightClip);
         RenderText(dst, font, buf, r, {20, 24, 60, 255}, true, true);
 
-        SDL_SetClipRect(dst, &oldClip);
+        EnUiCanvas::SetClipRect(dst, &oldClip);
     }
 }
 
@@ -1850,19 +1860,21 @@ SDL2Dialog::~SDL2Dialog() {
         SDL_DestroyWindow(m_dlgWindow);
         m_dlgWindow = nullptr;
     }
-    if (m_background) SDL_FreeSurface(m_background);
-    if (m_fullscreenBg && m_ownFullscreenBg) SDL_FreeSurface(m_fullscreenBg);
+    if (m_background) EnUiCanvas::FreeSurface(m_background);
+    if (m_frameArt) EnUiCanvas::FreeSurface(m_frameArt);
+    if (m_fullscreenBg && m_ownFullscreenBg) EnUiCanvas::FreeSurface(m_fullscreenBg);
     for (auto& pair : m_fontCache)
-        if (pair.second) TTF_CloseFont(pair.second);
+        if (pair.second) { EnUiCanvas::ForgetFont(pair.second); TTF_CloseFont(pair.second); }
 }
 
 TTF_Font* SDL2Dialog::GetFont(int size) {
+    size = EnUiCanvas::RasterSize(size);
     if (m_fontPath.empty()) return nullptr;
     auto it = m_fontCache.find(size);
-    if (it != m_fontCache.end()) return it->second;
+    if (it != m_fontCache.end()) return EnUiCanvas::Font(it->second);
     TTF_Font* font = EnOpenUiFont(m_fontPath.c_str(), size);
     m_fontCache[size] = font;
-    return font;
+    return EnUiCanvas::Font(font);
 }
 
 void SDL2Dialog::LoadDialogArt() {
@@ -1883,23 +1895,95 @@ void SDL2Dialog::LoadDialogArt() {
 }
 
 void SDL2Dialog::FreeDialogArt() {
-    if (s_dlgBkgnd)   { SDL_FreeSurface(s_dlgBkgnd);   s_dlgBkgnd = nullptr; }
-    if (s_dlgGold)     { SDL_FreeSurface(s_dlgGold);     s_dlgGold = nullptr; }
-    if (s_borderHorz)  { SDL_FreeSurface(s_borderHorz);  s_borderHorz = nullptr; }
-    if (s_borderVert)  { SDL_FreeSurface(s_borderVert);  s_borderVert = nullptr; }
+    if (s_dlgBkgnd)   { EnUiCanvas::FreeSurface(s_dlgBkgnd);   s_dlgBkgnd = nullptr; }
+    if (s_dlgGold)     { EnUiCanvas::FreeSurface(s_dlgGold);     s_dlgGold = nullptr; }
+    if (s_borderHorz)  { EnUiCanvas::FreeSurface(s_borderHorz);  s_borderHorz = nullptr; }
+    if (s_borderVert)  { EnUiCanvas::FreeSurface(s_borderVert);  s_borderVert = nullptr; }
     s_artLoaded = false;
 }
 
 void SDL2Dialog::PaintGameBorder(SDL_Surface* dst, SDL_Rect rect) {
     // Gold background fill (stretched to fill dialog area)
     if (s_dlgGold) {
-        SDL_BlitScaled(s_dlgGold, nullptr, dst, &rect);
+        EnUiCanvas::BlitScaled(s_dlgGold, nullptr, dst, &rect);
     }
 
     // Carved-gold frame (shared corner-correct routine — fills the corners with
     // no gap; the side strips overlap the top/bottom).
-    SDL2MainMenu::DrawGoldBorder(dst, rect.x, rect.y, rect.w, rect.h,
-                                 s_borderHorz, s_borderVert);
+    // The border artwork is raster art; scale it separately from crisp text.
+    if (!m_frameArt || m_frameArt->w != rect.w || m_frameArt->h != rect.h) {
+        if (m_frameArt) EnUiCanvas::FreeSurface(m_frameArt);
+        m_frameArt = SDL_CreateRGBSurfaceWithFormat(0, rect.w, rect.h, 32, SDL_PIXELFORMAT_ARGB8888);
+        if (m_frameArt) {
+            SDL_FillRect(m_frameArt, nullptr, 0);
+            SDL_SetSurfaceBlendMode(m_frameArt, SDL_BLENDMODE_BLEND);
+            SDL2MainMenu::DrawGoldBorder(m_frameArt, 0, 0, rect.w, rect.h, s_borderHorz, s_borderVert);
+        }
+    }
+    if (m_frameArt) EnUiCanvas::BlitScaled(m_frameArt, nullptr, dst, &rect);
+}
+
+void SDL2Dialog::RefreshDisplayMetrics() {
+    if (!m_dlgWindow) {
+        if (m_gameWindow) m_displayMetrics = m_gameWindow->GetDisplayMetrics();
+        return;
+    }
+    int display = SDL_GetWindowDisplayIndex(m_dlgWindow);
+    if (display >= 0 && display != m_dlgLastDisplay) {
+        m_dlgLastDisplay = display;
+    }
+    m_displayMetrics.Refresh(m_dlgWindow);
+    if (!m_displayMetrics.valid) return;
+    const double scale = m_displayMetrics.WindowScaleY();
+    SDL_SetWindowData(m_dlgWindow, "EN_resizeGrip", (void*)(intptr_t)1);
+    SDL_SetWindowData(m_dlgWindow, "EN_titleBarHeight", (void*)(intptr_t)m_displayMetrics.WindowY(kTitleBarH + DlgBorderTop()));
+    if (std::abs(scale - m_windowScale) > 0.001) {
+        m_windowScale = scale;
+        SDL_SetWindowSize(m_dlgWindow, m_displayMetrics.WindowX(m_width), m_displayMetrics.WindowY(m_height));
+        EnDpi::ClampWindow(m_dlgWindow);
+        m_displayMetrics.Refresh(m_dlgWindow);
+        m_forceFrame = true;
+    }
+    const int viewW = (int)std::floor(m_displayMetrics.drawableW / m_displayMetrics.pixelScale);
+    const int viewH = (int)std::floor(m_displayMetrics.drawableH / m_displayMetrics.pixelScale);
+    m_scrollX = std::max(0, std::min(m_scrollX, m_width - viewW));
+    m_scrollY = std::max(0, std::min(m_scrollY, m_height - viewH));
+}
+
+int SDL2Dialog::FooterTop() const {
+    int top = m_y + m_height;
+    for (auto& widget : m_widgets)
+        if (widget->IsVisible() && dynamic_cast<SDL2Button*>(widget.get()) &&
+            widget->GetRect().y >= m_y + m_height - 80)
+            top = std::min(top, widget->GetRect().y - 4);
+    return top;
+}
+
+void SDL2Dialog::EnsureFocusVisible() {
+    if (m_focusIndex < 0 || m_focusIndex >= (int)m_widgets.size() || !m_displayMetrics.valid) return;
+    SDL_Rect r = m_widgets[m_focusIndex]->GetRect();
+    const int vw = (int)(m_displayMetrics.drawableW / m_displayMetrics.pixelScale);
+    const int vh = (int)(m_displayMetrics.drawableH / m_displayMetrics.pixelScale);
+    if (r.x < m_x + m_scrollX) m_scrollX = r.x - m_x;
+    if (r.x + r.w > m_x + m_scrollX + vw) m_scrollX = r.x + r.w - m_x - vw;
+    // Bottom action buttons are anchored to the viewport, independent of scrolling.
+    const int footerTop = FooterTop(), footerH = m_y + m_height - footerTop;
+    if (r.y < footerTop) {
+        if (r.y < m_y + m_scrollY + 34) m_scrollY = r.y - m_y - 34;
+        if (r.y + r.h > m_y + m_scrollY + vh - footerH) m_scrollY = r.y + r.h - m_y - vh + footerH;
+    }
+    m_scrollX = std::max(0, std::min(m_scrollX, std::max(0, m_width - vw)));
+    m_scrollY = std::max(0, std::min(m_scrollY, std::max(0, m_height - vh)));
+}
+
+int SDL2Dialog::FooterScrollX(int viewW) const {
+    const int top = FooterTop();
+    int left = m_x + m_width, right = m_x;
+    for (auto& widget : m_widgets) {
+        SDL_Rect r = widget->GetRect();
+        if (widget->IsVisible() && r.y >= top) { left = std::min(left, r.x); right = std::max(right, r.x + r.w); }
+    }
+    return right > left && right - left <= viewW ? (left + right - 2 * m_x - viewW) / 2 : m_scrollX;
 }
 
 void SDL2Dialog::AddOKCancelButtons() {
@@ -1932,17 +2016,26 @@ void SDL2Dialog::Render() {
     // Lazy-load game art on first render
     if (!s_artLoaded) LoadDialogArt();
 
-    // Draw the dialog into the main window's surface at (m_x, m_y).
-    // Widget coords are baked relative to (m_x, m_y) so we always use the main surface.
-    SDL_Surface* mainSurface = m_gameWindow->GetPresentSurface();  // T0: software surface or renderer back-buffer
+    RefreshDisplayMetrics();
+    if (!m_displayMetrics.valid) return;
+    // Each dialog owns its rasterization density, including on a second monitor.
+    SDL_Surface* mainSurface = m_dlgWindow ? SDL_GetWindowSurface(m_dlgWindow) : m_gameWindow->GetDrawableSurface();
     if (!mainSurface) return;
 
     // Restore captured background if falling back to main window display
     if (!m_dlgWindow && m_background) {
-        SDL_BlitSurface(m_background, nullptr, mainSurface, nullptr);
+        EnUiCanvas::BlitSurface(m_background, nullptr, mainSurface, nullptr);
     }
 
-    SDL_Rect dlgRect = { m_x, m_y, m_width, m_height };
+    const double scale = m_displayMetrics.pixelScale;
+    const int viewW = std::min(m_width, (int)std::floor(mainSurface->w / scale));
+    const int viewH = std::min(m_height, (int)std::floor(mainSurface->h / scale));
+    const int placementX = m_dlgWindow ? 0 : m_displayMetrics.CenteredOrigin(mainSurface->w, m_width);
+    const int placementY = m_dlgWindow ? 0 : m_displayMetrics.CenteredOrigin(mainSurface->h, m_height);
+    const int footerTop = FooterTop(), footerH = m_y + m_height - footerTop;
+    const int footerX = FooterScrollX(viewW);
+    EnUiCanvas::Scope canvas(mainSurface, scale, m_x - placementX, m_y - placementY);
+    SDL_Rect dlgRect = { m_x, m_y, viewW, viewH };
     int borderTop = s_borderHorz ? s_borderHorz->h : 3;
     int borderSide = s_borderVert ? s_borderVert->w : 3;
 
@@ -1952,7 +2045,7 @@ void SDL2Dialog::Render() {
         // Full-screen end-game screen: stretch the painting over the whole rect,
         // no gold frame or title bar (mirrors CWndCutScene's full-screen popup).
         if (m_fullscreenBg)
-            SDL_BlitScaled(m_fullscreenBg, nullptr, mainSurface, &dlgRect);
+            EnUiCanvas::BlitScaled(m_fullscreenBg, nullptr, mainSurface, &dlgRect);
         else
             FillRect(mainSurface, dlgRect, SDL_Color{0, 0, 0, 255});
     } else if (s_artLoaded && (s_dlgGold || s_borderHorz)) {
@@ -1968,9 +2061,9 @@ void SDL2Dialog::Render() {
                 interior.x, interior.y + titleBarH,
                 interior.w, interior.h - titleBarH
             };
-            SDL_BlitScaled(m_customBg, nullptr, mainSurface, &bgRect);
+            EnUiCanvas::BlitScaled(m_customBg, nullptr, mainSurface, &bgRect);
         } else if (s_dlgGold) {
-            SDL_BlitScaled(s_dlgGold, nullptr, mainSurface, &interior);
+            EnUiCanvas::BlitScaled(s_dlgGold, nullptr, mainSurface, &interior);
         }
     } else {
         FillRect(mainSurface, dlgRect, UIColors::DialogBg);
@@ -1978,7 +2071,7 @@ void SDL2Dialog::Render() {
     }
 
     if (!m_chromeless) {
-        SDL_Rect titleRect = { m_x + borderSide, m_y + borderTop, m_width - 2 * borderSide, titleBarH };
+        SDL_Rect titleRect = { m_x + borderSide, m_y + borderTop, viewW - 2 * borderSide, titleBarH };
         FillRect(mainSurface, titleRect, UIColors::TitleBg);
 
         TTF_Font* titleFont = GetFont(16);
@@ -1991,6 +2084,14 @@ void SDL2Dialog::Render() {
 
     TTF_Font* widgetFont = GetFont(m_widgetFontSize);
     for (auto& widget : m_widgets) {
+        const bool footer = widget->GetRect().y >= footerTop;
+        const int sy = footer ? m_height - viewH : m_scrollY;
+        const int sx = footer ? footerX : m_scrollX;
+        EnUiCanvas::Scope widgetCanvas(mainSurface, scale,
+            m_x + sx - placementX, m_y + sy - placementY);
+        SDL_Rect clip = { m_x + sx, m_y + sy + (footer ? viewH - footerH : borderTop + titleBarH),
+                          viewW, footer ? footerH : std::max(0, viewH - borderTop - titleBarH - footerH) };
+        EnUiCanvas::SetClipRect(mainSurface, &clip);
         // Honour a per-widget font-size override (e.g. larger race-pick text),
         // falling back to the shared 13pt widget font.
         TTF_Font* wf = widgetFont;
@@ -2005,39 +2106,53 @@ void SDL2Dialog::Render() {
         // fuzzy and too small (operator). Floor at 7pt for legibility.
         {
             int wh = widget->GetRect().h;
-            if (wf && wh > 0 && TTF_FontHeight(wf) > wh) {
+            if (wf && wh > 0 && EnUiCanvas::FontHeight(wf) > wh) {
                 int pt = (widget->GetFontSize() > 0) ? widget->GetFontSize() : m_widgetFontSize;
                 for (int p = pt - 1; p >= 7; p--) {
                     TTF_Font* f2 = GetFont(p);
                     if (!f2) break;
                     wf = f2;
-                    if (TTF_FontHeight(f2) <= wh) break;
+                    if (EnUiCanvas::FontHeight(f2) <= wh) break;
                 }
             }
         }
         widget->Render(mainSurface, wf);
+        EnUiCanvas::SetClipRect(mainSurface, nullptr);
     }
     // Focus highlight in a SECOND pass, after all widgets are drawn — otherwise a
     // neighbouring widget (e.g. the next stacked button) renders over the bottom
     // edge of the focus box and the box looks clipped.
     for (auto& widget : m_widgets) {
         if (widget->HasFocus()) {
+            const int sy = widget->GetRect().y >= footerTop ? m_height - viewH : m_scrollY;
+            const int sx = widget->GetRect().y >= footerTop ? footerX : m_scrollX;
+            EnUiCanvas::Scope widgetCanvas(mainSurface, scale,
+                m_x + sx - placementX, m_y + sy - placementY);
+            const bool footer = widget->GetRect().y >= footerTop;
+            SDL_Rect clip = {m_x + sx, m_y + sy + (footer ? viewH - footerH : borderTop + titleBarH),
+                             viewW, footer ? footerH : std::max(0, viewH - borderTop - titleBarH - footerH)};
+            EnUiCanvas::SetClipRect(mainSurface, &clip);
             SDL_Rect r = widget->GetRect();
             r.x -= 2; r.y -= 2; r.w += 4; r.h += 4;
             DrawBevel(mainSurface, r, 1, {180, 200, 220, 255}, {180, 200, 220, 255});
+            EnUiCanvas::SetClipRect(mainSurface, nullptr);
         }
     }
     // Overlay pass (after focus): hover popups such as tooltips paint last so they
     // float above every sibling widget and the focus box, never clipped by a
     // later-added neighbour. Most widgets' RenderOverlay is a no-op.
-    SDL_Rect dlgContentRect = { m_x, m_y, m_width, m_height };
     for (auto& widget : m_widgets) {
+        const int sy = widget->GetRect().y >= footerTop ? m_height - viewH : m_scrollY;
+        const int sx = widget->GetRect().y >= footerTop ? footerX : m_scrollX;
+        EnUiCanvas::Scope widgetCanvas(mainSurface, scale,
+            m_x + sx - placementX, m_y + sy - placementY);
         TTF_Font* wf = widgetFont;
         if (widget->GetFontSize() > 0) {
             TTF_Font* ov = GetFont(widget->GetFontSize());
             if (ov) wf = ov;
         }
-        widget->RenderOverlay(mainSurface, wf, dlgContentRect);
+        SDL_Rect visible = { m_x + sx, m_y + sy, viewW, viewH };
+        widget->RenderOverlay(mainSurface, wf, visible);
     }
 
     if (m_dlgWindow) {
@@ -2111,24 +2226,7 @@ void SDL2Dialog::Render() {
 #endif
         }
 
-        // If the window has moved to a different monitor, SDL's cached window
-        // framebuffer surface is stale (it's only rebuilt on resize). Destroy
-        // it so the SDL_GetWindowSurface below recreates one bound to the new
-        // monitor — otherwise a dialog dragged to monitor 2/3 renders nothing.
-        int disp = SDL_GetWindowDisplayIndex(m_dlgWindow);
-        if (disp >= 0 && disp != m_dlgLastDisplay) {
-            if (m_dlgLastDisplay != -1)
-                SDL_DestroyWindowSurface(m_dlgWindow);
-            m_dlgLastDisplay = disp;
-        }
-
-        // Copy the dialog rectangle from the main surface into the dedicated dialog window
-        SDL_Surface* dlgSurface = SDL_GetWindowSurface(m_dlgWindow);
-        if (dlgSurface) {
-            SDL_Rect src = { m_x, m_y, m_width, m_height };
-            SDL_BlitSurface(mainSurface, &src, dlgSurface, nullptr);
-            SDL_UpdateWindowSurface(m_dlgWindow);
-        }
+        SDL_UpdateWindowSurface(m_dlgWindow);
     } else {
         m_gameWindow->PresentSurface();
     }
@@ -2149,6 +2247,7 @@ void SDL2Dialog::FocusNext() {
         if (m_widgets[idx]->IsFocusable()) {
             m_focusIndex = idx;
             m_widgets[idx]->SetFocus(true);
+            EnsureFocusVisible();
             return;
         }
     }
@@ -2168,13 +2267,32 @@ void SDL2Dialog::FocusPrev() {
         if (m_widgets[idx]->IsFocusable()) {
             m_focusIndex = idx;
             m_widgets[idx]->SetFocus(true);
+            EnsureFocusVisible();
             return;
         }
     }
     m_focusIndex = -1;
 }
 
-bool SDL2Dialog::HandleEvent(SDL_Event& event) {
+bool SDL2Dialog::HandleEvent(SDL_Event& incoming) {
+    SDL_Event event = incoming;
+    const Uint32 id = EnDpi::EventWindowID(event);
+    const Uint32 own = m_dlgWindow ? SDL_GetWindowID(m_dlgWindow) : SDL_GetWindowID(m_gameWindow->GetWindow());
+    if (id && id != own && !m_dlgDragging) return false;
+    if (event.type == SDL_WINDOWEVENT && event.window.event == SDL_WINDOWEVENT_CLOSE) { OnCancel(); return true; }
+    if (event.type == SDL_WINDOWEVENT && event.window.event == SDL_WINDOWEVENT_FOCUS_LOST && m_pointerWidget >= 0) {
+        SDL_Event release = {}; release.type = SDL_MOUSEBUTTONUP;
+        release.button.button = SDL_BUTTON_LEFT;
+        release.button.x = release.button.y = -1000000; // Cancel, never activate a button.
+        const int pressed = m_pointerWidget; m_pointerWidget = -1;
+        if (pressed < (int)m_widgets.size()) m_widgets[pressed]->HandleEvent(release);
+    }
+    if (event.type == SDL_WINDOWEVENT && event.window.event == SDL_WINDOWEVENT_FOCUS_LOST && m_dlgDragging) {
+        m_dlgDragging = false; SDL_CaptureMouse(SDL_FALSE);
+    }
+    RefreshDisplayMetrics();
+    if (!m_displayMetrics.valid) return false;
+    EnUiCanvas::Scope inputCanvas(nullptr, m_displayMetrics.pixelScale);
     // --- Title-bar drag: move the borderless dialog window (incl. to another
     // monitor). The window is borderless so there's no OS title bar to grab;
     // we drive the move ourselves via SDL_SetWindowPosition. Only the OS window
@@ -2190,8 +2308,8 @@ bool SDL2Dialog::HandleEvent(SDL_Event& event) {
             event.button.button == SDL_BUTTON_LEFT &&
             event.button.windowID == dlgWinID) {
             // event coords are dialog-window-local (0,0)-based
-            int lx = event.button.x, ly = event.button.y;
-            if (lx >= borderSide && lx < m_width - borderSide &&
+            int lx = m_displayMetrics.LayoutX(event.button.x), ly = m_displayMetrics.LayoutY(event.button.y);
+            if (!EnDpi::IsWayland() && lx >= borderSide && lx < m_width - borderSide &&
                 ly >= borderTop && ly < borderTop + titleBarH) {
                 m_dlgDragging = true;
                 SDL_GetGlobalMouseState(&m_dlgDragMouseX, &m_dlgDragMouseY);
@@ -2221,38 +2339,36 @@ bool SDL2Dialog::HandleEvent(SDL_Event& event) {
         }
     }
 
-    // When using a dedicated dialog window, mouse coordinates arrive relative to
-    // that window's (0,0). Widgets use coordinates relative to the main window
-    // (m_x + offset). Shift mouse events so they match widget rects.
-    SDL_Event shifted = event;
-    if (m_dlgWindow) {
-        uint32_t dlgWinID = SDL_GetWindowID(m_dlgWindow);
-        switch (event.type) {
-        case SDL_MOUSEBUTTONDOWN:
-        case SDL_MOUSEBUTTONUP:
-            if (event.button.windowID == dlgWinID) {
-                shifted.button.x += m_x;
-                shifted.button.y += m_y;
-            }
-            break;
-        case SDL_MOUSEMOTION:
-            if (event.motion.windowID == dlgWinID) {
-                shifted.motion.x += m_x;
-                shifted.motion.y += m_y;
-            }
-            break;
-        case SDL_MOUSEWHEEL:
-            // Wheel events carry the mouse position (SDL 2.0.18+) in dialog-window
-            // coords; shift to main-window coords so widgets hit-test correctly.
-            if (event.wheel.windowID == dlgWinID) {
-                shifted.wheel.mouseX += m_x;
-                shifted.wheel.mouseY += m_y;
-            }
-            break;
-        }
-        event = shifted;
+    const int viewW = (int)std::floor(m_displayMetrics.drawableW / m_displayMetrics.pixelScale);
+    const int viewH = (int)std::floor(m_displayMetrics.drawableH / m_displayMetrics.pixelScale);
+    const int footerTop = FooterTop(), footerH = m_y + m_height - footerTop;
+    const int placementX = m_dlgWindow ? 0 : m_displayMetrics.CenteredOrigin(m_displayMetrics.drawableW, m_width);
+    const int placementY = m_dlgWindow ? 0 : m_displayMetrics.CenteredOrigin(m_displayMetrics.drawableH, m_height);
+    int lx = 0, ly = 0;
+    bool pointer = true;
+    switch (event.type) {
+    case SDL_MOUSEBUTTONDOWN: case SDL_MOUSEBUTTONUP: lx = event.button.x; ly = event.button.y; break;
+    case SDL_MOUSEMOTION: lx = event.motion.x; ly = event.motion.y; break;
+    case SDL_MOUSEWHEEL: lx = event.wheel.mouseX; ly = event.wheel.mouseY; break;
+    default: pointer = false; break;
     }
-
+    bool footer = false;
+    const int captured = (m_pointerWidget >= 0 && m_pointerWidget < (int)m_widgets.size() &&
+        (event.type == SDL_MOUSEMOTION || event.type == SDL_MOUSEBUTTONUP)) ? m_pointerWidget : -1;
+    if (pointer) {
+        lx = m_displayMetrics.LayoutX(lx) - placementX;
+        ly = m_displayMetrics.LayoutY(ly) - placementY;
+        if (captured < 0 && !m_dlgWindow && (lx < 0 || ly < 0 || lx >= std::min(m_width, viewW) || ly >= std::min(m_height, viewH))) return false;
+        footer = footerH > 0 && ly >= std::min(m_height, viewH) - footerH;
+        if (captured >= 0) footer = m_widgets[captured]->GetRect().y >= footerTop;
+        const int sy = footer ? m_height - std::min(m_height, viewH) : m_scrollY;
+        lx += m_x + (footer ? FooterScrollX(std::min(m_width, viewW)) : m_scrollX); ly += m_y + sy;
+        switch (event.type) {
+        case SDL_MOUSEBUTTONDOWN: case SDL_MOUSEBUTTONUP: event.button.x = lx; event.button.y = ly; break;
+        case SDL_MOUSEMOTION: event.motion.x = lx; event.motion.y = ly; break;
+        case SDL_MOUSEWHEEL: event.wheel.mouseX = lx; event.wheel.mouseY = ly; break;
+        }
+    }
     // ESC = cancel
     if (event.type == SDL_KEYDOWN && event.key.keysym.sym == SDLK_ESCAPE) {
         OnCancel();
@@ -2300,8 +2416,15 @@ bool SDL2Dialog::HandleEvent(SDL_Event& event) {
     }
 
     // Route to all widgets for mouse events (reverse order for z-order)
+    if (captured >= 0) {
+        if (event.type == SDL_MOUSEBUTTONUP && event.button.button == SDL_BUTTON_LEFT) m_pointerWidget = -1;
+        m_widgets[captured]->HandleEvent(event);
+        return true;
+    }
     for (int i = (int)m_widgets.size() - 1; i >= 0; i--) {
+        if (pointer && ((m_widgets[i]->GetRect().y >= footerTop) != footer)) continue;
         if (m_widgets[i]->HandleEvent(event)) {
+            if (event.type == SDL_MOUSEBUTTONDOWN && event.button.button == SDL_BUTTON_LEFT) m_pointerWidget = i;
             // If a widget was clicked, give it focus
             if (event.type == SDL_MOUSEBUTTONDOWN && m_widgets[i]->IsFocusable()) {
                 if (m_focusIndex >= 0 && m_focusIndex < (int)m_widgets.size())
@@ -2313,6 +2436,13 @@ bool SDL2Dialog::HandleEvent(SDL_Event& event) {
         }
     }
 
+    if (event.type == SDL_MOUSEWHEEL) {
+        int delta = event.wheel.y * (event.wheel.direction == SDL_MOUSEWHEEL_FLIPPED ? -1 : 1);
+        if (SDL_GetModState() & KMOD_SHIFT) m_scrollX = std::max(0, std::min(m_scrollX - delta * 32, std::max(0, m_width - viewW)));
+        else m_scrollY = std::max(0, std::min(m_scrollY - delta * 32, std::max(0, m_height - viewH)));
+        m_forceFrame = true;
+        return true;
+    }
     // Consume all mouse events within dialog rect
     if (event.type == SDL_MOUSEBUTTONDOWN || event.type == SDL_MOUSEBUTTONUP ||
         event.type == SDL_MOUSEMOTION) {
@@ -2323,10 +2453,10 @@ bool SDL2Dialog::HandleEvent(SDL_Event& event) {
 }
 
 void SDL2Dialog::CaptureBackground() {
-    SDL_Surface* winSurface = m_gameWindow->GetPresentSurface();  // T0: software surface or renderer back-buffer
+    SDL_Surface* winSurface = m_gameWindow->GetDrawableSurface();
     if (!winSurface) return;
 
-    if (m_background) SDL_FreeSurface(m_background);
+    if (m_background) EnUiCanvas::FreeSurface(m_background);
     m_background = SDL_ConvertSurface(winSurface, winSurface->format, 0);
 }
 
@@ -2384,6 +2514,7 @@ int SDL2Dialog::DoModal() {
         SDL_SetWindowInputFocus(m_dlgWindow);
     }
 
+    RefreshDisplayMetrics();
     OnInit();
 
     SDL_Event event;
@@ -2406,6 +2537,9 @@ int SDL2Dialog::DoModal() {
         OnFrame();
 
         Render();
+#ifdef EN_DPI_SMOKE
+        EnDpiSmokeTick(this);
+#endif
 
         // Don't burn CPU
         SDL_Delay(16);
@@ -2485,6 +2619,7 @@ void SDL2Dialog::ShowNonModal(std::function<void(int)> onDone) {
         SDL_RaiseWindow(m_dlgWindow);
     }
 
+    RefreshDisplayMetrics();
     OnInit();
 
     // Register with GameWindow for per-frame event routing and rendering
@@ -2497,7 +2632,8 @@ void SDL2Dialog::ResizeNonModal(int w, int h) {
         return;
     m_width = w; m_height = h;
     if (m_dlgWindow) {
-        SDL_SetWindowSize(m_dlgWindow, w, h);
+        m_windowScale = 0;
+        RefreshDisplayMetrics();
         // Drop SDL's cached framebuffer surface so the next GetWindowSurface
         // returns one at the new size (same heal as the monitor-change case in
         // RenderFrameNonModal).

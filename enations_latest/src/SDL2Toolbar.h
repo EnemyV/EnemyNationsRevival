@@ -147,6 +147,8 @@ private:
     std::unordered_map<int, TTF_Font*> m_fontCache;
 
     int m_pressedBtn = -1;
+    SDL_Rect m_buttonRects[NUM_BUTTONS] = {};
+    int m_statY = 2;
     int m_btnSpriteW = 0;
     int m_btnSpriteH = 0;
 

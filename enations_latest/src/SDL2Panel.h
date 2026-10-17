@@ -3,6 +3,7 @@
 #include <string>
 #include <functional>
 #include <cstdint>
+#include "SDL2DisplayMetrics.h"
 
 struct SDL_Surface;
 struct SDL_Rect;
@@ -28,6 +29,7 @@ public:
     // Blit this panel's backbuffer onto the window surface at our position.
     // If movable, also renders title bar and resize border.
     void Render(SDL_Surface* windowSurface);
+    void RenderNativeUi(SDL_Surface* output);
 
     // Route an SDL event to this panel (hit-test first)
     // Returns true if the event was consumed
@@ -61,6 +63,23 @@ public:
     int GetY() const { return m_y; }
     int GetWidth() const { return m_width; }
     int GetHeight() const { return m_height; }
+    int GetLayoutWidth() const { return m_uiScaled ? (int)std::floor(m_width / m_displayMetrics.WindowScaleX()) : m_width; }
+    int GetLayoutHeight() const { return m_uiScaled ? (int)std::floor(m_height / m_displayMetrics.WindowScaleY()) : m_height; }
+    double GetUiPixelScale() const { return m_uiScaled ? m_displayMetrics.pixelScale : 1; }
+    double GetUiWindowScale() const { return m_displayMetrics.WindowScaleY(); }
+    int WindowHeightForLayout(int height) const { return m_displayMetrics.WindowY(height); }
+    int LayoutLocalX(int x) const { return SDL2DisplayMetrics::InverseEdge(x * m_displayMetrics.densityX, m_displayMetrics.pixelScale); }
+    int LayoutLocalY(int y) const { return SDL2DisplayMetrics::InverseEdge(y * m_displayMetrics.densityY, m_displayMetrics.pixelScale); }
+    void EnableUiScaling() { m_uiScaled = true; m_uiDesignWidth = m_width; m_uiDesignHeight = m_height; }
+    bool HasUiScaling() const { return m_uiScaled; }
+    void SetHostGameWindow(class GameWindow* host) { m_hostGameWindow = host; }
+    void RefreshDisplayMetrics();
+    void ResetPresentationResources();
+    void ForgetRelatedPanel(SDL2Panel* panel) {
+        if (m_uiParent == panel) m_uiParent = nullptr;
+        if (m_bottomChromePanel == panel) m_bottomChromePanel = nullptr;
+    }
+    int Chrome(int units) const { return (int)std::lround(units * m_displayMetrics.WindowScaleY()); }
 
     // Access the backbuffer surface
     SDL_Surface* GetSurface() const { return m_surface; }
@@ -85,7 +104,7 @@ public:
     // composited and detached (own borderless OS window) modes — detached game
     // windows are borderless so we render the chrome ourselves, the OS only
     // handles the drag/resize via SDL_SetWindowHitTest.
-    int GetTitleBarHeight() const { return m_movable ? TITLE_BAR_HT : 0; }
+    int GetTitleBarHeight() const { return m_movable ? Chrome(TITLE_BAR_HT) : 0; }
 
     // Total rect including title bar
     int GetTotalY() const { return m_y - GetTitleBarHeight(); }
@@ -146,7 +165,7 @@ public:
     // (the area-map button bar). In the GPU-terrain path RenderDetached builds
     // the overlay from the sprite-layer surface only, so the bar — which lives in
     // m_surface — would otherwise be dropped. Drawn as opaque chrome each present.
-    void SetBottomChromePanel( SDL2Panel* p ) { m_bottomChromePanel = p; }
+    void SetBottomChromePanel( SDL2Panel* p ) { m_bottomChromePanel = p; if (p) p->m_uiParent = this; }
 
     // Render to own detached window (called by compositor for detached panels)
     void RenderDetached();
@@ -231,6 +250,12 @@ private:
     int          m_zOrder;
     bool         m_visible;
     bool         m_dirty;
+    bool m_uiScaled = false;
+    bool m_nativePaint = false;
+    double m_uiDesignWidth = 0, m_uiDesignHeight = 0;
+    SDL2DisplayMetrics m_displayMetrics;
+    class GameWindow* m_hostGameWindow = nullptr;
+    SDL2Panel* m_uiParent = nullptr;
     SDL_Surface* m_surface;
     EventCallback m_eventCallback;
     ResizeCallback m_resizeCallback;
