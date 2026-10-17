@@ -57,7 +57,7 @@ public:
     // string resources so we show the MFC-original sentence-length help.
     void SetButtonHelpText(int index, const std::string& text);
 
-    static const int NUM_BUTTONS = 8;
+    static constexpr int NUM_BUTTONS = 8;
     static const int NUM_STATS = 4;
     static const int TOOLBAR_HT = 66;
     static const int BTN_ROW_HT = 38;

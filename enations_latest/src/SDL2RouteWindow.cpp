@@ -471,8 +471,8 @@ void SDL2RouteWindow::Render() {
         SDL_Surface* text = EnUiCanvas::Text(font, btn.label.c_str(), txtColor);
         if (text) {
             SDL_Rect dst = {
-                btn.rect.x + (btn.rect.w - text->w) / 2,
-                btn.rect.y + (btn.rect.h - text->h) / 2,
+                btn.rect.x + (btn.rect.w - EnUiCanvas::Width(text)) / 2,
+                btn.rect.y + (btn.rect.h - EnUiCanvas::Height(text)) / 2,
                 0, 0
             };
             EnUiCanvas::BlitSurface(text, NULL, surf, &dst);

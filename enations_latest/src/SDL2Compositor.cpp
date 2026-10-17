@@ -236,10 +236,31 @@ void SDL2Compositor::ResetWindowLayout() {
     InvalidateAll();
 }
 
-void SDL2Compositor::PaintNativeUi(SDL_Surface* output) {
-    for (auto& panel : m_panels)
-        if (panel->IsVisible() && !panel->IsDetached() && panel->HasUiScaling())
+static SDL_Rect PanelFootprint(SDL2Panel* p, SDL_Surface* ws);
+
+void SDL2Compositor::PaintNativeUi(SDL_Surface* output, SDL_Surface* compat) {
+    // Paint in panel z-order: a legacy (unscaled) panel above scaled UI gets its
+    // compat pixels restored where that UI overdrew it.
+    std::vector<SDL_Rect> painted;   // window-coord footprints of native UI so far
+    for (auto& panel : m_panels) {
+        if (!panel->IsVisible() || panel->IsDetached()) continue;
+        if (panel->HasUiScaling()) {
             panel->RenderNativeUi(output);
+            if (compat) painted.push_back(PanelFootprint(panel.get(), compat));
+            continue;
+        }
+        if (!compat || painted.empty()) continue;
+        const SDL_Rect fp = PanelFootprint(panel.get(), compat);
+        const double sx = (double)output->w / compat->w, sy = (double)output->h / compat->h;
+        for (const SDL_Rect& r : painted) {
+            SDL_Rect hit;
+            if (SDL_IntersectRect(&fp, &r, &hit) != SDL_TRUE) continue;
+            const int x0 = (int)std::lround(hit.x * sx), y0 = (int)std::lround(hit.y * sy);
+            SDL_Rect dst = { x0, y0, (int)std::lround((hit.x + hit.w) * sx) - x0,
+                                     (int)std::lround((hit.y + hit.h) * sy) - y0 };
+            SDL_BlitScaled(compat, &hit, output, &dst);
+        }
+    }
 }
 
 void SDL2Compositor::ResetPresentationResources() {

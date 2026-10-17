@@ -1523,8 +1523,11 @@ void CWndArea::GetClientRect( LPRECT lpRect ) const
     CWndAnim::GetClientRect( lpRect );
     CRect rStatic;
     m_WndStatic.GetClientRect( &rStatic );
-    if ( rStatic.Height( ) < lpRect->bottom )
-        lpRect->bottom -= rStatic.Height( );
+    // The SDL area bar is scaled/wrapped and taller than the hidden MFC static
+    // (m_iYmin); the visible map ends at the bar as drawn.
+    const int staticH = m_WndStatic.m_sdlPanel ? m_WndStatic.m_sdlPanel->GetHeight( ) : rStatic.Height( );
+    if ( staticH < lpRect->bottom )
+        lpRect->bottom -= staticH;
     else
         lpRect->bottom = 0;
 

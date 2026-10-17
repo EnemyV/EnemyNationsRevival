@@ -1025,6 +1025,11 @@ void SDL2Panel::Detach(SDL_Window* ownerWindow) {
     // underlying X11 window for the GL visual, silently wiping any properties
     // set on the original one. They are applied after it instead.
 
+    // T0b: GPU present for this window if the flag is on. Before any resize
+    // callback: a callback's metrics refresh takes the window surface, and SDL
+    // 2.28+ refuses a renderer on a window that already has one.
+    MaybeCreateOwnRenderer();
+
     // If this window has been opened (and moved/sized) before, reopen it in the
     // same spot. Done before the on-monitor clamp below so a restored rect is
     // still validated against the current display bounds.
@@ -1096,8 +1101,6 @@ void SDL2Panel::Detach(SDL_Window* ownerWindow) {
         m_x = wx;
         m_y = wy + tbH;
     }
-
-    MaybeCreateOwnRenderer();  // T0b: GPU present for this window if the flag is on
 
 #if defined(__linux__)
     // Linux/X11 window hints — applied AFTER MaybeCreateOwnRenderer because creating
@@ -1426,7 +1429,22 @@ void SDL2Panel::RenderDetached() {
         if (!winSurf)
             return;
 
-        // Surface pixels may legitimately differ from SDL window coordinates.
+        // Surface pixels may legitimately differ from SDL window coordinates, but
+        // after a manual resize SDL can hand back a surface still sized to the OLD
+        // drawable; blitting into it leaves the exposed strip stale. Rebind it
+        // whenever it disagrees with the current drawable size.
+        int pW = 0, pH = 0;
+#if SDL_VERSION_ATLEAST(2, 26, 0)
+        SDL_GetWindowSizeInPixels(m_ownWindow, &pW, &pH);
+#else
+        SDL_GetWindowSize(m_ownWindow, &pW, &pH);
+#endif
+        if (pW > 0 && pH > 0 && (winSurf->w != pW || winSurf->h != pH)) {
+            SDL_DestroyWindowSurface(m_ownWindow);
+            RefreshDisplayMetrics();   // density from the rebound surface
+            winSurf = SDL_GetWindowSurface(m_ownWindow);
+            if (!winSurf) return;
+        }
     }
 
     int tbH = GetTitleBarHeight();

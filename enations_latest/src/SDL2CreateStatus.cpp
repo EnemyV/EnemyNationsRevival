@@ -171,6 +171,9 @@ void SDL2CreateStatus::Show() {
                 | SDL_WINDOW_SKIP_TASKBAR);
 
         LogStatus(m_ownWindow ? "Created own window" : "Failed to create own window");
+        // A new window starts at baseline size: force the next metrics pass to resize it.
+        m_windowScale = 0;
+        m_displayMetrics = SDL2DisplayMetrics();
 #if defined(__linux__)
         // Transient-for the game window: Mutter focuses it silently instead of a
         // "window is ready" toast (#33) and it stacks above the game only.
@@ -353,7 +356,14 @@ void SDL2CreateStatus::Render() {
         if (!m_displayMetrics.valid) return;
         if (std::abs(m_windowScale - m_displayMetrics.WindowScaleY()) > 0.001) {
             m_windowScale = m_displayMetrics.WindowScaleY();
-            SDL_SetWindowSize(m_ownWindow, m_displayMetrics.WindowX(m_dlgW), m_displayMetrics.WindowY(m_dlgH));
+            const int newW = m_displayMetrics.WindowX(m_dlgW), newH = m_displayMetrics.WindowY(m_dlgH);
+            SDL_SetWindowSize(m_ownWindow, newW, newH);
+            if (m_gameWindow->GetWindow()) {   // re-centre on the main window at the scaled size
+                int mainX, mainY, mainW, mainH;
+                SDL_GetWindowPosition(m_gameWindow->GetWindow(), &mainX, &mainY);
+                SDL_GetWindowSize(m_gameWindow->GetWindow(), &mainW, &mainH);
+                SDL_SetWindowPosition(m_ownWindow, mainX + (mainW - newW) / 2, mainY + (mainH - newH) / 2);
+            }
             EnDpi::ClampWindow(m_ownWindow);
             m_displayMetrics.Refresh(m_ownWindow);
         }
@@ -479,13 +489,14 @@ void SDL2CreateStatus::Render() {
 void SDL2CreateStatus::RenderToGameWindow() {
     if (!m_gameWindow) return;
     SDL2Compositor* comp = m_gameWindow->GetCompositor();
+    // Metrics first: a display change may destroy the window surface.
+    SDL2DisplayMetrics metrics = m_gameWindow->GetDisplayMetrics();
     SDL_Surface*    surf = m_gameWindow->GetDrawableSurface();
     if (!comp || !surf) return;
 
     // Clean background each frame (the wallpaper) so changing messages don't smear.
     comp->RenderWallpaper(surf);
 
-    SDL2DisplayMetrics metrics = m_gameWindow->GetDisplayMetrics();
     EnUiCanvas::Scope canvas(surf, metrics.pixelScale);
     int winW = (int)std::floor(surf->w / metrics.pixelScale), winH = (int)std::floor(surf->h / metrics.pixelScale);
     SDL_Color gold  = { 225, 182, 55, 255 };

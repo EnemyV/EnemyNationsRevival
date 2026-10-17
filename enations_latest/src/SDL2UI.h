@@ -720,6 +720,7 @@ private:
     SDL_Window*  m_dlgWindow = nullptr;
     SDL2DisplayMetrics m_displayMetrics;
     double m_windowScale = 0;
+    bool m_dlgCenterPending = false;   // first scaled resize keeps the created window's centre
     int m_scrollX = 0, m_scrollY = 0;
     void RefreshDisplayMetrics();
     void EnsureFocusVisible();

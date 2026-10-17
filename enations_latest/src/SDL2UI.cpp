@@ -1260,8 +1260,7 @@ bool SDL2Listbox::HandleEvent(const SDL_Event& event) {
         int mx = event.wheel.mouseX, my = event.wheel.mouseY;
         if (PointInRect(mx, my, m_rect)) {
             const int previous = m_scrollOffset;
-            const int dy = event.wheel.direction == SDL_MOUSEWHEEL_FLIPPED ? -event.wheel.y : event.wheel.y;
-            ScrollBy(-dy * 2);
+            ScrollBy(-event.wheel.y * 2);
             // Let an oversized dialog scroll when the inner list is at its limit.
             return m_scrollOffset != previous;
         }
@@ -1939,13 +1938,20 @@ void SDL2Dialog::RefreshDisplayMetrics() {
     SDL_SetWindowData(m_dlgWindow, "EN_titleBarHeight", (void*)(intptr_t)m_displayMetrics.WindowY(kTitleBarH + DlgBorderTop()));
     if (std::abs(scale - m_windowScale) > 0.001) {
         m_windowScale = scale;
-        SDL_SetWindowSize(m_dlgWindow, m_displayMetrics.WindowX(m_width), m_displayMetrics.WindowY(m_height));
+        int oldX = 0, oldY = 0, oldW = 0, oldH = 0;
+        SDL_GetWindowPosition(m_dlgWindow, &oldX, &oldY);
+        SDL_GetWindowSize(m_dlgWindow, &oldW, &oldH);
+        const int newW = m_displayMetrics.WindowX(m_width), newH = m_displayMetrics.WindowY(m_height);
+        SDL_SetWindowSize(m_dlgWindow, newW, newH);
+        if (m_dlgCenterPending)   // m_x/m_y centred the baseline size; keep that centre
+            SDL_SetWindowPosition(m_dlgWindow, oldX + (oldW - newW) / 2, oldY + (oldH - newH) / 2);
+        m_dlgCenterPending = false;
         EnDpi::ClampWindow(m_dlgWindow);
         m_displayMetrics.Refresh(m_dlgWindow);
         m_forceFrame = true;
     }
-    const int viewW = (int)std::floor(m_displayMetrics.drawableW / m_displayMetrics.pixelScale);
-    const int viewH = (int)std::floor(m_displayMetrics.drawableH / m_displayMetrics.pixelScale);
+    const int viewW = SDL2DisplayMetrics::InverseEdge(m_displayMetrics.drawableW, m_displayMetrics.pixelScale);
+    const int viewH = SDL2DisplayMetrics::InverseEdge(m_displayMetrics.drawableH, m_displayMetrics.pixelScale);
     m_scrollX = std::max(0, std::min(m_scrollX, m_width - viewW));
     m_scrollY = std::max(0, std::min(m_scrollY, m_height - viewH));
 }
@@ -1962,8 +1968,8 @@ int SDL2Dialog::FooterTop() const {
 void SDL2Dialog::EnsureFocusVisible() {
     if (m_focusIndex < 0 || m_focusIndex >= (int)m_widgets.size() || !m_displayMetrics.valid) return;
     SDL_Rect r = m_widgets[m_focusIndex]->GetRect();
-    const int vw = (int)(m_displayMetrics.drawableW / m_displayMetrics.pixelScale);
-    const int vh = (int)(m_displayMetrics.drawableH / m_displayMetrics.pixelScale);
+    const int vw = SDL2DisplayMetrics::InverseEdge(m_displayMetrics.drawableW, m_displayMetrics.pixelScale);
+    const int vh = SDL2DisplayMetrics::InverseEdge(m_displayMetrics.drawableH, m_displayMetrics.pixelScale);
     if (r.x < m_x + m_scrollX) m_scrollX = r.x - m_x;
     if (r.x + r.w > m_x + m_scrollX + vw) m_scrollX = r.x + r.w - m_x - vw;
     // Bottom action buttons are anchored to the viewport, independent of scrolling.
@@ -2028,8 +2034,8 @@ void SDL2Dialog::Render() {
     }
 
     const double scale = m_displayMetrics.pixelScale;
-    const int viewW = std::min(m_width, (int)std::floor(mainSurface->w / scale));
-    const int viewH = std::min(m_height, (int)std::floor(mainSurface->h / scale));
+    const int viewW = std::min(m_width, SDL2DisplayMetrics::InverseEdge(mainSurface->w, scale));
+    const int viewH = std::min(m_height, SDL2DisplayMetrics::InverseEdge(mainSurface->h, scale));
     const int placementX = m_dlgWindow ? 0 : m_displayMetrics.CenteredOrigin(mainSurface->w, m_width);
     const int placementY = m_dlgWindow ? 0 : m_displayMetrics.CenteredOrigin(mainSurface->h, m_height);
     const int footerTop = FooterTop(), footerH = m_y + m_height - footerTop;
@@ -2278,7 +2284,11 @@ bool SDL2Dialog::HandleEvent(SDL_Event& incoming) {
     SDL_Event event = incoming;
     const Uint32 id = EnDpi::EventWindowID(event);
     const Uint32 own = m_dlgWindow ? SDL_GetWindowID(m_dlgWindow) : SDL_GetWindowID(m_gameWindow->GetWindow());
-    if (id && id != own && !m_dlgDragging) return false;
+    // Only pointer/window events are window-routed; keys and text always reach the modal dialog.
+    const bool routed = event.type == SDL_MOUSEMOTION || event.type == SDL_MOUSEBUTTONDOWN ||
+                        event.type == SDL_MOUSEBUTTONUP || event.type == SDL_MOUSEWHEEL ||
+                        event.type == SDL_WINDOWEVENT;
+    if (routed && id && id != own && !m_dlgDragging) return false;
     if (event.type == SDL_WINDOWEVENT && event.window.event == SDL_WINDOWEVENT_CLOSE) { OnCancel(); return true; }
     if (event.type == SDL_WINDOWEVENT && event.window.event == SDL_WINDOWEVENT_FOCUS_LOST && m_pointerWidget >= 0) {
         SDL_Event release = {}; release.type = SDL_MOUSEBUTTONUP;
@@ -2339,8 +2349,8 @@ bool SDL2Dialog::HandleEvent(SDL_Event& incoming) {
         }
     }
 
-    const int viewW = (int)std::floor(m_displayMetrics.drawableW / m_displayMetrics.pixelScale);
-    const int viewH = (int)std::floor(m_displayMetrics.drawableH / m_displayMetrics.pixelScale);
+    const int viewW = SDL2DisplayMetrics::InverseEdge(m_displayMetrics.drawableW, m_displayMetrics.pixelScale);
+    const int viewH = SDL2DisplayMetrics::InverseEdge(m_displayMetrics.drawableH, m_displayMetrics.pixelScale);
     const int footerTop = FooterTop(), footerH = m_y + m_height - footerTop;
     const int placementX = m_dlgWindow ? 0 : m_displayMetrics.CenteredOrigin(m_displayMetrics.drawableW, m_width);
     const int placementY = m_dlgWindow ? 0 : m_displayMetrics.CenteredOrigin(m_displayMetrics.drawableH, m_height);
@@ -2437,7 +2447,7 @@ bool SDL2Dialog::HandleEvent(SDL_Event& incoming) {
     }
 
     if (event.type == SDL_MOUSEWHEEL) {
-        int delta = event.wheel.y * (event.wheel.direction == SDL_MOUSEWHEEL_FLIPPED ? -1 : 1);
+        int delta = event.wheel.y;
         if (SDL_GetModState() & KMOD_SHIFT) m_scrollX = std::max(0, std::min(m_scrollX - delta * 32, std::max(0, m_width - viewW)));
         else m_scrollY = std::max(0, std::min(m_scrollY - delta * 32, std::max(0, m_height - viewH)));
         m_forceFrame = true;
@@ -2478,6 +2488,8 @@ int SDL2Dialog::DoModal() {
         titleStr.c_str(),
         mainX + m_x, mainY + m_y, m_width, m_height,
         SDL_WINDOW_SHOWN | SDL_WINDOW_BORDERLESS | SDL_WINDOW_SKIP_TASKBAR | EN_DLG_ONTOP_FLAG);
+    m_windowScale = 0;                    // new window: next metrics pass sizes it
+    m_dlgCenterPending = m_dlgWindow != nullptr;
 
     if (!m_dlgWindow) {
         // Fallback: render on the main window with a background snapshot
@@ -2593,6 +2605,8 @@ void SDL2Dialog::ShowNonModal(std::function<void(int)> onDone) {
         titleStr.c_str(),
         mainX + m_x, mainY + m_y, m_width, m_height,
         SDL_WINDOW_SHOWN | SDL_WINDOW_BORDERLESS | SDL_WINDOW_SKIP_TASKBAR | EN_DLG_ONTOP_FLAG);
+    m_windowScale = 0;                    // new window: next metrics pass sizes it
+    m_dlgCenterPending = m_dlgWindow != nullptr;
 
     if (!m_dlgWindow) {
         CaptureBackground();

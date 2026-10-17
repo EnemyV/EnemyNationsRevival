@@ -836,6 +836,7 @@ SDL_Surface* GameWindow::GetPresentSurface() {
     if (!m_compatSurface || m_compatSurface->w != w || m_compatSurface->h != h) {
         if (m_compatSurface) SDL_FreeSurface(m_compatSurface);
         m_compatSurface = SDL_CreateRGBSurfaceWithFormat(0, w, h, 32, SDL_PIXELFORMAT_ARGB8888);
+        if (m_compatSurface) SDL_SetSurfaceBlendMode(m_compatSurface, SDL_BLENDMODE_NONE);
         if (m_compositor) m_compositor->InvalidateAll();
     }
     m_presentCompat = true;
@@ -851,7 +852,7 @@ void GameWindow::PresentSurface(const SDL_Rect* dirty) {
         if (!output) return;
         SDL_Rect full = { 0, 0, output->w, output->h };
         SDL_BlitScaled(m_compatSurface, nullptr, output, &full);
-        if (m_compositor) m_compositor->PaintNativeUi(output);
+        if (m_compositor) m_compositor->PaintNativeUi(output, m_compatSurface);
         dirty = nullptr; // compatibility dirty bounds are in window units
     }
 

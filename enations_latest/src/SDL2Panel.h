@@ -63,8 +63,8 @@ public:
     int GetY() const { return m_y; }
     int GetWidth() const { return m_width; }
     int GetHeight() const { return m_height; }
-    int GetLayoutWidth() const { return m_uiScaled ? (int)std::floor(m_width / m_displayMetrics.WindowScaleX()) : m_width; }
-    int GetLayoutHeight() const { return m_uiScaled ? (int)std::floor(m_height / m_displayMetrics.WindowScaleY()) : m_height; }
+    int GetLayoutWidth() const { return m_uiScaled ? SDL2DisplayMetrics::InverseEdge(m_width, m_displayMetrics.WindowScaleX()) : m_width; }
+    int GetLayoutHeight() const { return m_uiScaled ? SDL2DisplayMetrics::InverseEdge(m_height, m_displayMetrics.WindowScaleY()) : m_height; }
     double GetUiPixelScale() const { return m_uiScaled ? m_displayMetrics.pixelScale : 1; }
     double GetUiWindowScale() const { return m_displayMetrics.WindowScaleY(); }
     int WindowHeightForLayout(int height) const { return m_displayMetrics.WindowY(height); }
@@ -205,7 +205,7 @@ public:
     static const int TITLE_BAR_HT = 24;
     static const int CLOSE_BTN_SIZE = 16;
     static const int RESIZE_BORDER = 6;
-    static const int MIN_WIDTH = 80;
+    static constexpr int MIN_WIDTH = 80;
     static const int MIN_HEIGHT = 60;
     // Caption buttons (minimize / maximize / close), right-aligned. Sized to the
     // game's 14x14 system-button art with a little breathing room.

@@ -1034,6 +1034,12 @@ void SDL2UnitInfoPanel::Show(CUnit* pUnit, int screenX, int screenY) {
     int h = borderH * 2 + 8;
     for (auto& line : m_lines) h += LineHeight(line);
     m_layoutH = h; m_layoutW = w; m_windowScale = 0;
+    // Window-coord size at the window's current scale (the conversion Render uses).
+    int sw = w, sh = h;
+    if (m_window && (m_displayMetrics.Refresh(m_window), m_displayMetrics.valid)) {
+        sw = m_displayMetrics.WindowX(w); sh = m_displayMetrics.WindowY(h);
+        m_windowScale = m_displayMetrics.WindowScaleY();
+    }
 
     // Clamp onto the display that the cursor is on (keeps it fully on-screen; no
     // main-window-relative math, so it can't get stuck at a wrong window's edge).
@@ -1047,8 +1053,8 @@ void SDL2UnitInfoPanel::Show(CUnit* pUnit, int screenX, int screenY) {
     }
     if (db.w == 0 && nDisp > 0) SDL_GetDisplayBounds(0, &db);
     if (db.w > 0) {
-        if (screenX + w > db.x + db.w) screenX = db.x + db.w - w;
-        if (screenY + h > db.y + db.h) screenY = db.y + db.h - h;
+        if (screenX + sw > db.x + db.w) screenX = db.x + db.w - sw;
+        if (screenY + sh > db.y + db.h) screenY = db.y + db.h - sh;
         if (screenX < db.x) screenX = db.x;
         if (screenY < db.y) screenY = db.y;
     }
@@ -1074,7 +1080,7 @@ void SDL2UnitInfoPanel::Show(CUnit* pUnit, int screenX, int screenY) {
     } else {
         int cw = 0, ch = 0;
         SDL_GetWindowSize(m_window, &cw, &ch);
-        if (cw != w || ch != h) SDL_SetWindowSize(m_window, w, h);
+        if (cw != sw || ch != sh) SDL_SetWindowSize(m_window, sw, sh);
     }
     SDL_SetWindowPosition(m_window, screenX, screenY);
     SDL_ShowWindow(m_window);
@@ -1108,8 +1114,13 @@ void SDL2UnitInfoPanel::Update() {
     int w = 240, h = borderH * 2 + 8;
     for (auto& line : m_lines) h += LineHeight(line);
     m_layoutH = h; m_layoutW = w; m_windowScale = 0;
-    int cw = 0, ch = 0; SDL_GetWindowSize(m_window, &cw, &ch);
-    if (cw != w || ch != h) SDL_SetWindowSize(m_window, w, h);
+    m_displayMetrics.Refresh(m_window);
+    if (m_displayMetrics.valid) {   // resize at the scale Render uses, so Render need not undo it
+        m_windowScale = m_displayMetrics.WindowScaleY();
+        const int sw = m_displayMetrics.WindowX(w), sh = m_displayMetrics.WindowY(h);
+        int cw = 0, ch = 0; SDL_GetWindowSize(m_window, &cw, &ch);
+        if (cw != sw || ch != sh) { SDL_SetWindowSize(m_window, sw, sh); EnDpi::ClampWindow(m_window); }
+    }
     Render();
 }
 
@@ -1643,9 +1654,12 @@ void SDL2MailDialog::OnDelete() {
 
 // cut=0, repeat=1, scenario_end=2, win=3, lose=4
 static bool CutIsEndScreen(int typ) { return typ == 2 || typ == 3 || typ == 4; }
+// Full-window size in layout units (GetWidth/GetHeight are window coords).
+static int CutLayoutW(GameWindow* gw) { SDL2DisplayMetrics m = gw->GetDisplayMetrics(); return m.valid ? m.LayoutX(gw->GetWidth()) : gw->GetWidth(); }
+static int CutLayoutH(GameWindow* gw) { SDL2DisplayMetrics m = gw->GetDisplayMetrics(); return m.valid ? m.LayoutY(gw->GetHeight()) : gw->GetHeight(); }
 
 SDL2CutSceneDialog::SDL2CutSceneDialog(GameWindow* gw, int typ, const std::string& text, int scenario)
-    : SDL2Dialog(gw, "", gw->GetWidth(), gw->GetHeight())
+    : SDL2Dialog(gw, "", CutLayoutW(gw), CutLayoutH(gw))
     , m_typ(typ)
     , m_text(text)
     , m_scenario(scenario)
