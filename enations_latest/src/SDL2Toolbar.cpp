@@ -165,19 +165,42 @@ void SDL2Toolbar::SetButtonHelpText(int index, const std::string& text) {
         m_buttons[index].helpText = text;
 }
 
+SDL2Toolbar::Layout SDL2Toolbar::ComputeLayout() const {
+    Layout l;
+    const int designW = m_panel->GetLayoutWidth();
+    const int buttonWidth = m_btnSpriteW > 0 ? m_btnSpriteW : 50;
+    l.columns = std::max(1, std::min(NUM_BUTTONS, (designW - 8) / (buttonWidth + 4)));
+    l.buttonRows = (NUM_BUTTONS + l.columns - 1) / l.columns;
+    l.separateStats = l.columns < NUM_BUTTONS || designW < 8 + NUM_BUTTONS * (buttonWidth + 4) + 240;
+    l.textRowY = l.separateStats ? (l.buttonRows + 1) * BTN_ROW_HT : BTN_ROW_HT;
+    l.panelHeight = m_panel->WindowHeightForLayout(l.textRowY + TEXT_ROW_HT);
+    return l;
+}
+
+int SDL2Toolbar::DesiredPanelHeight() {
+    if (!m_panel) return TOOLBAR_HT;
+    m_panel->RefreshDisplayMetrics();
+    return ComputeLayout().panelHeight;
+}
+
 void SDL2Toolbar::Render() {
     if (!m_panel) return;
     m_panel->RefreshDisplayMetrics();
-    const int designW = m_panel->GetLayoutWidth();
-    const int buttonWidth = m_btnSpriteW > 0 ? m_btnSpriteW : 50;
-    const int columns = std::max(1, std::min(NUM_BUTTONS, (designW - 8) / (buttonWidth + 4)));
-    const int buttonRows = (NUM_BUTTONS + columns - 1) / columns;
-    const bool separateStats = columns < NUM_BUTTONS || designW < 8 + NUM_BUTTONS * (buttonWidth + 4) + 240;
-    const int textRowY = separateStats ? (buttonRows + 1) * BTN_ROW_HT : BTN_ROW_HT;
-    const int desiredHeight = m_panel->WindowHeightForLayout(textRowY + TEXT_ROW_HT);
+    const Layout layout = ComputeLayout();
+    const int columns = layout.columns;
+    const int buttonRows = layout.buttonRows;
+    const bool separateStats = layout.separateStats;
+    const int textRowY = layout.textRowY;
+    const int desiredHeight = layout.panelHeight;
     if (m_panel->GetHeight() != desiredHeight) {
         m_panel->SetSize(m_panel->GetWidth(), desiredHeight);
         if (m_gw) m_panel->SetPosition(0, m_gw->GetHeight() - desiredHeight);
+    }
+    // m_iRow3 is the line game windows lay out above. Keep it on the bar as drawn
+    // (UI-scale change, main-window resize) and pull area maps up off the bar.
+    if (theApp.m_iRow3 != m_panel->GetY()) {
+        theApp.m_iRow3 = m_panel->GetY();
+        theAreaList.ClampToRow3();
     }
     SDL_Surface* dst = m_panel->GetSurface();
     if (!dst) return;

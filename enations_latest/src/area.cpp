@@ -738,6 +738,43 @@ void CAreaList::MoveSizeToNew( int xOld, int yOld )
     }
 }
 
+// Pull every area map's bottom edge up to the toolbar top (theApp.m_iRow3) after
+// the toolbar grew (UI scale) so the map does not cover its bars and clock.
+void CAreaList::ClampToRow3( )
+{
+    POSITION pos;
+    for ( pos = GetHeadPosition( ); pos != NULL; )
+    {
+        SDL2Panel* pPanel = GetNext( pos )->m_aa.m_sdlPanel;
+        if ( pPanel == nullptr )
+            continue;
+
+        // Detached maps are OS windows in screen coords; m_iRow3 is main-window-local.
+        int iBottom = theApp.m_iRow3;
+        if ( pPanel->IsDetached( ) )
+        {
+            SDL_Window* pMain = theApp.m_gameWindow ? theApp.m_gameWindow->GetWindow( ) : nullptr;
+            if ( pMain == nullptr )
+                continue;
+            int wx, wy, ww, wh;
+            SDL_GetWindowPosition( pMain, &wx, &wy );
+            SDL_GetWindowSize( pMain, &ww, &wh );
+            // a map moved off the main window (another monitor) is not over the bar
+            if ( pPanel->GetX( ) + pPanel->GetWidth( ) <= wx || pPanel->GetX( ) >= wx + ww ||
+                 pPanel->GetY( ) >= wy + wh )
+                continue;
+            iBottom += wy;
+        }
+
+        if ( pPanel->GetY( ) + pPanel->GetHeight( ) <= iBottom )
+            continue;
+        int iH = __max( SDL2Panel::MIN_HEIGHT, iBottom - pPanel->GetY( ) );
+        int iY = __min( pPanel->GetY( ), iBottom - iH );
+        pPanel->SetRect( pPanel->GetX( ), iY, pPanel->GetWidth( ), iH );
+        pPanel->InvokeResizeCallback( pPanel->GetWidth( ), pPanel->GetHeight( ) );
+    }
+}
+
 void CAreaList::SetLastAttack( CHexCoord const& _hex )
 {
 
@@ -1538,10 +1575,16 @@ void CWndArea::Create( CMapLoc const& ml, CUnit* pUnit, BOOL bFirst )
     CRect     rect;
     CWndArea* pPrev = theAreaList.GetTop( );
     if ( pPrev == NULL )
+    {
         rect.SetRect( EnGetProfileInt( theApp.m_sResIni.c_str(), "AreaX", theApp.m_iCol1 ),
                       EnGetProfileInt( theApp.m_sResIni.c_str(), "AreaY", 0 ),
                       EnGetProfileInt( theApp.m_sResIni.c_str(), "AreaEX", theApp.m_iScrnX ),
                       EnGetProfileInt( theApp.m_sResIni.c_str(), "AreaEY", theApp.m_iRow3 ) );
+        // A bottom saved at a smaller UI scale would sit under today's taller toolbar.
+        rect.bottom = __min( rect.bottom, theApp.m_iRow3 );
+        if ( rect.top > rect.bottom - SDL2Panel::MIN_HEIGHT )
+            rect.top = __max( 0, rect.bottom - SDL2Panel::MIN_HEIGHT );
+    }
     else
     {
         // Additional area maps (radio multi-window) open SMALL and cascaded — the

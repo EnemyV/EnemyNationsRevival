@@ -177,6 +177,13 @@ void CWndBar::Create( )
         s_toolbar.Init( m_sdlPanel, theApp.m_gameWindow.get() );
         theApp.m_gameWindow->SetSDL2Toolbar( &s_toolbar );
 
+        // The bar is TOOLBAR_HT only at 100% UI scale. Size it for the current
+        // scale now so m_iRow3 is its real top before the area map, chat and
+        // unit windows lay out against it.
+        const int iBarHt = s_toolbar.DesiredPanelHeight( );
+        theApp.m_iRow3 = rect.Height( ) - iBarHt;
+        m_sdlPanel->SetRect( 0, theApp.m_iRow3, rect.Width( ), iBarHt );
+
         CWndBar* pThis = this;
         s_toolbar.SetButtonHandler(0, [pThis]() { pThis->GotoArea(); });
         s_toolbar.SetButtonHandler(1, [pThis]() { pThis->GotoWorld(); });

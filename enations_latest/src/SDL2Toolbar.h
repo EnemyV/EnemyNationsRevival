@@ -26,6 +26,10 @@ public:
     // Initialize with the compositor panel. Call after game windows are created.
     void Init(SDL2Panel* panel, GameWindow* gw);
 
+    // Panel height in window pixels that fits the toolbar layout at the current
+    // panel width and UI scale (66 at 100% on a wide window). Refreshes metrics.
+    int DesiredPanelHeight();
+
     // Render all toolbar content to the panel surface. Called each frame.
     void Render();
 
@@ -60,6 +64,9 @@ public:
     static const int TEXT_ROW_HT = 28;
 
 private:
+    // Button grid / text-row offset (layout units) and the panel height for them.
+    struct Layout { int columns, buttonRows; bool separateStats; int textRowY, panelHeight; };
+    Layout ComputeLayout() const;
     TTF_Font* GetFont(int size);
     void RenderButton(SDL_Surface* dst, int idx, int x, int y, int w, int h);
     void RenderStatBar(SDL_Surface* dst, int idx, int x, int y, int w, int h);
