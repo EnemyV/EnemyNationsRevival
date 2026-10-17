@@ -15,7 +15,7 @@ endif ()
 # Turn on deliberately with -DEN_CHEAT=ON (needed for the in-dev End-key
 # spectator mode). See the _CHEAT note in target_compile_definitions below.
 option(EN_CHEAT "Compile the dev cheat surface (_CHEAT): map reveal, research grants, Max*, AI unit grants, End-key spectator, debug overlays" OFF)
-set(EN_DPI_SMOKE_DIR "" CACHE PATH "Directory holding dpi_smoke_driver.cpp; empty (default) builds nothing")
+set(EN_DPI_SMOKE_SRC "" CACHE PATH "Directory holding dpi_smoke_driver.cpp; empty (default) builds nothing")
 
 # 015 phase 2 (.dat cleanup): directory holding a loose data/ set to stage beside
 # the binary so the game can run with no ENations.dat. Empty = stage nothing, which
@@ -283,9 +283,9 @@ endif ()
 # The WIN32 keyword is a no-op on non-Windows (CMake ignores it), so it is
 # harmless to leave for the Linux build.
 add_executable(enations WIN32 ${enations_sources})
-if (EN_DPI_SMOKE_DIR)
-    target_sources(enations PRIVATE "${EN_DPI_SMOKE_DIR}/dpi_smoke_driver.cpp")
-    target_include_directories(enations PRIVATE "${EN_DPI_SMOKE_DIR}" "${CMAKE_CURRENT_SOURCE_DIR}")
+if (EN_DPI_SMOKE_SRC)
+    target_sources(enations PRIVATE "${EN_DPI_SMOKE_SRC}/dpi_smoke_driver.cpp")
+    target_include_directories(enations PRIVATE "${EN_DPI_SMOKE_SRC}" "${CMAKE_CURRENT_SOURCE_DIR}")
     target_compile_definitions(enations PRIVATE EN_DPI_SMOKE=1)
 endif ()
 target_compile_definitions(enations PRIVATE
