@@ -1319,16 +1319,17 @@ void CWndWorld::_OnSize() {
     }
 
 
-    // Scale the radar's controls independently of its map projection. Drawing
-    // and ButtonOn both derive their bounds from this same button bitmap.
+    // The radar's corner controls stretch with the window exactly like its map and
+    // frame art; the UI scale setting never enters here (the whole panel is sized
+    // from the screen, so it already grows with the display). Drawing and ButtonOn
+    // both derive their bounds from this same button bitmap.
     CDIB *pDibBtnBm = theBitmaps.GetByIndex(m_bIsRadar ? DIB_RADAR_BUTTONS : DIB_WORLD_BUTTONS);
-    const double uiScale = m_sdlPanel ? m_sdlPanel->GetUiWindowScale() : 1.0;
-    int buttonW = (int)std::lround((double)pDibBtnBm->GetWidth() * m_cx / pDibRadarBm->GetWidth() * uiScale);
-    int buttonH = (int)std::lround((double)pDibBtnBm->GetHeight() * m_cy / pDibRadarBm->GetHeight() * uiScale);
+    int buttonW = (int)std::lround((double)pDibBtnBm->GetWidth() * m_cx / pDibRadarBm->GetWidth());
+    int buttonH = (int)std::lround((double)pDibBtnBm->GetHeight() * m_cy / pDibRadarBm->GetHeight());
     buttonW = std::max(4, std::min(buttonW, m_cx));
     buttonH = std::max(8, std::min(buttonH, m_cy * 2));
-    m_xBtnUL = (int)std::lround((double)BTN_X_OFF * m_cx / pDibRadarBm->GetWidth() * uiScale);
-    m_yBtnUL = (int)std::lround((double)BTN_Y_OFF * m_cy / pDibRadarBm->GetHeight() * uiScale);
+    m_xBtnUL = (int)std::lround((double)BTN_X_OFF * m_cx / pDibRadarBm->GetWidth());
+    m_yBtnUL = (int)std::lround((double)BTN_Y_OFF * m_cy / pDibRadarBm->GetHeight());
     m_xBtnLR = std::max(m_xBtnUL, m_cx - m_xBtnUL - ((buttonW + 1) & ~1) / 2);
     m_yBtnLR = std::max(m_yBtnUL, m_cy - m_yBtnUL - ((buttonH + 3) & ~3) / 4);
     m_pdibButtons = new CDIB(ptrthebltformat->GetColorFormat(), CBLTFormat::DIB_MEMORY,
