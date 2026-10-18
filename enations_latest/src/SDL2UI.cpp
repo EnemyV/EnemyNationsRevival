@@ -435,7 +435,7 @@ void SDL2Button::Render(SDL_Surface* dst, TTF_Font* font) {
             frameIdx = 1;  // pressed
         SDL_Rect src = { frameIdx * frameW, 0, frameW, frameH };
         SDL_Rect dstR = m_rect;
-        EnUiCanvas::BlitScaled(m_btnSheet, &src, dst, &dstR);
+        EnUiCanvas::BlitArt(m_btnSheet, &src, dst, &dstR);
     } else if (m_rect.h < 32) {
         // SMALL buttons (e.g. the 10m/1h/6h/24h/7d graph-range row): the
         // symmetric gradient's bright center overpowers a short face and reads
@@ -495,7 +495,7 @@ void SDL2Button::Render(SDL_Surface* dst, TTF_Font* font) {
             dstY + shift,
             dstW, dstH
         };
-        EnUiCanvas::BlitScaled(m_iconSheet, &m_iconSrc, dst, &dr);
+        EnUiCanvas::BlitArt(m_iconSheet, &m_iconSrc, dst, &dr);
     }
 
     // Text rect: overlays the bottom of the face (on top of icon) or full face if no icon

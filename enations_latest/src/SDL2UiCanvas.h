@@ -24,6 +24,8 @@ int Height(SDL_Surface* surface);
 int FillRect(SDL_Surface* dst, const SDL_Rect* rect, Uint32 color);
 int BlitSurface(SDL_Surface* src, const SDL_Rect* srcRect, SDL_Surface* dst, SDL_Rect* dstRect);
 int BlitScaled(SDL_Surface* src, const SDL_Rect* srcRect, SDL_Surface* dst, SDL_Rect* dstRect);
+// Artwork (sprites, icons, button faces): nearest at integer scales, bilinear at fractional ones.
+int BlitArt(SDL_Surface* src, const SDL_Rect* srcRect, SDL_Surface* dst, SDL_Rect* dstRect);
 SDL_bool SetClipRect(SDL_Surface* dst, const SDL_Rect* rect);
 void GetClipRect(SDL_Surface* dst, SDL_Rect* rect);
 void FreeSurface(SDL_Surface* surface);
