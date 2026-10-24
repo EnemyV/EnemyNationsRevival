@@ -547,6 +547,32 @@ static void HideMacDockBar() {
     UnclampMacWindowsFromMenuBar();
 }
 
+// Emit a machine-checkable fullscreen/Dock result on every macOS game launch.
+// This is a release regression gate: a failed AppKit presentation change can
+// leave the Dock over the game, so record what the OS actually accepted.
+static void LogMacDisplayCheck(SDL_Window* window, bool wantFullscreen) {
+    Uint32 flags = window ? SDL_GetWindowFlags(window) : 0;
+    bool sdlFullscreen = (flags & SDL_WINDOW_FULLSCREEN) != 0;
+    auto cls = objc_getClass("NSApplication");
+    auto sel = sel_registerName("sharedApplication");
+    auto send0 = (void* (*)(void*, void*))objc_msgSend;
+    auto sendULRet = (unsigned long (*)(void*, void*))objc_msgSend;
+    void* app = cls ? send0(cls, sel) : nullptr;
+    unsigned long options = app
+        ? sendULRet(app, sel_registerName("presentationOptions")) : 0UL;
+    bool dockHidden = (options & (1UL << 1)) != 0;       // HideDock
+    bool menuBarHidden = (options & (1UL << 3)) != 0;    // HideMenuBar
+    bool pass = wantFullscreen && sdlFullscreen && dockHidden && menuBarHidden;
+    char line[256];
+    snprintf(line, sizeof(line),
+             "MAC_DISPLAY_CHECK: %s wantFullscreen=%d sdlFullscreen=%d "
+             "dockHidden=%d menuBarHidden=%d windowFlags=0x%08x",
+             pass ? "PASS" : "FAIL", wantFullscreen ? 1 : 0,
+             sdlFullscreen ? 1 : 0, dockHidden ? 1 : 0, menuBarHidden ? 1 : 0,
+             static_cast<unsigned int>(flags));
+    LogToFile(line);
+}
+
 // Counterpart of HideMacDockBar: hand the Dock and menu bar back to the system
 // (NSApplicationPresentationDefault). Needed before miniaturizing — see MinimizeAll.
 static void ShowMacDockBar() {
@@ -588,15 +614,17 @@ bool GameWindow::InitializeSDL() {
 #ifdef __APPLE__
     SetMacDockIcon();
 #endif
-    // macOS: run fullscreen-desktop by default (EN_FULLSCREEN=0 to stay windowed).
+    // macOS: stay fullscreen by default. The legacy EN_FULLSCREEN=0 override was
+    // easy to leak from test shells into release launches and left the Dock over
+    // the game. Require the explicit EN_WINDOWED=1 opt-in for a windowed Mac run.
     // The engine already renders at the desktop resolution (en_SetScreenMetrics
     // from linux_main), so fullscreen-desktop matches the back-buffer with no
     // scaling. Disable macOS fullscreen "Spaces" so the detached map/radar/panel
     // windows (ALWAYS_ON_TOP) still overlay the main window instead of being
     // hidden behind a separate fullscreen Space — essential for the multi-window
     // / multi-monitor model.
-    const char* enFs = getenv("EN_FULLSCREEN");
-    bool wantFullscreen = !(enFs && enFs[0] == '0');
+    const char* enWindowed = getenv("EN_WINDOWED");
+    bool wantFullscreen = !(enWindowed && enWindowed[0] == '1');
     if (wantFullscreen)
         SDL_SetHint(SDL_HINT_VIDEO_MAC_FULLSCREEN_SPACES, "0");
 #endif
@@ -696,6 +724,7 @@ bool GameWindow::InitializeSDL() {
     // game does not draw. Leaving them alone is the whole point of that mode.
     if (wantFullscreen && !usableMode)
         HideMacDockBar();
+    LogMacDisplayCheck(m_window, wantFullscreen && !usableMode);
 #endif
 
     // Cross-platform: register hit-test callback so SDL handles resize drags
@@ -1372,13 +1401,14 @@ void GameWindow::HandleEvent(SDL_Event& event) {
                 // uses; the restore-from-Dock focus gain (MINIMIZED cleared, deadline
                 // passed) still re-hides the bars as the game returns to fullscreen.
                 {
-                    const char* enFs = getenv("EN_FULLSCREEN");
+                    const char* enWindowed = getenv("EN_WINDOWED");
                     const bool minimizeInFlight =
                         (m_window && (SDL_GetWindowFlags(m_window) & SDL_WINDOW_MINIMIZED))
                         || timeGetTime() < m_suppressGroupRestoreMs;
                     // Same exclusion as at creation: in usable-bounds mode we never
                     // covered the Dock, so we must not hide it on focus either.
-                    if (!(enFs && enFs[0] == '0') && !m_macUsableFullscreen && !minimizeInFlight)
+                    if (!(enWindowed && enWindowed[0] == '1')
+                        && !m_macUsableFullscreen && !minimizeInFlight)
                         HideMacDockBar();
                 }
 #endif
