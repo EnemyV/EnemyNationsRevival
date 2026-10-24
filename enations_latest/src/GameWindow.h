@@ -338,6 +338,8 @@ private:
     // macOS: window is sized/positioned to the display's USABLE bounds, so it does NOT
     // cover the Dock's screen rect and the Dock must be left alone. Set in Create().
     bool m_macUsableFullscreen = false;
+    bool m_macHideBars = false;    // macOS: this run wants the Dock + menu bar hidden (self-heal)
+    DWORD m_macBarCheckMs = 0;     // timeGetTime() of the last presentation-options verify
     Uint32 m_focusLostAt = 0;      // SDL_GetTicks() when focus first read NULL (0 = focused)
 
     // UI Components (Phase 9.2)

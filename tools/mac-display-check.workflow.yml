@@ -1,0 +1,15 @@
+# To enable: copy to .github/workflows/mac-display-check.yml (pushing a workflow needs a token with the `workflow` scope, which the stored PAT lacks).
+name: mac-display-check
+# Fails a release branch if the macOS Dock/menu bar can show over the game.
+# Needs a self-hosted macOS runner (a GUI session) with a staged run dir; set
+# EN_MAC_RUN_DIR to it. Make this a REQUIRED status check in the branch rules.
+on:
+  push:
+    branches: ['release3_*', master, 'claude/301-dpi']
+  pull_request:
+jobs:
+  dock-hidden:
+    runs-on: [self-hosted, macOS]
+    steps:
+      - uses: actions/checkout@v4
+      - run: bash tools/mac-display-check.sh "$EN_MAC_RUN_DIR"

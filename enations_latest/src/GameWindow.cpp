@@ -573,6 +573,16 @@ static void LogMacDisplayCheck(SDL_Window* window, bool wantFullscreen) {
     LogToFile(line);
 }
 
+// True while AppKit still has both the Dock and the menu bar hidden for this process.
+static bool MacBarsHidden() {
+    auto send0 = (void* (*)(void*, void*))objc_msgSend;
+    auto sendULRet = (unsigned long (*)(void*, void*))objc_msgSend;
+    void* app = send0(objc_getClass("NSApplication"), sel_registerName("sharedApplication"));
+    if (!app) return true;   // nothing to verify against; never fight a missing app object
+    unsigned long options = sendULRet(app, sel_registerName("presentationOptions"));
+    return (options & ((1UL << 1) | (1UL << 3))) == ((1UL << 1) | (1UL << 3));
+}
+
 // Counterpart of HideMacDockBar: hand the Dock and menu bar back to the system
 // (NSApplicationPresentationDefault). Needed before miniaturizing — see MinimizeAll.
 static void ShowMacDockBar() {
@@ -717,6 +727,7 @@ bool GameWindow::InitializeSDL() {
 
 #ifdef __APPLE__
     m_macUsableFullscreen = usableMode;
+    m_macHideBars = wantFullscreen && !usableMode;
     // Hide the Dock + menu bar now that the game window exists (fullscreen game;
     // the non-Space fullscreen-desktop window won't auto-hide them on its own).
     // NOT in usable-bounds mode: there the window is deliberately sized to exclude the
@@ -1240,6 +1251,28 @@ bool GameWindow::PollEvents() {
         }
         }   // close the dispatch scope opened after the SDL_PollEvent split
     }
+
+#ifdef __APPLE__
+    // Self-heal. HideMacDockBar only runs at launch and on focus gain, but the Dock/menu
+    // bar showing over the game has come back from at least five different causes (see
+    // the HideMacDockBar history), each of which silently cleared the process-wide
+    // presentation options. So instead of trusting that the hide stuck, verify it about
+    // once a second and re-apply it if it drifted. Skipped while minimizing or inactive,
+    // when the bars are SUPPOSED to be visible.
+    if (m_macHideBars && m_appActive) {
+        const DWORD nowMs = timeGetTime();
+        const bool minimizeInFlight =
+            (m_window && (SDL_GetWindowFlags(m_window) & SDL_WINDOW_MINIMIZED))
+            || nowMs < m_suppressGroupRestoreMs;
+        if (!minimizeInFlight && (nowMs - m_macBarCheckMs) >= 1000) {
+            m_macBarCheckMs = nowMs;
+            if (!MacBarsHidden()) {
+                LogToFile("MAC_DISPLAY_CHECK: DRIFT dock/menu bar visible over the game, re-applying hide");
+                HideMacDockBar();
+            }
+        }
+    }
+#endif
 
     // Correlate frame cost with how many of our own extra windows are open. If the
     // SEC_RENDER spike (area map redraw) tracks ui.dialogs going 0→1, the overlapping
