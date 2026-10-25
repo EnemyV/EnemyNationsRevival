@@ -208,6 +208,9 @@ private:
 
     CUnit*      m_pUnit  = nullptr;
     SDL_Window* m_window = nullptr;   // own borderless top-most window (floats above the detached area map)
+    SDL2DisplayMetrics m_displayMetrics;
+    double m_windowScale = 0;
+    int m_layoutW = 240, m_layoutH = 0;
     std::string m_fontPath;
     std::unordered_map<int, TTF_Font*> m_fontCache;
     TTF_Font* GetFont(int size);

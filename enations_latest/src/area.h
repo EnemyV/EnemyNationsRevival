@@ -477,6 +477,7 @@ public:
 	CWndArea *		GetTop ();
 	void					SetTopArea (CWndArea * p) { m_pTopArea = p; }	// SDL2: track focused area window
 	void					MoveSizeToNew ( int xOld, int yOld );
+	void					ClampToRow3 ();	// keep maps above the toolbar (m_iRow3)
 
 	void					UnitDying (CUnit * pUnit);
 	void					MaterialChange (CUnit const * pUnit) const;

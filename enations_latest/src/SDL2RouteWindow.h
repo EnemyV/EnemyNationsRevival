@@ -83,6 +83,7 @@ private:
     SDL2Panel* m_panel = nullptr;
     std::string m_fontPath;
     TTF_Font* m_fontSmall = nullptr;
+    int m_fontRasterSize = 12;
 
     std::vector<RouteEntry> m_entries;
     std::vector<Button> m_buttons;

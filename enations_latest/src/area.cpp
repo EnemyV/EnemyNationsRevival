@@ -738,6 +738,43 @@ void CAreaList::MoveSizeToNew( int xOld, int yOld )
     }
 }
 
+// Pull every area map's bottom edge up to the toolbar top (theApp.m_iRow3) after
+// the toolbar grew (UI scale) so the map does not cover its bars and clock.
+void CAreaList::ClampToRow3( )
+{
+    POSITION pos;
+    for ( pos = GetHeadPosition( ); pos != NULL; )
+    {
+        SDL2Panel* pPanel = GetNext( pos )->m_aa.m_sdlPanel;
+        if ( pPanel == nullptr )
+            continue;
+
+        // Detached maps are OS windows in screen coords; m_iRow3 is main-window-local.
+        int iBottom = theApp.m_iRow3;
+        if ( pPanel->IsDetached( ) )
+        {
+            SDL_Window* pMain = theApp.m_gameWindow ? theApp.m_gameWindow->GetWindow( ) : nullptr;
+            if ( pMain == nullptr )
+                continue;
+            int wx, wy, ww, wh;
+            SDL_GetWindowPosition( pMain, &wx, &wy );
+            SDL_GetWindowSize( pMain, &ww, &wh );
+            // a map moved off the main window (another monitor) is not over the bar
+            if ( pPanel->GetX( ) + pPanel->GetWidth( ) <= wx || pPanel->GetX( ) >= wx + ww ||
+                 pPanel->GetY( ) >= wy + wh )
+                continue;
+            iBottom += wy;
+        }
+
+        if ( pPanel->GetY( ) + pPanel->GetHeight( ) <= iBottom )
+            continue;
+        int iH = __max( SDL2Panel::MIN_HEIGHT, iBottom - pPanel->GetY( ) );
+        int iY = __min( pPanel->GetY( ), iBottom - iH );
+        pPanel->SetRect( pPanel->GetX( ), iY, pPanel->GetWidth( ), iH );
+        pPanel->InvokeResizeCallback( pPanel->GetWidth( ), pPanel->GetHeight( ) );
+    }
+}
+
 void CAreaList::SetLastAttack( CHexCoord const& _hex )
 {
 
@@ -1486,8 +1523,11 @@ void CWndArea::GetClientRect( LPRECT lpRect ) const
     CWndAnim::GetClientRect( lpRect );
     CRect rStatic;
     m_WndStatic.GetClientRect( &rStatic );
-    if ( rStatic.Height( ) < lpRect->bottom )
-        lpRect->bottom -= rStatic.Height( );
+    // The SDL area bar is scaled/wrapped and taller than the hidden MFC static
+    // (m_iYmin); the visible map ends at the bar as drawn.
+    const int staticH = m_WndStatic.m_sdlPanel ? m_WndStatic.m_sdlPanel->GetHeight( ) : rStatic.Height( );
+    if ( staticH < lpRect->bottom )
+        lpRect->bottom -= staticH;
     else
         lpRect->bottom = 0;
 
@@ -1538,10 +1578,16 @@ void CWndArea::Create( CMapLoc const& ml, CUnit* pUnit, BOOL bFirst )
     CRect     rect;
     CWndArea* pPrev = theAreaList.GetTop( );
     if ( pPrev == NULL )
+    {
         rect.SetRect( EnGetProfileInt( theApp.m_sResIni.c_str(), "AreaX", theApp.m_iCol1 ),
                       EnGetProfileInt( theApp.m_sResIni.c_str(), "AreaY", 0 ),
                       EnGetProfileInt( theApp.m_sResIni.c_str(), "AreaEX", theApp.m_iScrnX ),
                       EnGetProfileInt( theApp.m_sResIni.c_str(), "AreaEY", theApp.m_iRow3 ) );
+        // A bottom saved at a smaller UI scale would sit under today's taller toolbar.
+        rect.bottom = __min( rect.bottom, theApp.m_iRow3 );
+        if ( rect.top > rect.bottom - SDL2Panel::MIN_HEIGHT )
+            rect.top = __max( 0, rect.bottom - SDL2Panel::MIN_HEIGHT );
+    }
     else
     {
         // Additional area maps (radio multi-window) open SMALL and cascaded — the
@@ -2589,7 +2635,7 @@ void CWndArea::Draw( )
     // Sync area static bar position and z-order to area panel
     // Resize the bar panel surface to match the area panel width
     if ( m_aa.m_sdlPanel && m_WndStatic.m_sdlPanel ) {
-        int staticH = m_WndStatic.m_iYmin;
+        int staticH = m_WndStatic.m_sdlPanel->GetHeight();
         m_WndStatic.m_sdlPanel->SetSize(
             m_aa.m_sdlPanel->GetWidth(), staticH );
     }
@@ -2606,8 +2652,8 @@ void CWndArea::Draw( )
                 int barOffY = m_aa.m_sdlPanel->GetHeight() - m_WndStatic.m_sdlPanel->GetHeight();
                 if ( barOffY >= 0 )
                 {
-                    SDL_Rect dst = { 0, barOffY, barSurf->w, barSurf->h };
-                    SDL_BlitSurface( barSurf, nullptr, areaSurf, &dst );
+                    SDL_Rect dst = { 0, barOffY, m_aa.m_sdlPanel->GetWidth(), m_WndStatic.m_sdlPanel->GetHeight() };
+                    SDL_BlitScaled( barSurf, nullptr, areaSurf, &dst );
                     m_aa.m_sdlPanel->SetDirty();
                 }
             }
@@ -3568,7 +3614,8 @@ int CWndArea::OnCreate( LPCREATESTRUCT lpCreateStruct )
                     int barOffY = areaH - barH;
                     if ( localY >= barOffY )
                         return pThis->m_WndStatic.m_sdl2Bar->HandleEvent(
-                            event, localX, localY - barOffY );
+                            event, pThis->m_WndStatic.m_sdlPanel->LayoutLocalX(localX),
+                            pThis->m_WndStatic.m_sdlPanel->LayoutLocalY(localY - barOffY) );
                 }
 
                 UINT flags = SDLModToMFC();
@@ -3709,7 +3756,7 @@ int CWndArea::OnCreate( LPCREATESTRUCT lpCreateStruct )
                 // Reposition the static button bar at the bottom of the area
                 if ( pThis->m_WndStatic.m_sdlPanel ) {
                     SDL2Panel* areaPanel = pThis->m_aa.m_sdlPanel;
-                    int staticH = pThis->m_WndStatic.m_iYmin;
+                    int staticH = pThis->m_WndStatic.m_sdlPanel->GetHeight();
                     pThis->m_WndStatic.m_sdlPanel->SetPosition(
                         areaPanel->GetX(),
                         areaPanel->GetY() + newH - staticH );

@@ -1319,22 +1319,22 @@ void CWndWorld::_OnSize() {
     }
 
 
-    // get the buttons
+    // The radar's corner controls stretch with the window exactly like its map and
+    // frame art; the UI scale setting never enters here (the whole panel is sized
+    // from the screen, so it already grows with the display). Drawing and ButtonOn
+    // both derive their bounds from this same button bitmap.
     CDIB *pDibBtnBm = theBitmaps.GetByIndex(m_bIsRadar ? DIB_RADAR_BUTTONS : DIB_WORLD_BUTTONS);
-    m_xBtnUL = (BTN_X_OFF * m_pdibRadar->GetWidth()) / pDibRadarBm->GetWidth();
-    m_yBtnUL = (BTN_Y_OFF * m_pdibRadar->GetHeight()) / pDibRadarBm->GetHeight();
-    m_xBtnLR = ((pDibRadarBm->GetWidth() - BTN_X_OFF - pDibBtnBm->GetWidth() / 2) * m_pdibRadar->GetWidth()) /
-               pDibRadarBm->GetWidth();
-    m_yBtnLR = ((pDibRadarBm->GetHeight() - BTN_Y_OFF - pDibBtnBm->GetHeight() / 4) * m_pdibRadar->GetHeight()) /
-               pDibRadarBm->GetHeight();
-
+    int buttonW = (int)std::lround((double)pDibBtnBm->GetWidth() * m_cx / pDibRadarBm->GetWidth());
+    int buttonH = (int)std::lround((double)pDibBtnBm->GetHeight() * m_cy / pDibRadarBm->GetHeight());
+    buttonW = std::max(4, std::min(buttonW, m_cx));
+    buttonH = std::max(8, std::min(buttonH, m_cy * 2));
+    m_xBtnUL = (int)std::lround((double)BTN_X_OFF * m_cx / pDibRadarBm->GetWidth());
+    m_yBtnUL = (int)std::lround((double)BTN_Y_OFF * m_cy / pDibRadarBm->GetHeight());
+    m_xBtnLR = std::max(m_xBtnUL, m_cx - m_xBtnUL - ((buttonW + 1) & ~1) / 2);
+    m_yBtnLR = std::max(m_yBtnUL, m_cy - m_yBtnUL - ((buttonH + 3) & ~3) / 4);
     m_pdibButtons = new CDIB(ptrthebltformat->GetColorFormat(), CBLTFormat::DIB_MEMORY,
-                             CBLTFormat::DIR_TOPDOWN,
-                             (((pDibBtnBm->GetWidth() * m_pdibRadar->GetWidth()) / pDibRadarBm->GetWidth()) + 1) & ~1,
-                             (((pDibBtnBm->GetHeight() * m_pdibRadar->GetHeight()) / pDibRadarBm->GetHeight()) + 3) &
-                             ~3);
+                             CBLTFormat::DIR_TOPDOWN, (buttonW + 1) & ~1, (buttonH + 3) & ~3);
     pDibBtnBm->StretchBlt(m_pdibButtons, m_pdibButtons->GetRect(), pDibBtnBm->GetRect());
-
     // this is here because we need it for when the window is created
     ApplyColors(m_pdibGround0);
 

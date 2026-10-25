@@ -1,5 +1,6 @@
 #include "stdafx.h"
-#include "SDL2UI.h"   // EnOpenUiFont (hinted font open)
+#include "SDL2UI.h"
+#include "SDL2UiCanvas.h"   // EnOpenUiFont (hinted font open)
 
 #include "SDL2UnitList.h"
 #include "SDL2Panel.h"
@@ -33,13 +34,13 @@ namespace ULColors {
 }
 
 static void FillU(SDL_Surface* s, SDL_Rect r, SDL_Color c) {
-    SDL_FillRect(s, &r, SDL_MapRGB(s->format, c.r, c.g, c.b));
+    EnUiCanvas::FillRect(s, &r, SDL_MapRGB(s->format, c.r, c.g, c.b));
 }
 
 // Software StretchBlt: scale srcSurf(srcRect) to dstSurf(dstRect)
 static void StretchBlit(SDL_Surface* src, SDL_Rect sr, SDL_Surface* dst, SDL_Rect dr) {
     if (!src || !dst || dr.w <= 0 || dr.h <= 0 || sr.w <= 0 || sr.h <= 0) return;
-    SDL_BlitScaled(src, &sr, dst, &dr);
+    EnUiCanvas::BlitScaled(src, &sr, dst, &dr);
 }
 
 SDL2UnitList::SDL2UnitList(ListType type)
@@ -49,26 +50,28 @@ SDL2UnitList::SDL2UnitList(ListType type)
 }
 
 SDL2UnitList::~SDL2UnitList() {
-    if (m_unitSprites) SDL_FreeSurface(m_unitSprites);
-    if (m_bgNormal) SDL_FreeSurface(m_bgNormal);
-    if (m_bgSelected) SDL_FreeSurface(m_bgSelected);
+    if (m_unitSprites) EnUiCanvas::FreeSurface(m_unitSprites);
+    if (m_bgNormal) EnUiCanvas::FreeSurface(m_bgNormal);
+    if (m_bgSelected) EnUiCanvas::FreeSurface(m_bgSelected);
     for (auto& id : m_iconData)
-        if (id.sheet) SDL_FreeSurface(id.sheet);
+        if (id.sheet) EnUiCanvas::FreeSurface(id.sheet);
     for (auto& p : m_fontCache)
-        if (p.second) TTF_CloseFont(p.second);
+        if (p.second) { EnUiCanvas::ForgetFont(p.second); TTF_CloseFont(p.second); }
 }
 
 TTF_Font* SDL2UnitList::GetFont(int size) {
+    size = EnUiCanvas::RasterSize(size);
     if (m_fontPath.empty()) return nullptr;
     auto it = m_fontCache.find(size);
-    if (it != m_fontCache.end()) return it->second;
+    if (it != m_fontCache.end()) return EnUiCanvas::Font(it->second);
     TTF_Font* f = EnOpenUiFont(m_fontPath.c_str(), size);
     m_fontCache[size] = f;
-    return f;
+    return EnUiCanvas::Font(f);
 }
 
 void SDL2UnitList::Init(SDL2Panel* panel, GameWindow* gw) {
     m_panel = panel;
+    if (m_panel) { m_panel->EnableUiScaling(); m_panel->RefreshDisplayMetrics(); }
     m_gw = gw;
 
     // Load unit type sprites (vehicle or building icon sheet)
@@ -92,14 +95,14 @@ void SDL2UnitList::Init(SDL2Panel* panel, GameWindow* gw) {
                 full->format->Gmask, full->format->Bmask, full->format->Amask);
             if (m_bgNormal) {
                 SDL_Rect sr = {0, 0, full->w, halfH};
-                SDL_BlitSurface(full, &sr, m_bgNormal, nullptr);
+                EnUiCanvas::BlitSurface(full, &sr, m_bgNormal, nullptr);
             }
             if (m_bgSelected) {
                 SDL_Rect sr = {0, halfH, full->w, halfH};
                 SDL_Rect dr = {0, 0, full->w, halfH};
-                SDL_BlitSurface(full, &sr, m_bgSelected, &dr);
+                EnUiCanvas::BlitSurface(full, &sr, m_bgSelected, &dr);
             }
-            SDL_FreeSurface(full);
+            EnUiCanvas::FreeSurface(full);
         }
     }
 
@@ -195,8 +198,8 @@ void SDL2UnitList::RemoveUnit(CUnit* pUnit) {
 // Scroll unit here is PIXELS: content = total item height, view = panel height.
 EnSb::Metrics SDL2UnitList::SbMetrics() const {
     if (!m_panel) return EnSb::Metrics();
-    const int w = m_panel->GetWidth();
-    const int h = m_panel->GetHeight();
+    const int w = m_panel->GetLayoutWidth();
+    const int h = m_panel->GetLayoutHeight();
     SDL_Rect bar = { w - SB_WIDTH, 0, SB_WIDTH, h };
     // 24px thumb floor, not the shared 12px default: this bar is 14px wide and its
     // rows are 64px tall, so a 12px thumb would be a square blob. That floor is what
@@ -210,7 +213,7 @@ EnSb::Metrics SDL2UnitList::SbMetrics() const {
 void SDL2UnitList::ScrollPixels(int dy) {
     if (!m_panel) return;
     const int content = (int)m_items.size() * ITEM_HT;
-    const int view    = m_panel->GetHeight();
+    const int view    = m_panel->GetLayoutHeight();
     const int y = EnSb::Clamp(m_scrollY + dy, content, view);
     if (y == m_scrollY) return;
     m_scrollY = y;
@@ -225,7 +228,7 @@ void SDL2UnitList::Render() {
     // and so a step forces the repaint that shows it. The global-button check
     // self-heals a press whose button-up went to another window.
     if (m_sbRepeat.Active()) {
-        if (!(SDL_GetGlobalMouseState(nullptr, nullptr) & SDL_BUTTON_LMASK))
+        if (!(EnDpi::MouseButtons() & SDL_BUTTON_LMASK))
             m_sbRepeat.End();
         else
             ScrollPixels(m_sbRepeat.Steps(SDL_GetTicks()) * m_sbRepeat.dir * SB_ARROW_STEP);
@@ -241,11 +244,13 @@ void SDL2UnitList::Render() {
     m_lastDrawMs = nowTick;
     m_forceDraw = false;
 
+    m_panel->RefreshDisplayMetrics();
     SDL_Surface* dst = m_panel->GetSurface();
     if (!dst) return;
+    EnUiCanvas::Scope canvas(dst, m_panel->GetUiPixelScale());
 
-    int w = m_panel->GetWidth();
-    int h = m_panel->GetHeight();
+    int w = m_panel->GetLayoutWidth();
+    int h = m_panel->GetLayoutHeight();
 
     // Background
     FillU(dst, {0, 0, w, h}, ULColors::Bg);
@@ -299,30 +304,30 @@ void SDL2UnitList::RenderShadowText(SDL_Surface* dst, TTF_Font* font, const char
     // Truncate text with "..." if too long (matching original)
     std::string sText = text;
     int tw = 0, th = 0;
-    TTF_SizeText(font, sText.c_str(), &tw, &th);
+    EnUiCanvas::SizeText(font, sText.c_str(), &tw, &th);
     if (tw > maxW && sText.length() > 4) {
         while (tw > maxW && sText.length() > 4) {
             sText.resize(sText.length() - 1);
-            TTF_SizeText(font, (sText + "...").c_str(), &tw, &th);
+            EnUiCanvas::SizeText(font, (sText + "...").c_str(), &tw, &th);
         }
         sText += "...";
     }
 
     // Shadow (offset +1,+1)
-    SDL_Surface* ts = TTF_RenderText_Blended(font, sText.c_str(), shadow);
+    SDL_Surface* ts = EnUiCanvas::Text(font, sText.c_str(), shadow);
     if (ts) {
-        SDL_Rect sr = {0, 0, std::min(ts->w, maxW), ts->h};
+        SDL_Rect sr = {0, 0, std::min(EnUiCanvas::Width(ts), maxW), EnUiCanvas::Height(ts)};
         SDL_Rect dr = {x + 1, y + 1, sr.w, sr.h};
-        SDL_BlitSurface(ts, &sr, dst, &dr);
-        SDL_FreeSurface(ts);
+        EnUiCanvas::BlitSurface(ts, &sr, dst, &dr);
+        EnUiCanvas::FreeSurface(ts);
     }
     // Foreground
-    ts = TTF_RenderText_Blended(font, sText.c_str(), fg);
+    ts = EnUiCanvas::Text(font, sText.c_str(), fg);
     if (ts) {
-        SDL_Rect sr = {0, 0, std::min(ts->w, maxW), ts->h};
+        SDL_Rect sr = {0, 0, std::min(EnUiCanvas::Width(ts), maxW), EnUiCanvas::Height(ts)};
         SDL_Rect dr = {x, y, sr.w, sr.h};
-        SDL_BlitSurface(ts, &sr, dst, &dr);
-        SDL_FreeSurface(ts);
+        EnUiCanvas::BlitSurface(ts, &sr, dst, &dr);
+        EnUiCanvas::FreeSurface(ts);
     }
 }
 
@@ -348,7 +353,7 @@ void SDL2UnitList::RenderItem(SDL_Surface* dst, int idx, int x, int y, int w, bo
     if (bg) {
         SDL_Rect sr = {0, 0, bg->w, bg->h};
         SDL_Rect dr = {x, y, w, ITEM_HT};
-        SDL_BlitScaled(bg, &sr, dst, &dr);
+        EnUiCanvas::BlitScaled(bg, &sr, dst, &dr);
     } else {
         SDL_Color bgColor = selected ? SDL_Color{70, 85, 95, 255} : SDL_Color{50, 55, 52, 255};
         FillU(dst, {x, y, w, ITEM_HT}, bgColor);
@@ -367,7 +372,7 @@ void SDL2UnitList::RenderItem(SDL_Surface* dst, int idx, int x, int y, int w, bo
             if (iconW > 0) {
                 SDL_Rect sr = {srcX, srcY, iconW, ITEM_HT};
                 SDL_Rect dr = {x + 4, y, iconW, ITEM_HT};
-                SDL_BlitSurface(m_unitSprites, &sr, dst, &dr);
+                EnUiCanvas::BlitSurface(m_unitSprites, &sr, dst, &dr);
             }
         }
     }
@@ -419,7 +424,7 @@ void SDL2UnitList::RenderItem(SDL_Surface* dst, int idx, int x, int y, int w, bo
         int textBotLimit = y + ITEM_HT - m_statBarHt - 4;
         int textAreaH = textBotLimit - textTop;
         int th = 0;
-        TTF_SizeText(font, "Ay", nullptr, &th);
+        EnUiCanvas::SizeText(font, "Ay", nullptr, &th);
         int textY = textTop + (textAreaH - th) / 2;
 
         RenderShadowText(dst, font, sText.c_str(), textLeft, textY, textW,
@@ -470,7 +475,7 @@ void SDL2UnitList::Render3PieceBg(SDL_Surface* dst, int iconIdx, int x, int y, i
         if (icon.cxLeft > 0) {
             SDL_Rect sr = {0, bgSrcY, icon.cxLeft, icon.cyBack};
             SDL_Rect dr = {x, y, icon.cxLeft, icon.cyBack};
-            SDL_BlitSurface(icon.sheet, &sr, dst, &dr);
+            EnUiCanvas::BlitSurface(icon.sheet, &sr, dst, &dr);
         }
         // Middle tile
         if (icon.cxBack > 0) {
@@ -480,14 +485,14 @@ void SDL2UnitList::Render3PieceBg(SDL_Surface* dst, int iconIdx, int x, int y, i
                 int bw = std::min(icon.cxBack, midEnd - tx);
                 SDL_Rect sr = {icon.cxLeft, bgSrcY, bw, icon.cyBack};
                 SDL_Rect dr = {tx, y, bw, icon.cyBack};
-                SDL_BlitSurface(icon.sheet, &sr, dst, &dr);
+                EnUiCanvas::BlitSurface(icon.sheet, &sr, dst, &dr);
             }
         }
         // Right cap
         if (icon.cxRight > 0) {
             SDL_Rect sr = {icon.cxLeft + icon.cxBack, bgSrcY, icon.cxRight, icon.cyBack};
             SDL_Rect dr = {x + w - icon.cxRight, y, icon.cxRight, icon.cyBack};
-            SDL_BlitSurface(icon.sheet, &sr, dst, &dr);
+            EnUiCanvas::BlitSurface(icon.sheet, &sr, dst, &dr);
         }
     } else if (icon.typBack == 0) {  // full_back: stretch entire background
         SDL_Rect sr = {0, bgSrcY, icon.cxBack, icon.cyBack};
@@ -498,7 +503,7 @@ void SDL2UnitList::Render3PieceBg(SDL_Surface* dst, int iconIdx, int x, int y, i
             int bw = std::min(icon.cxBack, w - tx);
             SDL_Rect sr = {0, bgSrcY, bw, icon.cyBack};
             SDL_Rect dr = {x + tx, y, bw, icon.cyBack};
-            SDL_BlitSurface(icon.sheet, &sr, dst, &dr);
+            EnUiCanvas::BlitSurface(icon.sheet, &sr, dst, &dr);
         }
     }
 }
@@ -533,7 +538,7 @@ void SDL2UnitList::RenderIconDone(SDL_Surface* dst, int iconIdx, int percent,
         if (ix + icon.cxIcon > iEnd) break;
         SDL_Rect sr = {0, 0, icon.cxIcon, icon.cyIcon};   // base icon (frame 0)
         SDL_Rect dr = {ix, iconY, icon.cxIcon, icon.cyIcon};
-        SDL_BlitSurface(icon.sheet, &sr, dst, &dr);
+        EnUiCanvas::BlitSurface(icon.sheet, &sr, dst, &dr);
     }
 }
 
@@ -579,13 +584,13 @@ void SDL2UnitList::RenderIconHave(SDL_Surface* dst, int iconIdx, int have, int n
         if (ix + icon.cxIcon > barRight) break;
         SDL_Rect sr = {0, 0, icon.cxIcon, icon.cyIcon};
         SDL_Rect dr = {ix, iconY, icon.cxIcon, icon.cyIcon};
-        SDL_BlitSurface(icon.sheet, &sr, dst, &dr);
+        EnUiCanvas::BlitSurface(icon.sheet, &sr, dst, &dr);
     }
     for (; ix < barRight; ix += iStep) {
         if (ix + icon.cxIcon > barRight) break;
         SDL_Rect sr = {needSrcX, 0, icon.cxIcon, icon.cyIcon};
         SDL_Rect dr = {ix, iconY, icon.cxIcon, icon.cyIcon};
-        SDL_BlitSurface(icon.sheet, &sr, dst, &dr);
+        EnUiCanvas::BlitSurface(icon.sheet, &sr, dst, &dr);
     }
 }
 
@@ -607,15 +612,15 @@ void SDL2UnitList::RenderIconText(SDL_Surface* dst, int iconIdx, const char* tex
     if (textW <= 0) return;
 
     int th = 0;
-    TTF_SizeText(font, text, nullptr, &th);
+    EnUiCanvas::SizeText(font, text, nullptr, &th);
     int textY = y + (h - th) / 2;
 
-    SDL_Surface* ts = TTF_RenderText_Blended(font, text, ULColors::Text);
+    SDL_Surface* ts = EnUiCanvas::Text(font, text, ULColors::Text);
     if (ts) {
-        SDL_Rect sr = {0, 0, std::min(ts->w, textW), ts->h};
+        SDL_Rect sr = {0, 0, std::min(EnUiCanvas::Width(ts), textW), EnUiCanvas::Height(ts)};
         SDL_Rect dr = {textX, textY, sr.w, sr.h};
-        SDL_BlitSurface(ts, &sr, dst, &dr);
-        SDL_FreeSurface(ts);
+        EnUiCanvas::BlitSurface(ts, &sr, dst, &dr);
+        EnUiCanvas::FreeSurface(ts);
     }
 }
 
@@ -674,7 +679,7 @@ void SDL2UnitList::RenderCarrierCargo(SDL_Surface* dst, CVehicle* pVeh, int icon
             SDL_Rect sr = {srcX, 0, icon.cxIcon, icon.cyIcon};
             SDL_Rect dr = {drawX, iconY, icon.cxIcon, icon.cyIcon};
             SDL_SetSurfaceBlendMode(icon.sheet, SDL_BLENDMODE_BLEND);
-            SDL_BlitSurface(icon.sheet, &sr, dst, &dr);
+            EnUiCanvas::BlitSurface(icon.sheet, &sr, dst, &dr);
         }
         drawX += icon.cxIcon;
     }
@@ -746,7 +751,7 @@ void SDL2UnitList::RenderMaterialsBar(SDL_Surface* dst, CUnit* pUnit, int iconId
             if (cursor > iRight) break;
             SDL_Rect sr = {srcX, 0, icon.cxIcon, icon.cyIcon};
             SDL_Rect dr = {cursor, iconY, icon.cxIcon, icon.cyIcon};
-            SDL_BlitSurface(icon.sheet, &sr, dst, &dr);
+            EnUiCanvas::BlitSurface(icon.sheet, &sr, dst, &dr);
             iLen -= iIconAdd;
         }
     }
@@ -936,7 +941,7 @@ void SDL2UnitList::OnClick(int itemIdx, bool dblClick) {
 
 bool SDL2UnitList::HandleEvent(SDL_Event& event, int localX, int localY) {
     if (!m_panel) return false;
-    const int h      = m_panel->GetHeight();
+    const int h      = m_panel->GetLayoutHeight();
     const int totalH = (int)m_items.size() * ITEM_HT;
 
     // Same gutter geometry the paint uses (SbMetrics is a pure function of the panel

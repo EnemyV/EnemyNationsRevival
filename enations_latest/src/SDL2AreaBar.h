@@ -90,6 +90,8 @@ private:
     struct BtnPos { int x, y, w, h; };
     BtnPos m_btnPos[NUM_BUTTONS];
     int m_totalW = 0;
+    int m_baselineHeight = 36;
+    int m_statusX = 0, m_statusY = 0;
 
     int m_pressedBtn = -1;
     int m_hoverBtn = -1;   // index under the cursor (flyby-help debounce; -1 = none)

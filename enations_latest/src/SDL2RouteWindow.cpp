@@ -1,5 +1,6 @@
 #include "stdafx.h"
-#include "SDL2UI.h"   // EnOpenUiFont (hinted font open)
+#include "SDL2UI.h"
+#include "SDL2UiCanvas.h"   // EnOpenUiFont (hinted font open)
 #include "SDL2RouteWindow.h"
 #include "GameWindow.h"
 #include "SDL2Compositor.h"
@@ -42,6 +43,8 @@ SDL2RouteWindow::SDL2RouteWindow(GameWindow* gw, CVehicle* pVeh, SDL2Panel* area
     int panelY = 100;
 
     m_panel = comp->AddPanel("route", panelX, panelY, PANEL_W, PANEL_H, 35);
+    m_panel->EnableUiScaling();
+    m_panel->RefreshDisplayMetrics();
     if (m_panel) {
         m_panel->SetMovable(true);
         m_panel->SetResizable(true);   // CWndRoute was resizable (WS_THICKFRAME, ui.h)
@@ -97,8 +100,8 @@ SDL2RouteWindow::SDL2RouteWindow(GameWindow* gw, CVehicle* pVeh, SDL2Panel* area
 // (Re)position the two button rows and recompute how many list rows fit, for the CURRENT
 // panel size. Called once at construction and again from the resize callback.
 void SDL2RouteWindow::Layout() {
-    int w = m_panel ? m_panel->GetWidth()  : PANEL_W;
-    int h = m_panel ? m_panel->GetHeight() : PANEL_H;
+    int w = m_panel ? m_panel->GetLayoutWidth()  : PANEL_W;
+    int h = m_panel ? m_panel->GetLayoutHeight() : PANEL_H;
     const int gap = 4;
     int btnY1 = h - BTN_H * 2 - gap * 3;
     int btnY2 = h - BTN_H - gap;
@@ -132,7 +135,7 @@ void SDL2RouteWindow::ScrollRows(int rows) {
 void SDL2RouteWindow::TickScrollRepeats() {
     if (s_openRouteWindows.empty()) return;
     const Uint32 now  = SDL_GetTicks();
-    const bool   held = (SDL_GetGlobalMouseState(nullptr, nullptr) & SDL_BUTTON_LMASK) != 0;
+    const bool   held = (EnDpi::MouseButtons() & SDL_BUTTON_LMASK) != 0;
     for (size_t i = 0; i < s_openRouteWindows.size(); ++i) {
         SDL2RouteWindow* rw = s_openRouteWindows[i];
         if (!rw->m_sbRepeat.Active()) continue;
@@ -146,10 +149,10 @@ SDL2RouteWindow::~SDL2RouteWindow() {
     for (size_t i = 0; i < s_openRouteWindows.size(); ++i)
         if (s_openRouteWindows[i] == this) { s_openRouteWindows.erase(s_openRouteWindows.begin() + i); break; }
 
-    if (m_fontSmall) TTF_CloseFont(m_fontSmall);
-    if (m_bgGold)   SDL_FreeSurface(m_bgGold);
-    if (m_borderH)  SDL_FreeSurface(m_borderH);
-    if (m_borderV)  SDL_FreeSurface(m_borderV);
+    if (m_fontSmall) { EnUiCanvas::ForgetFont(m_fontSmall); TTF_CloseFont(m_fontSmall); }
+    if (m_bgGold)   EnUiCanvas::FreeSurface(m_bgGold);
+    if (m_borderH)  EnUiCanvas::FreeSurface(m_borderH);
+    if (m_borderV)  EnUiCanvas::FreeSurface(m_borderV);
 
     if (m_panel && m_gameWindow) {
         SDL2Compositor* comp = m_gameWindow->GetCompositor();
@@ -173,7 +176,7 @@ void SDL2RouteWindow::LoadArt() {
 }
 
 void SDL2RouteWindow::RenderBackground(SDL_Surface* dst) {
-    int w = dst->w, h = dst->h;
+    int w = m_panel->GetLayoutWidth(), h = m_panel->GetLayoutHeight();
     int brdH = m_borderH ? m_borderH->h : 3;
     int brdV = m_borderV ? m_borderV->w : 3;
 
@@ -181,9 +184,9 @@ void SDL2RouteWindow::RenderBackground(SDL_Surface* dst) {
     if (m_bgGold) {
         SDL_Rect sr = {0, 0, m_bgGold->w, m_bgGold->h};
         SDL_Rect dr = {0, 0, w, h};
-        SDL_BlitScaled(m_bgGold, &sr, dst, &dr);
+        EnUiCanvas::BlitScaled(m_bgGold, &sr, dst, &dr);
     } else {
-        SDL_FillRect(dst, nullptr, SDL_MapRGB(dst->format, 160, 140, 90));
+        EnUiCanvas::FillRect(dst, nullptr, SDL_MapRGB(dst->format, 160, 140, 90));
     }
 
     // Carved-gold frame (shared corner-correct routine — fills the corners). Skipped when
@@ -194,8 +197,13 @@ void SDL2RouteWindow::RenderBackground(SDL_Surface* dst) {
 }
 
 TTF_Font* SDL2RouteWindow::GetFont(int size) {
-    if (size == 12) return m_fontSmall;
-    return m_fontSmall;  // fallback
+    size = EnUiCanvas::RasterSize(size);
+    if (m_fontRasterSize != size || !m_fontSmall) {
+        if (m_fontSmall) { EnUiCanvas::ForgetFont(m_fontSmall); TTF_CloseFont(m_fontSmall); }
+        m_fontSmall = EnOpenUiFont(m_fontPath.c_str(), size);
+        m_fontRasterSize = size;
+    }
+    return EnUiCanvas::Font(m_fontSmall);
 }
 
 void SDL2RouteWindow::Show() {
@@ -325,8 +333,10 @@ void SDL2RouteWindow::RebuildList() {
 void SDL2RouteWindow::Render() {
     if (!m_panel) return;
 
+    m_panel->RefreshDisplayMetrics();
     SDL_Surface* surf = m_panel->GetSurface();
     if (!surf) return;
+    EnUiCanvas::Scope canvas(surf, m_panel->GetUiPixelScale());
 
     LoadArt();
     TTF_Font* font = GetFont(12);
@@ -340,30 +350,30 @@ void SDL2RouteWindow::Render() {
     if (!font) { m_panel->SetDirty(); return; }
 
     int insetX = brdV + 4;
-    int insetW = surf->w - insetX * 2;
+    int insetW = m_panel->GetLayoutWidth() - insetX * 2;
 
     // F1: "Loop" checkbox in the top margin (above the list). Checked = the route loops
     // (legacy behaviour); unchecked = one-shot (stop at the last stop).
     {
         const int cbSz = 13, cbY = 5;
         m_loopRect = { insetX, cbY, cbSz, cbSz };
-        SDL_FillRect(surf, &m_loopRect, SDL_MapRGB(surf->format, 30, 25, 18));
+        EnUiCanvas::FillRect(surf, &m_loopRect, SDL_MapRGB(surf->format, 30, 25, 18));
         Uint32 dk = SDL_MapRGB(surf->format, 60, 50, 35);
         Uint32 lt = SDL_MapRGB(surf->format, 190, 170, 120);
         SDL_Rect e;
-        e = { m_loopRect.x, m_loopRect.y, cbSz, 1 };               SDL_FillRect(surf, &e, dk);
-        e = { m_loopRect.x, m_loopRect.y, 1, cbSz };               SDL_FillRect(surf, &e, dk);
-        e = { m_loopRect.x, m_loopRect.y + cbSz - 1, cbSz, 1 };    SDL_FillRect(surf, &e, lt);
-        e = { m_loopRect.x + cbSz - 1, m_loopRect.y, 1, cbSz };    SDL_FillRect(surf, &e, lt);
+        e = { m_loopRect.x, m_loopRect.y, cbSz, 1 };               EnUiCanvas::FillRect(surf, &e, dk);
+        e = { m_loopRect.x, m_loopRect.y, 1, cbSz };               EnUiCanvas::FillRect(surf, &e, dk);
+        e = { m_loopRect.x, m_loopRect.y + cbSz - 1, cbSz, 1 };    EnUiCanvas::FillRect(surf, &e, lt);
+        e = { m_loopRect.x + cbSz - 1, m_loopRect.y, 1, cbSz };    EnUiCanvas::FillRect(surf, &e, lt);
         if (m_pVeh && m_pVeh->GetRouteLoop()) {
             SDL_Rect chk = { m_loopRect.x + 3, m_loopRect.y + 3, cbSz - 6, cbSz - 6 };
-            SDL_FillRect(surf, &chk, SDL_MapRGB(surf->format, 255, 220, 100));
+            EnUiCanvas::FillRect(surf, &chk, SDL_MapRGB(surf->format, 255, 220, 100));
         }
-        SDL_Surface* lbl = TTF_RenderText_Blended(font, "Loop", SDL_Color{ 220, 210, 180, 255 });
+        SDL_Surface* lbl = EnUiCanvas::Text(font, "Loop", SDL_Color{ 220, 210, 180, 255 });
         if (lbl) {
             SDL_Rect d = { insetX + cbSz + 5, cbY - 1, 0, 0 };
-            SDL_BlitSurface(lbl, NULL, surf, &d);
-            SDL_FreeSurface(lbl);
+            EnUiCanvas::BlitSurface(lbl, NULL, surf, &d);
+            EnUiCanvas::FreeSurface(lbl);
         }
     }
 
@@ -372,16 +382,16 @@ void SDL2RouteWindow::Render() {
     int listW = insetW;
     int listH = m_visibleRows * ROW_H;
     SDL_Rect listRect = {listX, LIST_Y, listW, listH};
-    SDL_FillRect(surf, &listRect, SDL_MapRGB(surf->format, 30, 25, 18));
+    EnUiCanvas::FillRect(surf, &listRect, SDL_MapRGB(surf->format, 30, 25, 18));
 
     // Beveled border around list (dark top-left, light bottom-right)
     Uint32 darkBrd  = SDL_MapRGB(surf->format, 60, 50, 35);
     Uint32 lightBrd = SDL_MapRGB(surf->format, 190, 170, 120);
     SDL_Rect bdr;
-    bdr = {listX, LIST_Y, listW, 1}; SDL_FillRect(surf, &bdr, darkBrd);
-    bdr = {listX, LIST_Y, 1, listH}; SDL_FillRect(surf, &bdr, darkBrd);
-    bdr = {listX, LIST_Y + listH - 1, listW, 1}; SDL_FillRect(surf, &bdr, lightBrd);
-    bdr = {listX + listW - 1, LIST_Y, 1, listH}; SDL_FillRect(surf, &bdr, lightBrd);
+    bdr = {listX, LIST_Y, listW, 1}; EnUiCanvas::FillRect(surf, &bdr, darkBrd);
+    bdr = {listX, LIST_Y, 1, listH}; EnUiCanvas::FillRect(surf, &bdr, darkBrd);
+    bdr = {listX, LIST_Y + listH - 1, listW, 1}; EnUiCanvas::FillRect(surf, &bdr, lightBrd);
+    bdr = {listX + listW - 1, LIST_Y, 1, listH}; EnUiCanvas::FillRect(surf, &bdr, lightBrd);
 
     // Capture geometry for hit-testing (the inset is border-art-relative, not LIST_MARGIN)
     // and clamp the scroll offset to the current contents.
@@ -400,18 +410,18 @@ void SDL2RouteWindow::Render() {
         // Highlight selected
         if (idx == m_selectedIndex) {
             SDL_Rect selRect = {listX + 1, rowY, listW - 2, ROW_H};
-            SDL_FillRect(surf, &selRect, SDL_MapRGB(surf->format, 80, 65, 40));
+            EnUiCanvas::FillRect(surf, &selRect, SDL_MapRGB(surf->format, 80, 65, 40));
         }
 
         // Current route: gold, others: dark text
         SDL_Color color = entry.isCurrent ?
             SDL_Color{255, 220, 100, 255} : SDL_Color{220, 210, 180, 255};
 
-        SDL_Surface* text = TTF_RenderText_Blended(font, entry.text.c_str(), color);
+        SDL_Surface* text = EnUiCanvas::Text(font, entry.text.c_str(), color);
         if (text) {
             SDL_Rect dst = {listX + 4, rowY + 1, 0, 0};
-            SDL_BlitSurface(text, NULL, surf, &dst);
-            SDL_FreeSurface(text);
+            EnUiCanvas::BlitSurface(text, NULL, surf, &dst);
+            EnUiCanvas::FreeSurface(text);
         }
     }
 
@@ -443,30 +453,30 @@ void SDL2RouteWindow::Render() {
         else
             bgColor = SDL_MapRGB(surf->format, 150, 135, 95);
 
-        SDL_FillRect(surf, &btn.rect, bgColor);
+        EnUiCanvas::FillRect(surf, &btn.rect, bgColor);
 
         // Beveled button border (light top-left, dark bottom-right)
         Uint32 light = SDL_MapRGB(surf->format, 200, 185, 140);
         Uint32 dark  = SDL_MapRGB(surf->format, 80, 70, 45);
         if (btn.pressed) { Uint32 tmp = light; light = dark; dark = tmp; }
 
-        bdr = {btn.rect.x, btn.rect.y, btn.rect.w, 1}; SDL_FillRect(surf, &bdr, light);
-        bdr = {btn.rect.x, btn.rect.y, 1, btn.rect.h}; SDL_FillRect(surf, &bdr, light);
-        bdr = {btn.rect.x, btn.rect.y + btn.rect.h - 1, btn.rect.w, 1}; SDL_FillRect(surf, &bdr, dark);
-        bdr = {btn.rect.x + btn.rect.w - 1, btn.rect.y, 1, btn.rect.h}; SDL_FillRect(surf, &bdr, dark);
+        bdr = {btn.rect.x, btn.rect.y, btn.rect.w, 1}; EnUiCanvas::FillRect(surf, &bdr, light);
+        bdr = {btn.rect.x, btn.rect.y, 1, btn.rect.h}; EnUiCanvas::FillRect(surf, &bdr, light);
+        bdr = {btn.rect.x, btn.rect.y + btn.rect.h - 1, btn.rect.w, 1}; EnUiCanvas::FillRect(surf, &bdr, dark);
+        bdr = {btn.rect.x + btn.rect.w - 1, btn.rect.y, 1, btn.rect.h}; EnUiCanvas::FillRect(surf, &bdr, dark);
 
         // Button label — dark text on gold button
         SDL_Color txtColor = btn.enabled ?
             SDL_Color{30, 25, 15, 255} : SDL_Color{90, 85, 70, 255};
-        SDL_Surface* text = TTF_RenderText_Blended(font, btn.label.c_str(), txtColor);
+        SDL_Surface* text = EnUiCanvas::Text(font, btn.label.c_str(), txtColor);
         if (text) {
             SDL_Rect dst = {
-                btn.rect.x + (btn.rect.w - text->w) / 2,
-                btn.rect.y + (btn.rect.h - text->h) / 2,
+                btn.rect.x + (btn.rect.w - EnUiCanvas::Width(text)) / 2,
+                btn.rect.y + (btn.rect.h - EnUiCanvas::Height(text)) / 2,
                 0, 0
             };
-            SDL_BlitSurface(text, NULL, surf, &dst);
-            SDL_FreeSurface(text);
+            EnUiCanvas::BlitSurface(text, NULL, surf, &dst);
+            EnUiCanvas::FreeSurface(text);
         }
     }
 

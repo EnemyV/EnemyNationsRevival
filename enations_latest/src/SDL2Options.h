@@ -15,4 +15,5 @@ private:
     SDL2Slider* m_sldSpeed = nullptr;
     SDL2Slider* m_sldSound = nullptr;
     SDL2Slider* m_sldMusic = nullptr;
+    SDL2Listbox* m_uiScale = nullptr;
 };

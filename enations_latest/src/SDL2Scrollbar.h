@@ -25,6 +25,7 @@
 // ============================================================================
 
 #include <SDL.h>
+#include "SDL2UiCanvas.h"
 
 namespace EnSb {
 
@@ -185,7 +186,7 @@ inline Colors SlateColors() {
 inline void SbFill(SDL_Surface* dst, const SDL_Rect& r, SDL_Color c) {
     if (!dst || r.w <= 0 || r.h <= 0) return;
     SDL_Rect rr = r;
-    SDL_FillRect(dst, &rr, SDL_MapRGB(dst->format, c.r, c.g, c.b));
+    EnUiCanvas::FillRect(dst, &rr, SDL_MapRGB(dst->format, c.r, c.g, c.b));
 }
 
 inline void SbBevel(SDL_Surface* dst, const SDL_Rect& r, SDL_Color light, SDL_Color dark) {

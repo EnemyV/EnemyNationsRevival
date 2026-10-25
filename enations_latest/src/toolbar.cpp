@@ -177,6 +177,13 @@ void CWndBar::Create( )
         s_toolbar.Init( m_sdlPanel, theApp.m_gameWindow.get() );
         theApp.m_gameWindow->SetSDL2Toolbar( &s_toolbar );
 
+        // The bar is TOOLBAR_HT only at 100% UI scale. Size it for the current
+        // scale now so m_iRow3 is its real top before the area map, chat and
+        // unit windows lay out against it.
+        const int iBarHt = s_toolbar.DesiredPanelHeight( );
+        theApp.m_iRow3 = rect.Height( ) - iBarHt;
+        m_sdlPanel->SetRect( 0, theApp.m_iRow3, rect.Width( ), iBarHt );
+
         CWndBar* pThis = this;
         s_toolbar.SetButtonHandler(0, [pThis]() { pThis->GotoArea(); });
         s_toolbar.SetButtonHandler(1, [pThis]() { pThis->GotoWorld(); });
@@ -908,6 +915,26 @@ static void ToggleUnitListPanel(SDL2UnitList*& pList, SDL2UnitList::ListType typ
     delete pList;
     pList = new SDL2UnitList(type);
     pList->Init(panel, theApp.m_gameWindow.get());
+
+    // Init sized the panel for the UI scale, so the clamp above (unscaled size,
+    // whole screen) can leave it over the toolbar. Keep the window, title bar
+    // included, between the top of the screen and the toolbar (m_iRow3).
+    {
+        const int barTop = (theApp.m_iRow3 > 0 && theApp.m_iRow3 <= screenH) ? theApp.m_iRow3 : screenH;
+        const int tbH = panel->GetTitleBarHeight();
+        int h = panel->GetHeight();
+        if (h + tbH > barTop - 8)                            h = barTop - 8 - tbH;
+        if (h < tbH * 3)                                     h = tbH * 3;
+        int x = panel->GetX();
+        if (x + panel->GetWidth() > screenW)                 x = screenW - panel->GetWidth() - 10;
+        if (x < 0)                                           x = 0;
+        int y = panel->GetY();
+        if (y + h > barTop - 4)                              y = barTop - 4 - h;
+        if (y < tbH + 4)                                     y = tbH + 4;
+        if (h != panel->GetHeight())
+            panel->SetSize(panel->GetWidth(), h);
+        panel->SetPosition(x, y);
+    }
 
     SDL2UnitList* pL = pList;
     panel->SetEventCallback(

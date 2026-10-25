@@ -26,6 +26,10 @@ public:
     // Initialize with the compositor panel. Call after game windows are created.
     void Init(SDL2Panel* panel, GameWindow* gw);
 
+    // Panel height in window pixels that fits the toolbar layout at the current
+    // panel width and UI scale (66 at 100% on a wide window). Refreshes metrics.
+    int DesiredPanelHeight();
+
     // Render all toolbar content to the panel surface. Called each frame.
     void Render();
 
@@ -53,13 +57,16 @@ public:
     // string resources so we show the MFC-original sentence-length help.
     void SetButtonHelpText(int index, const std::string& text);
 
-    static const int NUM_BUTTONS = 8;
+    static constexpr int NUM_BUTTONS = 8;
     static const int NUM_STATS = 4;
     static const int TOOLBAR_HT = 66;
     static const int BTN_ROW_HT = 38;
     static const int TEXT_ROW_HT = 28;
 
 private:
+    // Button grid / text-row offset (layout units) and the panel height for them.
+    struct Layout { int columns, buttonRows; bool separateStats; int textRowY, panelHeight; };
+    Layout ComputeLayout() const;
     TTF_Font* GetFont(int size);
     void RenderButton(SDL_Surface* dst, int idx, int x, int y, int w, int h);
     void RenderStatBar(SDL_Surface* dst, int idx, int x, int y, int w, int h);
@@ -147,6 +154,8 @@ private:
     std::unordered_map<int, TTF_Font*> m_fontCache;
 
     int m_pressedBtn = -1;
+    SDL_Rect m_buttonRects[NUM_BUTTONS] = {};
+    int m_statY = 2;
     int m_btnSpriteW = 0;
     int m_btnSpriteH = 0;
 
