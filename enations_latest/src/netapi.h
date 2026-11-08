@@ -9,6 +9,7 @@
 #ifndef __NETAPI_H__
 #define __NETAPI_H__
 
+#include "vdmplay.h"
 
 const int iMaxNameLen = VP_MAXPLAYERDATA;
 const VPGUID tlpGUID = { "F9FC4F00843C11cfB82000AA0047F4" };
@@ -26,7 +27,8 @@ class CNetApi : public CObject
 {
 public:
 		CNetApi ();
-		~CNetApi ();
+		~CNetApi( );
+    
 
 static		BOOL		SupportsProtocol (int iPrtcl) 
 									{ return (vpSupportedTransports () & (1 << iPrtcl)); }
@@ -35,12 +37,12 @@ static		LRESULT OnNetMsg (WPARAM wParam, LPARAM lParam);
 static		void OnNetFlowOn ();
 static		void OnNetFlowOff ();
 
-		CString	GetIServeAddress ();
+		std::string	GetIServeAddress ();
 
 		BOOL		OpenServer (int iPrtcl, HWND hWnd, char const *pName, void const * pData, void const * pPrtcl);
 		BOOL		UpdateSessionData (void const * pData) { return (! vpUpdateSessionData (m_vpSession, pData)); }
 		BOOL		OpenClient (int iPrtcl, HWND hWnd, void const * pPrtcl);
-		CString	GetAddress () const ;
+		std::string	GetAddress () const ;
 
 		BOOL		StartEnum () { return (! vpEnumSessions (m_vpHdl, m_hWnd, TRUE, NULL)); }
 		BOOL		StopEnum () { return (! vpStopEnumSessions (m_vpHdl)); }
@@ -60,6 +62,14 @@ static		void OnNetFlowOff ();
 		int			GetMode () const { return (m_iMode); }
 		int			GetType () const { return (m_iType); }
 
+		// Re-assert client mode on the discovered-session Join path. OpenClient sets
+		// m_iType=client, but the SDL2 Join dialog runs theGame.ctor()/Open() between the
+		// browse-open and Join, which re-defaults theNet's m_iType to closed (the vp handle
+		// survives — linux2 datapoint 2026-06-26). Call this right before Join() so the
+		// :178 ASSERT(m_iType==client) holds without weakening it. (Win MP join via :160
+		// is unaffected; calling this when already client is a harmless no-op.)
+		void		SetClientType () { m_iType = client; }
+
 		void		SetMode (int iMode) { ASSERT ((0 <= iMode) && (iMode <= num_modes)); m_iMode = iMode; }
 						enum		{ closed,		// totally closed down
 											opened,		// connected to net, no session
@@ -74,6 +84,13 @@ static		void OnNetFlowOff ();
 														 client = 2 };
 
 		VPSESSIONHANDLE		_GetSessionHandle () const { return m_vpSession; }
+
+		// Host relay (docs/plans/host-relay-spec.md 8): is our link to that
+		// player relayed through the host? Read-only. ProbePeerLink kicks the
+		// one-shot direct dial that makes the answer meaningful in the lobby.
+		// Both are engine-side no-ops while the relay gate is off.
+		BOOL		PeerIsRelayed (VPPLAYERID id) const { return (vpPeerIsRelayed (m_vpSession, id)); }
+		void		ProbePeerLink (VPPLAYERID id) { vpProbePeerLink (m_vpSession, id); }
 
 private:
 		VPHANDLE					m_vpHdl;
@@ -105,6 +122,8 @@ static	CNetPublish * Alloc (CGame * pG);
 		char			m_cFlags;
 							enum { fdebug = 0x01, fcheat = 0x02, fload = 0x04, finprogress = 0x08 };
 
+		DWORD			m_dwDataHash;		// gameplay data fingerprint (datahash.h), 015 phase 3
+
 		char			m_sPlyrName[1];	// server's player name
 		//char		m_sPw[];				// game password
 		//char		m_sGameName[];	// game name
@@ -123,8 +142,16 @@ static	CNetJoin * Alloc (CPlayer const *pPlyr, BOOL bSrvr);
 		int				m_iLen;								// how long this message is
 		int				m_iPlyrNum;
 		BOOL			m_bServer;
+		DWORD			m_dwDataHash;					// gameplay data fingerprint (datahash.h), 015 phase 3
 		char			m_sName[1];
 		// note - we actually have the full name
+
+		// Smallest m_iLen a record of THIS layout can carry (the header plus
+		// one NUL for the name). The server refuses anything shorter before it
+		// reads m_dwDataHash. It is a sanity bound, not a format discriminator:
+		// a pre-015 sender is caught by the hash compare itself, because its
+		// name bytes land where the hash belongs and will not match.
+		static int MinLen () { return (int)sizeof (CNetJoin); }
 };
 
 

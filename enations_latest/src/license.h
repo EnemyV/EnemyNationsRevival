@@ -1,41 +1,23 @@
 // License.h : header file
 //
+// CDlgLicense — Non-MFC license dialog.
+// Uses Win32 MessageBoxA to display license text from LANG data.
 
-/////////////////////////////////////////////////////////////////////////////
-// CDlgLicense dialog
+#ifndef __LICENSE_H__
+#define __LICENSE_H__
 
-class CDlgLicense : public CDialog
+class CDlgLicense
 {
-// Construction
 public:
-	CDlgLicense(int iText, BOOL bOK = FALSE , CWnd* pParent = NULL);   // standard constructor
+    // iText: which license chunk (0-based) to load from LANG/LEGL
+    // bOK: TRUE = read-only (OK button), FALSE = acceptance (Yes/Cancel)
+    CDlgLicense(int iText, BOOL bOK = FALSE, CWnd* pParent = NULL);
 
-// Dialog Data
-	//{{AFX_DATA(CDlgLicense)
-	enum { IDD = IDD_LICENSE };
-	CWndOD< CButton >	m_btnYes;
-	CWndOD< CButton >	m_btnOk;
-	CWndOD< CButton >	m_btnCancel;
-	CString	m_strLicense;
-	//}}AFX_DATA
+    // Returns IDOK on acceptance, IDCANCEL on rejection
+    int DoModal();
 
-	int		m_iText;
-	BOOL	m_bOK;
-
-// Overrides
-	// ClassWizard generated virtual function overrides
-	//{{AFX_VIRTUAL(CDlgLicense)
-	protected:
-	virtual void DoDataExchange(CDataExchange* pDX);    // DDX/DDV support
-	//}}AFX_VIRTUAL
-
-// Implementation
-protected:
-
-	// Generated message map functions
-	//{{AFX_MSG(CDlgLicense)
-	virtual BOOL OnInitDialog();
-	afx_msg void OnYes();
-	//}}AFX_MSG
-	DECLARE_MESSAGE_MAP()
+    int  m_iText;
+    BOOL m_bOK;
 };
+
+#endif // __LICENSE_H__

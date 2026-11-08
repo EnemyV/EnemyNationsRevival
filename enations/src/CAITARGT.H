@@ -954,74 +954,74 @@ static BYTE caTargetAttack[] = {
 };
 
 /*
-		enum BLDG_TYPE { city,								// this is returned by GetType ()
-						rocket,
-						apartment_1_1,			// #=frontier/estab/city, #=choice
-						apartment_1_2,
-						apartment_2_1,
-						apartment_2_2,
-						apartment_2_3,
-						apartment_2_4,
-						apartment_3_1,			// obsolete
-						apartment_3_2,			// obsolete
-						office_2_1,
-						office_2_2,
-						office_2_3,
-						office_2_4,
-						office_3_1,
-						office_3_2,					// obsolete
-						// above are only placed by computer
-						barracks_2,
-						barracks_3,					// obsolete
-						command_center,
-						embassy,
-						farm,
-						fort_1,
-						fort_2,
-						fort_3,
-						heavy,
-						light_1,
-						light_2,
-						lumber,
-						oil_well,
-						refinery,
-						coal,
-						iron,
-						copper,
-						power_1,
-						power_2,
-						power_3,
-						research,
-						repair,
-						seaport,
-						shipyard_1,
-						shipyard_3,
-						smelter,
-						warehouse,
-						light_0,
-						num_types, = 44 buildings
+  enum BLDG_TYPE { city,        // this is returned by GetType ()
+      rocket,
+      apartment_1_1,   // #=frontier/estab/city, #=choice
+      apartment_1_2,
+      apartment_2_1,
+      apartment_2_2,
+      apartment_2_3,
+      apartment_2_4,
+      apartment_3_1,   // obsolete
+      apartment_3_2,   // obsolete
+      office_2_1,
+      office_2_2,
+      office_2_3,
+      office_2_4,
+      office_3_1,
+      office_3_2,     // obsolete
+      // above are only placed by computer
+      barracks_2,
+      barracks_3,     // obsolete
+      command_center,
+      embassy,
+      farm,
+      fort_1,
+      fort_2,
+      fort_3,
+      heavy,
+      light_1,
+      light_2,
+      lumber,
+      oil_well,
+      refinery,
+      coal,
+      iron,
+      copper,
+      power_1,
+      power_2,
+      power_3,
+      research,
+      repair,
+      seaport,
+      shipyard_1,
+      shipyard_3,
+      smelter,
+      warehouse,
+      light_0,
+      num_types, = 44 buildings
 
-		enum TRANS_TYPE {  construction,		// this is returned by GetType ()
-						med_truck,					// obsolete
-						heavy_truck,
-						light_scout,
-						med_scout,
-						heavy_scout,
-						infantry_carrier,
-						light_tank,
-						med_tank,
-						heavy_tank,
-						light_art,
-						med_art,
-						heavy_art,
-						light_cargo,
-						gun_boat,
-						destroyer,
-						cruiser,
-						landing_craft,
-						infantry,
-						rangers,
-						marines, 						// obsolete
-						num_types = 21 vehicles
-						};
+  enum TRANS_TYPE {  construction,  // this is returned by GetType ()
+      med_truck,     // obsolete
+      heavy_truck,
+      light_scout,
+      med_scout,
+      heavy_scout,
+      infantry_carrier,
+      light_tank,
+      med_tank,
+      heavy_tank,
+      light_art,
+      med_art,
+      heavy_art,
+      light_cargo,
+      gun_boat,
+      destroyer,
+      cruiser,
+      landing_craft,
+      infantry,
+      rangers,
+      marines,       // obsolete
+      num_types = 21 vehicles
+      };
 */

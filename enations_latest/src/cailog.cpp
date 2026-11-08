@@ -8,9 +8,9 @@
 //
 ////////////////////////////////////////////////////////////////////////////
 
-#include "STDAFX.H"
+#include "stdafx.h"
 
-#include "CAILog.hpp"
+#include "cailog.hpp"
 #include "error.h"
 
 #define new DEBUG_NEW

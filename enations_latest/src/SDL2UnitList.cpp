@@ -1,0 +1,1028 @@
+#include "stdafx.h"
+#include "SDL2UI.h"
+#include "SDL2UiCanvas.h"   // EnOpenUiFont (hinted font open)
+
+#include "SDL2UnitList.h"
+#include "SDL2Panel.h"
+#include "SDL2MainMenu.h"
+#include "GameWindow.h"
+#include "lastplnt.h"
+#include "area.h"
+#include "player.h"
+#include "bitmaps.h"
+#include "icons.h"
+
+#include "building.inl"
+#include "vehicle.inl"
+#include "unit.inl"
+#include "terrain.inl"  // CHexCoord/CMapLoc inlines (needed at /Ob2)
+
+#include <SDL.h>
+#include <SDL_ttf.h>
+
+#undef min
+#undef max
+#include <algorithm>
+
+namespace ULColors {
+    const SDL_Color Bg        = {  40,  45,  42, 255 };
+    const SDL_Color Text      = { 255, 255, 255, 255 };
+    const SDL_Color TextShadow= {   0,   0,   0, 255 };
+    const SDL_Color TextDim   = { 180, 175, 165, 255 };
+    const SDL_Color BarBg     = {  25,  30,  27, 255 };
+    const SDL_Color ScrollBar = { 100, 110, 105, 255 };
+}
+
+static void FillU(SDL_Surface* s, SDL_Rect r, SDL_Color c) {
+    EnUiCanvas::FillRect(s, &r, SDL_MapRGB(s->format, c.r, c.g, c.b));
+}
+
+// Software StretchBlt: scale srcSurf(srcRect) to dstSurf(dstRect)
+static void StretchBlit(SDL_Surface* src, SDL_Rect sr, SDL_Surface* dst, SDL_Rect dr) {
+    if (!src || !dst || dr.w <= 0 || dr.h <= 0 || sr.w <= 0 || sr.h <= 0) return;
+    EnUiCanvas::BlitScaled(src, &sr, dst, &dr);
+}
+
+SDL2UnitList::SDL2UnitList(ListType type)
+    : m_type(type)
+{
+    m_fontPath = EnResolveFontPath();   // T-0073: one shared resolver, bundled font first
+}
+
+SDL2UnitList::~SDL2UnitList() {
+    if (m_unitSprites) EnUiCanvas::FreeSurface(m_unitSprites);
+    if (m_bgNormal) EnUiCanvas::FreeSurface(m_bgNormal);
+    if (m_bgSelected) EnUiCanvas::FreeSurface(m_bgSelected);
+    for (auto& id : m_iconData)
+        if (id.sheet) EnUiCanvas::FreeSurface(id.sheet);
+    for (auto& p : m_fontCache)
+        if (p.second) { EnUiCanvas::ForgetFont(p.second); TTF_CloseFont(p.second); }
+}
+
+TTF_Font* SDL2UnitList::GetFont(int size) {
+    size = EnUiCanvas::RasterSize(size);
+    if (m_fontPath.empty()) return nullptr;
+    auto it = m_fontCache.find(size);
+    if (it != m_fontCache.end()) return EnUiCanvas::Font(it->second);
+    TTF_Font* f = EnOpenUiFont(m_fontPath.c_str(), size);
+    m_fontCache[size] = f;
+    return EnUiCanvas::Font(f);
+}
+
+void SDL2UnitList::Init(SDL2Panel* panel, GameWindow* gw) {
+    m_panel = panel;
+    if (m_panel) { m_panel->EnableUiScaling(); m_panel->RefreshDisplayMetrics(); }
+    m_gw = gw;
+
+    // Load unit type sprites (vehicle or building icon sheet)
+    int dibIdx = (m_type == VEHICLES) ? DIB_LIST_UNIT_VEHICLES : DIB_LIST_UNIT_BUILDINGS;
+    CDIB* pSprites = theBitmaps.GetByIndex(dibIdx);
+    if (pSprites)
+        m_unitSprites = SDL2MainMenu::CreateSurfaceFromDIB(pSprites);
+
+    // Load background texture ??? top half is normal, bottom half is selected
+    // Original uses StretchBlt to stretch this to fit each item
+    CDIB* pBg = theBitmaps.GetByIndex(DIB_LIST_UNIT_BACK);
+    if (pBg) {
+        SDL_Surface* full = SDL2MainMenu::CreateSurfaceFromDIB(pBg);
+        if (full) {
+            int halfH = full->h / 2;
+            m_bgNormal = SDL_CreateRGBSurface(0, full->w, halfH,
+                full->format->BitsPerPixel, full->format->Rmask,
+                full->format->Gmask, full->format->Bmask, full->format->Amask);
+            m_bgSelected = SDL_CreateRGBSurface(0, full->w, halfH,
+                full->format->BitsPerPixel, full->format->Rmask,
+                full->format->Gmask, full->format->Bmask, full->format->Amask);
+            if (m_bgNormal) {
+                SDL_Rect sr = {0, 0, full->w, halfH};
+                EnUiCanvas::BlitSurface(full, &sr, m_bgNormal, nullptr);
+            }
+            if (m_bgSelected) {
+                SDL_Rect sr = {0, halfH, full->w, halfH};
+                SDL_Rect dr = {0, 0, full->w, halfH};
+                EnUiCanvas::BlitSurface(full, &sr, m_bgSelected, &dr);
+            }
+            EnUiCanvas::FreeSurface(full);
+        }
+    }
+
+    // Load icon sprite data for status bars (same pattern as SDL2Toolbar)
+    int iconIndices[] = { ICON_BAR_TEXT, ICON_MATERIALS, ICON_DAMAGE,
+                          ICON_CONSTRUCTION, ICON_BUILD_VEH, ICON_REPAIR_VEH,
+                          ICON_BUILD_ROAD, ICON_VEHICLES };
+    for (int idx : iconIndices) {
+        if (idx < 0 || idx >= 15) continue;
+        CStatData* pSd = theIcons.GetByIndex(idx);
+        if (!pSd) continue;
+        m_iconData[idx].cxIcon = pSd->m_cxIcon;
+        m_iconData[idx].cyIcon = pSd->m_cyIcon;
+        m_iconData[idx].cxLeft = pSd->m_cxLeft;
+        m_iconData[idx].cxBack = pSd->m_cxBack;
+        m_iconData[idx].cxRight = pSd->m_cxRight;
+        m_iconData[idx].cyBack = pSd->m_cyBack;
+        m_iconData[idx].leftOff = pSd->m_leftOff;
+        m_iconData[idx].rightOff = pSd->m_rightOff;
+        m_iconData[idx].typIcon = (int)pSd->m_iTypIcon;
+        m_iconData[idx].typBack = (int)pSd->m_iTypBack;
+        m_iconData[idx].nNeedIcon = pSd->m_nNeedIcon;
+        if (pSd->m_pcDib)
+            m_iconData[idx].sheet = SDL2MainMenu::CreateSurfaceFromDIB(pSd->m_pcDib);
+    }
+
+    // Use ICON_DAMAGE height as the status bar row height (matches original m_iStatHt)
+    if (m_iconData[ICON_DAMAGE].cyBack > 0)
+        m_statBarHt = m_iconData[ICON_DAMAGE].cyBack;
+
+    Rebuild();
+}
+
+void SDL2UnitList::Rebuild() {
+    m_items.clear();
+
+    if (m_type == VEHICLES) {
+        POSITION pos = theVehicleMap.GetStartPosition();
+        while (pos != NULL) {
+            DWORD dwID;
+            CVehicle* pVeh;
+            theVehicleMap.GetNextAssoc(pos, dwID, pVeh);
+            if (pVeh->GetOwner()->IsMe())
+                AddUnit(pVeh);
+        }
+    } else {
+        POSITION pos = theBuildingMap.GetStartPosition();
+        while (pos != NULL) {
+            DWORD dwID;
+            CBuilding* pBldg;
+            theBuildingMap.GetNextAssoc(pos, dwID, pBldg);
+            if (pBldg->GetOwner()->IsMe())
+                AddUnit(pBldg);
+        }
+    }
+
+    // Sort by type then name (matches original CWndListUnits::OnCompareItem)
+    std::sort(m_items.begin(), m_items.end(), [](const ListItem& a, const ListItem& b) {
+        if (a.typeIndex != b.typeIndex) return a.typeIndex < b.typeIndex;
+        return a.name < b.name;
+    });
+}
+
+void SDL2UnitList::AddUnit(CUnit* pUnit) {
+    ListItem item;
+    item.pUnit = pUnit;
+    item.dwID  = pUnit->GetID();
+    item.name = pUnit->GetData()->GetDesc().c_str();
+
+    if (m_type == VEHICLES) {
+        CVehicle* pVeh = (CVehicle*)pUnit;
+        item.typeIndex = pVeh->GetData()->GetType();
+    } else {
+        CBuilding* pBldg = (CBuilding*)pUnit;
+        item.typeIndex = pBldg->GetData()->GetType();
+    }
+
+    m_items.push_back(item);
+}
+
+void SDL2UnitList::RemoveUnit(CUnit* pUnit) {
+    m_items.erase(
+        std::remove_if(m_items.begin(), m_items.end(),
+            [pUnit](const ListItem& it) { return it.pUnit == pUnit; }),
+        m_items.end());
+}
+
+// The scrollbar gutter broken into its up arrow, track, thumb and down arrow. Pure
+// function of the live panel height and item count, so the paint and every hit-test
+// call it rather than each re-deriving the thumb arithmetic (which is how the old
+// copy came to hit-test the gutter only while the content overflowed: a click in the
+// bar selected a row whenever everything fit).
+// Scroll unit here is PIXELS: content = total item height, view = panel height.
+EnSb::Metrics SDL2UnitList::SbMetrics() const {
+    if (!m_panel) return EnSb::Metrics();
+    const int w = m_panel->GetLayoutWidth();
+    const int h = m_panel->GetLayoutHeight();
+    SDL_Rect bar = { w - SB_WIDTH, 0, SB_WIDTH, h };
+    // 24px thumb floor, not the shared 12px default: this bar is 14px wide and its
+    // rows are 64px tall, so a 12px thumb would be a square blob. That floor is what
+    // this widget has always used - only the arrows are new.
+    return EnSb::Layout(bar, (int)m_items.size() * ITEM_HT, h, m_scrollY, 24);
+}
+
+// Scroll by pixels (negative = up), clamped to the contents. Forces the next frame
+// to actually repaint so the movement is visible immediately instead of waiting out
+// the redraw throttle.
+void SDL2UnitList::ScrollPixels(int dy) {
+    if (!m_panel) return;
+    const int content = (int)m_items.size() * ITEM_HT;
+    const int view    = m_panel->GetLayoutHeight();
+    const int y = EnSb::Clamp(m_scrollY + dy, content, view);
+    if (y == m_scrollY) return;
+    m_scrollY = y;
+    m_forceDraw = true;
+}
+
+void SDL2UnitList::Render() {
+    if (!m_panel) return;
+
+    // Scrollbar arrow held down. Advanced BEFORE the repaint throttle below so the
+    // auto-repeat runs on the game's frame clock instead of the 7fps redraw interval,
+    // and so a step forces the repaint that shows it. The global-button check
+    // self-heals a press whose button-up went to another window.
+    if (m_sbRepeat.Active()) {
+        if (!(EnDpi::MouseButtons() & SDL_BUTTON_LMASK))
+            m_sbRepeat.End();
+        else
+            ScrollPixels(m_sbRepeat.Steps(SDL_GetTicks()) * m_sbRepeat.dir * SB_ARROW_STEP);
+    }
+
+    // Throttle: only actually redraw on a fixed interval (or when forced by an
+    // interaction). On skipped frames we leave the panel's surface and dirty flag
+    // untouched, so the compositor's present-gate skips re-presenting our detached
+    // window ??? that's what keeps an open list from dragging the game's framerate.
+    DWORD nowTick = ::timeGetTime();
+    if (!m_forceDraw && (nowTick - m_lastDrawMs) < DRAW_INTERVAL_MS)
+        return;
+    m_lastDrawMs = nowTick;
+    m_forceDraw = false;
+
+    m_panel->RefreshDisplayMetrics();
+    SDL_Surface* dst = m_panel->GetSurface();
+    if (!dst) return;
+    EnUiCanvas::Scope canvas(dst, m_panel->GetUiPixelScale());
+
+    int w = m_panel->GetLayoutWidth();
+    int h = m_panel->GetLayoutHeight();
+
+    // Background
+    FillU(dst, {0, 0, w, h}, ULColors::Bg);
+
+    // Rebuild list periodically to catch new units
+    static DWORD s_lastRebuild = 0;
+    DWORD now = ::timeGetTime();
+    if (now - s_lastRebuild > 2000) {
+        Rebuild();
+        s_lastRebuild = now;
+        // Units die, so the list shrinks under a scrolled view. Nothing clamped
+        // m_scrollY on a rebuild (only the event handlers did), which left the panel
+        // scrolled past the end showing blank rows until the player touched the bar.
+        ScrollPixels(0);
+    }
+
+    // Content width excludes scrollbar (always reserved)
+    int contentW = w - SB_WIDTH;
+
+    // Highlight is driven per-row from each unit's live selected flag (RenderItem
+    // re-resolves the row by ID and reads IsSelected()), so the whole selection SET
+    // shows selected ??? not just the single m_pUnit. This keeps the list in sync with
+    // the map: box/list-selecting units highlights them all here, and when the map
+    // clears its selection (e.g. after a crane is given a build order, area.cpp
+    // build_loc does RemoveAllUnits/SelectOff) the highlight clears here too.
+
+    // Render visible items (within content area, not overlapping scrollbar)
+    int y = -m_scrollY;
+    for (int i = 0; i < (int)m_items.size(); i++) {
+        if (y + ITEM_HT > 0 && y < h)
+            RenderItem(dst, i, 0, y, contentW, false);
+        y += ITEM_HT;
+    }
+
+    // Scrollbar (always visible, so the content width below never changes under the
+    // player). Track, thumb and the up/down arrow buttons at the ends all come from
+    // EnSb, shared with the dialog list boxes and the route window; the arrows dim
+    // when the list is already at that end, and when everything fits the track is
+    // filled edge to edge with both arrows dimmed.
+    EnSb::Draw(dst, SbMetrics(), EnSb::SlateColors(), m_scrollY,
+               (int)m_items.size() * ITEM_HT, h);
+
+    m_panel->SetDirty();
+}
+
+// Render shadow text (black at +1,+1, white on top ??? matching original)
+void SDL2UnitList::RenderShadowText(SDL_Surface* dst, TTF_Font* font, const char* text,
+                                     int x, int y, int maxW, SDL_Color fg, SDL_Color shadow) {
+    if (!font || !text || !text[0]) return;
+
+    // Truncate text with "..." if too long (matching original)
+    std::string sText = text;
+    int tw = 0, th = 0;
+    EnUiCanvas::SizeText(font, sText.c_str(), &tw, &th);
+    if (tw > maxW && sText.length() > 4) {
+        while (tw > maxW && sText.length() > 4) {
+            sText.resize(sText.length() - 1);
+            EnUiCanvas::SizeText(font, (sText + "...").c_str(), &tw, &th);
+        }
+        sText += "...";
+    }
+
+    // Shadow (offset +1,+1)
+    SDL_Surface* ts = EnUiCanvas::Text(font, sText.c_str(), shadow);
+    if (ts) {
+        SDL_Rect sr = {0, 0, std::min(EnUiCanvas::Width(ts), maxW), EnUiCanvas::Height(ts)};
+        SDL_Rect dr = {x + 1, y + 1, sr.w, sr.h};
+        EnUiCanvas::BlitSurface(ts, &sr, dst, &dr);
+        EnUiCanvas::FreeSurface(ts);
+    }
+    // Foreground
+    ts = EnUiCanvas::Text(font, sText.c_str(), fg);
+    if (ts) {
+        SDL_Rect sr = {0, 0, std::min(EnUiCanvas::Width(ts), maxW), EnUiCanvas::Height(ts)};
+        SDL_Rect dr = {x, y, sr.w, sr.h};
+        EnUiCanvas::BlitSurface(ts, &sr, dst, &dr);
+        EnUiCanvas::FreeSurface(ts);
+    }
+}
+
+void SDL2UnitList::RenderItem(SDL_Surface* dst, int idx, int x, int y, int w, bool selected) {
+    ListItem& item = m_items[idx];
+
+    // The list is only rebuilt every ~2s (see Render), so a unit can die in
+    // combat and leave this row pointing at freed memory until the next rebuild.
+    // The original kept rows in sync by removing them on death; here we instead
+    // re-resolve the cached pointer against the live map by ID every draw and
+    // skip the row if the unit is gone. (Refresh item.pUnit so the rest of this
+    // function ??? GetData(), status bars, etc. ??? uses the live object.)
+    CUnit* pLive = (m_type == VEHICLES)
+                       ? (CUnit*)theVehicleMap.GetVehicle( item.dwID )
+                       : (CUnit*)theBuildingMap.GetBldg( item.dwID );
+    if ( pLive == NULL )
+        return;            // unit died since the last Rebuild() ??? don't draw a stale row
+    item.pUnit = pLive;
+    selected = pLive->IsSelected();   // reflect the map's live selection set
+
+    // --- Background: STRETCH to fill entire item (matching original StretchBlt) ---
+    SDL_Surface* bg = selected ? m_bgSelected : m_bgNormal;
+    if (bg) {
+        SDL_Rect sr = {0, 0, bg->w, bg->h};
+        SDL_Rect dr = {x, y, w, ITEM_HT};
+        EnUiCanvas::BlitScaled(bg, &sr, dst, &dr);
+    } else {
+        SDL_Color bgColor = selected ? SDL_Color{70, 85, 95, 255} : SDL_Color{50, 55, 52, 255};
+        FillU(dst, {x, y, w, ITEM_HT}, bgColor);
+    }
+
+    // --- Unit icon from sprite sheet ---
+    // Original: CRect rDest(4, 0, min(88, spriteW), 64), CPoint ptSrc(20, 64*iTyp)
+    // So source starts at x=20, dest starts at x=4, max dest width = 84-4=80
+    // Clamp to fit within item and not overlap text area
+    if (m_unitSprites && item.typeIndex >= 0) {
+        int spriteW = m_unitSprites->w;
+        int srcY = ITEM_HT * item.typeIndex;
+        if (srcY + ITEM_HT <= m_unitSprites->h) {
+            int srcX = 20;
+            int iconW = std::min(spriteW - srcX, std::min(68, w - 8));
+            if (iconW > 0) {
+                SDL_Rect sr = {srcX, srcY, iconW, ITEM_HT};
+                SDL_Rect dr = {x + 4, y, iconW, ITEM_HT};
+                EnUiCanvas::BlitSurface(m_unitSprites, &sr, dst, &dr);
+            }
+        }
+    }
+
+    // Text area starts after icon
+    int textLeft = x + 72;
+    int textRight = w - 4;
+    int textW = textRight - textLeft;
+    if (textW <= 0) return;
+
+    // --- Unit name with status text (shadow text like original) ---
+    TTF_Font* font = GetFont(11);
+    if (font) {
+        // Build display text matching original unit_wnd.cpp OnDrawItem
+        std::string sText = item.name;
+
+        if (m_type == VEHICLES) {
+            CVehicle* pVeh = (CVehicle*)item.pUnit;
+            sText += " ";
+
+            // Transport: show AUTO/ROUTE prefix
+            if (pVeh->GetData()->IsTransport()) {
+                if (!pVeh->IsHpControl())
+                    sText += CTransportData::m_sAuto;
+                else if (pVeh->GetEvent() == CVehicle::route)
+                    sText += CTransportData::m_sRoute;
+            }
+
+            // Show destination building name
+            CBuilding* pBldg = theBuildingHex.GetBuilding(pVeh->GetPtHead());
+            if (pBldg == NULL || pVeh->GetHexOwnership())
+                pBldg = theBuildingHex.GetBuilding(pVeh->GetHexDest());
+            if (pBldg != NULL && pBldg->GetOwner()->IsMe())
+                sText += std::string("[") + pBldg->GetData()->GetDesc().c_str() + "]";
+            else if (pVeh->GetData()->IsTransport()) {
+                if (pVeh->GetRouteMode() == CVehicle::stop)
+                    sText += CTransportData::m_sIdle;
+                else
+                    sText += CTransportData::m_sTravel;
+            }
+        } else {
+            CBuilding* pBldg = (CBuilding*)item.pUnit;
+            if (pBldg->IsConstructing())
+                sText += " [Building]";
+        }
+
+        // Text is drawn above the status bars (original: rect.top=4, rect.bottom=60-statHt-4)
+        int textTop = y + 4;
+        int textBotLimit = y + ITEM_HT - m_statBarHt - 4;
+        int textAreaH = textBotLimit - textTop;
+        int th = 0;
+        EnUiCanvas::SizeText(font, "Ay", nullptr, &th);
+        int textY = textTop + (textAreaH - th) / 2;
+
+        RenderShadowText(dst, font, sText.c_str(), textLeft, textY, textW,
+                         ULColors::Text, ULColors::TextShadow);
+    }
+
+    // --- Status bars at bottom (original: rect at y=60-statHt to y=60) ---
+    int numBars = GetNumStatusBars(item.pUnit);
+    if (numBars > 0) {
+        int barY = y + ITEM_HT - m_statBarHt;
+        RenderStatusBars(dst, item.pUnit, textLeft, barY, textW, numBars);
+    }
+}
+
+int SDL2UnitList::GetNumStatusBars(CUnit* pUnit) {
+    if (!pUnit) return 0;
+
+    if (pUnit->GetUnitType() == CUnit::vehicle) {
+        CVehicle* pVeh = (CVehicle*)pUnit;
+        if (pVeh->GetData()->IsTransport())
+            return 3;  // damage + route text + materials/cargo
+        if (pVeh->GetData()->IsCrane() || pVeh->GetData()->IsCarrier())
+            return 2;  // damage + construction/cargo
+        return 1;      // damage only
+    }
+
+    if (pUnit->GetUnitType() == CUnit::building) {
+        CBuilding* pBldg = (CBuilding*)pUnit;
+        if (pBldg->IsConstructing())
+            return 3;  // damage + materials + construction progress
+        if (pBldg->GetTotalStore() > 0)
+            return 2;  // damage + materials
+        return 1;      // damage only
+    }
+
+    return 1;
+}
+
+// Render the 3-piece background for a status bar icon
+void SDL2UnitList::Render3PieceBg(SDL_Surface* dst, int iconIdx, int x, int y, int w) {
+    IconData& icon = m_iconData[iconIdx];
+    if (!icon.sheet || icon.cyBack <= 0) return;
+
+    int bgSrcY = icon.cyIcon;  // Background row is below icon row in sprite sheet
+
+    if (icon.typBack == 1) {  // back_3: left cap + tiled middle + right cap
+        // Left cap
+        if (icon.cxLeft > 0) {
+            SDL_Rect sr = {0, bgSrcY, icon.cxLeft, icon.cyBack};
+            SDL_Rect dr = {x, y, icon.cxLeft, icon.cyBack};
+            EnUiCanvas::BlitSurface(icon.sheet, &sr, dst, &dr);
+        }
+        // Middle tile
+        if (icon.cxBack > 0) {
+            int midX = x + icon.cxLeft;
+            int midEnd = x + w - icon.cxRight;
+            for (int tx = midX; tx < midEnd; tx += icon.cxBack) {
+                int bw = std::min(icon.cxBack, midEnd - tx);
+                SDL_Rect sr = {icon.cxLeft, bgSrcY, bw, icon.cyBack};
+                SDL_Rect dr = {tx, y, bw, icon.cyBack};
+                EnUiCanvas::BlitSurface(icon.sheet, &sr, dst, &dr);
+            }
+        }
+        // Right cap
+        if (icon.cxRight > 0) {
+            SDL_Rect sr = {icon.cxLeft + icon.cxBack, bgSrcY, icon.cxRight, icon.cyBack};
+            SDL_Rect dr = {x + w - icon.cxRight, y, icon.cxRight, icon.cyBack};
+            EnUiCanvas::BlitSurface(icon.sheet, &sr, dst, &dr);
+        }
+    } else if (icon.typBack == 0) {  // full_back: stretch entire background
+        SDL_Rect sr = {0, bgSrcY, icon.cxBack, icon.cyBack};
+        SDL_Rect dr = {x, y, w, icon.cyBack};
+        StretchBlit(icon.sheet, sr, dst, dr);
+    } else {  // tile
+        for (int tx = 0; tx < w; tx += icon.cxBack) {
+            int bw = std::min(icon.cxBack, w - tx);
+            SDL_Rect sr = {0, bgSrcY, bw, icon.cyBack};
+            SDL_Rect dr = {x + tx, y, bw, icon.cyBack};
+            EnUiCanvas::BlitSurface(icon.sheet, &sr, dst, &dr);
+        }
+    }
+}
+
+// DrawStatDone: tiles the stat icon sprite (e.g. the construction wrench / road /
+// build-vehicle tool) across `percent`% of the bar ??? matching the original
+// CStatInst::DrawStatDone. The previous version drew a flat colour block, which
+// is why crane/build progress showed a solid bar instead of tool icons.
+void SDL2UnitList::RenderIconDone(SDL_Surface* dst, int iconIdx, int percent,
+                                   int x, int y, int w, int h) {
+    Render3PieceBg(dst, iconIdx, x, y, w);
+
+    if (percent <= 0) return;
+
+    IconData& icon = m_iconData[iconIdx];
+    if (!icon.sheet || icon.cxIcon <= 0 || icon.cyIcon <= 0) return;
+
+    int iconY  = y + (h - icon.cyIcon) / 2;
+    int left   = x + icon.leftOff;
+    int right  = x + w - icon.rightOff;
+    int width  = right - left;
+    if (width <= 0) return;
+
+    int iEnd = right;
+    if (percent < 100) iEnd -= icon.cxIcon / 2;   // leave the last icon for 100%
+    int iRight = left + (width * percent) / 100;
+    iRight = std::max(left + 1, iRight);           // at least one icon when > 0
+    int iStep = std::max(1, icon.cxIcon / 2);      // overlap by half (like the original)
+
+    SDL_SetSurfaceBlendMode(icon.sheet, SDL_BLENDMODE_BLEND);
+    for (int ix = left; ix < iRight; ix += iStep) {
+        if (ix + icon.cxIcon > iEnd) break;
+        SDL_Rect sr = {0, 0, icon.cxIcon, icon.cyIcon};   // base icon (frame 0)
+        SDL_Rect dr = {ix, iconY, icon.cxIcon, icon.cyIcon};
+        EnUiCanvas::BlitSurface(icon.sheet, &sr, dst, &dr);
+    }
+}
+
+// DrawStatHave: have icons (green) then need icons (red/animated)
+void SDL2UnitList::RenderIconHave(SDL_Surface* dst, int iconIdx, int have, int need,
+                                   int x, int y, int w, int h) {
+    Render3PieceBg(dst, iconIdx, x, y, w);
+
+    IconData& icon = m_iconData[iconIdx];
+    if (!icon.sheet || icon.cxIcon <= 0 || icon.cyIcon <= 0) return;
+    if (have <= 0 && need <= 0) return;
+
+    int iconY = y + (h - icon.cyIcon) / 2;
+    int barLeft = x + icon.leftOff;
+    int barRight = x + w - icon.rightOff;
+    int barW = barRight - barLeft;
+    if (barW <= 0) return;
+
+    int iDone;
+    int needSrcX;
+    if (have < need && need > 0) {
+        iDone = (have * 100) / need;
+        needSrcX = icon.cxIcon * 2;  // "need" icon (frame 2+)
+    } else {
+        if (have <= 0 || need <= 0)
+            iDone = 100;
+        else {
+            iDone = (need * 100) / have;
+            if (iDone == 0 && need > 0) iDone = 1;
+        }
+        needSrcX = icon.cxIcon;  // "excess" icon
+    }
+
+    int splitX = barLeft + (barW * iDone) / 100;
+    int iStep = std::max(1, icon.cxIcon / 2);
+
+    // ONE cursor advances by iStep across the bar; the "need" run continues from
+    // where the "have" run stopped, on the same half-icon grid (matching the
+    // original CStatInst::DrawStatHave). Restarting at the off-grid splitX shifted
+    // the red icons and overlapped the seam icon (misaligned + doubled look).
+    int ix = barLeft;
+    for (; ix < splitX; ix += iStep) {
+        if (ix + icon.cxIcon > barRight) break;
+        SDL_Rect sr = {0, 0, icon.cxIcon, icon.cyIcon};
+        SDL_Rect dr = {ix, iconY, icon.cxIcon, icon.cyIcon};
+        EnUiCanvas::BlitSurface(icon.sheet, &sr, dst, &dr);
+    }
+    for (; ix < barRight; ix += iStep) {
+        if (ix + icon.cxIcon > barRight) break;
+        SDL_Rect sr = {needSrcX, 0, icon.cxIcon, icon.cyIcon};
+        SDL_Rect dr = {ix, iconY, icon.cxIcon, icon.cyIcon};
+        EnUiCanvas::BlitSurface(icon.sheet, &sr, dst, &dr);
+    }
+}
+
+// DrawStatText: text inside status bar background
+void SDL2UnitList::RenderIconText(SDL_Surface* dst, int iconIdx, const char* text,
+                                   int x, int y, int w, int h) {
+    Render3PieceBg(dst, iconIdx, x, y, w);
+
+    IconData& icon = m_iconData[iconIdx];
+    if (!text || !text[0]) return;
+
+    // Status text (e.g. "Auto: Idle") ??? 9pt was too small to read; 11 matches the
+    // item-name font and still fits the bar height.
+    TTF_Font* font = GetFont(11);
+    if (!font) return;
+
+    int textX = x + icon.leftOff;
+    int textW = w - icon.leftOff - icon.rightOff;
+    if (textW <= 0) return;
+
+    int th = 0;
+    EnUiCanvas::SizeText(font, text, nullptr, &th);
+    int textY = y + (h - th) / 2;
+
+    SDL_Surface* ts = EnUiCanvas::Text(font, text, ULColors::Text);
+    if (ts) {
+        SDL_Rect sr = {0, 0, std::min(EnUiCanvas::Width(ts), textW), EnUiCanvas::Height(ts)};
+        SDL_Rect dr = {textX, textY, sr.w, sr.h};
+        EnUiCanvas::BlitSurface(ts, &sr, dst, &dr);
+        EnUiCanvas::FreeSurface(ts);
+    }
+}
+
+// DrawStatBar: continuous progress bar (for construction)
+void SDL2UnitList::RenderIconBar(SDL_Surface* dst, int iconIdx, int percent,
+                                  int x, int y, int w, int h) {
+    Render3PieceBg(dst, iconIdx, x, y, w);
+
+    IconData& icon = m_iconData[iconIdx];
+    if (!icon.sheet || percent <= 0) return;
+
+    int barLeft = x + icon.leftOff;
+    int barRight = x + w - icon.rightOff;
+    int barW = barRight - barLeft;
+    if (barW <= 0) return;
+
+    int fillW = (barW * percent) / 100;
+    if (fillW <= 0) return;
+
+    // Draw the gradient at its NATIVE height (cyIcon), vertically centered in the
+    // box ??? exactly CStatInst::DrawStatBar (icons.cpp): rDest.top += (H - cyIcon)/2;
+    // rDest.bottom = top + cyIcon. The 3-piece background drawn above is taller
+    // (cyBack), so its carved gold frame shows as a clean border above/below the
+    // bar. The previous fabricated vInset (cyBack/8) made the fill SHORTER than
+    // cyIcon, so the dark box interior peeked out as black strips top and bottom.
+    int fillH = icon.cyIcon;
+    int fillY = y + (h - icon.cyIcon) / 2;
+    if (fillH < 1) fillH = 1;
+
+    int srcW = (icon.cxIcon * percent) / 100;
+    if (srcW <= 0) srcW = 1;
+    SDL_Rect sr = {0, 0, srcW, icon.cyIcon};
+    SDL_Rect dr = {barLeft, fillY, fillW, fillH};
+    StretchBlit(icon.sheet, sr, dst, dr);
+}
+
+// Render carried vehicle sprites
+void SDL2UnitList::RenderCarrierCargo(SDL_Surface* dst, CVehicle* pVeh, int iconIdx,
+                                       int x, int y, int w, int h) {
+    Render3PieceBg(dst, iconIdx, x, y, w);
+
+    IconData& icon = m_iconData[iconIdx];
+    if (!icon.sheet || icon.cxIcon <= 0 || icon.cyIcon <= 0) return;
+
+    int iconY = y + (h - icon.cyIcon) / 2;
+    int drawX = x + icon.leftOff;
+    int rightLimit = x + w - icon.rightOff;
+
+    POSITION pos = pVeh->GetCargoHeadPosition();
+    while (pos != NULL) {
+        CVehicle* pCargo = pVeh->GetCargoNext(pos);
+        if (drawX + icon.cxIcon > rightLimit) break;
+
+        int srcX = pCargo->GetData()->GetType() * icon.cxIcon;
+        if (srcX + icon.cxIcon <= icon.sheet->w) {
+            SDL_Rect sr = {srcX, 0, icon.cxIcon, icon.cyIcon};
+            SDL_Rect dr = {drawX, iconY, icon.cxIcon, icon.cyIcon};
+            SDL_SetSurfaceBlendMode(icon.sheet, SDL_BLENDMODE_BLEND);
+            EnUiCanvas::BlitSurface(icon.sheet, &sr, dst, &dr);
+        }
+        drawX += icon.cxIcon;
+    }
+}
+
+// Render materials using ICON_MATERIALS sprites
+void SDL2UnitList::RenderMaterialsBar(SDL_Surface* dst, CUnit* pUnit, int iconIdx,
+                                       int x, int y, int w, int h) {
+    Render3PieceBg(dst, iconIdx, x, y, w);
+
+    IconData& icon = m_iconData[iconIdx];
+    if (!icon.sheet || icon.cxIcon <= 0 || icon.cyIcon <= 0) return;
+
+    int total = pUnit->GetTotalStore();
+    if (total <= 0) return;
+
+    // Match original: for vehicles use max capacity, for buildings use at least 500 per icon
+    int maxStore = total;
+    if (pUnit->GetUnitType() == CUnit::vehicle) {
+        int maxMat = ((CVehicle*)pUnit)->GetMaxMaterials();
+        if (maxMat > total) maxStore = maxMat;
+    } else {
+        int iStep = std::max(1, icon.cxIcon / 2);
+        int barW = w - icon.leftOff - icon.rightOff;
+        int numIcons = barW / iStep;
+        maxStore = std::max(total, 500 * numIcons);
+    }
+
+    int iconY = y + (h - icon.cyIcon) / 2;
+    int barLeft = x + icon.leftOff;
+    int barRight = x + w - icon.rightOff;
+    int barW = barRight - barLeft;
+    if (barW <= 0) return;
+
+    // Faithful port of CUnit::PaintStatusMaterials: a single cursor advances by
+    // cxIcon/2 across ALL material types (no per-type reset), and each type's run
+    // reserves room for one icon of every remaining type. Carrying the cursor
+    // continuously is what prevents the last icon of one type overlapping the
+    // first of the next. Each type uses its own sprite column (srcX = i*cxIcon),
+    // matching the original's `CPoint pt(iOn*cxIcon, 0)`.
+    int iIconAdd = std::max(1, icon.cxIcon / 2);
+    int iLen   = barW - icon.cxIcon;     // drawable run length (minus one icon)
+    int iRight = barRight - icon.cxIcon; // rightmost legal icon left-edge
+
+    int iNumTypes = 0;
+    for (int i = 0; i < CMaterialTypes::GetNumTypes(); i++)
+        if (pUnit->GetStore(i) > 0) iNumTypes++;
+
+    int iTotal = maxStore;
+    int cursor = barLeft;
+
+    for (int i = 0; i < CMaterialTypes::GetNumTypes(); i++) {
+        int stored = pUnit->GetStore(i);
+        if (stored <= 0) continue;
+
+        int iWid = (iTotal > 0) ? (iLen * stored) / iTotal : iLen;
+        iWid = std::max(1, iWid);
+        iNumTypes--;
+        iWid = std::min(iWid, iLen - iNumTypes * iIconAdd);  // room for 1 of each remaining
+        iTotal -= stored;
+        iWid += cursor;                                       // absolute stop x
+
+        int srcX = i * icon.cxIcon;
+        if (srcX + icon.cxIcon > icon.sheet->w)
+            srcX = 0;  // out-of-range type: fall back to first icon
+
+        SDL_SetSurfaceBlendMode(icon.sheet, SDL_BLENDMODE_BLEND);
+        for (; cursor < iWid; cursor += iIconAdd) {
+            if (cursor > iRight) break;
+            SDL_Rect sr = {srcX, 0, icon.cxIcon, icon.cyIcon};
+            SDL_Rect dr = {cursor, iconY, icon.cxIcon, icon.cyIcon};
+            EnUiCanvas::BlitSurface(icon.sheet, &sr, dst, &dr);
+            iLen -= iIconAdd;
+        }
+    }
+}
+
+void SDL2UnitList::RenderStatusBars(SDL_Surface* dst, CUnit* pUnit, int x, int y, int w, int numBars) {
+    if (!pUnit || numBars <= 0 || w <= 0) return;
+
+    // Divide available width equally among status bars (matching original)
+    // Original: rect.right += (rDraw.right - rect.left) / (iNum - iOn)
+    int usedW = 0;
+    int barH = m_statBarHt;
+
+    for (int iOn = 0; iOn < numBars; iOn++) {
+        int barW = (w - usedW) / (numBars - iOn);
+        int barX = x + usedW;
+        usedW += barW;
+
+        // Leave 1px gap between bars (matching original rect.left = rect.right + 1)
+        int renderX = barX + 1;
+        int renderW = barW - 1;
+
+        if (pUnit->GetUnitType() == CUnit::vehicle) {
+            CVehicle* pVeh = (CVehicle*)pUnit;
+
+            if (iOn == 0) {
+                // Bar 0: Damage/health. ICON_DAMAGE is a TYP_ICON 'bar' (its art is
+                // a 1000px red->yellow->green gradient), so it draws with DrawStatBar:
+                // the gradient is scaled by percent into the fill. Use RenderIconBar,
+                // NOT RenderIconDone (which is for 'done'-type icons and was drawing a
+                // flat colour that didn't match the original).
+                int dmg = std::max(1, pVeh->GetDamagePer());
+                RenderIconBar(dst, ICON_DAMAGE, dmg, renderX, y, renderW, barH);
+            } else if (pVeh->GetData()->IsCarrier() &&
+                       ((pVeh->GetData()->IsTransport() && iOn == 2) ||
+                        (!pVeh->GetData()->IsTransport() && iOn == 1))) {
+                // Carrier cargo (ICON_VEHICLES)
+                RenderCarrierCargo(dst, pVeh, ICON_VEHICLES, renderX, y, renderW, barH);
+            } else if (pVeh->GetData()->IsTransport() && iOn == 1) {
+                // Route text (ICON_BAR_TEXT)
+                std::string routeText;
+                if (!pVeh->IsHpControl())
+                    routeText = CTransportData::m_sAuto;
+                else if (pVeh->GetEvent() == CVehicle::route)
+                    routeText = CTransportData::m_sRoute;
+
+                CBuilding* pBldg = theBuildingHex.GetBuilding(pVeh->GetPtHead());
+                if (pBldg == NULL || pVeh->GetHexOwnership())
+                    pBldg = theBuildingHex.GetBuilding(pVeh->GetHexDest());
+                if (pBldg != NULL && pBldg->GetOwner()->IsMe())
+                    routeText += pBldg->GetData()->GetDesc().c_str();
+                else if (pVeh->GetRouteMode() == CVehicle::stop)
+                    routeText += CTransportData::m_sIdle;
+                else
+                    routeText += CTransportData::m_sTravel;
+
+                RenderIconText(dst, ICON_BAR_TEXT, routeText.c_str(), renderX, y, renderW, barH);
+            } else if (pVeh->GetData()->IsCrane() && iOn == 1) {
+                // Crane construction progress
+                int per = 0;
+                int craneIcon = ICON_CONSTRUCTION;
+                if (pVeh->GetRouteMode() == CVehicle::run) {
+                    if (pVeh->GetEvent() == CVehicle::build ||
+                        pVeh->GetEvent() == CVehicle::repair_bldg) {
+                        CBuilding* pConst = pVeh->GetConst();
+                        if (pConst)
+                            per = std::max(1, pConst->GetBuildPer());
+                    } else if (pVeh->GetEvent() == CVehicle::build_road) {
+                        craneIcon = ICON_BUILD_ROAD;
+                        per = std::max(1, pVeh->GetRoadPer());
+                    }
+                }
+                RenderIconDone(dst, craneIcon, per, renderX, y, renderW, barH);
+            } else {
+                // Materials (ICON_MATERIALS, DrawStatHave-style)
+                RenderMaterialsBar(dst, pVeh, ICON_MATERIALS, renderX, y, renderW, barH);
+            }
+        } else if (pUnit->GetUnitType() == CUnit::building) {
+            CBuilding* pBldg = (CBuilding*)pUnit;
+
+            if (iOn == 0) {
+                // Damage/health ??? gradient 'bar' icon (see vehicle note above).
+                int dmg = std::max(1, pBldg->GetDamagePer());
+                RenderIconBar(dst, ICON_DAMAGE, dmg, renderX, y, renderW, barH);
+            } else if (iOn == 1) {
+                // Materials
+                RenderMaterialsBar(dst, pBldg, ICON_MATERIALS, renderX, y, renderW, barH);
+            } else if (iOn == 2) {
+                // Construction progress
+                int per = std::max(1, pBldg->GetBuildPer());
+                RenderIconDone(dst, ICON_CONSTRUCTION, per, renderX, y, renderW, barH);
+            }
+        }
+    }
+}
+
+// Re-resolve a row's unit against the live map by ID; a row can outlive its unit
+// (the list is only rebuilt every ~2s), so the cached pointer may be stale.
+CUnit* SDL2UnitList::LiveUnit(int idx) {
+    if (idx < 0 || idx >= (int)m_items.size()) return nullptr;
+    return (m_type == VEHICLES)
+               ? (CUnit*)theVehicleMap.GetVehicle(m_items[idx].dwID)
+               : (CUnit*)theBuildingMap.GetBldg(m_items[idx].dwID);
+}
+
+// Windows-convention extended selection, mirrored onto the area map's unit set.
+// Faithful to the 1996 CWndListUnits::OnLbnClk semantics: the map selection becomes
+// all highlighted rows, and m_pUnit is set only when exactly one unit is selected
+// (CWndArea::OnlySelectUnit/AddSelectUnit/SubSelectUnit enforce that).
+void SDL2UnitList::Select(int itemIdx, bool ctrl, bool shift) {
+    CUnit* pUnit = LiveUnit(itemIdx);
+    CWndArea* pArea = theAreaList.GetTop();
+    if (!pUnit || !pArea) return;
+
+    if (shift && m_anchorIdx >= 0 && m_anchorIdx < (int)m_items.size()) {
+        // Range from anchor to clicked row, replacing the selection; anchor stays put.
+        int lo = std::min(m_anchorIdx, itemIdx);
+        int hi = std::max(m_anchorIdx, itemIdx);
+        bool first = true;
+        for (int i = lo; i <= hi; i++) {
+            CUnit* pU = LiveUnit(i);
+            if (!pU) continue;
+            if (first) { pArea->OnlySelectUnit(pU); first = false; }
+            else       pArea->AddSelectUnit(pU);
+        }
+    } else if (ctrl) {
+        // Toggle this row in/out of the set.
+        if (pUnit->IsSelected()) pArea->SubSelectUnit(pUnit);
+        else                     pArea->AddSelectUnit(pUnit);
+        m_anchorIdx = itemIdx;
+    } else {
+        // Plain click: single select + center on the unit (existing behavior).
+        pArea->OnlySelectUnit(pUnit);
+        if (pUnit->GetUnitType() == CUnit::vehicle)
+            pArea->Center(CMapLoc(((CVehicle*)pUnit)->GetPtHead()));
+        else if (pUnit->GetUnitType() == CUnit::building)
+            pArea->Center(CMapLoc(((CBuilding*)pUnit)->GetHex()));
+        m_anchorIdx = itemIdx;
+    }
+
+    pArea->InvalidateWindow();
+    m_selectedIdx = itemIdx;
+}
+
+void SDL2UnitList::OnClick(int itemIdx, bool dblClick) {
+    CUnit* pUnit = LiveUnit(itemIdx);
+    if (!pUnit) return;
+
+    if (dblClick) {
+        // ShowWindow() brings the relevant area map to the top of the list and
+        // centers it on the unit. (Multiple area maps are supported ??? BringToTop
+        // picks the right one.)
+        if (pUnit->GetUnitType() == CUnit::vehicle)
+            ((CVehicle*)pUnit)->ShowWindow();
+        else if (pUnit->GetUnitType() == CUnit::building)
+            ((CBuilding*)pUnit)->ShowWindow();
+
+        // Re-fetch the top map (ShowWindow may have raised a different one).
+        CWndArea* pTop = theAreaList.GetTop();
+        if (pTop) {
+            // Hand keyboard focus back to the map window FIRST, THEN select.
+            // Clicking in this detached unit-list window moved OS focus here, so
+            // we raise/focus the map's SDL window to restore arrow-key scrolling.
+            // But that changes OS foreground, which sends WM_ACTIVATE(WA_INACTIVE)
+            // to the *separate* MFC area window ??? and CWndArea::OnActivate clears
+            // every unit's selected flag on deactivation (legacy single-window
+            // behavior). If we selected before this, that deselect would silently
+            // drop the selection box while leaving m_pUnit set (the unit still
+            // looks selected on the toolbar, but loses its rectangle on the map).
+            // Selecting AFTER the focus churn makes the selection stick.
+            SDL_Window* mapWin = nullptr;
+            if (SDL2Panel* p = pTop->GetAA().m_sdlPanel)
+                if (p->IsDetached())
+                    mapWin = p->GetOwnWindow();
+            if (!mapWin && theApp.m_gameWindow)
+                mapWin = theApp.m_gameWindow->GetWindow();
+            if (mapWin) {
+                SDL_RaiseWindow(mapWin);
+                SDL_SetWindowInputFocus(mapWin);
+            }
+
+            pTop->OnlySelectUnit(pUnit);
+            pTop->InvalidateWindow();
+        }
+    }
+}
+
+bool SDL2UnitList::HandleEvent(SDL_Event& event, int localX, int localY) {
+    if (!m_panel) return false;
+    const int h      = m_panel->GetLayoutHeight();
+    const int totalH = (int)m_items.size() * ITEM_HT;
+
+    // Same gutter geometry the paint uses (SbMetrics is a pure function of the panel
+    // size and item count), so hit-testing cannot drift from the chrome.
+    const EnSb::Metrics sb = SbMetrics();
+
+    switch (event.type) {
+    case SDL_MOUSEBUTTONDOWN:
+        if (event.button.button == SDL_BUTTON_LEFT) {
+            // The scrollbar gutter. Tested against the SAME rects that were drawn,
+            // and tested whether or not the content overflows: the bar is always
+            // painted, so a click on it must never fall through and select the row
+            // behind it (it used to, whenever the list fit in the panel).
+            const EnSb::Hit hit = EnSb::HitTest(sb, localX, localY);
+            if (hit != EnSb::HitNone) {
+                switch (hit) {
+                case EnSb::HitArrowUp:
+                    ScrollPixels(-SB_ARROW_STEP);                 // one step now,
+                    m_sbRepeat.Begin(-1, SDL_GetTicks());         // then repeat
+                    break;
+                case EnSb::HitArrowDown:
+                    ScrollPixels(SB_ARROW_STEP);
+                    m_sbRepeat.Begin(1, SDL_GetTicks());
+                    break;
+                case EnSb::HitPageUp:
+                    ScrollPixels(-h);
+                    break;
+                case EnSb::HitPageDown:
+                    ScrollPixels(h);
+                    break;
+                case EnSb::HitThumb:
+                    m_sbDragging   = true;
+                    m_sbDragOffset = localY - sb.thumb.y;
+                    break;
+                default:
+                    break;
+                }
+            } else {
+                // Click on list item
+                int itemIdx = (localY + m_scrollY) / ITEM_HT;
+                if (itemIdx >= 0 && itemIdx < (int)m_items.size()) {
+                    DWORD now = ::timeGetTime();
+                    bool dblClick = (itemIdx == m_lastClickIdx && now - m_lastClickTime < 400);
+                    m_lastClickTime = now;
+                    m_lastClickIdx = itemIdx;
+
+                    if (dblClick) {
+                        OnClick(itemIdx, true);   // show + center, single-select
+                    } else {
+                        // Windows-convention extended select (modifier state read live,
+                        // like area.cpp SDLModToMFC): Ctrl toggles, Shift ranges.
+                        SDL_Keymod km = SDL_GetModState();
+                        Select(itemIdx, (km & KMOD_CTRL) != 0, (km & KMOD_SHIFT) != 0);
+                    }
+                }
+            }
+            m_forceDraw = true;  // repaint immediately so selection/scroll feels instant
+        }
+        return true;
+
+    case SDL_MOUSEBUTTONUP:
+        if (event.button.button == SDL_BUTTON_LEFT) {
+            m_sbDragging = false;
+            m_sbRepeat.End();
+        }
+        return true;
+
+    case SDL_MOUSEWHEEL:
+        ScrollPixels(-event.wheel.y * 48);
+        return true;
+
+    case SDL_MOUSEMOTION:
+        if (m_sbDragging) {
+            // Same track/thumb rects the bar was painted from, so the thumb tracks
+            // the cursor instead of drifting against its own chrome.
+            const int y = EnSb::OffsetFromThumbTop(sb, localY - m_sbDragOffset,
+                                                   totalH, h);
+            if (y != m_scrollY) { m_scrollY = y; m_forceDraw = true; }
+        }
+        ::SetCursor(::LoadCursor(NULL, IDC_ARROW));
+        return true;
+    }
+    return false;
+}

@@ -1,0 +1,95 @@
+Microsoft (R) COFF/PE Dumper Version 14.29.30140.0
+Copyright (C) Microsoft Corporation.  All rights reserved.
+
+
+Dump of file fastfile.lib
+
+File Type: LIBRARY
+
+COFF SYMBOL TABLE
+000 00000000 DEBUG  notype       Filename     | .file
+    ..\fastfile.c
+002 00000000 SECT1  notype       Static       | .drectve
+    Section length   26, #relocs    0, #linenums    0, checksum        0
+004 00000000 SECT2  notype       Static       | .text
+    Section length   19, #relocs    1, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+006 00000000 SECT2  notype ()    External     | _Compare
+007 00000000 UNDEF  notype ()    External     | __stricmp
+008 00000000 SECT3  notype       Static       | .debug$F
+    Section length   10, #relocs    1, #linenums    0, checksum        0, selection    5 (pick associative Section 0x2)
+00A 00000000 SECT4  notype       Static       | .text
+    Section length  119, #relocs   19, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+00C 00000000 SECT4  notype ()    External     | _FastFileInit
+00D 00000000 SECT5  notype       Static       | .bss
+    Section length   24, #relocs    0, #linenums    0, checksum        0
+00F 00000010 SECT5  notype       Static       | _hFile$S19849
+010 00000018 SECT5  notype       Static       | _lFileEnd$S19856
+011 00000000 SECT5  notype       Static       | _pFE$S19851
+012 0000000C SECT5  notype       Static       | _dwFECnt$S19853
+013 00000004 SECT5  notype       Static       | _pBase$S19852
+014 00000000 UNDEF  notype ()    External     | __imp__MapViewOfFile@20
+015 00000014 SECT5  notype       Static       | _hFileMapping$S19850
+016 00000000 UNDEF  notype ()    External     | __imp__CreateFileMappingA@24
+017 00000000 UNDEF  notype ()    External     | __imp__CreateFileA@28
+018 00000000 UNDEF  notype ()    External     | __imp__LockResource@4
+019 00000000 UNDEF  notype ()    External     | __imp__LoadResource@8
+01A 00000000 UNDEF  notype ()    External     | __imp__FindResourceA@12
+01B 0000001C SECT5  notype       Static       | _dwFHCnt$S19855
+01C 00000020 SECT5  notype       Static       | _lpFH$S19854
+01D 00000000 UNDEF  notype ()    External     | __imp__LocalAlloc@8
+01E 00000008 SECT5  notype       Static       | _LockCount$S19848
+01F 00000000 SECT6  notype       Static       | .debug$F
+    Section length   10, #relocs    1, #linenums    0, checksum        0, selection    5 (pick associative Section 0x4)
+021 00000000 SECT7  notype       Static       | .text
+    Section length   94, #relocs   11, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+023 00000000 SECT7  notype ()    External     | _FastFileFini
+024 00000000 UNDEF  notype ()    External     | __imp__LocalFree@4
+025 00000000 UNDEF  notype ()    External     | __imp__CloseHandle@4
+026 00000000 UNDEF  notype ()    External     | __imp__UnmapViewOfFile@4
+027 00000000 SECT8  notype       Static       | .debug$F
+    Section length   10, #relocs    1, #linenums    0, checksum        0, selection    5 (pick associative Section 0x7)
+029 00000000 SECT9  notype       Static       | .text
+    Section length   C2, #relocs    6, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+02B 00000000 SECT9  notype ()    External     | _FastFileOpen
+02C 00000000 UNDEF  notype ()    External     | _bsearch
+02D 00000000 SECTA  notype       Static       | .debug$F
+    Section length   10, #relocs    1, #linenums    0, checksum        0, selection    5 (pick associative Section 0x9)
+02F 00000000 SECTB  notype       Static       | .text
+    Section length   1C, #relocs    0, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+031 00000000 SECTB  notype ()    External     | _FastFileClose
+032 00000000 SECTC  notype       Static       | .debug$F
+    Section length   10, #relocs    1, #linenums    0, checksum        0, selection    5 (pick associative Section 0xB)
+034 00000000 SECTD  notype       Static       | .text
+    Section length   44, #relocs    2, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+036 00000000 SECTD  notype ()    External     | _FastFileLock
+037 00000000 SECTE  notype       Static       | .debug$F
+    Section length   10, #relocs    1, #linenums    0, checksum        0, selection    5 (pick associative Section 0xD)
+039 00000000 SECTF  notype       Static       | .text
+    Section length   38, #relocs    1, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+03B 00000000 SECTF  notype ()    External     | _FastFileUnlock
+03C 00000000 SECT10 notype       Static       | .debug$F
+    Section length   10, #relocs    1, #linenums    0, checksum        0, selection    5 (pick associative Section 0xF)
+03E 00000000 SECT11 notype       Static       | .text
+    Section length   63, #relocs    1, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+040 00000000 SECT11 notype ()    External     | _FastFileRead
+041 00000000 SECT12 notype       Static       | .debug$F
+    Section length   10, #relocs    1, #linenums    0, checksum        0, selection    5 (pick associative Section 0x11)
+043 00000000 SECT13 notype       Static       | .text
+    Section length   71, #relocs    0, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+045 00000000 SECT13 notype ()    External     | _FastFileSeek
+046 00000000 SECT14 notype       Static       | .debug$F
+    Section length   10, #relocs    1, #linenums    0, checksum        0, selection    5 (pick associative Section 0x13)
+048 00000000 SECT15 notype       Static       | .text
+    Section length   1C, #relocs    0, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+04A 00000000 SECT15 notype ()    External     | _FastFileTell
+04B 00000000 SECT16 notype       Static       | .debug$F
+    Section length   10, #relocs    1, #linenums    0, checksum        0, selection    5 (pick associative Section 0x15)
+
+String Table Size = 0x200 bytes
+
+  Summary
+
+          24 .bss
+          A0 .debug$F
+          26 .drectve
+         410 .text

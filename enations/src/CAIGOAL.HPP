@@ -23,40 +23,40 @@ class CAIGoal : public CObject
 {
 protected:
 
-	WORD m_wID;			// unique id of the goal
+ WORD m_wID;   // unique id of the goal
 
-	WORD *m_pwaTasks;	// array of tasks of the goal
-	int m_iNumTasks;
+ WORD *m_pwaTasks; // array of tasks of the goal
+ int m_iNumTasks;
 
-	BYTE m_cType;		// TRADE, INDUSTRY, WARFARE
-	
+ BYTE m_cType;  // TRADE, INDUSTRY, WARFARE
+ 
 public:
 
-	CAIGoal() {};
-	~CAIGoal();
-	CAIGoal( WORD wID, BYTE cType, CWordArray *pwaTasks );
-		
-	WORD GetID( void );
-	BYTE GetType( void );
-	WORD GetTaskAt( int iAt );
-	WORD GetFirstTask( void );
-	WORD GetNextTask( WORD wPriorID );
+ CAIGoal() {};
+ ~CAIGoal();
+ CAIGoal( WORD wID, BYTE cType, CWordArray *pwaTasks );
+  
+ WORD GetID( void );
+ BYTE GetType( void );
+ WORD GetTaskAt( int iAt );
+ WORD GetFirstTask( void );
+ WORD GetNextTask( WORD wPriorID );
 
-	CAIGoal *CopyGoal( void );
+ CAIGoal *CopyGoal( void );
 };
 
 class CAIGoalList : public CObList
 {
 public:
 
-	CAIGoalList() {};
-	~CAIGoalList();
+ CAIGoalList() {};
+ ~CAIGoalList();
 
-	BOOL Initialize( CAIGoalList *plGoals );
-	
-	CAIGoal *GetGoal( WORD wID );
-	void RemoveGoal( WORD wID );
-	void DeleteList( void );
+ BOOL Initialize( CAIGoalList *plGoals );
+ 
+ CAIGoal *GetGoal( WORD wID );
+ void RemoveGoal( WORD wID );
+ void DeleteList( void );
 };
 
 #endif // __CAIGOAL_HPP__

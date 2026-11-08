@@ -66,7 +66,7 @@ BEGIN
     LTEXT           "unknown",IDC_VER_NET,7,35,264,8
     LTEXT           "unknown",IDC_VER_THUNK,7,105,200,8
     LTEXT           "unknown",IDC_VER_RIF,7,49,264,8
-    LTEXT           "© 1995 - 1997 Windward Studios, Inc.  All Rights Reserved.",
+    LTEXT           "ï¿½ 1995 - 1997 Windward Studios, Inc.  All Rights Reserved.",
                     IDC_STATIC,7,148,192,8
     LTEXT           "unknown",IDC_VER_VIDEO,7,63,264,8
     LTEXT           "unknown",IDC_VER_SOUND,7,77,264,8
@@ -1255,12 +1255,12 @@ END
 
 STRINGTABLE DISCARDABLE 
 BEGIN
-    IDH_AREA_WIN            "Click unit to select, double click for unit window, RMB drag to move"
+    IDH_AREA_WIN            "Left click selects (drag a box), right click moves/attacks (drag a line move), middle button drag scrolls"
     IDH_AREA_WIN_BUILD      "Click on hex for bottom corner of location for building you wish to build"
     IDH_AREA_WIN_MOVE       "Click on the location you wish to have the selected vehicle(s) move to"
     IDS_CREATE_CHOOSE       "Choose Race >>"
     IDS_CREATE_CREATE       "Create Game >>"
-    IDH_WORLD_WIN           "LMB click to send selected units, RMB drag to move"
+    IDH_WORLD_WIN           "Left click looks at a location, right click sends the selected units there, middle button drag scrolls"
     IDS_CREATE_PUBLISH      "Publish Game >>"
     IDS_JOIN_PUBLISH        "Publish >>"
     IDS_JOIN_JOIN           "Join >>"
@@ -1308,10 +1308,10 @@ BEGIN
     IDS_INIT_MAP            "Building the world..."
     IDS_CHECK_MAP           "Checking the world..."
     IDS_ASSIGN_TILES        "Determining terrain..."
-    IDH_AREA_WIN_RMB        "Move the mouse with the RMB down to scroll in that direction"
+    IDH_AREA_WIN_RMB        "Drag with the middle button down to scroll the map (push to a window edge to keep scrolling)"
     IDS_TIME_OUT            "This is the shareware version of Second Chance which has\na play limit. You must end this game now. You can save this\ngame and continue playing with the retail version of Second Chance.\nDo you wish to save?"
     IDS_MULT_INST           "You are already running a copy of Second Chance.\nDo you wish to switch to the running game (Yes)?\n(Or start a second copy of the game (No).)"
-    IDH_WORLD_WIN_RMB       "Move the mouse with the RMB down to scroll in that direction"
+    IDH_WORLD_WIN_RMB       "Drag with the middle button down to scroll the view"
     IDS_LOAD_FILE           "Loading the file..."
 END
 
@@ -1376,7 +1376,7 @@ BEGIN
     IDS_VPJOIN_FAILED       "The network layer could not connect to the requested game.\nThe game may have already started."
     IDS_VPSEND_FAILED       "The network layer could not talk to one of the other player's computers.\nYou may want to try to reconnect."
     IDS_MSG_JOIN_FAILED     "You cannot join game%1.\nThe network returned error %2."
-    IDS_COPYRIGHT           "© 1995 - 1997 Windward Studios, Inc.  All Rights Reserved."
+    IDS_COPYRIGHT           "ï¿½ 1995 - 1997 Windward Studios, Inc.  All Rights Reserved."
     IDS_AI_PLAYER           "Computer Player %1"
     IDS_PREV                "<< &Prev"
 END
@@ -1403,7 +1403,7 @@ STRINGTABLE DISCARDABLE
 BEGIN
     IDS_SAVE_OLD            "Do you wish to save the existing game?"
     IDS_SAVE_NAME           "Save to File %1"
-    IDS_SAVE_VER            "This file was saved by another version of Second Chance.\nThe file is version %1\nYou are running version%2"
+    IDS_SAVE_VER            "This file was saved by another version of Second Chance.\nThe file is version %1\nYou are running version %2"
     IDS_SAVE_ERROR          "Error saving game to file %1"
     IDS_LOAD_NAME           "Loading: %1"
     IDS_LOAD_ERROR          "Error loading game from file %1"
@@ -1569,6 +1569,7 @@ BEGIN
     IDS_CANCEL              "Exit"
     IDS_SAVE                "Save..."
     IDS_YOU_WON             "You have conquered the planet"
+    IDS_PLAYER_WON          "%1 has conquered the planet"
     IDS_YOU_LOST            "You Lost"
     IDS_LOADING             "Loading Second Chance..."
     IDS_LEAVING             "Leaving Second Chance..."
@@ -1611,6 +1612,9 @@ BEGIN
     IDS_LOAD                "load"
     IDS_UNLOAD              "unload"
     IDS_EVENT_ROCKET_CANT_LAND "Your rocket cannot land here"
+    IDS_EVENT_BRIDGE_HALTED "Bridge construction halted - ground unsuitable"
+    IDS_DATA_MISMATCH       "Game data differs.\n\n%1 is running gameplay data %2; this machine has %3.\n\nThe unit, research and text tables must match to play together. Art, sound and music may differ freely."
+    IDS_BUILD_MISMATCH      "Game version differs.\n\n%1 is running save and network format %2; this machine has %3.\n\nEvery player must run the same Enemy Nations build to play together."
     IDS_LOAD_MUSIC          "Arranging Music"
     IDS_JOIN_LOAD_FILE      "Receiving game..."
     IDS_JOIN_FILE_ERROR     "Could not receive game from server"

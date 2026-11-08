@@ -14,7 +14,12 @@
 //
 
 /////////////////////////////////////////////////////////////////////////////
-// CDlgChatAll dialog
+// CDlgChatAll dialog — excluded from build (Phase 2d). SDL2ChatWindow is the
+// intended replacement. The MFC declaration is kept for historical reference
+// but not compiled — live callers only use CDlgChatAll* (always nullptr now).
+class CDlgChatAll;
+
+#if 0  // MFC_LEGACY_CHAT_DIALOG
 
 class CDlgChatAll : public CDialog
 {
@@ -57,6 +62,8 @@ protected:
 	//}}AFX_MSG
 	DECLARE_MESSAGE_MAP()
 };
+
+#endif // MFC_LEGACY_CHAT_DIALOG
 
 
 #endif

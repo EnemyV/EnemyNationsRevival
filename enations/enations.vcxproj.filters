@@ -1,0 +1,746 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup>
+    <Filter Include="Source Files">
+      <UniqueIdentifier>{4FC737F1-C7A5-4376-A066-2A32D752A2FF}</UniqueIdentifier>
+      <Extensions>cpp;c;cc;cxx;c++;cppm;ixx;def;odl;idl;hpj;bat;asm;asmx</Extensions>
+    </Filter>
+    <Filter Include="Header Files">
+      <UniqueIdentifier>{93995380-89BD-4b04-88EB-625FBE52EBFB}</UniqueIdentifier>
+      <Extensions>h;hh;hpp;hxx;h++;hm;inl;inc;ipp;xsd</Extensions>
+    </Filter>
+    <Filter Include="Resource Files">
+      <UniqueIdentifier>{67DA6AB6-F800-4c08-8B7A-83BB121AAD01}</UniqueIdentifier>
+      <Extensions>rc;ico;cur;bmp;dlg;rc2;rct;bin;rgs;gif;jpg;jpeg;jpe;resx;tiff;tif;png;wav;mfcribbon-ms</Extensions>
+    </Filter>
+  </ItemGroup>
+  <ItemGroup>
+    <ClCompile Include="src\ADVANCED.CPP">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="src\ADVDLG.CPP">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="src\Ai.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="src\area.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="src\bmbutton.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="src\bridge.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="src\CAICOPY.CPP">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="src\Caidata.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="src\Caigmgr.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="src\CAIGOAL.CPP">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="src\CAIHEX.CPP">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="src\CAIINIT.CPP">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="src\CAILOG.CPP">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="src\CAIMAP.CPP">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="src\Caimaput.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="src\CAIMGR.CPP">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="src\CAIMSG.CPP">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="src\CAIOPFOR.CPP">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="src\CAIQUEUE.CPP">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="src\Cairoute.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="src\CAISAVLD.CPP">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="src\CAISTART.CPP">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="src\CAITASK.CPP">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="src\CAITMGR.CPP">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="src\CAIUNIT.CPP">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="src\CdLoc.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="src\chat.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="src\CHATBAR.CPP">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="src\Chproute.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="src\Citizen.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="src\CPATHMAP.CPP">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="src\CPATHMGR.CPP">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="src\Creatmul.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="src\CREATSIN.CPP">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="src\credits.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="src\Cutscene.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="src\dlgflic.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="src\DlgMsg.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="src\DlgReg.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="src\Dxfer.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="src\Event.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="src\icons.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="src\IPCCHAT.CPP">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="src\IPCCOMM.CPP">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="src\IPCMSG.CPP">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="src\IPCPLAY.CPP">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="src\IPCREAD.CPP">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="src\IPCSEND.CPP">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="src\Join.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="src\lastplnt.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="src\License.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="src\loadtruk.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="src\main.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="src\Mainloop.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="src\minerals.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="src\movie.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="src\Netapi.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="src\netcmd.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="src\new_game.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="src\new_unit.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="src\newworld.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="src\options.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="src\pickrace.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="src\Player.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="src\PlyrList.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="src\projbase.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="src\Racedata.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="src\relation.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="src\research.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="src\scenario.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="src\sprite.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="src\sprtinit.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="src\STDAFX.CPP">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="src\terrain.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="src\toolbar.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="src\tstsnds.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="src\UI.CPP">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="src\unit.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="src\unit_wnd.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="src\vehicle.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="src\Vehmove.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="src\vehoppo.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="src\VPXFER.CPP">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="src\world.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="src\wrldinit.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="src\LASTPLNT.DEF">
+      <Filter>Source Files</Filter>
+    </None>
+    <None Include="src\STDGTA.DAT">
+      <Filter>Resource Files</Filter>
+    </None>
+    <None Include="src\CREATMUL.INL">
+      <Filter>Header Files</Filter>
+    </None>
+    <None Include="src\MINERALS.INL">
+      <Filter>Header Files</Filter>
+    </None>
+    <None Include="src\TERRAIN.INL">
+      <Filter>Header Files</Filter>
+    </None>
+    <None Include="src\UI.INL">
+      <Filter>Header Files</Filter>
+    </None>
+    <None Include="src\UNIT.INL">
+      <Filter>Header Files</Filter>
+    </None>
+    <None Include="src\vehicle.inl">
+      <Filter>Header Files</Filter>
+    </None>
+    <None Include="ClassDiagram.cd" />
+    <None Include="src\res\cursor1.cur">
+      <Filter>Resource Files</Filter>
+    </None>
+    <None Include="src\RES\CUR00002.CUR">
+      <Filter>Resource Files</Filter>
+    </None>
+    <None Include="src\RES\CUR00003.CUR">
+      <Filter>Resource Files</Filter>
+    </None>
+    <None Include="src\RES\CUR00004.CUR">
+      <Filter>Resource Files</Filter>
+    </None>
+    <None Include="src\RES\CUR00005.CUR">
+      <Filter>Resource Files</Filter>
+    </None>
+    <None Include="src\RES\GOTO1.CUR">
+      <Filter>Resource Files</Filter>
+    </None>
+    <None Include="src\RES\CUR00006.CUR">
+      <Filter>Resource Files</Filter>
+    </None>
+    <None Include="src\RES\GOTO3.CUR">
+      <Filter>Resource Files</Filter>
+    </None>
+    <None Include="src\RES\TARGET1.CUR">
+      <Filter>Resource Files</Filter>
+    </None>
+    <None Include="src\RES\TARGET2.CUR">
+      <Filter>Resource Files</Filter>
+    </None>
+    <None Include="src\RES\TARGET3.CUR">
+      <Filter>Resource Files</Filter>
+    </None>
+    <None Include="src\RES\SELECT1.CUR">
+      <Filter>Resource Files</Filter>
+    </None>
+    <None Include="src\RES\SELECT2.CUR">
+      <Filter>Resource Files</Filter>
+    </None>
+    <None Include="src\RES\SELECT3.CUR">
+      <Filter>Resource Files</Filter>
+    </None>
+    <None Include="src\RES\CUR00007.CUR">
+      <Filter>Resource Files</Filter>
+    </None>
+    <None Include="src\RES\CUR00008.CUR">
+      <Filter>Resource Files</Filter>
+    </None>
+    <None Include="src\RES\CUR00010.CUR">
+      <Filter>Resource Files</Filter>
+    </None>
+    <None Include="src\RES\CUR00011.CUR">
+      <Filter>Resource Files</Filter>
+    </None>
+    <None Include="src\RES\REPAIR1.CUR">
+      <Filter>Resource Files</Filter>
+    </None>
+    <None Include="src\res\road_beg.cur">
+      <Filter>Resource Files</Filter>
+    </None>
+    <None Include="src\res\cur00001.cur">
+      <Filter>Resource Files</Filter>
+    </None>
+    <None Include="src\res\cur00012.cur">
+      <Filter>Resource Files</Filter>
+    </None>
+    <None Include="src\res\cur00013.cur">
+      <Filter>Resource Files</Filter>
+    </None>
+    <None Include="src\res\cur00014.cur">
+      <Filter>Resource Files</Filter>
+    </None>
+    <None Include="src\res\cur00015.cur">
+      <Filter>Resource Files</Filter>
+    </None>
+    <None Include="src\res\road_set.cur">
+      <Filter>Resource Files</Filter>
+    </None>
+    <None Include="src\res\load1.cur">
+      <Filter>Resource Files</Filter>
+    </None>
+    <None Include="src\res\load2.cur">
+      <Filter>Resource Files</Filter>
+    </None>
+    <None Include="src\res\load3.cur">
+      <Filter>Resource Files</Filter>
+    </None>
+    <None Include="src\res\unload1.cur">
+      <Filter>Resource Files</Filter>
+    </None>
+    <None Include="src\res\unload2.cur">
+      <Filter>Resource Files</Filter>
+    </None>
+    <None Include="src\res\unload3.cur">
+      <Filter>Resource Files</Filter>
+    </None>
+    <None Include="src\res\move1.cur">
+      <Filter>Resource Files</Filter>
+    </None>
+    <None Include="src\res\load4.cur">
+      <Filter>Resource Files</Filter>
+    </None>
+    <None Include="src\res\move3.cur">
+      <Filter>Resource Files</Filter>
+    </None>
+    <None Include="src\res\move5.cur">
+      <Filter>Resource Files</Filter>
+    </None>
+    <None Include="src\res\move7.cur">
+      <Filter>Resource Files</Filter>
+    </None>
+    <None Include="src\res\move2.cur">
+      <Filter>Resource Files</Filter>
+    </None>
+    <None Include="src\res\move4.cur">
+      <Filter>Resource Files</Filter>
+    </None>
+    <None Include="src\res\move6.cur">
+      <Filter>Resource Files</Filter>
+    </None>
+  </ItemGroup>
+  <ItemGroup>
+    <ResourceCompile Include="src\Lastplnt.rc">
+      <Filter>Resource Files</Filter>
+    </ResourceCompile>
+    <ResourceCompile Include="src\lang\ENLang7.rc">
+      <Filter>Resource Files</Filter>
+    </ResourceCompile>
+    <ResourceCompile Include="src\lang\wind7.rc">
+      <Filter>Resource Files</Filter>
+    </ResourceCompile>
+    <ResourceCompile Include="src\RES\VERSION.RC">
+      <Filter>Resource Files</Filter>
+    </ResourceCompile>
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="src\ADVDLG.H">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="src\ai.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="src\area.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="src\base.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="src\bitmaps.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="src\BMBUTTON.H">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="src\bridge.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="src\building.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="src\CAI.H">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="src\CAICOPY.HPP">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="src\CAIDATA.HPP">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="src\CAIGMGR.HPP">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="src\CAIGOAL.HPP">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="src\CAIGOALM.HPP">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="src\CAIHEX.HPP">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="src\CAIINIT.HPP">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="src\CAILOG.HPP">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="src\CAIMAP.HPP">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="src\CAIMAPUT.HPP">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="src\CAIMGR.HPP">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="src\CAIMSG.HPP">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="src\CAIOPFOR.HPP">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="src\CAIQUEUE.HPP">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="src\CAIROUTE.HPP">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="src\CAISAVLD.HPP">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="src\CAISTART.HPP">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="src\CAITARGT.H">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="src\CAITASK.HPP">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="src\CAITASKM.HPP">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="src\CAITMGR.HPP">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="src\CAIUNIT.HPP">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="src\CdLoc.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="src\chat.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="src\CHATBAR.H">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="src\CHPROUTE.HPP">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="src\CPATHMAP.H">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="src\CPATHMGR.H">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="src\CREATMUL.H">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="src\CREATSIN.H">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="src\credits.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="src\CUTSCENE.H">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="src\dlgflic.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="src\DlgMsg.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="src\DlgReg.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="src\DXFER.H">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="src\ERROR.H">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="src\EVENT.H">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="src\HELP.H">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="src\icons.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="src\IPCCHAT.H">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="src\IPCCOMM.H">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="src\IPCMSG.HPP">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="src\IPCPLAY.H">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="src\IPCREAD.H">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="src\IPCSEND.H">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="src\JOIN.H">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="src\lastplnt.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="src\License.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="src\loadtruk.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="src\MINERALS.H">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="src\movie.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="src\MSGS.H">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="src\NETAPI.H">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="src\NETCMD.H">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="src\NEW_GAME.H">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="src\options.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="src\ourlog.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="src\PICKRACE.H">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="src\PLAYER.H">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="src\PlyrList.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="src\Racedata.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="src\relation.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="src\RESEARCH.H">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="src\resource.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="src\SCENARIO.H">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="src\SFX.H">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="src\sprite.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="src\STDAFX.H">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="src\terrain.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="src\TO_WNDRD.H">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="src\toolbar.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="src\tstsnds.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="src\ui.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="src\unit.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="src\unit_wnd.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="src\us_eng.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="src\VDMPLAY.H">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="src\vehicle.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="src\VERSION.H">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="src\VPXFER.H">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="src\world.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="src\lang\_res.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="src\RES\resource.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+  </ItemGroup>
+  <ItemGroup>
+    <Image Include="src\RES\CLOSED.DIB" />
+    <Image Include="src\RES\toolbar.bmp">
+      <Filter>Resource Files</Filter>
+    </Image>
+    <Image Include="src\RES\BITMAP1.BMP">
+      <Filter>Resource Files</Filter>
+    </Image>
+    <Image Include="src\RES\CHAT_MSG.BMP">
+      <Filter>Resource Files</Filter>
+    </Image>
+    <Image Include="src\RES\EMAIL_MS.BMP">
+      <Filter>Resource Files</Filter>
+    </Image>
+    <Image Include="src\RES\EMAIL_RE.BMP">
+      <Filter>Resource Files</Filter>
+    </Image>
+    <Image Include="src\RES\NO_SELEC.BMP">
+      <Filter>Resource Files</Filter>
+    </Image>
+    <Image Include="src\RES\PLYR_SEL.BMP">
+      <Filter>Resource Files</Filter>
+    </Image>
+    <Image Include="src\RES\VOC_MSG.BMP">
+      <Filter>Resource Files</Filter>
+    </Image>
+    <Image Include="src\res\main.ico">
+      <Filter>Resource Files</Filter>
+    </Image>
+  </ItemGroup>
+</Project>

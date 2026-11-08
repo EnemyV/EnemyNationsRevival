@@ -1,0 +1,416 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup>
+    <Filter Include="Source Files">
+      <UniqueIdentifier>{4FC737F1-C7A5-4376-A066-2A32D752A2FF}</UniqueIdentifier>
+      <Extensions>cpp;c;cc;cxx;c++;cppm;ixx;def;odl;idl;hpj;bat;asm;asmx</Extensions>
+    </Filter>
+    <Filter Include="Header Files">
+      <UniqueIdentifier>{93995380-89BD-4b04-88EB-625FBE52EBFB}</UniqueIdentifier>
+      <Extensions>h;hh;hpp;hxx;h++;hm;inl;inc;ipp;xsd</Extensions>
+    </Filter>
+    <Filter Include="Resource Files">
+      <UniqueIdentifier>{67DA6AB6-F800-4c08-8B7A-83BB121AAD01}</UniqueIdentifier>
+      <Extensions>rc;ico;cur;bmp;dlg;rc2;rct;bin;rgs;gif;jpg;jpeg;jpe;resx;tiff;tif;png;wav;mfcribbon-ms</Extensions>
+    </Filter>
+  </ItemGroup>
+  <ItemGroup>
+    <ClCompile Include="ADVANCED.CPP">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="ADVDLG.CPP">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="ASTRING.CPP">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="COMMNET.CPP">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="COMSTATD.CPP">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="COREERR.CPP">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="CSTRING.CPP">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="DATALINK.CPP">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="DATALOG.CPP">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="DIALER.CPP">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="DPENGINE.CPP">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="DPNET.CPP">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="DXFER.CPP">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="FRCODER.CPP">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="IPX16NET.CPP">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="IPX16STB.CPP">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="ISLIST.CPP">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="ISLISTIT.CPP">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="MAINFRM.CPP">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="MDMDRVR.CPP">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="MDMNET.CPP">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="MEMPOOL.CPP">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="MESSAGE.CPP">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="NBDLG.CPP">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="NBNET.CPP">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="NDLINK.CPP">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="REF.CPP">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="RWERR.CPP">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="SLIST.CPP">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="SLISTIT.CPP">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="SMAP.CPP">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="STDAFX.CPP">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="TAPINET.CPP">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="TAPIUTIL.CPP">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="TCPIPXDL.CPP">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="TCPNET.CPP">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="TEXT1.CPP">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="TOOLERR.CPP">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="TWSIPX.CPP">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="vdmnew.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="VDMPLAY.CPP">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="VDMPLUI.CPP">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="VPDP.CPP">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="VPENGINE.CPP">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="VPNET.CPP">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="VPUT16.CPP">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="VPUTIL.CPP">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="VPWINSK.CPP">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="VPXFER.CPP">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="W16COMM.CPP">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="W32COMM.CPP">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="WSIPXNET.CPP">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="generic.hpp">
+      <Filter>Source Files</Filter>
+    </ClInclude>
+    <ClInclude Include="_DEFS.H">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="ADVDLG.H">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="ASTRING.H">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="ASTRLIST.H">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="BASE.H">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="COMMNET.H">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="COMMPORT.H">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="COMSTATD.H">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="DATAGRAM.H">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="DATALINK.H">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="DATALOG.H">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="DEFMISC.H">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="DIALER.H">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="DLINKI.H">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="DPENGINE.H">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="DPNET.H">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="DXFER.H">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="FRCODER.H">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="GENERIC.H">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="generic.hxx">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="HELP.H">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="IPX16NET.H">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="IPX16STB.H">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="MAINFRM.H">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="MDMDRVR.H">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="MDMNET.H">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="NB30.H">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="NBDLG.H">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="NBNET.H">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="NDLINK.H">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="RESOURCE.H">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="SMAP.H">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="STDAFX.H">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="TAPINET.H">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="TAPIUTIL.H">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="TCPIPXDL.H">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="TCPNET.H">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="TDLOG.H">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="VDMPLUI.H">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="VERSION.H">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="VPENGINE.H">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="VPINT.H">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="VPLIST.H">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="VPNET.H">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="VPPARAM.H">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="VPUTIL.H">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="VPWINSK.H">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="VPXFER.H">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="W16COMM.H">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="W32COMM.H">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="W32SUT.H">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="WNOTQUE.H">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="WSIPXNET.H">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="NBPOST.ASM">
+      <Filter>Source Files</Filter>
+    </None>
+    <None Include="NBPOST.LST">
+      <Filter>Source Files</Filter>
+    </None>
+    <None Include="VDMPLUI.RC2">
+      <Filter>Resource Files</Filter>
+    </None>
+    <None Include="VDMPLAY.DEF">
+      <Filter>Header Files</Filter>
+    </None>
+    <None Include="VDMPLUI.DEF">
+      <Filter>Header Files</Filter>
+    </None>
+    <None Include="VDMPLAY.INI">
+      <Filter>Resource Files</Filter>
+    </None>
+    <None Include="ECBPOST.ASM">
+      <Filter>Source Files</Filter>
+    </None>
+  </ItemGroup>
+  <ItemGroup>
+    <ResourceCompile Include="DIALOG.RC">
+      <Filter>Resource Files</Filter>
+    </ResourceCompile>
+    <ResourceCompile Include="Vdmplay.RC">
+      <Filter>Resource Files</Filter>
+    </ResourceCompile>
+    <ResourceCompile Include="VDMPLUI.RC">
+      <Filter>Resource Files</Filter>
+    </ResourceCompile>
+    <ResourceCompile Include="VER32.RC">
+      <Filter>Resource Files</Filter>
+    </ResourceCompile>
+    <ResourceCompile Include="VERSION.RC">
+      <Filter>Resource Files</Filter>
+    </ResourceCompile>
+  </ItemGroup>
+  <ItemGroup>
+    <Image Include="BITMAP1.BMP">
+      <Filter>Resource Files</Filter>
+    </Image>
+    <Image Include="DISCON.ICO">
+      <Filter>Resource Files</Filter>
+    </Image>
+    <Image Include="ICON1.ICO">
+      <Filter>Resource Files</Filter>
+    </Image>
+  </ItemGroup>
+  <ItemGroup>
+    <Text Include="README.TXT">
+      <Filter>Resource Files</Filter>
+    </Text>
+    <Text Include="T.TXT">
+      <Filter>Resource Files</Filter>
+    </Text>
+    <Text Include="VDMPLAY.TXT">
+      <Filter>Resource Files</Filter>
+    </Text>
+    <Text Include="VMPLAY.TXT">
+      <Filter>Resource Files</Filter>
+    </Text>
+    <Text Include="VPLOG1.TXT">
+      <Filter>Resource Files</Filter>
+    </Text>
+    <Text Include="VPLOG2.TXT">
+      <Filter>Resource Files</Filter>
+    </Text>
+    <Text Include="X.LOG">
+      <Filter>Resource Files</Filter>
+    </Text>
+    <Text Include="ZIPEXCL.TXT">
+      <Filter>Resource Files</Filter>
+    </Text>
+  </ItemGroup>
+</Project>

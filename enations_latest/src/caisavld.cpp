@@ -8,9 +8,10 @@
 //
 ////////////////////////////////////////////////////////////////////////////
 
-#include "STDAFX.H"
-#include "CAI.h"
-#include "CAISavLd.hpp"
+#include "caisavld.hpp"
+
+#include "cai.h"
+#include "stdafx.h"
 
 ////////////////////////////////////////////////////////////////////////////
 //
@@ -21,233 +22,207 @@
 IMPLEMENT_DYNAMIC( CAISavLd, CObject );
 
 #define new DEBUG_NEW
-#define DEBUG_SAVELOAD	0
+#define DEBUG_SAVELOAD 0
 
-extern CAIGoalList *plGoalList;	// standard goals
-extern CAITaskList *plTaskList;	// standard tasks
-//extern CWordArray *pwaRCIP;		// racial characteristics and initial pos
-extern CWordArray *pwaIG;		// initial goals
+extern CAIGoalList* plGoalList;  // standard goals
+extern CAITaskList* plTaskList;  // standard tasks
+// extern CWordArray *pwaRCIP;		// racial characteristics and initial pos
+extern CWordArray* pwaIG;  // initial goals
 
-CAISavLd::CAISavLd( CWnd *pParent )
+CAISavLd::CAISavLd( CWnd* pParent )
 {
     m_pParent = pParent;
 }
 
 void CAISavLd::SaveBinary( void )
 {
-    CFile *pFile;
-    //CFileException* theException = new CFileException;
-	
-   	try
-   	{
-       	pFile = OpenForDump( "stdgta.dat" );
-       	ASSERT( pFile != NULL );
-            
-       	DumpBinaryData( pFile );
-   	}
-   	catch( CFileException theException )
-   	{
-   		if( m_pParent != NULL )
-       		m_pParent->MessageBox( "Save Binary Error", "stdgta.dat", 
-       		MB_ICONEXCLAMATION | MB_SYSTEMMODAL | MB_OK );
-       	
-    	pFile->Close();
-    	delete pFile;
-		return;
-       	//throw(ERR_CAI_BAD_FILE);
-   	}
+    CFile* pFile;
+    // CFileException* theException = new CFileException;
 
-    pFile->Close();
+    try
+    {
+        pFile = OpenForDump( "stdgta.dat" );
+        ASSERT( pFile != NULL );
+
+        DumpBinaryData( pFile );
+    }
+    catch ( CFileException* theException )
+    {
+        if ( m_pParent != NULL )
+            m_pParent->MessageBox( "Save Binary Error", "stdgta.dat", MB_ICONEXCLAMATION | MB_SYSTEMMODAL | MB_OK );
+
+        pFile->Close( );
+        delete pFile;
+        return;
+        // throw(ERR_CAI_BAD_FILE);
+    }
+
+    pFile->Close( );
     delete pFile;
-        
-	//theException->Delete();
+
+    // theException->Delete();
 }
 
 void CAISavLd::Save( void )
 {
-    CFile *pFile;
+    CFile*          pFile;
     CFileException* theException = new CFileException;
-    CString sStdExt, sHead, sSave;
-    sStdExt = ".std";
+    const std::string sStdExt = ".std";
+    std::string sHead, sSave;
 
-    for( int i=TASK_DATA; i<=GOAL_DATA; ++i )
+    for ( int i = TASK_DATA; i <= GOAL_DATA; ++i )
     {
-    	switch( i )
-    	{
-    		case GOAL_DATA:
-    			sHead = "goals";
-    			break;
-    		case TASK_DATA:
-    			sHead = "tasks";
-    			break;
-    		default:
-    			return;
-    	}
-		sSave = sHead + sStdExt;
+        switch ( i )
+        {
+        case GOAL_DATA:
+            sHead = "goals";
+            break;
+        case TASK_DATA:
+            sHead = "tasks";
+            break;
+        default:
+            return;
+        }
+        sSave = sHead + sStdExt;
 
-		CString sMsg;
-    	// save the list of objects
-    	TRY
-    	{
-        	pFile = OpenForDump( sSave );
-        	ASSERT( pFile != NULL );
-            
-        	DumpData( pFile, i );
-    	}
-    	CATCH( CFileException, theException )
-    	{
-    		// "Save Error"
-    		sMsg = "Save Error";
-    		if( m_pParent != NULL )
-        	m_pParent->MessageBox( sMsg, sSave, 
-        		MB_ICONEXCLAMATION | MB_SYSTEMMODAL | MB_OK );
-        	sMsg.Empty();
+        // save the list of objects
+        TRY
+        {
+            pFile = OpenForDump( sSave );
+            ASSERT( pFile != NULL );
 
-        	//throw(ERR_CAI_BAD_FILE);
-    	}
-    	AND_CATCH( CArchiveException, theException )
-    	{
-        	pFile->Close();
-        	delete pFile;
-        	// "Archive Error"
-        	sMsg = "Archive Error";
-        	if( m_pParent != NULL )
-        	m_pParent->MessageBox( sMsg, sSave, 
-        		MB_ICONEXCLAMATION | MB_SYSTEMMODAL | MB_OK );
-        	sMsg.Empty();
+            DumpData( pFile, i );
+        }
+        CATCH( CFileException, theException )
+        {
+            if ( m_pParent != NULL )
+                m_pParent->MessageBox( "Save Error", sSave.c_str(), MB_ICONEXCLAMATION | MB_SYSTEMMODAL | MB_OK );
 
-        	//throw(ERR_CAI_BAD_FILE);
-    	}
-		END_CATCH
+            // throw(ERR_CAI_BAD_FILE);
+        }
+        AND_CATCH( CArchiveException, theException )
+        {
+            pFile->Close( );
+            delete pFile;
+            if ( m_pParent != NULL )
+                m_pParent->MessageBox( "Archive Error", sSave.c_str(), MB_ICONEXCLAMATION | MB_SYSTEMMODAL | MB_OK );
 
-        pFile->Close();
+            // throw(ERR_CAI_BAD_FILE);
+        }
+        END_CATCH
+
+        pFile->Close( );
         delete pFile;
-        
-        sSave.Empty();
-        sHead.Empty();
+
+        sSave.clear( );
+        sHead.clear( );
     }
-    //delete theException;
-	theException->Delete();
-    sStdExt.Empty();
+    // delete theException;
+    theException->Delete( );
 }
 
 void CAISavLd::LoadBinary( void )
 {
-    CFile *pFile = NULL;
-    //CFileException* theException = new CFileException;
+    CFile* pFile = NULL;
+    // CFileException* theException = new CFileException;
 
-   	try
-   	{
-		pFile = theDataFile.OpenAsFile( "stdgta.dat" );
+    try
+    {
+        pFile = theDataFile.OpenAsFile( "stdgta.dat" );
 #ifdef BUGBUG
-       	pFile = OpenForLoad( "stdgta.dat" );
+        pFile = OpenForLoad( "stdgta.dat" );
 #endif
-       	ASSERT( pFile != NULL );
-            
-       	LoadBinaryData( pFile );
-   	}
-   	catch( CFileException theException )
-   	{
-   		if( m_pParent != NULL )
-       	m_pParent->MessageBox( "Load Binary Error", "stdgta.dat", 
-       		MB_ICONEXCLAMATION | MB_SYSTEMMODAL | MB_OK );
-       	
-		if( pFile != NULL )
-		{
-    		pFile->Close();
-    		delete pFile;
-		}
-       	
-       	throw(ERR_CAI_BAD_FILE);
-   	}
+        ASSERT( pFile != NULL );
 
-    pFile->Close();
+        LoadBinaryData( pFile );
+    }
+    catch ( CFileException* theException )
+    {
+        if ( m_pParent != NULL )
+            m_pParent->MessageBox( "Load Binary Error", "stdgta.dat", MB_ICONEXCLAMATION | MB_SYSTEMMODAL | MB_OK );
+
+        if ( pFile != NULL )
+        {
+            pFile->Close( );
+            delete pFile;
+        }
+
+        throw( ERR_CAI_BAD_FILE );
+    }
+
+    pFile->Close( );
     delete pFile;
-        
-	//theException->Delete();
+
+    // theException->Delete();
 }
 
 void CAISavLd::Load( void )
 {
-    CFile *pFile;
-    //CFileException* theException = new CFileException;
-    CString sStdExt, sHead, sFile, sMsg;
-    sStdExt = ".std";
+    CFile* pFile;
+    // CFileException* theException = new CFileException;
+    const std::string sStdExt = ".std";
+    std::string sHead, sFile;
 
-    for( int i=TASK_DATA; i<=GOAL_DATA; ++i )
+    for ( int i = TASK_DATA; i <= GOAL_DATA; ++i )
     {
-    	switch( i )
-    	{
-    		case GOAL_DATA:
-    			sHead = "goals";
-    			break;
-    		case TASK_DATA:
-    			sHead = "tasks";
-    			break;
-    		default:
-    			return;
-    	}
-		sFile = sHead + sStdExt;
+        switch ( i )
+        {
+        case GOAL_DATA:
+            sHead = "goals";
+            break;
+        case TASK_DATA:
+            sHead = "tasks";
+            break;
+        default:
+            return;
+        }
+        sFile = sHead + sStdExt;
 
-    	try
-    	{
-        	pFile = OpenForLoad( sFile );
-        	ASSERT( pFile != NULL );
-            
-        	LoadData( pFile, i );
-    	}
-    	catch( CFileException theException )
-    	{
-    		// "LOAD File Error"
-    		sMsg = "LOAD File Error";
-    		if( m_pParent != NULL )
-        	m_pParent->MessageBox( sMsg, sFile, 
-        		MB_ICONEXCLAMATION | MB_SYSTEMMODAL | MB_OK );
-        	sMsg.Empty();
+        try
+        {
+            pFile = OpenForLoad( sFile );
+            ASSERT( pFile != NULL );
 
-        	throw(ERR_CAI_BAD_FILE);
-    	}
-    	catch( CArchiveException theException )
-    	{
-    		if( theException.m_cause !=
-    			CArchiveException::endOfFile )
-    		{
-        	pFile->Close();
-        	delete pFile;
-        	// "LOAD Archive Error"
-        	sMsg = "LOAD Archive Error";
-        	if( m_pParent != NULL )
-        	m_pParent->MessageBox( sMsg, sFile, 
-        		MB_ICONEXCLAMATION | MB_SYSTEMMODAL | MB_OK );
-        	sMsg.Empty();
+            LoadData( pFile, i );
+        }
+        catch ( CFileException* theException )
+        {
+            if ( m_pParent != NULL )
+                m_pParent->MessageBox( "LOAD File Error", sFile.c_str(), MB_ICONEXCLAMATION | MB_SYSTEMMODAL | MB_OK );
 
-        	throw(ERR_CAI_BAD_FILE);
-        	}
-    	}
+            throw( ERR_CAI_BAD_FILE );
+        }
+        catch ( CArchiveException* theException )
+        {
+            if ( theException->m_cause != CArchiveException::endOfFile )
+            {
+                pFile->Close( );
+                delete pFile;
+                if ( m_pParent != NULL )
+                    m_pParent->MessageBox( "LOAD Archive Error", sFile.c_str(), MB_ICONEXCLAMATION | MB_SYSTEMMODAL | MB_OK );
 
-    	pFile->Close();
-    	delete pFile;
-    	
-    	sFile.Empty();
-    	sHead.Empty();    	
+                throw( ERR_CAI_BAD_FILE );
+            }
+        }
+
+        pFile->Close( );
+        delete pFile;
+
+        sFile.clear( );
+        sHead.clear( );
     }
-    //delete theException;
-	//theException->Delete();
-    sStdExt.Empty();
+    // delete theException;
+    // theException->Delete();
 }
 
-CWordArray *CAISavLd::LoadRCIP( int iSmart )
+CWordArray* CAISavLd::LoadRCIP( int iSmart )
 {
-	CString sHead;
-	sHead = "drcip"; // name of serialized word array of values
-	return( LoadArrays( iSmart, sHead ) );
+    return ( LoadArrays( iSmart, "drcip" ) );  // name of serialized word array of values
 }
 
-CWordArray *CAISavLd::LoadIG( int iSmart )
+CWordArray* CAISavLd::LoadIG( int iSmart )
 {
-	CString sHead;
-	sHead = "goals"; // name of serialized word array of values
-	return( LoadArrays( iSmart, sHead ) );
+    return ( LoadArrays( iSmart, "goals" ) );  // name of serialized word array of values
 }
 
 //
@@ -255,660 +230,606 @@ CWordArray *CAISavLd::LoadIG( int iSmart )
 // and initial position of the AI player based on difficulty
 // value previously set in GameData
 //
-CWordArray *CAISavLd::LoadArrays( int iSmart, CString& sHead )
+CWordArray* CAISavLd::LoadArrays( int iSmart, const std::string& sHead )
 {
-	CWordArray *pwaLoadRCIP = NULL;
-    CFile *pFile;
-    //CFileException* theException = new CFileException;
-    CString sExt, sFile, sMsg;
-    
-    
-    wsprintf( sExt.GetBuffer( 3 ), ".%d", iSmart );
-    sExt.ReleaseBuffer();
-    sFile = sHead + sExt;
+    CWordArray* pwaLoadRCIP = NULL;
+    CFile*      pFile;
+    // CFileException* theException = new CFileException;
+    char extBuf[8];
+    snprintf( extBuf, sizeof( extBuf ), ".%d", iSmart );
+    std::string sFile = sHead + extBuf;
 
-   	try
-   	{
-       	pFile = OpenForLoad( sFile );
-       	ASSERT( pFile != NULL );
-            
-       	pwaLoadRCIP = LoadData( pFile );
-   	}
-   	catch( CFileException theException )
-   	{
-   		// "LOAD File Error"
-   		sMsg = "LOAD File Error";
-   		if( m_pParent != NULL )
-       	m_pParent->MessageBox( sMsg, sFile, 
-       		MB_ICONEXCLAMATION | MB_SYSTEMMODAL | MB_OK );
-       	sMsg.Empty();
+    try
+    {
+        pFile = OpenForLoad( sFile );
+        ASSERT( pFile != NULL );
 
-       	throw(ERR_CAI_BAD_FILE);
-   	}
-   	catch( CArchiveException theException )
-   	{
-   		if( theException.m_cause !=
-   			CArchiveException::endOfFile )
-   		{
-        	pFile->Close();
-        	delete pFile;
-        	// "LOAD Archive Error"
-        	sMsg = "LOAD Archive Error";
-        	if( m_pParent != NULL )
-        	m_pParent->MessageBox( sMsg, sFile, 
-        		MB_ICONEXCLAMATION | MB_SYSTEMMODAL | MB_OK );
-        	sMsg.Empty();
+        pwaLoadRCIP = LoadData( pFile );
+    }
+    catch ( CFileException* theException )
+    {
+        if ( m_pParent != NULL )
+            m_pParent->MessageBox( "LOAD File Error", sFile.c_str(), MB_ICONEXCLAMATION | MB_SYSTEMMODAL | MB_OK );
 
-        	throw(ERR_CAI_BAD_FILE);
-       	}
-   	}
+        throw( ERR_CAI_BAD_FILE );
+    }
+    catch ( CArchiveException* theException )
+    {
+        if ( theException->m_cause != CArchiveException::endOfFile )
+        {
+            pFile->Close( );
+            delete pFile;
+            if ( m_pParent != NULL )
+                m_pParent->MessageBox( "LOAD Archive Error", sFile.c_str(), MB_ICONEXCLAMATION | MB_SYSTEMMODAL | MB_OK );
 
-   	pFile->Close();
-   	delete pFile;
-    //delete theException;
-	//theException->Delete();
-    sExt.Empty();
-   	sFile.Empty();
-   	sHead.Empty();
-   	
-   	return( pwaLoadRCIP );
+            throw( ERR_CAI_BAD_FILE );
+        }
+    }
+
+    pFile->Close( );
+    delete pFile;
+    // delete theException;
+    // theException->Delete();
+
+    return ( pwaLoadRCIP );
 }
 
-void CAISavLd::SaveIG( int iSmart, CWordArray *pwaData )
+void CAISavLd::SaveIG( int iSmart, CWordArray* pwaData )
 {
-	CString sHead;
-	sHead = "goals"; // name of serialized word array of values
-	SaveArrays( iSmart, pwaData, sHead );
+    SaveArrays( iSmart, pwaData, "goals" );  // name of serialized word array of values
 }
 
-void CAISavLd::SaveRCIP( int iSmart, CWordArray *pwaData )
+void CAISavLd::SaveRCIP( int iSmart, CWordArray* pwaData )
 {
-	CString sHead;
-	sHead = "drcip"; // name of serialized word array of values
-	SaveArrays( iSmart, pwaData, sHead );
+    SaveArrays( iSmart, pwaData, "drcip" );  // name of serialized word array of values
 }
 
-void CAISavLd::SaveArrays( int iSmart, CWordArray *pwaData, CString& sHead )
+void CAISavLd::SaveArrays( int iSmart, CWordArray* pwaData, const std::string& sHead )
 {
-    CFile *pFile;
+    CFile*          pFile;
     CFileException* theException = new CFileException;
-    CString sExt, sFile, sMsg;
-    
-    
-    wsprintf( sExt.GetBuffer( 3 ), ".%d", iSmart );
-    sExt.ReleaseBuffer();
-    sFile = sHead + sExt;
+    char extBuf[8];
+    snprintf( extBuf, sizeof( extBuf ), ".%d", iSmart );
+    std::string sFile = sHead + extBuf;
 
-   	TRY
-   	{
-       	pFile = OpenForDump( sFile );
-       	ASSERT( pFile != NULL );
-            
-       	DumpData( pFile, pwaData );
-   	}
-   	CATCH( CFileException, theException )
-   	{
-    	// "Save Error"
-    	sMsg = "Save Error";
-   		if( m_pParent != NULL )
-       	m_pParent->MessageBox( sMsg, sFile, 
-       		MB_ICONEXCLAMATION | MB_SYSTEMMODAL | MB_OK );
-       	sMsg.Empty();
-       	return;
-   	}
-   	AND_CATCH( CArchiveException, theException )
-   	{
-   		if( theException->m_cause !=
-   			CArchiveException::endOfFile )
-   		{
-        	pFile->Close();
-        	delete pFile;
-        	// "SAVE Archive Error"
-        	sMsg = "SAVE Archive Error";
-        	if( m_pParent != NULL )
-        	m_pParent->MessageBox( sMsg, sFile, 
-        		MB_ICONEXCLAMATION | MB_SYSTEMMODAL | MB_OK );
-        	sMsg.Empty();
-        	return;
-       	}
-   	}
-   	END_CATCH
+    TRY
+    {
+        pFile = OpenForDump( sFile );
+        ASSERT( pFile != NULL );
 
-   	pFile->Close();
-   	delete pFile;
-    //delete theException;
-	theException->Delete();
-    sExt.Empty();
-   	sFile.Empty();
-   	sHead.Empty();
+        DumpData( pFile, pwaData );
+    }
+    CATCH( CFileException, theException )
+    {
+        if ( m_pParent != NULL )
+            m_pParent->MessageBox( "Save Error", sFile.c_str(), MB_ICONEXCLAMATION | MB_SYSTEMMODAL | MB_OK );
+        return;
+    }
+    AND_CATCH( CArchiveException, theException )
+    {
+        if ( theException->m_cause != CArchiveException::endOfFile )
+        {
+            pFile->Close( );
+            delete pFile;
+            if ( m_pParent != NULL )
+                m_pParent->MessageBox( "SAVE Archive Error", sFile.c_str(), MB_ICONEXCLAMATION | MB_SYSTEMMODAL | MB_OK );
+            return;
+        }
+    }
+    END_CATCH
+
+    pFile->Close( );
+    delete pFile;
+    // delete theException;
+    theException->Delete( );
 }
 
-void CAISavLd::LoadBinaryData( CFile *pFile )
+void CAISavLd::LoadBinaryData( CFile* pFile )
 {
-	GoalBuff goalbuffer;
-	TaskBuff taskbuffer;
-	//CFileException* theException = new CFileException;
+    GoalBuff goalbuffer;
+    TaskBuff taskbuffer;
+    // CFileException* theException = new CFileException;
 
-	if( pFile == NULL )
-		throw(ERR_CAI_BAD_FILE);
+    if ( pFile == NULL )
+        throw( ERR_CAI_BAD_FILE );
 
-	// first, make sure goal list is empty
-	if( plGoalList != NULL )
-		plGoalList->DeleteList();
+    // first, make sure goal list is empty
+    if ( plGoalList != NULL )
+        plGoalList->DeleteList( );
 
-	int iCnt;
-	try
-	{
-		pFile->Read( (void*)&iCnt, sizeof(int) );
-	}
-    catch( CFileException theException )
+    int iCnt;
+    try
     {
-        throw(ERR_CAI_BAD_FILE);
+        pFile->Read( (void*)&iCnt, sizeof( int ) );
+    }
+    catch ( CFileException* theException )
+    {
+        throw( ERR_CAI_BAD_FILE );
     }
 
 
-	// if there are goals to read
-	if( iCnt )
-	{
-		int iBytes;
-		for( int i=0; i<iCnt; ++i )
-		{
-			// read file data into buffer
-			try
-			{
-				iBytes = 
-					pFile->Read( 
-					(void*)&goalbuffer, sizeof(GoalBuff) );
-			}
-    		catch( CFileException theException )
-    		{
-        		throw(ERR_CAI_BAD_FILE);
-    		}
-
-			if( iBytes != sizeof(GoalBuff) )
-				return;
-
-			// count actual tasks for this goal
-			for( int j=0; j<NUM_INITIAL_GOALS; ++j )
-			{
-				if( !goalbuffer.iTasks[j] )
-					break;
-			}
-			// j contains number of actual tasks
-
-			CWordArray *pwaTasks = NULL;
-			CAIGoal *pGoal = NULL;
-			try
-			{
-				// create array for tasks
-				pwaTasks = new CWordArray();
-				pwaTasks->SetSize(j);
-				for( j=0; j<pwaTasks->GetSize(); ++j )
-					pwaTasks->SetAt( j, goalbuffer.iTasks[j] );
-
-				//CAIGoal( WORD wID, BYTE cType, CWordArray *pwaTasks );
-				pGoal = new CAIGoal( (WORD)goalbuffer.iID,
-					(BYTE)goalbuffer.iType, pwaTasks );
-				plGoalList->AddTail( (CObject *)pGoal );
-			}
-			catch( CException e )
-			{
-				if( pwaTasks != NULL )
-				{
-				// clean up array
-				pwaTasks->RemoveAll();
-				delete pwaTasks;
-				}
-				if( pGoal != NULL )
-					delete pGoal;
-
-				throw(ERR_CAI_BAD_NEW);
-			}
-
-			// clean up array
-			if( pwaTasks != NULL )
-			{
-				pwaTasks->RemoveAll();
-				delete pwaTasks;
-			}
-		}
-	}
-
-	// make sure task list is empty
-	if( plTaskList != NULL )
-		plTaskList->DeleteList();
-
-	// now, read count of tasks
-	try
-	{
-		pFile->Read( (void*)&iCnt, sizeof(int) );
-	}
-    catch( CFileException theException )
+    // if there are goals to read
+    if ( iCnt )
     {
-        throw(ERR_CAI_BAD_FILE);
+        int iBytes;
+        for ( int i = 0; i < iCnt; ++i )
+        {
+            // read file data into buffer
+            try
+            {
+                iBytes = pFile->Read( (void*)&goalbuffer, sizeof( GoalBuff ) );
+            }
+            catch ( CFileException* theException )
+            {
+                throw( ERR_CAI_BAD_FILE );
+            }
+
+            if ( iBytes != sizeof( GoalBuff ) )
+                return;
+
+            // count actual tasks for this goal
+            int j = 0;
+            for ( ; j < NUM_INITIAL_GOALS; ++j )
+            {
+                if ( !goalbuffer.iTasks[j] )
+                    break;
+            }
+            // j contains number of actual tasks
+
+            CWordArray* pwaTasks = NULL;
+            CAIGoal*    pGoal    = NULL;
+            try
+            {
+                // create array for tasks
+                pwaTasks = new CWordArray( );
+                pwaTasks->SetSize( j );
+                for ( j = 0; j < pwaTasks->GetSize( ); ++j ) pwaTasks->SetAt( j, goalbuffer.iTasks[j] );
+
+                // CAIGoal( WORD wID, BYTE cType, CWordArray *pwaTasks );
+                pGoal = new CAIGoal( (WORD)goalbuffer.iID, (BYTE)goalbuffer.iType, pwaTasks );
+                plGoalList->AddTail( (CObject*)pGoal );
+            }
+            catch ( CException* e )
+            {
+                if ( pwaTasks != NULL )
+                {
+                    // clean up array
+                    pwaTasks->RemoveAll( );
+                    delete pwaTasks;
+                }
+                if ( pGoal != NULL )
+                    delete pGoal;
+
+                throw( ERR_CAI_BAD_NEW );
+            }
+
+            // clean up array
+            if ( pwaTasks != NULL )
+            {
+                pwaTasks->RemoveAll( );
+                delete pwaTasks;
+            }
+        }
     }
-	
-	if( iCnt )
-	{
-		int iBytes;
-		for( int i=0; i<iCnt; ++i )
-		{
-			// read file data into buffer
-			try
-			{
-				iBytes = 
-					pFile->Read( 
-					(void*)&taskbuffer, sizeof(TaskBuff) );
-			}
-    		catch( CFileException theException )
-    		{
-        		throw(ERR_CAI_BAD_FILE);
-    		}
+
+    // make sure task list is empty
+    if ( plTaskList != NULL )
+        plTaskList->DeleteList( );
+
+    // now, read count of tasks
+    try
+    {
+        pFile->Read( (void*)&iCnt, sizeof( int ) );
+    }
+    catch ( CFileException* theException )
+    {
+        throw( ERR_CAI_BAD_FILE );
+    }
+
+    if ( iCnt )
+    {
+        int iBytes;
+        for ( int i = 0; i < iCnt; ++i )
+        {
+            // read file data into buffer
+            try
+            {
+                iBytes = pFile->Read( (void*)&taskbuffer, sizeof( TaskBuff ) );
+            }
+            catch ( CFileException* theException )
+            {
+                throw( ERR_CAI_BAD_FILE );
+            }
 
 
-			if( iBytes != sizeof(TaskBuff) )
-				return;
+            if ( iBytes != sizeof( TaskBuff ) )
+                return;
 
-			CWordArray *pwaParams = NULL;
-			CAITask *pTask = NULL;
-			try
-			{
-				// create array for tasks params
-				pwaParams = new CWordArray();
-				pwaParams->SetSize(MAX_TASKPARAMS);
-				for( int j=0; j<pwaParams->GetSize(); ++j )
-					pwaParams->SetAt( j, taskbuffer.iParams[j] );
+            CWordArray* pwaParams = NULL;
+            CAITask*    pTask     = NULL;
+            try
+            {
+                // create array for tasks params
+                pwaParams = new CWordArray( );
+                pwaParams->SetSize( MAX_TASKPARAMS );
+                for ( int j = 0; j < pwaParams->GetSize( ); ++j ) pwaParams->SetAt( j, taskbuffer.iParams[j] );
 
-				//	CAITask( WORD wID, BYTE cType, BYTE cPriority, 
-				//		WORD wOrderID, CWordArray *pwaParams );
-				pTask = new CAITask( (WORD)taskbuffer.iID,
-					(BYTE)taskbuffer.iType,(BYTE)taskbuffer.iPriority,
-					(WORD)taskbuffer.iOrderID, pwaParams );
+                //	CAITask( WORD wID, BYTE cType, BYTE cPriority,
+                //		WORD wOrderID, CWordArray *pwaParams );
+                pTask = new CAITask( (WORD)taskbuffer.iID, (BYTE)taskbuffer.iType, (BYTE)taskbuffer.iPriority,
+                                     (WORD)taskbuffer.iOrderID, pwaParams );
 
-				plTaskList->AddTail( (CObject *)pTask );
-			}
-			catch( CException e )
-			{
-				if( pwaParams != NULL )
-				{
-				// clean up array
-				pwaParams->RemoveAll();
-				delete pwaParams;
-				}
-				if( pTask != NULL )
-					delete pTask;
+                plTaskList->AddTail( (CObject*)pTask );
+            }
+            catch ( CException* e )
+            {
+                if ( pwaParams != NULL )
+                {
+                    // clean up array
+                    pwaParams->RemoveAll( );
+                    delete pwaParams;
+                }
+                if ( pTask != NULL )
+                    delete pTask;
 
-				throw(ERR_CAI_BAD_NEW);
-			}
-			if( pwaParams != NULL )
-			{
-				// clean up array
-				pwaParams->RemoveAll();
-				delete pwaParams;
-			}
-		}
-	}
+                throw( ERR_CAI_BAD_NEW );
+            }
+            if ( pwaParams != NULL )
+            {
+                // clean up array
+                pwaParams->RemoveAll( );
+                delete pwaParams;
+            }
+        }
+    }
 
 
-	/*
-	// now do racial charactistics and inital position
-	if( pwaRCIP == NULL )
-	{
-		try
-		{
-			int iSizeOne = NUM_RACE_CHAR + NUM_INIT_SPLYS;
-			// calculate size all difficulty levels
-			int iSize = iSizeOne * NUM_DIFFICUTY_LEVELS;
-			pwaRCIP = new CWordArray();
-			pwaRCIP->SetSize(iSize);
-			for( int i=0; i<pwaRCIP->GetSize(); ++i )
-				pwaRCIP->SetAt(i,0);
-		}
-		catch( CException e )
-		{
-			if( pwaRCIP != NULL )
-			{
-				pwaRCIP->RemoveAll();
-				delete pwaRCIP;
-				pwaRCIP = NULL;
-			}
-			throw(ERR_CAI_BAD_NEW);
-		}
-	}
+    /*
+    // now do racial charactistics and inital position
+    if( pwaRCIP == NULL )
+    {
+        try
+        {
+            int iSizeOne = NUM_RACE_CHAR + NUM_INIT_SPLYS;
+            // calculate size all difficulty levels
+            int iSize = iSizeOne * NUM_DIFFICUTY_LEVELS;
+            pwaRCIP = new CWordArray();
+            pwaRCIP->SetSize(iSize);
+            for( int i=0; i<pwaRCIP->GetSize(); ++i )
+                pwaRCIP->SetAt(i,0);
+        }
+        catch( CException e )
+        {
+            if( pwaRCIP != NULL )
+            {
+                pwaRCIP->RemoveAll();
+                delete pwaRCIP;
+                pwaRCIP = NULL;
+            }
+            throw(ERR_CAI_BAD_NEW);
+        }
+    }
 
-	for( int i=0; i<pwaRCIP->GetSize(); ++i )
-	{
-		try
-		{
-			pFile->Read( (void*)&iCnt, sizeof(int) );
-		}
-    	catch( CFileException theException )
-    	{
-       		throw(ERR_CAI_BAD_FILE);
-    	}
+    for( int i=0; i<pwaRCIP->GetSize(); ++i )
+    {
+        try
+        {
+            pFile->Read( (void*)&iCnt, sizeof(int) );
+        }
+        catch( CFileException theException )
+        {
+            throw(ERR_CAI_BAD_FILE);
+        }
 
-		pwaRCIP->SetAt(i,iCnt);
-	}
-	*/
+        pwaRCIP->SetAt(i,iCnt);
+    }
+    */
 
-	// and now the initial goals
-	if( pwaIG == NULL )
-	{
-		try
-		{
-			// calculate size all difficulty levels
-			int iSize = NUM_INITIAL_GOALS * NUM_DIFFICUTY_LEVELS;
-			pwaIG = new CWordArray();
-			pwaIG->SetSize(iSize);
-			for( int i=0; i<pwaIG->GetSize(); ++i )
-				pwaIG->SetAt(i,0);
-		}
-		catch( CException e )
-		{
-			if( pwaIG != NULL )
-			{
-				pwaIG->RemoveAll();
-				delete pwaIG;
-				pwaIG = NULL;
-			}
-			throw(ERR_CAI_BAD_NEW);
-		}
+    // and now the initial goals
+    if ( pwaIG == NULL )
+    {
+        try
+        {
+            // calculate size all difficulty levels
+            int iSize = NUM_INITIAL_GOALS * NUM_DIFFICUTY_LEVELS;
+            pwaIG     = new CWordArray( );
+            pwaIG->SetSize( iSize );
+            for ( int i = 0; i < pwaIG->GetSize( ); ++i ) pwaIG->SetAt( i, 0 );
+        }
+        catch ( CException* e )
+        {
+            if ( pwaIG != NULL )
+            {
+                pwaIG->RemoveAll( );
+                delete pwaIG;
+                pwaIG = NULL;
+            }
+            throw( ERR_CAI_BAD_NEW );
+        }
+    }
 
-	}
+    for ( int i = 0; i < pwaIG->GetSize( ); ++i )
+    {
+        try
+        {
+            pFile->Read( (void*)&iCnt, sizeof( int ) );
+        }
+        catch ( CFileException* theException )
+        {
+            throw( ERR_CAI_BAD_FILE );
+        }
 
-	for( int i=0; i<pwaIG->GetSize(); ++i )
-	{
-		try
-		{
-			pFile->Read( (void*)&iCnt, sizeof(int) );
-		}
-    	catch( CFileException theException )
-    	{
-       		throw(ERR_CAI_BAD_FILE);
-    	}
+        pwaIG->SetAt( i, iCnt );
+    }
 
-		pwaIG->SetAt(i,iCnt);
-	}
-
-	//theException->Delete();
+    // theException->Delete();
 }
 
 //
 // this function loads the racial characteristics/initial
 // position data that has been serialized in pFile
 //
-CWordArray *CAISavLd::LoadData( CFile *pFile )
+CWordArray* CAISavLd::LoadData( CFile* pFile )
 {
     CFileException* theException = new CFileException;
     ASSERT( theException != NULL );
-    
+
     CArchive archive( pFile, CArchive::load );
-    CObject *pObj;
-    
-    TRY
-    {
-        archive >> (CObject *)pObj;
-    }
+    CObject* pObj;
+
+    TRY { archive >> pObj; }
     CATCH( CArchiveException, theException )
     {
-        archive.Close();
-        THROW_LAST();
+        archive.Close( );
+        THROW_LAST( );
     }
     END_CATCH
-    archive.Close();
-    //delete theException;
-	theException->Delete();
-    
-    return( (CWordArray *)pObj );
+    archive.Close( );
+    // delete theException;
+    theException->Delete( );
+
+    return ( (CWordArray*)pObj );
 }
 
-void CAISavLd::LoadData( CFile *pFile, UINT uWhich )
+void CAISavLd::LoadData( CFile* pFile, UINT uWhich )
 {
     CFileException* theException = new CFileException;
     ASSERT( theException != NULL );
-    
+
     CArchive archive( pFile, CArchive::load );
-    CObject *pObj;
-    
-    TRY
-    {
-        archive >> (CObject *)pObj;
-    }
+    CObject* pObj;
+
+    TRY { archive >> pObj; }
     CATCH( CArchiveException, theException )
     {
-        archive.Close();
-        THROW_LAST();
+        archive.Close( );
+        THROW_LAST( );
     }
     END_CATCH
-    archive.Close();
-    //delete theException;
-	theException->Delete();
-    
-    if( uWhich == GOAL_DATA )
+    archive.Close( );
+    // delete theException;
+    theException->Delete( );
+
+    if ( uWhich == GOAL_DATA )
     {
-        plGoalList = (CAIGoalList *)pObj;
+        plGoalList = (CAIGoalList*)pObj;
     }
-    else if( uWhich == TASK_DATA )
+    else if ( uWhich == TASK_DATA )
     {
-        plTaskList = (CAITaskList *)pObj;
+        plTaskList = (CAITaskList*)pObj;
     }
 }
 
-void CAISavLd::DumpBinaryData( CFile *pFile )
+void CAISavLd::DumpBinaryData( CFile* pFile )
 {
-	GoalBuff goalbuffer;
-	TaskBuff taskbuffer;
-	//CFileException* theException = new CFileException;
+    GoalBuff goalbuffer;
+    TaskBuff taskbuffer;
+    // CFileException* theException = new CFileException;
 
-	// first, write count of goals
-	int iCnt = plGoalList->GetCount();
-	try
-	{
-		pFile->Write( (const void*)&iCnt, sizeof(int) );
-	}
-    catch( CFileException theException )
+    // first, write count of goals
+    int iCnt = plGoalList->GetCount( );
+    try
     {
-        throw(ERR_CAI_BAD_FILE);
+        pFile->Write( (const void*)&iCnt, sizeof( int ) );
+    }
+    catch ( CFileException* theException )
+    {
+        throw( ERR_CAI_BAD_FILE );
     }
 
-	// if there are goals to write
-	if( iCnt )
-	{
-    	POSITION pos = plGoalList->GetHeadPosition();
-    	while( pos != NULL )
-    	{   
-        	CAIGoal *pGoal = (CAIGoal *)plGoalList->GetNext( pos );
-        	if( pGoal != NULL )
-        	{
-        		ASSERT_VALID( pGoal );
-
-				// move data to buffer
-				goalbuffer.iID = (int)pGoal->GetID();
-				goalbuffer.iType = (int)pGoal->GetType();
-
-				for( int i=0; i<NUM_INITIAL_GOALS; ++i )
-					goalbuffer.iTasks[i] = 0;
-				
-				i = 0;
-				while( pGoal->GetTaskAt(i) )
-				{
-					goalbuffer.iTasks[i] = (int)pGoal->GetTaskAt(i);
-					++i;
-				}
-
-				// now write buffer out
-				try
-				{
-					pFile->Write( 
-						(const void*)&goalbuffer, sizeof(GoalBuff) );
-				}
-    			catch( CFileException theException )
-    			{
-        			throw(ERR_CAI_BAD_FILE);
-    			}
-        	}
-    	}
-	}
-
-	// now, write count of tasks
-	iCnt = plTaskList->GetCount();
-	try
-	{
-		pFile->Write( (const void*)&iCnt, sizeof(int) );
-	}
-    catch( CFileException theException )
+    // if there are goals to write
+    if ( iCnt )
     {
-        throw(ERR_CAI_BAD_FILE);
+        POSITION pos = plGoalList->GetHeadPosition( );
+        while ( pos != NULL )
+        {
+            CAIGoal* pGoal = (CAIGoal*)plGoalList->GetNext( pos );
+            if ( pGoal != NULL )
+            {
+                ASSERT_VALID( pGoal );
+
+                // move data to buffer
+                goalbuffer.iID   = (int)pGoal->GetID( );
+                goalbuffer.iType = (int)pGoal->GetType( );
+
+                for ( int i = 0; i < NUM_INITIAL_GOALS; ++i ) goalbuffer.iTasks[i] = 0;
+
+                int i = 0;
+                while ( pGoal->GetTaskAt( i ) )
+                {
+                    goalbuffer.iTasks[i] = (int)pGoal->GetTaskAt( i );
+                    ++i;
+                }
+
+                // now write buffer out
+                try
+                {
+                    pFile->Write( (const void*)&goalbuffer, sizeof( GoalBuff ) );
+                }
+                catch ( CFileException* theException )
+                {
+                    throw( ERR_CAI_BAD_FILE );
+                }
+            }
+        }
     }
 
-	// if there are tasks to write
-	if( iCnt )
-	{
-    	POSITION pos = plTaskList->GetHeadPosition();
-    	while( pos != NULL )
-    	{   
-        	CAITask *pTask = (CAITask *)plTaskList->GetNext( pos );
-        	if( pTask != NULL )
-        	{
-        		ASSERT_VALID( pTask );
+    // now, write count of tasks
+    iCnt = plTaskList->GetCount( );
+    try
+    {
+        pFile->Write( (const void*)&iCnt, sizeof( int ) );
+    }
+    catch ( CFileException* theException )
+    {
+        throw( ERR_CAI_BAD_FILE );
+    }
 
-				// move data to buffer
-				taskbuffer.iID = (int)pTask->GetID();
-				taskbuffer.iGoal = 0;
-				taskbuffer.iType = (int)pTask->GetType();
-				taskbuffer.iPriority = (int)pTask->GetPriority();
-				taskbuffer.iOrderID = (int)pTask->GetOrderID();
+    // if there are tasks to write
+    if ( iCnt )
+    {
+        POSITION pos = plTaskList->GetHeadPosition( );
+        while ( pos != NULL )
+        {
+            CAITask* pTask = (CAITask*)plTaskList->GetNext( pos );
+            if ( pTask != NULL )
+            {
+                ASSERT_VALID( pTask );
 
-				for( int i=0; i<MAX_TASKPARAMS; ++i )
-					taskbuffer.iParams[i] = 0;
-				for( i=0; i<MAX_TASKPARAMS; ++i )
-					taskbuffer.iParams[i] = (int)pTask->GetTaskParam(i);
-				
-				// now write buffer out
-				try
-				{
-					pFile->Write( 
-						(const void*)&taskbuffer, sizeof(TaskBuff) );
-				}
-    			catch( CFileException theException )
-    			{
-        			throw(ERR_CAI_BAD_FILE);
-    			}
-        	}
-    	}
-	}
+                // move data to buffer
+                taskbuffer.iID       = (int)pTask->GetID( );
+                taskbuffer.iGoal     = 0;
+                taskbuffer.iType     = (int)pTask->GetType( );
+                taskbuffer.iPriority = (int)pTask->GetPriority( );
+                taskbuffer.iOrderID  = (int)pTask->GetOrderID( );
+
+                for ( int i = 0; i < MAX_TASKPARAMS; ++i ) taskbuffer.iParams[i] = 0;
+                for ( int i = 0; i < MAX_TASKPARAMS; ++i ) taskbuffer.iParams[i] = (int)pTask->GetTaskParam( i );
+
+                // now write buffer out
+                try
+                {
+                    pFile->Write( (const void*)&taskbuffer, sizeof( TaskBuff ) );
+                }
+                catch ( CFileException* theException )
+                {
+                    throw( ERR_CAI_BAD_FILE );
+                }
+            }
+        }
+    }
 
 
-	/*
-	// now do racial charactistics and inital position
-	if( pwaRCIP != NULL )
-	{
-		for( int i=0; i<pwaRCIP->GetSize(); ++i )
-		{
-			iCnt = (int)pwaRCIP->GetAt(i);
-			try
-			{
-				pFile->Write( (const void*)&iCnt, sizeof(int) );
-			}
-    		catch( CFileException theException )
-    		{
-        		throw(ERR_CAI_BAD_FILE);
-    		}
-		}
-	}
-	*/
+    /*
+    // now do racial charactistics and inital position
+    if( pwaRCIP != NULL )
+    {
+        for( int i=0; i<pwaRCIP->GetSize(); ++i )
+        {
+            iCnt = (int)pwaRCIP->GetAt(i);
+            try
+            {
+                pFile->Write( (const void*)&iCnt, sizeof(int) );
+            }
+            catch( CFileException theException )
+            {
+                throw(ERR_CAI_BAD_FILE);
+            }
+        }
+    }
+    */
 
-	// and now the initial goals
-	if( pwaIG != NULL )
-	{
-		for( int i=0; i<pwaIG->GetSize(); ++i )
-		{
-			iCnt = (int)pwaIG->GetAt(i);
-			try
-			{
-				pFile->Write( (const void*)&iCnt, sizeof(int) );
-			}
-    		catch( CFileException theException )
-    		{
-        		throw(ERR_CAI_BAD_FILE);
-    		}
-		}
-	}
+    // and now the initial goals
+    if ( pwaIG != NULL )
+    {
+        for ( int i = 0; i < pwaIG->GetSize( ); ++i )
+        {
+            iCnt = (int)pwaIG->GetAt( i );
+            try
+            {
+                pFile->Write( (const void*)&iCnt, sizeof( int ) );
+            }
+            catch ( CFileException* theException )
+            {
+                throw( ERR_CAI_BAD_FILE );
+            }
+        }
+    }
 
-	//theException->Delete();
+    // theException->Delete();
 }
 
-void CAISavLd::DumpData( CFile *pFile, CWordArray *pwaData )
+void CAISavLd::DumpData( CFile* pFile, CWordArray* pwaData )
 {
-    CArchive archive( pFile, CArchive::store );
+    CArchive        archive( pFile, CArchive::store );
     CFileException* theException = new CFileException;
     ASSERT( theException != NULL );
-    CObject *pObj = NULL;
-    pObj = (CObject *)pwaData;
+    CObject* pObj = NULL;
+    pObj          = (CObject*)pwaData;
 
     TRY
     {
-    	if( pObj != NULL )
-        	archive << (CObject *)pObj;
+        if ( pObj != NULL )
+            archive << (CObject*)pObj;
     }
     CATCH( CArchiveException, theException )
     {
-        archive.Close();
-        THROW_LAST();
+        archive.Close( );
+        THROW_LAST( );
     }
     END_CATCH
-    archive.Close();
-    //delete theException;
-	theException->Delete();
+    archive.Close( );
+    // delete theException;
+    theException->Delete( );
 }
 
-void CAISavLd::DumpData( CFile *pFile, UINT uWhich )
+void CAISavLd::DumpData( CFile* pFile, UINT uWhich )
 {
-    CArchive archive( pFile, CArchive::store );
+    CArchive        archive( pFile, CArchive::store );
     CFileException* theException = new CFileException;
     ASSERT( theException != NULL );
-    CObject *pObj = NULL;
-    
+    CObject* pObj = NULL;
 
-    if( uWhich == GOAL_DATA )
+
+    if ( uWhich == GOAL_DATA )
     {
-        pObj = (CObject *)plGoalList;
+        pObj = (CObject*)plGoalList;
     }
-    else if( uWhich == TASK_DATA )
+    else if ( uWhich == TASK_DATA )
     {
-    	pObj = (CObject *)plTaskList;
+        pObj = (CObject*)plTaskList;
     }
 
     TRY
     {
-    	if( pObj != NULL )
-        	archive << (CObject *)pObj;
+        if ( pObj != NULL )
+            archive << (CObject*)pObj;
     }
     CATCH( CArchiveException, theException )
     {
-        archive.Close();
-        THROW_LAST();
+        archive.Close( );
+        THROW_LAST( );
     }
     END_CATCH
-    archive.Close();
-    //delete theException;
-	theException->Delete();
+    archive.Close( );
+    // delete theException;
+    theException->Delete( );
 }
 
 //
 // OpenForLoad - open a file for reading
 //
-CFile* CAISavLd::OpenForLoad( const CString& rFileName )
+CFile* CAISavLd::OpenForLoad( const std::string& rFileName )
 {
-    CFile* pFile = new CFile;
+    CFile*          pFile        = new CFile;
     CFileException* theException = new CFileException;
-    if ( !pFile->Open( rFileName, CFile::modeRead, theException ) )
+    if ( !pFile->Open( rFileName.c_str( ), CFile::modeRead, theException ) )
     {
         delete pFile;
-        throw(ERR_CAI_BAD_FILE);
+        throw( ERR_CAI_BAD_FILE );
     }
-    //delete theException;
-	theException->Delete();
+    // delete theException;
+    theException->Delete( );
 
     // Exit here if no exceptions
     return pFile;
@@ -917,26 +838,25 @@ CFile* CAISavLd::OpenForLoad( const CString& rFileName )
 //
 // OpenForDump - open a file for writing
 //
-CFile* CAISavLd::OpenForDump( const CString& rFileName )
+CFile* CAISavLd::OpenForDump( const std::string& rFileName )
 {
-    CFile* pFile = new CFile;
-    CFileStatus status;
-    UINT nAccess = CFile::modeWrite;
+    CFile*      pFile = new CFile;
+    UINT        nAccess = CFile::modeWrite;
 
     // GetStatus will return TRUE if file exists,
     // or FALSE if it doesn't exist
     // if ( !CFile::GetStatus( rFileName, status ) )
-        nAccess |= CFile::modeCreate;
-    
+    nAccess |= CFile::modeCreate;
+
     CFileException* theException = new CFileException;
-    if ( !pFile->Open( rFileName, nAccess, theException ) )
+    if ( !pFile->Open( rFileName.c_str( ), nAccess, theException ) )
     {
         delete pFile;
-        throw(ERR_CAI_BAD_FILE);
+        throw( ERR_CAI_BAD_FILE );
     }
-    //delete theException;
-	theException->Delete();
-    
+    // delete theException;
+    theException->Delete( );
+
     // Exit here if no errors or exceptions
     return pFile;
 }

@@ -1,0 +1,64 @@
+Microsoft (R) COFF/PE Dumper Version 14.29.30140.0
+Copyright (C) Microsoft Corporation.  All rights reserved.
+
+
+Dump of file shmfc4m.lib
+
+File Type: LIBRARY
+
+COFF SYMBOL TABLE
+000 00000000 DEBUG  notype       Filename     | .file
+    shnew.cpp
+002 00000000 SECT1  notype       Static       | .drectve
+    Section length  10B, #relocs    0, #linenums    0, checksum        0
+004 00000000 SECT2  notype       Static       | .data
+    Section length    8, #relocs    0, #linenums    0, checksum        0
+006 00000004 SECT2  notype       External     | _SmartHeap_new
+007 00000000 SECT2  notype       External     | ?_new_handler@@3P6AXXZA (void (__cdecl* _new_handler)(void))
+008 00000000 SECT3  notype       Static       | .text
+    Section length   78, #relocs    9, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+00A 00000000 SECT3  notype ()    External     | ?shi_New@@YAPAXKIPAU_SHI_Pool@@@Z (void * __cdecl shi_New(unsigned long,unsigned int,struct _SHI_Pool *))
+00B 00000000 UNDEF  notype ()    External     | ?AfxThrowMemoryException@@YGXXZ (void __stdcall AfxThrowMemoryException(void))
+00C 00000000 UNDEF  notype       External     | _MemDefaultPool
+00D 00000000 UNDEF  notype ()    External     | _shi_call_new_handler_msc
+00E 00000000 UNDEF  notype ()    External     | _MemAllocPtr@12
+00F 00000000 UNDEF  notype ()    External     | _MemInitDefaultPool@0
+010 00000000 UNDEF  notype       External     | _MemDefaultPoolFlags
+011 00000000 SECT4  notype       Static       | .debug$F
+    Section length   10, #relocs    1, #linenums    0, checksum        0, selection    5 (pick associative Section 0x3)
+013 00000000 SECT5  notype       Static       | .text
+    Section length   12, #relocs    1, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+015 00000000 SECT5  notype ()    External     | ??2@YAPAXI@Z (void * __cdecl operator new(unsigned int))
+016 00000000 SECT6  notype       Static       | .debug$F
+    Section length   10, #relocs    1, #linenums    0, checksum        0, selection    5 (pick associative Section 0x5)
+018 00000000 SECT7  notype       Static       | .text
+    Section length    8, #relocs    1, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+01A 00000000 SECT7  notype ()    External     | ?AfxNewHandler@@YAHI@Z (int __cdecl AfxNewHandler(unsigned int))
+01B 00000000 SECT8  notype       Static       | .debug$F
+    Section length   10, #relocs    1, #linenums    0, checksum        0, selection    5 (pick associative Section 0x7)
+01D 00000000 SECT9  notype       Static       | .text
+    Section length    9, #relocs    1, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+01F 00000000 SECT9  notype ()    External     | ?AfxGetNewHandler@@YGP6AHI@ZXZ (int (__cdecl*__stdcall AfxGetNewHandler(void))(unsigned int))
+020 00000000 UNDEF  notype ()    External     | ?AfxGetModuleThreadState@@YGPAVAFX_MODULE_THREAD_STATE@@XZ (class AFX_MODULE_THREAD_STATE * __stdcall AfxGetModuleThreadState(void))
+021 00000000 SECTA  notype       Static       | .debug$F
+    Section length   10, #relocs    1, #linenums    0, checksum        0, selection    5 (pick associative Section 0x9)
+023 00000000 SECTB  notype       Static       | .text
+    Section length   14, #relocs    1, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+025 00000000 SECTB  notype ()    External     | ?AfxSetNewHandler@@YGP6AHI@ZP6AHI@Z@Z (int (__cdecl*__stdcall AfxSetNewHandler(int (__cdecl*)(unsigned int)))(unsigned int))
+026 00000000 SECTC  notype       Static       | .debug$F
+    Section length   10, #relocs    1, #linenums    0, checksum        0, selection    5 (pick associative Section 0xB)
+028 00000000 SECTD  notype       Static       | .text
+    Section length    F, #relocs    1, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+02A 00000000 SECTD  notype ()    External     | ??3@YAXPAX@Z (void __cdecl operator delete(void *))
+02B 00000000 UNDEF  notype ()    External     | _MemFreePtr@4
+02C 00000000 SECTE  notype       Static       | .debug$F
+    Section length   10, #relocs    1, #linenums    0, checksum        0, selection    5 (pick associative Section 0xD)
+
+String Table Size = 0x191 bytes
+
+  Summary
+
+           8 .data
+          60 .debug$F
+         10B .drectve
+          BE .text

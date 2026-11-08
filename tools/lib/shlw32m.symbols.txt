@@ -1,0 +1,1399 @@
+Microsoft (R) COFF/PE Dumper Version 14.29.30140.0
+Copyright (C) Microsoft Corporation.  All rights reserved.
+
+
+Dump of file shlw32m.lib
+
+File Type: LIBRARY
+
+COFF SYMBOL TABLE
+000 00000000 DEBUG  notype       Filename     | .file
+    shmaljmp.asm
+002 00000000 SECT1  notype       Static       | .data
+    Section length   3C, #relocs    E, #linenums    0, checksum        0
+004 00000000 SECT1  notype       Static       | DGROUP
+005 00000000 UNDEF  notype       External     | __heapwalk
+006 00000024 SECT1  notype       External     | __imp___heapset
+007 00000000 UNDEF  notype       External     | ??3@YAXPAX@Z (void __cdecl operator delete(void *))
+008 00000000 UNDEF  notype       External     | __heapchk
+009 00000000 UNDEF  notype       External     | ??2@YAPAXI@Z (void * __cdecl operator new(unsigned int))
+00A 0000001C SECT1  notype       External     | __imp___heapadd
+00B 00000018 SECT1  notype       External     | __imp___msize
+00C 0000002C SECT1  notype       External     | __imp___heapused
+00D 00000000 UNDEF  notype       External     | _free
+00E 00000008 SECT1  notype       External     | __imp__calloc
+00F 00000020 SECT1  notype       External     | __imp___heapchk
+010 00000000 UNDEF  notype       External     | __heapused
+011 00000010 SECT1  notype       External     | __imp__free
+012 00000000 UNDEF  notype       External     | _malloc
+013 00000000 SECT1  notype       External     | _SmartHeap_malloc
+014 00000000 UNDEF  notype       External     | __heapmin
+015 00000000 UNDEF  notype       External     | _realloc
+016 0000000C SECT1  notype       External     | __imp__realloc
+017 00000000 UNDEF  notype       External     | __heapset
+018 00000038 SECT1  notype       External     | __imp_??3@YAXPAX@Z (__declspec(dllimport) void __cdecl operator delete(void *))
+019 00000000 UNDEF  notype       External     | __expand
+01A 00000034 SECT1  notype       External     | __imp_??2@YAPAXI@Z (__declspec(dllimport) void * __cdecl operator new(unsigned int))
+01B 00000030 SECT1  notype       External     | __imp___heapmin
+01C 00000004 SECT1  notype       External     | __imp__malloc
+01D 00000014 SECT1  notype       External     | __imp___expand
+01E 00000000 UNDEF  notype       External     | __msize
+01F 00000028 SECT1  notype       External     | __imp___heapwalk
+020 00000000 UNDEF  notype       External     | __heapadd
+021 00000000 UNDEF  notype       External     | _calloc
+
+String Table Size = 0x14A bytes
+
+COFF SYMBOL TABLE
+000 00000000 DEBUG  notype       Filename     | .file
+    shnewhnd.cpp
+002 00000000 SECT1  notype       Static       | .data
+    Section length    4, #relocs    0, #linenums    0, checksum        0
+004 00000000 SECT1  notype       External     | __pnhHeap
+005 00000000 SECT2  notype       Static       | .text
+    Section length   30, #relocs    2, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+007 00000000 SECT2  notype ()    External     | _shi_call_new_handler_msc
+008 00000000 UNDEF  notype ()    External     | ?_query_new_handler@@YAP6AHI@ZXZ (int (__cdecl*__cdecl _query_new_handler(void))(unsigned int))
+009 00000000 UNDEF  notype ()    External     | ?_query_new_mode@@YAHXZ (int __cdecl _query_new_mode(void))
+00A 00000000 SECT3  notype       Static       | .debug$F
+    Section length   10, #relocs    1, #linenums    0, checksum        0, selection    5 (pick associative Section 0x2)
+
+String Table Size = 0x61 bytes
+
+COFF SYMBOL TABLE
+000 00000000 DEBUG  notype       Filename     | .file
+    defflags.c
+002 00000000 SECT1  notype       Static       | .data
+    Section length    4, #relocs    0, #linenums    0, checksum        0
+004 00000000 SECT1  notype       External     | _MemDefaultPoolFlags
+
+String Table Size = 0x19 bytes
+
+COFF SYMBOL TABLE
+000 00000000 DEBUG  notype       Filename     | .file
+    defsizfs.c
+002 00000000 SECT1  notype       Static       | .data
+    Section length    2, #relocs    0, #linenums    0, checksum        0
+004 00000000 SECT1  notype       External     | _MemDefaultPoolBlockSizeFS
+
+String Table Size = 0x1F bytes
+
+COFF SYMBOL TABLE
+000 00000000 DEBUG  notype       Filename     | .file
+    defpagsz.c
+002 00000000 SECT1  notype       Static       | .data
+    Section length    4, #relocs    0, #linenums    0, checksum        0
+004 00000000 SECT1  notype       External     | _MemDefaultPoolPageSize
+
+String Table Size = 0x1C bytes
+
+COFF SYMBOL TABLE
+000 00000000 DEBUG  notype       Filename     | .file
+    shmalmac.c
+002 00000000 SECT1  notype       Static       | .text
+    Section length   6D, #relocs    7, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+004 00000000 SECT1  notype ()    External     | _MEM_malloc
+005 00000000 UNDEF  notype       External     | _MemDefaultPool
+006 00000000 UNDEF  notype ()    External     | _shi_call_new_handler_msc
+007 00000000 UNDEF  notype ()    External     | _MemAllocPtr@12
+008 00000000 UNDEF  notype       External     | _MemDefaultPoolFlags
+009 00000000 UNDEF  notype ()    External     | _MemInitDefaultPool@0
+00A 00000000 SECT2  notype       Static       | .debug$F
+    Section length   10, #relocs    1, #linenums    0, checksum        0, selection    5 (pick associative Section 0x1)
+00C 00000000 SECT3  notype       Static       | .text
+    Section length   60, #relocs    6, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+00E 00000000 SECT3  notype ()    External     | _MEM_calloc
+00F 00000000 SECT4  notype       Static       | .debug$F
+    Section length   10, #relocs    1, #linenums    0, checksum        0, selection    5 (pick associative Section 0x3)
+011 00000000 SECT5  notype       Static       | .text
+    Section length   5C, #relocs    5, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+013 00000000 SECT5  notype ()    External     | _MEM_realloc
+014 00000000 UNDEF  notype ()    External     | _MemReAllocPtr@12
+015 00000000 SECT6  notype       Static       | .debug$F
+    Section length   10, #relocs    1, #linenums    0, checksum        0, selection    5 (pick associative Section 0x5)
+017 00000000 SECT7  notype       Static       | .text
+    Section length    F, #relocs    1, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+019 00000000 SECT7  notype ()    External     | _MEM_free
+01A 00000000 UNDEF  notype ()    External     | _MemFreePtr@4
+01B 00000000 SECT8  notype       Static       | .debug$F
+    Section length   10, #relocs    1, #linenums    0, checksum        0, selection    5 (pick associative Section 0x7)
+
+String Table Size = 0xB8 bytes
+
+COFF SYMBOL TABLE
+000 00000000 DEBUG  notype       Filename     | .file
+    shnew.cpp
+002 00000000 SECT1  notype       Static       | .data
+    Section length    8, #relocs    0, #linenums    0, checksum        0
+004 00000004 SECT1  notype       External     | _SmartHeap_new
+005 00000000 SECT1  notype       External     | ?_new_handler@@3P6AXXZA (void (__cdecl* _new_handler)(void))
+006 00000000 SECT2  notype       Static       | .text
+    Section length   73, #relocs    8, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+008 00000000 SECT2  notype ()    External     | ?shi_New@@YAPAXKIPAU_SHI_Pool@@@Z (void * __cdecl shi_New(unsigned long,unsigned int,struct _SHI_Pool *))
+009 00000000 UNDEF  notype       External     | _MemDefaultPool
+00A 00000000 UNDEF  notype ()    External     | _shi_call_new_handler_msc
+00B 00000000 UNDEF  notype ()    External     | _MemAllocPtr@12
+00C 00000000 UNDEF  notype ()    External     | _MemInitDefaultPool@0
+00D 00000000 UNDEF  notype       External     | _MemDefaultPoolFlags
+00E 00000000 SECT3  notype       Static       | .debug$F
+    Section length   10, #relocs    1, #linenums    0, checksum        0, selection    5 (pick associative Section 0x2)
+010 00000000 SECT4  notype       Static       | .text
+    Section length   12, #relocs    1, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+012 00000000 SECT4  notype ()    External     | ??2@YAPAXI@Z (void * __cdecl operator new(unsigned int))
+013 00000000 SECT5  notype       Static       | .debug$F
+    Section length   10, #relocs    1, #linenums    0, checksum        0, selection    5 (pick associative Section 0x4)
+015 00000000 SECT6  notype       Static       | .text
+    Section length    F, #relocs    1, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+017 00000000 SECT6  notype ()    External     | ??3@YAXPAX@Z (void __cdecl operator delete(void *))
+018 00000000 UNDEF  notype ()    External     | _MemFreePtr@4
+019 00000000 SECT7  notype       Static       | .debug$F
+    Section length   10, #relocs    1, #linenums    0, checksum        0, selection    5 (pick associative Section 0x6)
+
+String Table Size = 0xDA bytes
+
+COFF SYMBOL TABLE
+000 00000000 DEBUG  notype       Filename     | .file
+    shmalloc.c
+002 00000000 SECT1  notype       Static       | .text
+    Section length   6D, #relocs    7, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+004 00000000 SECT1  notype ()    External     | _malloc
+005 00000000 UNDEF  notype       External     | _MemDefaultPool
+006 00000000 UNDEF  notype ()    External     | _shi_call_new_handler_msc
+007 00000000 UNDEF  notype ()    External     | _MemAllocPtr@12
+008 00000000 UNDEF  notype       External     | _MemDefaultPoolFlags
+009 00000000 UNDEF  notype ()    External     | _MemInitDefaultPool@0
+00A 00000000 SECT2  notype       Static       | .debug$F
+    Section length   10, #relocs    1, #linenums    0, checksum        0, selection    5 (pick associative Section 0x1)
+00C 00000000 SECT3  notype       Static       | .text
+    Section length   60, #relocs    6, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+00E 00000000 SECT3  notype ()    External     | _calloc
+00F 00000000 SECT4  notype       Static       | .debug$F
+    Section length   10, #relocs    1, #linenums    0, checksum        0, selection    5 (pick associative Section 0x3)
+011 00000000 SECT5  notype       Static       | .text
+    Section length   5C, #relocs    5, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+013 00000000 SECT5  notype ()    External     | _realloc
+014 00000000 UNDEF  notype ()    External     | _MemReAllocPtr@12
+015 00000000 SECT6  notype       Static       | .debug$F
+    Section length   10, #relocs    1, #linenums    0, checksum        0, selection    5 (pick associative Section 0x5)
+017 00000000 SECT7  notype       Static       | .text
+    Section length    F, #relocs    1, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+019 00000000 SECT7  notype ()    External     | _free
+01A 00000000 UNDEF  notype ()    External     | _MemFreePtr@4
+01B 00000000 SECT8  notype       Static       | .debug$F
+    Section length   10, #relocs    1, #linenums    0, checksum        0, selection    5 (pick associative Section 0x7)
+01D 00000000 SECT9  notype       Static       | .text
+    Section length   32, #relocs    1, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+01F 00000000 SECT9  notype ()    External     | __expand
+020 00000000 SECTA  notype       Static       | .debug$F
+    Section length   10, #relocs    1, #linenums    0, checksum        0, selection    5 (pick associative Section 0x9)
+022 00000000 SECTB  notype       Static       | .text
+    Section length    6, #relocs    0, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+024 00000000 SECTB  notype ()    External     | __heapadd
+025 00000000 SECTC  notype       Static       | .debug$F
+    Section length   10, #relocs    1, #linenums    0, checksum        0, selection    5 (pick associative Section 0xB)
+027 00000000 SECTD  notype       Static       | .text
+    Section length   90, #relocs    A, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+029 00000000 SECTD  notype ()    External     | __heapwalk
+02A 00000000 SECTE  notype       Static       | .bss
+    Section length   20, #relocs    0, #linenums    0, checksum        0
+02C 00000000 SECTE  notype       Static       | _?entry@?1??_heapwalk@@9@9$S434
+02D 00000000 UNDEF  notype ()    External     | _MemPoolWalk@8
+02E 00000000 UNDEF  notype ()    External     | _MemCheckPtr@8
+02F 00000000 SECTF  notype       Static       | .debug$F
+    Section length   10, #relocs    1, #linenums    0, checksum        0, selection    5 (pick associative Section 0xD)
+031 00000000 SECT10 notype       Static       | .text
+    Section length   2C, #relocs    3, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+033 00000000 SECT10 notype ()    External     | __heapused
+034 00000000 UNDEF  notype ()    External     | _MemPoolSize@4
+035 00000000 SECT11 notype       Static       | .debug$F
+    Section length   10, #relocs    1, #linenums    0, checksum        0, selection    5 (pick associative Section 0x10)
+037 00000000 SECT12 notype       Static       | .text
+    Section length   12, #relocs    2, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+039 00000000 SECT12 notype ()    External     | __heapmin
+03A 00000000 UNDEF  notype ()    External     | _MemPoolShrink@4
+03B 00000000 SECT13 notype       Static       | .debug$F
+    Section length   10, #relocs    1, #linenums    0, checksum        0, selection    5 (pick associative Section 0x12)
+03D 00000000 SECT14 notype       Static       | .text
+    Section length    E, #relocs    1, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+03F 00000000 SECT14 notype ()    External     | __msize
+040 00000000 UNDEF  notype ()    External     | _MemSizePtr@4
+041 00000000 SECT15 notype       Static       | .debug$F
+    Section length   10, #relocs    1, #linenums    0, checksum        0, selection    5 (pick associative Section 0x14)
+043 00000000 SECT16 notype       Static       | .text
+    Section length   21, #relocs    2, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+045 00000000 SECT16 notype ()    External     | __heapchk
+046 00000000 UNDEF  notype ()    External     | _MemPoolCheck@4
+047 00000000 SECT17 notype       Static       | .debug$F
+    Section length   10, #relocs    1, #linenums    0, checksum        0, selection    5 (pick associative Section 0x16)
+049 00000000 SECT18 notype       Static       | .text
+    Section length    5, #relocs    1, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+04B 00000000 SECT18 notype ()    External     | __heapset
+04C 00000000 SECT19 notype       Static       | .debug$F
+    Section length   10, #relocs    1, #linenums    0, checksum        0, selection    5 (pick associative Section 0x18)
+
+String Table Size = 0x143 bytes
+
+COFF SYMBOL TABLE
+000 00000000 DEBUG  notype       Filename     | .file
+    defpool.c
+002 00000000 SECT1  notype       Static       | .data
+    Section length    4, #relocs    0, #linenums    0, checksum        0
+004 00000000 SECT1  notype       External     | _MemDefaultPool
+005 00000000 SECT2  notype       Static       | .text
+    Section length   6E, #relocs    E, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+007 00000000 SECT2  notype ()    External     | _MemInitDefaultPool@0
+008 00000000 UNDEF  notype ()    External     | __shi_leaveCriticalSection@0
+009 00000000 UNDEF  notype ()    External     | _MemPoolSetBlockSizeFS@8
+00A 00000000 UNDEF  notype       External     | _MemDefaultPoolBlockSizeFS
+00B 00000000 UNDEF  notype ()    External     | _MemPoolSetPageSize@8
+00C 00000000 UNDEF  notype       External     | _MemDefaultPoolPageSize
+00D 00000000 UNDEF  notype ()    External     | _MemPoolInit@4
+00E 00000000 UNDEF  notype       External     | _MemDefaultPoolFlags
+00F 00000000 UNDEF  notype       External     | _SmartHeap_malloc
+010 00000000 UNDEF  notype ()    External     | __shi_enterCriticalSection@0
+011 00000000 SECT3  notype       Static       | .debug$F
+    Section length   10, #relocs    1, #linenums    0, checksum        0, selection    5 (pick associative Section 0x2)
+013 00000000 SECT4  notype       Static       | .text
+    Section length   37, #relocs    5, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+015 00000000 SECT4  notype ()    External     | _MemFreeDefaultPool@0
+016 00000000 UNDEF  notype ()    External     | _MemPoolFree@4
+017 00000000 SECT5  notype       Static       | .debug$F
+    Section length   10, #relocs    1, #linenums    0, checksum        0, selection    5 (pick associative Section 0x4)
+
+String Table Size = 0x121 bytes
+
+COFF SYMBOL TABLE
+000 00000000 DEBUG  notype       Filename     | .file
+    iowinapi.c
+002 00000000 SECT1  notype       Static       | .drectve
+    Section length   17, #relocs    0, #linenums    0, checksum        0
+004 00000000 SECT2  notype       Static       | .rdata
+    Section length   12, #relocs    0, #linenums    0, checksum        0
+006 00000000 SECT2  notype       External     | _szLibName
+007 00000000 SECT3  notype       Static       | .text
+    Section length   80, #relocs    A, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+009 00000000 SECT3  notype ()    External     | @_shi_sysReportError@16
+00A 00000059 SECT3  notype       Label        | $L18349
+00B 00000061 SECT3  notype       Label        | $L18350
+00C 00000054 SECT3  notype       Label        | $L18348
+00D 00000000 UNDEF  notype ()    External     | _abort
+00E 0000006C SECT3  notype       Label        | $L18359
+00F 00000000 UNDEF  notype ()    External     | __imp__MessageBoxA@16
+010 00000000 UNDEF  notype ()    External     | __imp__MessageBeep@4
+011 00000000 SECT4  notype       Static       | .debug$F
+    Section length   10, #relocs    1, #linenums    0, checksum        0, selection    5 (pick associative Section 0x3)
+
+String Table Size = 0x52 bytes
+
+COFF SYMBOL TABLE
+000 00000000 DEBUG  notype       Filename     | .file
+    syswin32.c
+002 00000000 SECT1  notype       Static       | .data
+    Section length   6C, #relocs    2, #linenums    0, checksum        0
+004 00000068 SECT1  notype       Static       | _?version@?1??shi_isNT@@9@9$S19006
+005 00000064 SECT1  notype       Static       | _shi_sharedPools$S18604
+006 00000060 SECT1  notype       External     | _shi_mutexPoolName
+007 00000044 SECT1  notype       Static       | $SG18601
+008 00000040 SECT1  notype       External     | _shi_mutexMovName
+009 00000024 SECT1  notype       Static       | $SG18600
+00A 00000020 SECT1  notype       External     | __shi_mutexMov
+00B 0000001C SECT1  notype       External     | _shi_mutexPool
+00C 00000018 SECT1  notype       External     | _shi_mutexPoolSynch
+00D 00000014 SECT1  notype       External     | __shi_mutexMovLockCount
+00E 00000010 SECT1  notype       External     | _shi_initPoolReaders
+00F 0000000C SECT1  notype       External     | _shi_mutexPoolInit
+010 00000008 SECT1  notype       External     | __shi_mutexMovInit
+011 00000004 SECT1  notype       External     | __shi_mutexGlobalInit
+012 00000000 SECT1  notype       Static       | _lowestAddr$S18515
+013 00000000 SECT2  notype       Static       | .rdata
+    Section length    B, #relocs    0, #linenums    0, checksum        0
+015 00000000 SECT2  notype       Static       | __shi_FILE$S18514
+016 00000018 UNDEF  notype       External     | __shi_mutexGlobal
+017 00000000 SECT3  notype       Static       | .text
+    Section length   3F, #relocs    4, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+019 00000000 SECT3  notype ()    External     | @shi_findAllocAddress@4
+01A 00000000 UNDEF  notype ()    External     | __imp__VirtualQuery@12
+01B 00000000 SECT4  notype       Static       | .debug$F
+    Section length   10, #relocs    1, #linenums    0, checksum        0, selection    5 (pick associative Section 0x3)
+01D 00000000 SECT5  notype       Static       | .text
+    Section length   A2, #relocs    6, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+01F 00000000 SECT5  notype ()    External     | @_shi_sysAlloc@8
+020 00000000 UNDEF  notype ()    External     | @_shi_assertFailure1@8
+021 00000000 UNDEF  notype ()    External     | __imp__VirtualLock@8
+022 00000000 UNDEF  notype ()    External     | __imp__VirtualAlloc@16
+023 00000000 SECT6  notype       Static       | .debug$F
+    Section length   10, #relocs    1, #linenums    0, checksum        0, selection    5 (pick associative Section 0x5)
+025 00000000 SECT7  notype       Static       | .text
+    Section length   52, #relocs    4, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+027 00000000 SECT7  notype ()    External     | @_shi_sysFree@4
+028 00000000 UNDEF  notype ()    External     | __imp__VirtualFree@12
+029 00000000 SECT8  notype       Static       | .debug$F
+    Section length   10, #relocs    1, #linenums    0, checksum        0, selection    5 (pick associative Section 0x7)
+02B 00000000 SECT9  notype       Static       | .text
+    Section length   A3, #relocs    4, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+02D 00000000 SECT9  notype ()    External     | @_shi_sysRealloc@12
+02E 00000000 SECTA  notype       Static       | .debug$F
+    Section length   10, #relocs    1, #linenums    0, checksum        0, selection    5 (pick associative Section 0x9)
+030 00000000 SECTB  notype       Static       | .text
+    Section length  121, #relocs    8, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+032 00000000 SECTB  notype ()    External     | @_shi_sysResize@12
+033 00000000 SECTC  notype       Static       | .debug$F
+    Section length   10, #relocs    1, #linenums    0, checksum        0, selection    5 (pick associative Section 0xB)
+035 00000000 SECTD  notype       Static       | .text
+    Section length   6C, #relocs    3, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+037 00000000 SECTD  notype ()    External     | @_shi_sysSize@4
+038 00000000 SECTE  notype       Static       | .debug$F
+    Section length   10, #relocs    1, #linenums    0, checksum        0, selection    5 (pick associative Section 0xD)
+03A 00000000 SECTF  notype       Static       | .text
+    Section length   F4, #relocs    6, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+03C 00000000 SECTF  notype ()    External     | @_shi_sysValidatePtr@12
+03D 00000000 SECT10 notype       Static       | .rdata
+    Section length    C, #relocs    2, #linenums    0, checksum        0, selection    5 (pick associative Section 0xF)
+03F 00000000 SECT10 notype       Static       | $T19101
+040 00000000 UNDEF  notype       External     | __except_list
+041 000000CD SECTF  notype       Label        | $L19097
+042 000000C7 SECTF  notype       Label        | $L19096
+043 00000000 UNDEF  notype ()    External     | __except_handler3
+044 00000000 SECT11 notype       Static       | .debug$F
+    Section length   10, #relocs    1, #linenums    0, checksum        0, selection    5 (pick associative Section 0xF)
+046 00000000 SECT12 notype       Static       | .text
+    Section length   1A, #relocs    1, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+048 00000000 SECT12 notype ()    External     | @_shi_sysValidateFunction@4
+049 00000000 UNDEF  notype ()    External     | __imp__IsBadCodePtr@4
+04A 00000000 SECT13 notype       Static       | .debug$F
+    Section length   10, #relocs    1, #linenums    0, checksum        0, selection    5 (pick associative Section 0x12)
+04C 00000000 SECT14 notype       Static       | .text
+    Section length  256, #relocs   15, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+04E 00000000 SECT14 notype ()    External     | @_shi_sysAllocNamedShared@32
+04F 00000000 UNDEF  notype ()    External     | __imp__CloseHandle@4
+050 00000000 UNDEF  notype ()    External     | __imp__UnmapViewOfFile@4
+051 00000000 UNDEF  notype ()    External     | __imp__MapViewOfFileEx@24
+052 00000000 UNDEF  notype ()    External     | __imp__CreateFileMappingA@24
+053 00000000 UNDEF  notype ()    External     | __imp__OpenFileMappingA@12
+054 00000000 SECT15 notype       Static       | .debug$F
+    Section length   10, #relocs    1, #linenums    0, checksum        0, selection    5 (pick associative Section 0x14)
+056 00000000 SECT16 notype       Static       | .text
+    Section length  1DC, #relocs    B, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+058 00000000 SECT16 notype ()    External     | @shi_findSharedAddress@16
+059 00000000 UNDEF  notype ()    External     | _free
+05A 00000000 UNDEF  notype ()    External     | _rand
+05B 00000000 UNDEF  notype ()    External     | __imp__GetSystemInfo@4
+05C 00000000 UNDEF  notype ()    External     | __imp__OpenProcess@12
+05D 00000000 UNDEF  notype ()    External     | __imp__GetCurrentProcess@0
+05E 00000000 UNDEF  notype ()    External     | _calloc
+05F 00000000 SECT17 notype       Static       | .debug$F
+    Section length   10, #relocs    1, #linenums    0, checksum        0, selection    5 (pick associative Section 0x16)
+061 00000000 SECT18 notype       Static       | .text
+    Section length   91, #relocs    3, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+063 00000000 SECT18 notype ()    External     | @shi_findAddrInProcess@20
+064 00000000 UNDEF  notype ()    External     | __imp__VirtualQueryEx@16
+065 00000000 SECT19 notype       Static       | .debug$F
+    Section length   10, #relocs    1, #linenums    0, checksum        0, selection    5 (pick associative Section 0x18)
+067 00000000 SECT1A notype       Static       | .text
+    Section length    8, #relocs    0, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+069 00000000 SECT1A notype ()    External     | @shi_putSharedPoolMapping@16
+06A 00000000 SECT1B notype       Static       | .debug$F
+    Section length   10, #relocs    1, #linenums    0, checksum        0, selection    5 (pick associative Section 0x1A)
+06C 00000000 SECT1C notype       Static       | .text
+    Section length   36, #relocs    3, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+06E 00000000 SECT1C notype ()    External     | @_shi_sysAllocPool@12
+06F 00000000 UNDEF  notype ()    External     | @_shi_invokeErrorHandler1@8
+070 00000000 SECT1D notype       Static       | .debug$F
+    Section length   10, #relocs    1, #linenums    0, checksum        0, selection    5 (pick associative Section 0x1C)
+072 00000000 SECT1E notype       Static       | .text
+    Section length  154, #relocs    5, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+074 00000000 SECT1E notype ()    External     | @_shi_sysAllocPool1@16
+075 00000000 SECT1F notype       Static       | .debug$F
+    Section length   10, #relocs    1, #linenums    0, checksum        0, selection    5 (pick associative Section 0x1E)
+077 00000000 SECT20 notype       Static       | .text
+    Section length   BB, #relocs    7, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+079 00000000 SECT20 notype ()    External     | @_shi_sysReallocPool@16
+07A 00000000 SECT21 notype       Static       | .debug$F
+    Section length   10, #relocs    1, #linenums    0, checksum        0, selection    5 (pick associative Section 0x20)
+07C 00000000 SECT22 notype       Static       | .text
+    Section length  19E, #relocs    B, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+07E 00000000 SECT22 notype ()    External     | @_shi_sysResizePool@16
+07F 00000000 SECT23 notype       Static       | .debug$F
+    Section length   10, #relocs    1, #linenums    0, checksum        0, selection    5 (pick associative Section 0x22)
+081 00000000 SECT24 notype       Static       | .text
+    Section length   41, #relocs    4, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+083 00000000 SECT24 notype ()    External     | @_shi_sysFreePool@8
+084 00000000 SECT25 notype       Static       | .debug$F
+    Section length   10, #relocs    1, #linenums    0, checksum        0, selection    5 (pick associative Section 0x24)
+086 00000000 SECT26 notype       Static       | .text
+    Section length   28, #relocs    3, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+088 00000000 SECT26 notype ()    External     | @_shi_sysFreePage@4
+089 00000000 SECT27 notype       Static       | .debug$F
+    Section length   10, #relocs    1, #linenums    0, checksum        0, selection    5 (pick associative Section 0x26)
+08B 00000000 SECT28 notype       Static       | .text
+    Section length   CB, #relocs    2, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+08D 00000000 SECT28 notype ()    External     | @_shi_sysFreePool1@12
+08E 00000000 SECT29 notype       Static       | .debug$F
+    Section length   10, #relocs    1, #linenums    0, checksum        0, selection    5 (pick associative Section 0x28)
+090 00000000 SECT2A notype       Static       | .text
+    Section length   55, #relocs    3, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+092 00000000 SECT2A notype ()    External     | @_shi_sysSizePage@4
+093 00000000 SECT2B notype       Static       | .debug$F
+    Section length   10, #relocs    1, #linenums    0, checksum        0, selection    5 (pick associative Section 0x2A)
+095 00000000 SECT2C notype       Static       | .text
+    Section length   13, #relocs    1, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+097 00000000 SECT2C notype ()    External     | @_shi_sysSizePool@8
+098 00000000 SECT2D notype       Static       | .debug$F
+    Section length   10, #relocs    1, #linenums    0, checksum        0, selection    5 (pick associative Section 0x2C)
+09A 00000000 SECT2E notype       Static       | .text
+    Section length  205, #relocs   12, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+09C 00000000 SECT2E notype ()    External     | @_shi_registerShared@16
+09D 00000000 UNDEF  notype ()    External     | __imp__OpenMutexA@12
+09E 00000000 UNDEF  notype ()    External     | __imp__MapViewOfFile@20
+09F 00000000 SECT2F notype       Static       | .debug$F
+    Section length   10, #relocs    1, #linenums    0, checksum        0, selection    5 (pick associative Section 0x2E)
+0A1 00000000 SECT30 notype       Static       | .text
+    Section length   57, #relocs    7, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+0A3 00000000 SECT30 notype ()    External     | @_shi_unregisterShared@8
+0A4 00000000 UNDEF  notype ()    External     | @_shi_taskRemovePool@4
+0A5 00000000 UNDEF  notype ()    External     | @_shi_checkPool@4
+0A6 00000000 UNDEF  notype ()    External     | __imp__ReleaseMutex@4
+0A7 00000000 SECT31 notype       Static       | .debug$F
+    Section length   10, #relocs    1, #linenums    0, checksum        0, selection    5 (pick associative Section 0x30)
+0A9 00000000 SECT32 notype       Static       | .text
+    Section length   8E, #relocs    4, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+0AB 00000000 SECT32 notype ()    External     | @shi_allocFreeRegion@12
+0AC 00000000 UNDEF  notype ()    External     | @shi_allocPageHeader@4
+0AD 00000000 SECT33 notype       Static       | .debug$F
+    Section length   10, #relocs    1, #linenums    0, checksum        0, selection    5 (pick associative Section 0x32)
+0AF 00000000 SECT34 notype       Static       | .text
+    Section length   52, #relocs    5, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+0B1 00000000 SECT34 notype ()    External     | @shi_freeFreeRegion@8
+0B2 00000000 UNDEF  notype ()    External     | @shi_freePageHeader@8
+0B3 00000000 SECT35 notype       Static       | .debug$F
+    Section length   10, #relocs    1, #linenums    0, checksum        0, selection    5 (pick associative Section 0x34)
+0B5 00000000 SECT36 notype       Static       | .text
+    Section length   28, #relocs    3, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+0B7 00000000 SECT36 notype ()    External     | @_shi_getNextPool@4
+0B8 00000000 SECT37 notype       Static       | .debug$F
+    Section length   10, #relocs    1, #linenums    0, checksum        0, selection    5 (pick associative Section 0x36)
+0BA 00000000 SECT38 notype       Static       | .text
+    Section length   11, #relocs    2, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+0BC 00000000 SECT38 notype ()    External     | @shi_delNextPool@4
+0BD 00000000 SECT39 notype       Static       | .debug$F
+    Section length   10, #relocs    1, #linenums    0, checksum        0, selection    5 (pick associative Section 0x38)
+0BF 00000000 SECT3A notype       Static       | .text
+    Section length   A0, #relocs    B, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+0C1 00000000 SECT3A notype ()    External     | @shi_insertSharedPool@8
+0C2 00000000 UNDEF  notype ()    External     | _malloc
+0C3 00000000 SECT3B notype       Static       | .debug$F
+    Section length   10, #relocs    1, #linenums    0, checksum        0, selection    5 (pick associative Section 0x3A)
+0C5 00000000 SECT3C notype       Static       | .text
+    Section length   6C, #relocs    8, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+0C7 00000000 SECT3C notype ()    External     | @shi_deleteSharedPool@4
+0C8 00000000 SECT3D notype       Static       | .debug$F
+    Section length   10, #relocs    1, #linenums    0, checksum        0, selection    5 (pick associative Section 0x3C)
+0CA 00000000 SECT3E notype       Static       | .text
+    Section length   1B, #relocs    2, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+0CC 00000000 SECT3E notype ()    External     | @shi_findSharedPool@4
+0CD 00000000 SECT3F notype       Static       | .debug$F
+    Section length   10, #relocs    1, #linenums    0, checksum        0, selection    5 (pick associative Section 0x3E)
+0CF 00000000 SECT40 notype       Static       | .text
+    Section length    6, #relocs    1, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+0D1 00000000 SECT40 notype ()    External     | @_shi_getCurrentProcessID@0
+0D2 00000000 UNDEF  notype ()    External     | __imp__GetCurrentProcessId@0
+0D3 00000000 SECT41 notype       Static       | .debug$F
+    Section length   10, #relocs    1, #linenums    0, checksum        0, selection    5 (pick associative Section 0x40)
+0D5 00000000 SECT42 notype       Static       | .text
+    Section length   35, #relocs    2, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+0D7 00000000 SECT42 notype ()    External     | @shi_createAndEnterMutexShr@12
+0D8 00000000 UNDEF  notype ()    External     | __imp__WaitForSingleObject@8
+0D9 00000000 UNDEF  notype ()    External     | __imp__CreateMutexA@12
+0DA 00000000 SECT43 notype       Static       | .debug$F
+    Section length   10, #relocs    1, #linenums    0, checksum        0, selection    5 (pick associative Section 0x42)
+0DC 00000000 SECT44 notype       Static       | .text
+    Section length   69, #relocs    4, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+0DE 00000000 SECT44 notype ()    External     | @shi_initPoolMutexShr@4
+0DF 00000000 UNDEF  notype ()    External     | __imp__GetLastError@0
+0E0 00000000 SECT45 notype       Static       | .debug$F
+    Section length   10, #relocs    1, #linenums    0, checksum        0, selection    5 (pick associative Section 0x44)
+0E2 00000000 SECT46 notype       Static       | .text
+    Section length   38, #relocs    6, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+0E4 00000000 SECT46 notype ()    External     | @shi_genMutexName@8
+0E5 00000000 SECT47 notype       Static       | .data
+    Section length    7, #relocs    0, #linenums    0, checksum        0, selection    5 (pick associative Section 0x46)
+0E7 00000000 SECT47 notype       Static       | $SG18964
+0E8 00000000 UNDEF  notype ()    External     | _sprintf
+0E9 00000000 UNDEF  notype ()    External     | _srand
+0EA 00000000 UNDEF  notype ()    External     | __imp__GetCurrentThreadId@0
+0EB 00000000 SECT48 notype       Static       | .debug$F
+    Section length   10, #relocs    1, #linenums    0, checksum        0, selection    5 (pick associative Section 0x46)
+0ED 00000000 SECT49 notype       Static       | .text
+    Section length   14, #relocs    2, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+0EF 00000000 SECT49 notype ()    External     | @shi_termPoolMutexShr@4
+0F0 00000000 SECT4A notype       Static       | .debug$F
+    Section length   10, #relocs    1, #linenums    0, checksum        0, selection    5 (pick associative Section 0x49)
+0F2 00000000 SECT4B notype       Static       | .text
+    Section length   20, #relocs    2, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+0F4 00000000 SECT4B notype ()    External     | @shi_enterPoolMutexShr@4
+0F5 00000000 SECT4C notype       Static       | .debug$F
+    Section length   10, #relocs    1, #linenums    0, checksum        0, selection    5 (pick associative Section 0x4B)
+0F7 00000000 SECT4D notype       Static       | .text
+    Section length   14, #relocs    2, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+0F9 00000000 SECT4D notype ()    External     | @shi_leavePoolMutexShr@4
+0FA 00000000 SECT4E notype       Static       | .debug$F
+    Section length   10, #relocs    1, #linenums    0, checksum        0, selection    5 (pick associative Section 0x4D)
+0FC 00000000 SECT4F notype       Static       | .text
+    Section length   1C, #relocs    4, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+0FE 00000000 SECT4F notype ()    External     | __shi_enterCriticalSection@0
+0FF 00000000 UNDEF  notype ()    External     | __imp__EnterCriticalSection@4
+100 00000000 SECT50 notype       Static       | .bss
+    Section length   18, #relocs    0, #linenums    0, checksum        0
+102 00000000 SECT50 notype       Static       | __shi_mutexDefpool$S18598
+103 00000000 UNDEF  notype ()    External     | __imp__InitializeCriticalSection@4
+104 00000000 SECT51 notype       Static       | .debug$F
+    Section length   10, #relocs    1, #linenums    0, checksum        0, selection    5 (pick associative Section 0x4F)
+106 00000000 SECT52 notype       Static       | .text
+    Section length   17, #relocs    4, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+108 00000000 SECT52 notype ()    External     | __shi_leaveCriticalSection@0
+109 00000000 UNDEF  notype ()    External     | __imp__DeleteCriticalSection@4
+10A 00000000 UNDEF  notype ()    External     | __imp__LeaveCriticalSection@4
+10B 00000000 SECT53 notype       Static       | .debug$F
+    Section length   10, #relocs    1, #linenums    0, checksum        0, selection    5 (pick associative Section 0x52)
+10D 00000000 SECT54 notype       Static       | .text
+    Section length   2B, #relocs    2, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+10F 00000000 SECT54 notype ()    External     | __shi_createAndEnterMutex
+110 00000000 SECT55 notype       Static       | .debug$F
+    Section length   10, #relocs    1, #linenums    0, checksum        0, selection    5 (pick associative Section 0x54)
+112 00000000 SECT56 notype       Static       | .text
+    Section length  118, #relocs   10, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+114 00000000 SECT56 notype ()    External     | _shi_enterPoolMutexSafely
+115 00000000 SECT57 notype       Static       | .rdata
+    Section length    C, #relocs    2, #linenums    0, checksum        0, selection    5 (pick associative Section 0x56)
+117 00000000 SECT57 notype       Static       | $T19199
+118 000000FB SECT56 notype       Label        | $L19194
+119 000000F5 SECT56 notype       Label        | $L19193
+11A 00000000 UNDEF  notype       External     | __shi_poolTerminating
+11B 00000000 SECT58 notype       Static       | .debug$F
+    Section length   10, #relocs    1, #linenums    0, checksum        0, selection    5 (pick associative Section 0x56)
+11D 00000000 SECT59 notype       Static       | .text
+    Section length   99, #relocs   14, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+11F 00000000 SECT59 notype ()    External     | _shi_enterPoolInitMutexReader
+120 00000000 SECT5A notype       Static       | .debug$F
+    Section length   10, #relocs    1, #linenums    0, checksum        0, selection    5 (pick associative Section 0x59)
+122 00000000 SECT5B notype       Static       | .text
+    Section length   5B, #relocs    B, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+124 00000000 SECT5B notype ()    External     | _shi_leavePoolInitMutexReader
+125 00000000 SECT5C notype       Static       | .debug$F
+    Section length   10, #relocs    1, #linenums    0, checksum        0, selection    5 (pick associative Section 0x5B)
+127 00000000 SECT5D notype       Static       | .text
+    Section length    6, #relocs    1, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+129 00000000 SECT5D notype ()    External     | @_shi_getCurrentThreadID@0
+12A 00000000 SECT5E notype       Static       | .debug$F
+    Section length   10, #relocs    1, #linenums    0, checksum        0, selection    5 (pick associative Section 0x5D)
+12C 00000000 SECT5F notype       Static       | .text
+    Section length   22, #relocs    3, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+12E 00000000 SECT5F notype ()    External     | _shi_isNT
+12F 00000000 UNDEF  notype ()    External     | __imp__GetVersion@0
+130 00000000 SECT60 notype       Static       | .debug$F
+    Section length   10, #relocs    1, #linenums    0, checksum        0, selection    5 (pick associative Section 0x5F)
+
+String Table Size = 0x8D7 bytes
+
+COFF SYMBOL TABLE
+000 00000000 DEBUG  notype       Filename     | .file
+    task.c
+002 00000000 SECT1  notype       Static       | .data
+    Section length   DC, #relocs    1, #linenums    0, checksum        0
+004 00000000 SECT1  notype       External     | __shi_TaskRecord
+005 00000000 UNDEF  notype ()    External     | _MemDefaultErrorHandler@4
+006 00000000 SECT2  notype       Static       | .rdata
+    Section length    7, #relocs    0, #linenums    0, checksum        0
+008 00000000 SECT2  notype       Static       | __shi_FILE$S8070
+009 00000000 SECT3  notype       Static       | .text
+    Section length   57, #relocs    B, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+00B 00000000 SECT3  notype ()    External     | _MemRegisterTask@0
+00C 00000000 UNDEF  notype ()    External     | __imp__LeaveCriticalSection@4
+00D 00000000 UNDEF  notype       External     | __shi_mutexGlobal
+00E 00000000 UNDEF  notype ()    External     | __shi_createAndEnterMutex
+00F 00000000 UNDEF  notype       External     | __shi_mutexGlobalInit
+010 00000000 SECT4  notype       Static       | .debug$F
+    Section length   10, #relocs    1, #linenums    0, checksum        0, selection    5 (pick associative Section 0x3)
+012 00000000 SECT5  notype       Static       | .text
+    Section length   E9, #relocs   1B, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+014 00000000 SECT5  notype ()    External     | _MemUnregisterTask@0
+015 00000000 UNDEF  notype       External     | _shi_mutexPoolInit
+016 00000000 UNDEF  notype       External     | _shi_mutexPool
+017 00000000 UNDEF  notype ()    External     | __imp__ReleaseMutex@4
+018 00000000 UNDEF  notype ()    External     | __imp__CloseHandle@4
+019 00000000 UNDEF  notype       External     | __shi_mutexMovInit
+01A 00000000 UNDEF  notype       External     | __shi_mutexMov
+01B 00000000 UNDEF  notype ()    External     | __imp__DeleteCriticalSection@4
+01C 00000000 SECT6  notype       Static       | .debug$F
+    Section length   10, #relocs    1, #linenums    0, checksum        0, selection    5 (pick associative Section 0x5)
+01E 00000000 SECT7  notype       Static       | .text
+    Section length   51, #relocs    3, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+020 00000000 SECT7  notype ()    External     | @_shi_expungeTaskRec@8
+021 00000000 UNDEF  notype ()    External     | @_shi_getNextPool@4
+022 00000000 UNDEF  notype ()    External     | @_shi_poolFree@8
+023 00000000 SECT8  notype       Static       | .debug$F
+    Section length   10, #relocs    1, #linenums    0, checksum        0, selection    5 (pick associative Section 0x7)
+025 00000000 SECT9  notype       Static       | .text
+    Section length   29, #relocs    1, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+027 00000000 SECT9  notype ()    External     | @_shi_checkPool@4
+028 00000000 UNDEF  notype ()    External     | @_shi_sysValidatePtr@12
+029 00000000 SECTA  notype       Static       | .debug$F
+    Section length   10, #relocs    1, #linenums    0, checksum        0, selection    5 (pick associative Section 0x9)
+02B 00000000 SECTB  notype       Static       | .text
+    Section length   C1, #relocs    A, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+02D 00000000 SECTB  notype ()    External     | @_shi_taskRemovePool@4
+02E 00000000 UNDEF  notype ()    External     | @shi_delNextPool@4
+02F 00000000 UNDEF  notype ()    External     | @_shi_assertFailure1@8
+030 00000000 SECTC  notype       Static       | .debug$F
+    Section length   10, #relocs    1, #linenums    0, checksum        0, selection    5 (pick associative Section 0xB)
+032 00000000 SECTD  notype       Static       | .text
+    Section length   5C, #relocs    1, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+034 00000000 SECTD  notype ()    External     | @_shi_getCurrentThreadContext@8
+035 00000000 UNDEF  notype ()    External     | @_shi_getCurrentThreadID@0
+036 00000000 SECTE  notype       Static       | .debug$F
+    Section length   10, #relocs    1, #linenums    0, checksum        0, selection    5 (pick associative Section 0xD)
+038 00000000 SECTF  notype       Static       | .text
+    Section length   1F, #relocs    0, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+03A 00000000 SECTF  notype ()    External     | @_shi_deleteThreadContext@8
+03B 00000000 SECT10 notype       Static       | .debug$F
+    Section length   10, #relocs    1, #linenums    0, checksum        0, selection    5 (pick associative Section 0xF)
+
+String Table Size = 0x254 bytes
+
+COFF SYMBOL TABLE
+000 00000000 DEBUG  notype       Filename     | .file
+    check.c
+002 00000000 SECT1  notype       Static       | .rdata
+    Section length    8, #relocs    0, #linenums    0, checksum        0
+004 00000000 SECT1  notype       Static       | __shi_FILE$S8161
+005 00000000 SECT2  notype       Static       | .text
+    Section length   D6, #relocs    7, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+007 00000000 SECT2  notype ()    External     | _MemPoolCheck@4
+008 00000000 UNDEF  notype ()    External     | __imp__LeaveCriticalSection@4
+009 00000000 UNDEF  notype ()    External     | @shi_leavePoolMutexShr@4
+00A 00000000 UNDEF  notype ()    External     | @_shi_walkPool@16
+00B 00000000 UNDEF  notype ()    External     | __imp__EnterCriticalSection@4
+00C 00000000 UNDEF  notype ()    External     | @shi_enterPoolMutexShr@4
+00D 00000000 UNDEF  notype ()    External     | @_shi_invokeErrorHandler1@8
+00E 00000000 SECT3  notype       Static       | .debug$F
+    Section length   10, #relocs    1, #linenums    0, checksum        0, selection    5 (pick associative Section 0x2)
+010 00000000 SECT4  notype       Static       | .text
+    Section length  180, #relocs    C, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+012 00000000 SECT4  notype ()    External     | @shi_checkPoolPage@4
+013 00000000 UNDEF  notype ()    External     | @_shi_assertFailure1@8
+014 00000000 UNDEF  notype ()    External     | @_shi_sysValidatePtr@12
+015 00000000 SECT5  notype       Static       | .debug$F
+    Section length   10, #relocs    1, #linenums    0, checksum        0, selection    5 (pick associative Section 0x4)
+017 00000000 SECT6  notype       Static       | .text
+    Section length   61, #relocs    2, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+019 00000000 SECT6  notype ()    External     | @_shi_validateFreeLists@4
+01A 00000000 SECT7  notype       Static       | .debug$F
+    Section length   10, #relocs    1, #linenums    0, checksum        0, selection    5 (pick associative Section 0x6)
+01C 00000000 SECT8  notype       Static       | .text
+    Section length   4C, #relocs    A, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+01E 00000000 SECT8  notype ()    External     | @shi_validateFreeListPage@8
+01F 00000031 SECT8  notype       Label        | $L8242
+020 0000002B SECT8  notype       Label        | $L8245
+021 00000021 SECT8  notype       Label        | $L8243
+022 00000026 SECT8  notype       Label        | $L8244
+023 00000038 SECT8  notype       Label        | $L8334
+024 00000000 SECT9  notype       Static       | .debug$F
+    Section length   10, #relocs    1, #linenums    0, checksum        0, selection    5 (pick associative Section 0x8)
+026 00000000 SECTA  notype       Static       | .text
+    Section length   3F, #relocs    1, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+028 00000000 SECTA  notype ()    External     | @shi_validateFreeListsSmall@4
+029 00000000 UNDEF  notype ()    External     | @shi_isBlockInUseSmall@8
+02A 00000000 SECTB  notype       Static       | .debug$F
+    Section length   10, #relocs    1, #linenums    0, checksum        0, selection    5 (pick associative Section 0xA)
+02C 00000000 SECTC  notype       Static       | .text
+    Section length   85, #relocs    1, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+02E 00000000 SECTC  notype ()    External     | @_shi_validateFreeListVar@4
+02F 00000000 SECTD  notype       Static       | .debug$F
+    Section length   10, #relocs    1, #linenums    0, checksum        0, selection    5 (pick associative Section 0xC)
+031 00000000 SECTE  notype       Static       | .text
+    Section length   36, #relocs    2, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+033 00000000 SECTE  notype ()    External     | @_shi_validateFreeListFS@4
+034 00000000 UNDEF  notype ()    External     | @_shi_isBlockInUseFS@12
+035 00000000 SECTF  notype       Static       | .debug$F
+    Section length   10, #relocs    1, #linenums    0, checksum        0, selection    5 (pick associative Section 0xE)
+037 00000000 SECT10 notype       Static       | .text
+    Section length  16C, #relocs   10, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+039 00000000 SECT10 notype ()    External     | _MemCheckPtr@8
+03A 00000108 SECT10 notype       Label        | $L8299
+03B 0000011A SECT10 notype       Label        | $L8296
+03C 000000F0 SECT10 notype       Label        | $L8301
+03D 000000F8 SECT10 notype       Label        | $L8303
+03E 00000158 SECT10 notype       Label        | $L8346
+03F 00000000 SECT11 notype       Static       | .debug$F
+    Section length   10, #relocs    1, #linenums    0, checksum        0, selection    5 (pick associative Section 0x10)
+
+String Table Size = 0x1D0 bytes
+
+COFF SYMBOL TABLE
+000 00000000 DEBUG  notype       Filename     | .file
+    error.c
+002 00000000 SECT1  notype       Static       | .rdata
+    Section length   7C, #relocs    0, #linenums    0, checksum        0
+004 00000040 SECT1  notype       Static       | _?szOutMem@?1??_shi_getString@@9@9$S8280
+005 00000000 SECT2  notype       Static       | .data
+    Section length  190, #relocs    0, #linenums    0, checksum        0
+007 00000000 SECT2  notype       Static       | __shi_errorMessages$S8276
+008 00000008 SECT1  notype       Static       | _?assertMsg@?1??_shi_assertFailure1@@9@9$S8234
+009 00000000 SECT1  notype       Static       | __shi_FILE$S8177
+00A 00000000 SECT3  notype       Static       | .text
+    Section length  23E, #relocs   2D, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+00C 00000000 SECT3  notype ()    External     | @_shi_invokeErrorHandler1@8
+00D 00000000 SECT4  notype       Static       | .rdata
+    Section length    C, #relocs    1, #linenums    0, checksum        0, selection    5 (pick associative Section 0x3)
+00F 00000000 SECT4  notype       Static       | $T8316
+010 00000000 UNDEF  notype       External     | __except_list
+011 00000000 UNDEF  notype       External     | __shi_mutexMovLockCount
+012 00000000 UNDEF  notype ()    External     | @shi_createAndEnterMutexShr@12
+013 00000000 UNDEF  notype       External     | _shi_mutexMovName
+014 00000000 UNDEF  notype       External     | __shi_mutexMov
+015 00000000 UNDEF  notype       External     | __shi_mutexMovInit
+016 00000000 UNDEF  notype ()    External     | _shi_enterPoolMutexSafely
+017 000001D9 SECT3  notype       Label        | $L8306
+018 000001D4 SECT3  notype       Label        | $L8305
+019 00000000 UNDEF  notype       External     | __shi_TaskRecord
+01A 00000000 UNDEF  notype ()    External     | __imp__LeaveCriticalSection@4
+01B 00000000 UNDEF  notype ()    External     | @shi_leavePoolMutexShr@4
+01C 00000000 UNDEF  notype ()    External     | __imp__ReleaseMutex@4
+01D 00000000 UNDEF  notype ()    External     | __imp__EnterCriticalSection@4
+01E 00000000 UNDEF  notype ()    External     | @shi_enterPoolMutexShr@4
+01F 00000000 UNDEF  notype ()    External     | @_shi_checkPool@4
+020 00000000 UNDEF  notype       External     | __shi_mutexGlobal
+021 00000000 UNDEF  notype ()    External     | @_shi_sysValidateFunction@4
+022 00000000 UNDEF  notype ()    External     | __shi_createAndEnterMutex
+023 00000000 UNDEF  notype       External     | __shi_mutexGlobalInit
+024 00000000 UNDEF  notype ()    External     | __except_handler3
+025 00000000 SECT5  notype       Static       | .debug$F
+    Section length   10, #relocs    1, #linenums    0, checksum        0, selection    5 (pick associative Section 0x3)
+027 00000000 SECT6  notype       Static       | .text
+    Section length   A3, #relocs    E, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+029 00000000 SECT6  notype ()    External     | @_shi_assertFailure1@8
+02A 00000000 SECT7  notype       Static       | .rdata
+    Section length    C, #relocs    1, #linenums    0, checksum        0, selection    5 (pick associative Section 0x6)
+02C 00000000 SECT7  notype       Static       | $T8331
+02D 0000008F SECT6  notype       Label        | $L8330
+02E 0000008A SECT6  notype       Label        | $L8329
+02F 00000000 UNDEF  notype ()    External     | @_shi_sysReportError@16
+030 00000000 UNDEF  notype ()    External     | _sprintf
+031 00000000 SECT8  notype       Static       | .debug$F
+    Section length   10, #relocs    1, #linenums    0, checksum        0, selection    5 (pick associative Section 0x6)
+033 00000000 SECT9  notype       Static       | .text
+    Section length   99, #relocs    C, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+035 00000000 SECT9  notype ()    External     | @_shi_detectErrorRecursion@12
+036 00000000 SECTA  notype       Static       | .data
+    Section length   68, #relocs    0, #linenums    0, checksum        0, selection    5 (pick associative Section 0x9)
+038 00000034 SECTA  notype       Static       | $SG8252
+039 00000000 SECTA  notype       Static       | $SG8250
+03A 00000000 UNDEF  notype ()    External     | @_shi_getCurrentThreadContext@8
+03B 00000000 SECTB  notype       Static       | .debug$F
+    Section length   10, #relocs    1, #linenums    0, checksum        0, selection    5 (pick associative Section 0x9)
+03D 00000000 SECTC  notype       Static       | .text
+    Section length   50, #relocs    A, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+03F 00000000 SECTC  notype ()    External     | _MemErrorUnwind@0
+040 00000000 UNDEF  notype ()    External     | @_shi_deleteThreadContext@8
+041 00000000 SECTD  notype       Static       | .debug$F
+    Section length   10, #relocs    1, #linenums    0, checksum        0, selection    5 (pick associative Section 0xC)
+043 00000000 SECTE  notype       Static       | .text
+    Section length   52, #relocs    4, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+045 00000000 SECTE  notype ()    External     | _MemDefaultErrorHandler@4
+046 00000000 SECTF  notype       Static       | .debug$F
+    Section length   10, #relocs    1, #linenums    0, checksum        0, selection    5 (pick associative Section 0xE)
+048 00000000 SECT10 notype       Static       | .text
+    Section length   4E, #relocs    5, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+04A 00000000 SECT10 notype ()    External     | @_shi_getString@4
+04B 00000000 SECT11 notype       Static       | .debug$F
+    Section length   10, #relocs    1, #linenums    0, checksum        0, selection    5 (pick associative Section 0x10)
+04D 00000000 SECT12 notype       Static       | .text
+    Section length   5D, #relocs    9, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+04F 00000000 SECT12 notype ()    External     | _MemSetErrorHandler@4
+050 00000000 SECT13 notype       Static       | .debug$F
+    Section length   10, #relocs    1, #linenums    0, checksum        0, selection    5 (pick associative Section 0x12)
+
+String Table Size = 0x32A bytes
+
+COFF SYMBOL TABLE
+000 00000000 DEBUG  notype       Filename     | .file
+    info.c
+002 00000000 SECT1  notype       Static       | .rdata
+    Section length    7, #relocs    0, #linenums    0, checksum        0
+004 00000000 SECT1  notype       Static       | __shi_FILE$S8161
+005 00000000 SECT2  notype       Static       | .text
+    Section length    6, #relocs    0, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+007 00000000 SECT2  notype ()    External     | _MemVersion@0
+008 00000000 SECT3  notype       Static       | .debug$F
+    Section length   10, #relocs    1, #linenums    0, checksum        0, selection    5 (pick associative Section 0x2)
+00A 00000000 SECT4  notype       Static       | .text
+    Section length   83, #relocs    5, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+00C 00000000 SECT4  notype ()    External     | _MemPoolSize@4
+00D 00000000 UNDEF  notype ()    External     | __imp__LeaveCriticalSection@4
+00E 00000000 UNDEF  notype ()    External     | @shi_leavePoolMutexShr@4
+00F 00000000 UNDEF  notype ()    External     | __imp__EnterCriticalSection@4
+010 00000000 UNDEF  notype ()    External     | @shi_enterPoolMutexShr@4
+011 00000000 UNDEF  notype ()    External     | @_shi_invokeErrorHandler1@8
+012 00000000 SECT5  notype       Static       | .debug$F
+    Section length   10, #relocs    1, #linenums    0, checksum        0, selection    5 (pick associative Section 0x4)
+014 00000000 SECT6  notype       Static       | .text
+    Section length   89, #relocs    6, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+016 00000000 SECT6  notype ()    External     | _MemPoolCount@4
+017 00000000 SECT7  notype       Static       | .debug$F
+    Section length   10, #relocs    1, #linenums    0, checksum        0, selection    5 (pick associative Section 0x6)
+019 00000000 SECT8  notype       Static       | .text
+    Section length   34, #relocs    0, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+01B 00000000 SECT8  notype ()    External     | @_shi_poolCount@4
+01C 00000000 SECT9  notype       Static       | .debug$F
+    Section length   10, #relocs    1, #linenums    0, checksum        0, selection    5 (pick associative Section 0x8)
+01E 00000000 SECTA  notype       Static       | .text
+    Section length   91, #relocs    6, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+020 00000000 SECTA  notype ()    External     | _MemPoolWalk@8
+021 00000000 SECTB  notype       Static       | .debug$F
+    Section length   10, #relocs    1, #linenums    0, checksum        0, selection    5 (pick associative Section 0xA)
+023 00000000 SECTC  notype       Static       | .text
+    Section length  188, #relocs    F, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+025 00000000 SECTC  notype ()    External     | @_shi_walkPool@16
+026 00000100 SECTC  notype       Label        | $L8245
+027 000000E5 SECTC  notype       Label        | $L8248
+028 000000B6 SECTC  notype       Label        | $L8246
+029 000000D1 SECTC  notype       Label        | $L8247
+02A 00000000 UNDEF  notype ()    External     | @_shi_assertFailure1@8
+02B 00000174 SECTC  notype       Label        | $L8454
+02C 00000000 SECTD  notype       Static       | .debug$F
+    Section length   10, #relocs    1, #linenums    0, checksum        0, selection    5 (pick associative Section 0xC)
+02E 00000000 SECTE  notype       Static       | .text
+    Section length   93, #relocs    1, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+030 00000000 SECTE  notype ()    External     | @_shi_walkPoolExternal@8
+031 00000000 UNDEF  notype ()    External     | @_shi_sysSizePage@4
+032 00000000 SECTF  notype       Static       | .debug$F
+    Section length   10, #relocs    1, #linenums    0, checksum        0, selection    5 (pick associative Section 0xE)
+034 00000000 SECT10 notype       Static       | .text
+    Section length  120, #relocs    3, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+036 00000000 SECT10 notype ()    External     | @shi_walkPoolSmall@12
+037 00000000 UNDEF  notype ()    External     | @_shi_sysValidatePtr@12
+038 00000000 SECT11 notype       Static       | .debug$F
+    Section length   10, #relocs    1, #linenums    0, checksum        0, selection    5 (pick associative Section 0x10)
+03A 00000000 SECT12 notype       Static       | .text
+    Section length   7C, #relocs    3, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+03C 00000000 SECT12 notype ()    External     | @shi_isBlockInUseSmall@8
+03D 00000000 SECT13 notype       Static       | .debug$F
+    Section length   10, #relocs    1, #linenums    0, checksum        0, selection    5 (pick associative Section 0x12)
+03F 00000000 SECT14 notype       Static       | .text
+    Section length  174, #relocs    2, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+041 00000000 SECT14 notype ()    External     | @_shi_walkPoolVar@8
+042 00000000 SECT15 notype       Static       | .debug$F
+    Section length   10, #relocs    1, #linenums    0, checksum        0, selection    5 (pick associative Section 0x14)
+044 00000000 SECT16 notype       Static       | .text
+    Section length   EB, #relocs    3, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+046 00000000 SECT16 notype ()    External     | @_shi_walkPoolFS@12
+047 00000000 SECT17 notype       Static       | .debug$F
+    Section length   10, #relocs    1, #linenums    0, checksum        0, selection    5 (pick associative Section 0x16)
+049 00000000 SECT18 notype       Static       | .text
+    Section length   75, #relocs    0, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+04B 00000000 SECT18 notype ()    External     | @_shi_isBlockInUseFS@12
+04C 00000000 SECT19 notype       Static       | .debug$F
+    Section length   10, #relocs    1, #linenums    0, checksum        0, selection    5 (pick associative Section 0x18)
+04E 00000000 SECT1A notype       Static       | .text
+    Section length   F6, #relocs    9, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+050 00000000 SECT1A notype ()    External     | _MemPoolInfo@12
+051 00000000 SECT1B notype       Static       | .debug$F
+    Section length   10, #relocs    1, #linenums    0, checksum        0, selection    5 (pick associative Section 0x1A)
+053 00000000 SECT1C notype       Static       | .text
+    Section length   24, #relocs    1, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+055 00000000 SECT1C notype ()    External     | _MemPoolFirst@8
+056 00000000 SECT1D notype       Static       | .debug$F
+    Section length   10, #relocs    1, #linenums    0, checksum        0, selection    5 (pick associative Section 0x1C)
+058 00000000 SECT1E notype       Static       | .text
+    Section length  128, #relocs    C, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+05A 00000000 SECT1E notype ()    External     | _MemPoolNext@8
+05B 00000000 UNDEF  notype       External     | __shi_mutexGlobal
+05C 00000000 UNDEF  notype       External     | __shi_TaskRecord
+05D 00000000 UNDEF  notype ()    External     | @_shi_getNextPool@4
+05E 00000000 UNDEF  notype ()    External     | __shi_createAndEnterMutex
+05F 00000000 UNDEF  notype       External     | __shi_mutexGlobalInit
+060 00000000 SECT1F notype       Static       | .debug$F
+    Section length   10, #relocs    1, #linenums    0, checksum        0, selection    5 (pick associative Section 0x1E)
+062 00000000 SECT20 notype       Static       | .text
+    Section length   DA, #relocs    6, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+064 00000000 SECT20 notype ()    External     | @_shi_setPoolInfo@8
+065 00000000 SECT21 notype       Static       | .debug$F
+    Section length   10, #relocs    1, #linenums    0, checksum        0, selection    5 (pick associative Section 0x20)
+
+String Table Size = 0x274 bytes
+
+COFF SYMBOL TABLE
+000 00000000 DEBUG  notype       Filename     | .file
+    pool.c
+002 00000000 SECT1  notype       Static       | .data
+    Section length    4, #relocs    0, #linenums    0, checksum        0
+004 00000000 SECT1  notype       External     | __shi_poolTerminating
+005 00000000 SECT2  notype       Static       | .rdata
+    Section length    7, #relocs    0, #linenums    0, checksum        0
+007 00000000 SECT2  notype       Static       | __shi_FILE$S8161
+008 00000000 SECT3  notype       Static       | .text
+    Section length   20, #relocs    1, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+00A 00000000 SECT3  notype ()    External     | _MemPoolInit@4
+00B 00000000 SECT4  notype       Static       | .debug$F
+    Section length   10, #relocs    1, #linenums    0, checksum        0, selection    5 (pick associative Section 0x3)
+00D 00000000 SECT5  notype       Static       | .text
+    Section length   21, #relocs    1, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+00F 00000000 SECT5  notype ()    External     | _MemPoolInitFS@12
+010 00000000 SECT6  notype       Static       | .debug$F
+    Section length   10, #relocs    1, #linenums    0, checksum        0, selection    5 (pick associative Section 0x5)
+012 00000000 SECT7  notype       Static       | .text
+    Section length   29, #relocs    1, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+014 00000000 SECT7  notype ()    External     | _MemPoolInitNamedShared@12
+015 00000000 SECT8  notype       Static       | .debug$F
+    Section length   10, #relocs    1, #linenums    0, checksum        0, selection    5 (pick associative Section 0x7)
+017 00000000 SECT9  notype       Static       | .text
+    Section length   35, #relocs    1, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+019 00000000 SECT9  notype ()    External     | _MemPoolInitNamedSharedEx@28
+01A 00000000 SECTA  notype       Static       | .debug$F
+    Section length   10, #relocs    1, #linenums    0, checksum        0, selection    5 (pick associative Section 0x9)
+01C 00000000 SECTB  notype       Static       | .text
+    Section length   C2, #relocs   11, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+01E 00000000 SECTB  notype ()    External     | _MemPoolAttachShared@8
+01F 00000000 UNDEF  notype ()    External     | __imp__ReleaseMutex@4
+020 00000000 UNDEF  notype       External     | _shi_mutexPool
+021 00000000 UNDEF  notype ()    External     | __imp__LeaveCriticalSection@4
+022 00000000 UNDEF  notype       External     | __shi_TaskRecord
+023 00000000 UNDEF  notype       External     | __shi_mutexGlobal
+024 00000000 UNDEF  notype ()    External     | @_shi_getNextPool@4
+025 00000000 UNDEF  notype ()    External     | __shi_createAndEnterMutex
+026 00000000 UNDEF  notype       External     | __shi_mutexGlobalInit
+027 00000000 UNDEF  notype ()    External     | @_shi_registerShared@16
+028 00000000 UNDEF  notype ()    External     | @shi_createAndEnterMutexShr@12
+029 00000000 UNDEF  notype       External     | _shi_mutexPoolInit
+02A 00000000 UNDEF  notype       External     | _shi_mutexPoolName
+02B 00000000 SECTC  notype       Static       | .debug$F
+    Section length   10, #relocs    1, #linenums    0, checksum        0, selection    5 (pick associative Section 0xB)
+02D 00000000 SECTD  notype       Static       | .text
+    Section length  27F, #relocs   1D, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+02F 00000000 SECTD  notype ()    External     | @_shi_initPool@36
+030 00000000 UNDEF  notype ()    External     | _MemPoolPreAllocate@12
+031 00000000 UNDEF  notype ()    External     | @_shi_sysFreePool@8
+032 00000000 UNDEF  notype ()    External     | __imp__InitializeCriticalSection@4
+033 00000000 UNDEF  notype ()    External     | @shi_initPoolMutexShr@4
+034 00000000 UNDEF  notype ()    External     | @_shi_invokeErrorHandler1@8
+035 00000000 UNDEF  notype ()    External     | @_shi_sysAllocPool@12
+036 00000000 UNDEF  notype ()    External     | @_shi_sysAllocNamedShared@32
+037 00000000 SECTE  notype       Static       | .debug$F
+    Section length   10, #relocs    1, #linenums    0, checksum        0, selection    5 (pick associative Section 0xD)
+039 00000000 SECTF  notype       Static       | .text
+    Section length   AC, #relocs    6, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+03B 00000000 SECTF  notype ()    External     | _MemPoolSetPageSize@8
+03C 00000000 UNDEF  notype ()    External     | @shi_leavePoolMutexShr@4
+03D 00000000 UNDEF  notype ()    External     | __imp__EnterCriticalSection@4
+03E 00000000 UNDEF  notype ()    External     | @shi_enterPoolMutexShr@4
+03F 00000000 SECT10 notype       Static       | .debug$F
+    Section length   10, #relocs    1, #linenums    0, checksum        0, selection    5 (pick associative Section 0xF)
+041 00000000 SECT11 notype       Static       | .text
+    Section length   45, #relocs    0, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+043 00000000 SECT11 notype ()    External     | @_shi_normalizePageSize@4
+044 00000000 SECT12 notype       Static       | .debug$F
+    Section length   10, #relocs    1, #linenums    0, checksum        0, selection    5 (pick associative Section 0x11)
+046 00000000 SECT13 notype       Static       | .text
+    Section length   D8, #relocs    6, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+048 00000000 SECT13 notype ()    External     | _MemPoolSetBlockSizeFS@8
+049 00000000 SECT14 notype       Static       | .debug$F
+    Section length   10, #relocs    1, #linenums    0, checksum        0, selection    5 (pick associative Section 0x13)
+04B 00000000 SECT15 notype       Static       | .text
+    Section length   9E, #relocs    6, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+04D 00000000 SECT15 notype ()    External     | _MemPoolSetSmallBlockSize@8
+04E 00000000 SECT16 notype       Static       | .debug$F
+    Section length   10, #relocs    1, #linenums    0, checksum        0, selection    5 (pick associative Section 0x15)
+050 00000000 SECT17 notype       Static       | .text
+    Section length   A2, #relocs    5, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+052 00000000 SECT17 notype ()    External     | _MemPoolSetFloor@8
+053 00000000 SECT18 notype       Static       | .debug$F
+    Section length   10, #relocs    1, #linenums    0, checksum        0, selection    5 (pick associative Section 0x17)
+055 00000000 SECT19 notype       Static       | .text
+    Section length   A9, #relocs    5, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+057 00000000 SECT19 notype ()    External     | _MemPoolSetCeiling@8
+058 00000000 SECT1A notype       Static       | .debug$F
+    Section length   10, #relocs    1, #linenums    0, checksum        0, selection    5 (pick associative Section 0x19)
+05A 00000000 SECT1B notype       Static       | .text
+    Section length   27, #relocs    2, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+05C 00000000 SECT1B notype ()    External     | _MemPoolFree@4
+05D 00000000 SECT1C notype       Static       | .debug$F
+    Section length   10, #relocs    1, #linenums    0, checksum        0, selection    5 (pick associative Section 0x1B)
+05F 00000000 SECT1D notype       Static       | .text
+    Section length  182, #relocs   1D, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+061 00000000 SECT1D notype ()    External     | @_shi_poolFree@8
+062 00000000 UNDEF  notype ()    External     | @_shi_sysFree@4
+063 00000000 UNDEF  notype ()    External     | __imp__DeleteCriticalSection@4
+064 00000000 UNDEF  notype ()    External     | @shi_termPoolMutexShr@4
+065 00000000 UNDEF  notype ()    External     | @_shi_taskRemovePool@4
+066 00000000 UNDEF  notype ()    External     | @_shi_unregisterShared@8
+067 00000000 SECT1E notype       Static       | .debug$F
+    Section length   10, #relocs    1, #linenums    0, checksum        0, selection    5 (pick associative Section 0x1D)
+069 00000000 SECT1F notype       Static       | .text
+    Section length   23, #relocs    1, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+06B 00000000 SECT1F notype ()    External     | @_shi_VALIDATE_EXCEEDING_SIZES@8
+06C 00000000 SECT20 notype       Static       | .debug$F
+    Section length   10, #relocs    1, #linenums    0, checksum        0, selection    5 (pick associative Section 0x1F)
+06E 00000000 SECT21 notype       Static       | .text
+    Section length   36, #relocs    2, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+070 00000000 SECT21 notype ()    External     | @_shi_VALIDATE_EXCEEDING_SIZE@8
+071 00000000 UNDEF  notype ()    External     | @_shi_assertFailure1@8
+072 00000000 SECT22 notype       Static       | .debug$F
+    Section length   10, #relocs    1, #linenums    0, checksum        0, selection    5 (pick associative Section 0x21)
+074 00000000 SECT23 notype       Static       | .text
+    Section length   52, #relocs    3, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+076 00000000 SECT23 notype ()    External     | _MemPoolLock@4
+077 00000000 SECT24 notype       Static       | .debug$F
+    Section length   10, #relocs    1, #linenums    0, checksum        0, selection    5 (pick associative Section 0x23)
+079 00000000 SECT25 notype       Static       | .text
+    Section length   58, #relocs    3, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+07B 00000000 SECT25 notype ()    External     | _MemPoolUnlock@4
+07C 00000000 SECT26 notype       Static       | .debug$F
+    Section length   10, #relocs    1, #linenums    0, checksum        0, selection    5 (pick associative Section 0x25)
+
+String Table Size = 0x455 bytes
+
+COFF SYMBOL TABLE
+000 00000000 DEBUG  notype       Filename     | .file
+    heapmov.c
+002 00000000 SECT1  notype       Static       | .rdata
+    Section length    A, #relocs    0, #linenums    0, checksum        0
+004 00000000 SECT1  notype       Static       | __shi_FILE$S8175
+005 00000000 SECT2  notype       Static       | .text
+    Section length   23, #relocs    1, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+007 00000000 SECT2  notype ()    External     | @_shi_allocHandle@4
+008 00000000 SECT3  notype       Static       | .debug$F
+    Section length   10, #relocs    1, #linenums    0, checksum        0, selection    5 (pick associative Section 0x2)
+00A 00000000 SECT4  notype       Static       | .text
+    Section length   BC, #relocs    6, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+00C 00000000 SECT4  notype ()    External     | _MemPoolPreAllocateHandles@8
+00D 00000000 UNDEF  notype ()    External     | __imp__LeaveCriticalSection@4
+00E 00000000 UNDEF  notype ()    External     | @shi_leavePoolMutexShr@4
+00F 00000000 UNDEF  notype ()    External     | __imp__EnterCriticalSection@4
+010 00000000 UNDEF  notype ()    External     | @shi_enterPoolMutexShr@4
+011 00000000 UNDEF  notype ()    External     | @_shi_invokeErrorHandler1@8
+012 00000000 SECT5  notype       Static       | .debug$F
+    Section length   10, #relocs    1, #linenums    0, checksum        0, selection    5 (pick associative Section 0x4)
+014 00000000 SECT6  notype       Static       | .text
+    Section length  1E4, #relocs    D, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+016 00000000 SECT6  notype ()    External     | @_shi_growHandleTable@8
+017 00000000 UNDEF  notype ()    External     | @_shi_assertFailure1@8
+018 00000000 UNDEF  notype ()    External     | @_shi_sysSizePool@8
+019 00000000 UNDEF  notype ()    External     | @_shi_sysAllocPool@12
+01A 00000000 UNDEF  notype ()    External     | @_shi_sysResizePool@16
+01B 00000000 SECT7  notype       Static       | .debug$F
+    Section length   10, #relocs    1, #linenums    0, checksum        0, selection    5 (pick associative Section 0x6)
+01D 00000000 SECT8  notype       Static       | .text
+    Section length    9, #relocs    0, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+01F 00000000 SECT8  notype ()    External     | @_shi_freeHandle@8
+020 00000000 SECT9  notype       Static       | .debug$F
+    Section length   10, #relocs    1, #linenums    0, checksum        0, selection    5 (pick associative Section 0x8)
+022 00000000 SECTA  notype       Static       | .text
+    Section length  117, #relocs    A, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+024 00000000 SECTA  notype ()    External     | @_shi_compactPool@8
+025 00000000 UNDEF  notype ()    External     | __imp__ReleaseMutex@4
+026 00000000 UNDEF  notype       External     | __shi_mutexMovLockCount
+027 00000000 UNDEF  notype       External     | __shi_mutexMov
+028 00000000 UNDEF  notype ()    External     | @shi_createAndEnterMutexShr@12
+029 00000000 UNDEF  notype       External     | _shi_mutexMovName
+02A 00000000 UNDEF  notype       External     | __shi_mutexMovInit
+02B 00000000 SECTB  notype       Static       | .debug$F
+    Section length   10, #relocs    1, #linenums    0, checksum        0, selection    5 (pick associative Section 0xA)
+02D 00000000 SECTC  notype       Static       | .text
+    Section length  3A8, #relocs   12, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+02F 00000000 SECTC  notype ()    External     | @_shi_moveBlocksFromPage@8
+030 00000000 UNDEF  notype ()    External     | @_shi_deletePage@8
+031 00000000 UNDEF  notype ()    External     | _MemSizePtr@4
+032 00000000 UNDEF  notype ()    External     | @_shi_allocVar@12
+033 00000000 SECTD  notype       Static       | .debug$F
+    Section length   10, #relocs    1, #linenums    0, checksum        0, selection    5 (pick associative Section 0xC)
+035 00000000 SECTE  notype       Static       | .text
+    Section length   DE, #relocs    2, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+037 00000000 SECTE  notype ()    External     | @_shi_compactPage@12
+038 00000000 SECTF  notype       Static       | .debug$F
+    Section length   10, #relocs    1, #linenums    0, checksum        0, selection    5 (pick associative Section 0xE)
+03A 00000000 SECT10 notype       Static       | .text
+    Section length   2B, #relocs    0, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+03C 00000000 SECT10 notype ()    External     | @_shi_findLargestFree@4
+03D 00000000 SECT11 notype       Static       | .debug$F
+    Section length   10, #relocs    1, #linenums    0, checksum        0, selection    5 (pick associative Section 0x10)
+03F 00000000 SECT12 notype       Static       | .text
+    Section length  2A8, #relocs   1B, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+041 00000000 SECT12 notype ()    External     | @_shi_shiftUnlockedBlocks@4
+042 00000000 UNDEF  notype ()    External     | _memmove
+043 00000000 SECT13 notype       Static       | .debug$F
+    Section length   10, #relocs    1, #linenums    0, checksum        0, selection    5 (pick associative Section 0x12)
+045 00000000 SECT14 notype       Static       | .text
+    Section length   22, #relocs    2, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+047 00000000 SECT14 notype ()    External     | @_shi_allocVarOrExternal@12
+048 00000000 UNDEF  notype ()    External     | @_shi_allocExternal@12
+049 00000000 SECT15 notype       Static       | .debug$F
+    Section length   10, #relocs    1, #linenums    0, checksum        0, selection    5 (pick associative Section 0x14)
+04B 00000000 SECT16 notype       Static       | .text
+    Section length  178, #relocs   10, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+04D 00000000 SECT16 notype ()    External     | _MemAlloc@12
+04E 00000000 UNDEF  notype       External     | __shi_compactPageFn
+04F 00000000 UNDEF  notype       External     | __shi_compactPoolFn
+050 00000000 SECT17 notype       Static       | .debug$F
+    Section length   10, #relocs    1, #linenums    0, checksum        0, selection    5 (pick associative Section 0x16)
+052 00000000 SECT18 notype       Static       | .text
+    Section length  4BB, #relocs   32, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+054 00000000 SECT18 notype ()    External     | _MemReAlloc@12
+055 00000000 UNDEF  notype ()    External     | _MemFreePtr@4
+056 00000000 UNDEF  notype ()    External     | @_shi_resizeAny@16
+057 00000000 SECT19 notype       Static       | .debug$F
+    Section length   10, #relocs    1, #linenums    0, checksum        0, selection    5 (pick associative Section 0x18)
+059 00000000 SECT1A notype       Static       | .text
+    Section length  174, #relocs    F, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+05B 00000000 SECT1A notype ()    External     | _MemFree@4
+05C 00000000 UNDEF  notype       External     | __shi_freeFns
+05D 00000000 SECT1B notype       Static       | .debug$F
+    Section length   10, #relocs    1, #linenums    0, checksum        0, selection    5 (pick associative Section 0x1A)
+05F 00000000 SECT1C notype       Static       | .text
+    Section length   CC, #relocs    9, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+061 00000000 SECT1C notype ()    External     | _MemHandle@4
+062 00000000 SECT1D notype       Static       | .debug$F
+    Section length   10, #relocs    1, #linenums    0, checksum        0, selection    5 (pick associative Section 0x1C)
+064 00000000 SECT1E notype       Static       | .text
+    Section length   C6, #relocs    9, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+066 00000000 SECT1E notype ()    External     | _MemLockCount@4
+067 00000000 SECT1F notype       Static       | .debug$F
+    Section length   10, #relocs    1, #linenums    0, checksum        0, selection    5 (pick associative Section 0x1E)
+069 00000000 SECT20 notype       Static       | .text
+    Section length  105, #relocs    B, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+06B 00000000 SECT20 notype ()    External     | _MemIsMoveable@4
+06C 00000000 SECT21 notype       Static       | .debug$F
+    Section length   10, #relocs    1, #linenums    0, checksum        0, selection    5 (pick associative Section 0x20)
+06E 00000000 SECT22 notype       Static       | .text
+    Section length  1B0, #relocs   10, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+070 00000000 SECT22 notype ()    External     | _MemLock@4
+071 00000000 SECT23 notype       Static       | .debug$F
+    Section length   10, #relocs    1, #linenums    0, checksum        0, selection    5 (pick associative Section 0x22)
+073 00000000 SECT24 notype       Static       | .text
+    Section length  1BF, #relocs   10, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+075 00000000 SECT24 notype ()    External     | _MemUnlock@4
+076 00000000 SECT25 notype       Static       | .debug$F
+    Section length   10, #relocs    1, #linenums    0, checksum        0, selection    5 (pick associative Section 0x24)
+078 00000000 SECT26 notype       Static       | .text
+    Section length  311, #relocs   1E, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+07A 00000000 SECT26 notype ()    External     | _MemFix@4
+07B 00000000 UNDEF  notype ()    External     | @_shi_freeVar@4
+07C 00000000 SECT27 notype       Static       | .debug$F
+    Section length   10, #relocs    1, #linenums    0, checksum        0, selection    5 (pick associative Section 0x26)
+07E 00000000 SECT28 notype       Static       | .text
+    Section length  2F1, #relocs   1C, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+080 00000000 SECT28 notype ()    External     | _MemUnfix@4
+081 00000000 SECT29 notype       Static       | .debug$F
+    Section length   10, #relocs    1, #linenums    0, checksum        0, selection    5 (pick associative Section 0x28)
+083 00000000 SECT2A notype       Static       | .text
+    Section length  145, #relocs    E, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+085 00000000 SECT2A notype ()    External     | _MemSize@4
+086 00000000 SECT2B notype       Static       | .debug$F
+    Section length   10, #relocs    1, #linenums    0, checksum        0, selection    5 (pick associative Section 0x2A)
+088 00000000 SECT2C notype       Static       | .text
+    Section length   E7, #relocs    C, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+08A 00000000 SECT2C notype ()    External     | _MemSizeRequested@4
+08B 00000000 SECT2D notype       Static       | .debug$F
+    Section length   10, #relocs    1, #linenums    0, checksum        0, selection    5 (pick associative Section 0x2C)
+
+String Table Size = 0x3BB bytes
+
+COFF SYMBOL TABLE
+000 00000000 DEBUG  notype       Filename     | .file
+    heap.c
+002 00000000 SECT1  notype       Static       | .data
+    Section length   1C, #relocs    5, #linenums    0, checksum        0
+004 00000018 SECT1  notype       External     | __shi_compactPageFn
+005 00000014 SECT1  notype       External     | __shi_compactPoolFn
+006 00000000 SECT1  notype       External     | __shi_freeFns
+007 00000000 SECT2  notype       Static       | .rdata
+    Section length    7, #relocs    0, #linenums    0, checksum        0
+009 00000000 SECT2  notype       Static       | __shi_FILE$S8175
+00A 00000000 SECT3  notype       Static       | .text
+    Section length   89, #relocs    6, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+00C 00000000 SECT3  notype ()    External     | _MemPoolShrink@4
+00D 00000000 UNDEF  notype ()    External     | __imp__LeaveCriticalSection@4
+00E 00000000 UNDEF  notype ()    External     | @shi_leavePoolMutexShr@4
+00F 00000000 UNDEF  notype ()    External     | __imp__EnterCriticalSection@4
+010 00000000 UNDEF  notype ()    External     | @shi_enterPoolMutexShr@4
+011 00000000 UNDEF  notype ()    External     | @_shi_invokeErrorHandler1@8
+012 00000000 SECT4  notype       Static       | .debug$F
+    Section length   10, #relocs    1, #linenums    0, checksum        0, selection    5 (pick associative Section 0x3)
+014 00000000 SECT5  notype       Static       | .text
+    Section length   B4, #relocs    5, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+016 00000000 SECT5  notype ()    External     | @_shi_shrinkPool@4
+017 00000000 UNDEF  notype ()    External     | @_shi_assertFailure1@8
+018 00000000 SECT6  notype       Static       | .debug$F
+    Section length   10, #relocs    1, #linenums    0, checksum        0, selection    5 (pick associative Section 0x5)
+01A 00000000 SECT7  notype       Static       | .text
+    Section length  137, #relocs    8, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+01C 00000000 SECT7  notype ()    External     | _MemPoolPreAllocate@12
+01D 00000000 UNDEF  notype       External     | _SmartHeap_malloc
+01E 00000000 SECT8  notype       Static       | .debug$F
+    Section length   10, #relocs    1, #linenums    0, checksum        0, selection    5 (pick associative Section 0x7)
+020 00000000 SECT9  notype       Static       | .text
+    Section length  264, #relocs    8, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+022 00000000 SECT9  notype ()    External     | @_shi_initPageHeaders@4
+023 00000000 UNDEF  notype ()    External     | @_shi_sysAllocPool@12
+024 00000000 UNDEF  notype ()    External     | @_shi_sysResizePool@16
+025 00000000 UNDEF  notype ()    External     | @_shi_sysSizePool@8
+026 00000000 SECTA  notype       Static       | .debug$F
+    Section length   10, #relocs    1, #linenums    0, checksum        0, selection    5 (pick associative Section 0x9)
+028 00000000 SECTB  notype       Static       | .text
+    Section length   2A, #relocs    1, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+02A 00000000 SECTB  notype ()    External     | @shi_allocPageHeader@4
+02B 00000000 SECTC  notype       Static       | .debug$F
+    Section length   10, #relocs    1, #linenums    0, checksum        0, selection    5 (pick associative Section 0xB)
+02D 00000000 SECTD  notype       Static       | .text
+    Section length    A, #relocs    0, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+02F 00000000 SECTD  notype ()    External     | @shi_freePageHeader@8
+030 00000000 SECTE  notype       Static       | .debug$F
+    Section length   10, #relocs    1, #linenums    0, checksum        0, selection    5 (pick associative Section 0xD)
+032 00000000 SECTF  notype       Static       | .text
+    Section length  203, #relocs    C, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+034 00000000 SECTF  notype ()    External     | @_shi_newPage@16
+035 00000000 SECT10 notype       Static       | .debug$F
+    Section length   10, #relocs    1, #linenums    0, checksum        0, selection    5 (pick associative Section 0xF)
+037 00000000 SECT11 notype       Static       | .text
+    Section length   E8, #relocs    7, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+039 00000000 SECT11 notype ()    External     | @_shi_deletePage@8
+03A 00000000 UNDEF  notype ()    External     | @_shi_sysFreePage@4
+03B 00000000 UNDEF  notype ()    External     | @_shi_sysSizePage@4
+03C 00000000 SECT12 notype       Static       | .debug$F
+    Section length   10, #relocs    1, #linenums    0, checksum        0, selection    5 (pick associative Section 0x11)
+03E 00000000 SECT13 notype       Static       | .text
+    Section length   1E, #relocs    1, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+040 00000000 SECT13 notype ()    External     | @_shi_initPageExternal@8
+041 00000000 SECT14 notype       Static       | .debug$F
+    Section length   10, #relocs    1, #linenums    0, checksum        0, selection    5 (pick associative Section 0x13)
+043 00000000 SECT15 notype       Static       | .text
+    Section length   84, #relocs    5, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+045 00000000 SECT15 notype ()    External     | @_shi_allocExternal@12
+046 00000000 SECT16 notype       Static       | .debug$F
+    Section length   10, #relocs    1, #linenums    0, checksum        0, selection    5 (pick associative Section 0x15)
+048 00000000 SECT17 notype       Static       | .text
+    Section length   2F, #relocs    3, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+04A 00000000 SECT17 notype ()    External     | @_shi_freeExternal@4
+04B 00000000 SECT18 notype       Static       | .debug$F
+    Section length   10, #relocs    1, #linenums    0, checksum        0, selection    5 (pick associative Section 0x17)
+04D 00000000 SECT19 notype       Static       | .text
+    Section length  13A, #relocs    9, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+04F 00000000 SECT19 notype ()    External     | @_shi_resizeExternal@16
+050 00000000 UNDEF  notype ()    External     | @_shi_sysReallocPool@16
+051 00000000 SECT1A notype       Static       | .debug$F
+    Section length   10, #relocs    1, #linenums    0, checksum        0, selection    5 (pick associative Section 0x19)
+053 00000000 SECT1B notype       Static       | .text
+    Section length   30, #relocs    2, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+055 00000000 SECT1B notype ()    External     | @_shi_initPageFS@12
+056 00000000 SECT1C notype       Static       | .debug$F
+    Section length   10, #relocs    1, #linenums    0, checksum        0, selection    5 (pick associative Section 0x1B)
+058 00000000 SECT1D notype       Static       | .text
+    Section length   A6, #relocs    2, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+05A 00000000 SECT1D notype ()    External     | @_shi_initLinksFS@12
+05B 00000000 SECT1E notype       Static       | .debug$F
+    Section length   10, #relocs    1, #linenums    0, checksum        0, selection    5 (pick associative Section 0x1D)
+05D 00000000 SECT1F notype       Static       | .text
+    Section length   83, #relocs    6, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+05F 00000000 SECT1F notype ()    External     | _MemAllocFS@4
+060 00000000 SECT20 notype       Static       | .debug$F
+    Section length   10, #relocs    1, #linenums    0, checksum        0, selection    5 (pick associative Section 0x1F)
+062 00000000 SECT21 notype       Static       | .text
+    Section length  167, #relocs    5, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+064 00000000 SECT21 notype ()    External     | @_shi_allocFS@4
+065 00000000 SECT22 notype       Static       | .debug$F
+    Section length   10, #relocs    1, #linenums    0, checksum        0, selection    5 (pick associative Section 0x21)
+067 00000000 SECT23 notype       Static       | .text
+    Section length   B5, #relocs    6, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+069 00000000 SECT23 notype ()    External     | _MemFreeFS@4
+06A 00000000 SECT24 notype       Static       | .debug$F
+    Section length   10, #relocs    1, #linenums    0, checksum        0, selection    5 (pick associative Section 0x23)
+06C 00000000 SECT25 notype       Static       | .text
+    Section length   31, #relocs    1, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+06E 00000000 SECT25 notype ()    External     | @_shi_freeFS@4
+06F 00000000 SECT26 notype       Static       | .debug$F
+    Section length   10, #relocs    1, #linenums    0, checksum        0, selection    5 (pick associative Section 0x25)
+071 00000000 SECT27 notype       Static       | .text
+    Section length  159, #relocs    9, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+073 00000000 SECT27 notype ()    External     | @_shi_initPageVariable@8
+074 00000000 SECT28 notype       Static       | .debug$F
+    Section length   10, #relocs    1, #linenums    0, checksum        0, selection    5 (pick associative Section 0x27)
+076 00000000 SECT29 notype       Static       | .text
+    Section length   17, #relocs    1, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+078 00000000 SECT29 notype ()    External     | @shi_initPageSmall@8
+079 00000000 SECT2A notype       Static       | .debug$F
+    Section length   10, #relocs    1, #linenums    0, checksum        0, selection    5 (pick associative Section 0x29)
+07B 00000000 SECT2B notype       Static       | .text
+    Section length   BD, #relocs    8, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+07D 00000000 SECT2B notype ()    External     | _MemAllocPtr@12
+07E 00000000 SECT2C notype       Static       | .debug$F
+    Section length   10, #relocs    1, #linenums    0, checksum        0, selection    5 (pick associative Section 0x2B)
+080 00000000 SECT2D notype       Static       | .text
+    Section length  24D, #relocs    D, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+082 00000000 SECT2D notype ()    External     | @shi_allocSmall@12
+083 00000000 SECT2E notype       Static       | .debug$F
+    Section length   10, #relocs    1, #linenums    0, checksum        0, selection    5 (pick associative Section 0x2D)
+085 00000000 SECT2F notype       Static       | .text
+    Section length   41, #relocs    2, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+087 00000000 SECT2F notype ()    External     | @shi_freeSmall@4
+088 00000000 SECT30 notype       Static       | .debug$F
+    Section length   10, #relocs    1, #linenums    0, checksum        0, selection    5 (pick associative Section 0x2F)
+08A 00000000 SECT31 notype       Static       | .text
+    Section length  1AC, #relocs    7, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+08C 00000000 SECT31 notype ()    External     | @_shi_allocVar@12
+08D 00000000 SECT32 notype       Static       | .debug$F
+    Section length   10, #relocs    1, #linenums    0, checksum        0, selection    5 (pick associative Section 0x31)
+08F 00000000 SECT33 notype       Static       | .text
+    Section length  296, #relocs    E, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+091 00000000 SECT33 notype ()    External     | @_shi_allocBlock@12
+092 00000000 SECT34 notype       Static       | .debug$F
+    Section length   10, #relocs    1, #linenums    0, checksum        0, selection    5 (pick associative Section 0x33)
+094 00000000 SECT35 notype       Static       | .text
+    Section length   A7, #relocs    6, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+096 00000000 SECT35 notype ()    External     | _MemFreePtr@4
+097 00000000 SECT36 notype       Static       | .debug$F
+    Section length   10, #relocs    1, #linenums    0, checksum        0, selection    5 (pick associative Section 0x35)
+099 00000000 SECT37 notype       Static       | .text
+    Section length  1A3, #relocs    B, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+09B 00000000 SECT37 notype ()    External     | @_shi_freeVar@4
+09C 00000000 SECT38 notype       Static       | .debug$F
+    Section length   10, #relocs    1, #linenums    0, checksum        0, selection    5 (pick associative Section 0x37)
+09E 00000000 SECT39 notype       Static       | .text
+    Section length  154, #relocs    C, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+0A0 00000000 SECT39 notype ()    External     | _MemReAllocPtr@12
+0A1 00000000 SECT3A notype       Static       | .debug$F
+    Section length   10, #relocs    1, #linenums    0, checksum        0, selection    5 (pick associative Section 0x39)
+0A3 00000000 SECT3B notype       Static       | .text
+    Section length  2E0, #relocs    E, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+0A5 00000000 SECT3B notype ()    External     | @_shi_resizeAny@16
+0A6 00000239 SECT3B notype       Label        | $L8621
+0A7 000001E5 SECT3B notype       Label        | $L8645
+0A8 00000095 SECT3B notype       Label        | $L8626
+0A9 0000019C SECT3B notype       Label        | $L8641
+0AA 000002CC SECT3B notype       Label        | $L8858
+0AB 00000000 SECT3C notype       Static       | .debug$F
+    Section length   10, #relocs    1, #linenums    0, checksum        0, selection    5 (pick associative Section 0x3B)
+0AD 00000000 SECT3D notype       Static       | .text
+    Section length  299, #relocs    C, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+0AF 00000000 SECT3D notype ()    External     | @_shi_resizeVar@8
+0B0 00000000 SECT3E notype       Static       | .debug$F
+    Section length   10, #relocs    1, #linenums    0, checksum        0, selection    5 (pick associative Section 0x3D)
+0B2 00000000 SECT3F notype       Static       | .text
+    Section length   E4, #relocs    C, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+0B4 00000000 SECT3F notype ()    External     | _MemSizePtr@4
+0B5 0000009A SECT3F notype       Label        | $L8677
+0B6 0000008D SECT3F notype       Label        | $L8683
+0B7 00000062 SECT3F notype       Label        | $L8680
+0B8 00000080 SECT3F notype       Label        | $L8682
+0B9 000000D0 SECT3F notype       Label        | $L8883
+0BA 00000000 SECT40 notype       Static       | .debug$F
+    Section length   10, #relocs    1, #linenums    0, checksum        0, selection    5 (pick associative Section 0x3F)
+
+String Table Size = 0x3CE bytes
+
+  Summary
+
+          38 .bss
+         3BD .data
+         B10 .debug$F
+          17 .drectve
+          F7 .rdata
+        815B .text

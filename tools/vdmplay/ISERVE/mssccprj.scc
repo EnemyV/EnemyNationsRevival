@@ -1,0 +1,7 @@
+SCC = This is a Source Code Control file
+
+[iserve.mak]
+SCC_Project_Name = "$/vdmplay/src/iserve", ZABAAAAA
+
+[ISERVEDS.MAK]
+SCC_Project_Name = "$/vdmplay/src/iserve", XCCAAAAA

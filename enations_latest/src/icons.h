@@ -78,7 +78,7 @@ protected:
 
 class CStatData
 {
-friend CIcons;
+friend class CIcons;
 public:
 						CStatData ();
 						~CStatData ();
@@ -139,7 +139,7 @@ protected:
 
 class CStatInst
 {
-friend CWndStatBar;
+friend class CWndStatBar;
 // Construction
 public:
 					CStatInst ();
@@ -189,7 +189,7 @@ protected:
 	CDIB *						m_pBackDib;			// bitmap that is the background (for transparent parts)
 	CPoint						m_ptBackOff;		// where to start tiling from
 
-	CString						m_sText;				// text for status text type windows
+	std::string				m_sText;				// text for status text type windows
 	IMPORTANCE				m_iImp;					// how important
 };
 
@@ -200,13 +200,15 @@ protected:
 class CWndStatBar : public CWndBase
 {
 #ifdef _CHEAT
-friend CWndBar;
+friend class CWndBar;
 #endif
 // Construction
 public:
 					CWndStatBar();
 
 	void		Create (CIcons * pIcons, int iIndex, CRect & rect, CWnd * pPar, CDIB * pBack = NULL);
+	void		Create (CIcons * pIcons, int iIndex, CRect & rect, CWndStub * pPar, CDIB * pBack = NULL)
+		{ Create( pIcons, iIndex, rect, CWnd::FromHandle( pPar ? pPar->m_hWnd : NULL ), pBack ); }
 	void		Attach (CIcons * pIcons, int iIndex) { m_statInst.Attach (pIcons, iIndex); }
 	void		CheckSize ();
 

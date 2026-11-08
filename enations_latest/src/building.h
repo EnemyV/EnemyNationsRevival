@@ -15,6 +15,9 @@
 #include "unit.h"
 #include "vehicle.h"
 
+class SDL2BuildTransport;
+class SDL2BuildingWindow;
+
 
 const int ROCKET_APT_CAP = 80;
 const int ROCKET_OFC_CAP = 40;
@@ -40,6 +43,10 @@ class CBuildFarm;
 class CBuildRepair;
 class CBuildShipyard;
 class CRepairBuilding;
+
+// Forward declaration ONLY. building.h deliberately does not #include "altoutput.h" (see the
+// note on m_afAltAccum below); CPowerBuilding needs nothing more than the incomplete type here.
+namespace AltOutput { struct AltOutputDef; }
 
 
 /////////////////////////////////////////////////////////////////////////////
@@ -104,11 +111,11 @@ friend void CStructure::InitLang ();
 friend void CStructure::Close ();
 public:
 					CStructureType () {}
-		char const *	GetDesc (int iInd) { ASSERT_STRICT ((0 <= iInd) && (iInd < 6)); return (m_sTitle[iInd]); }
+		char const *	GetDesc (int iInd) { ASSERT_STRICT ((0 <= iInd) && (iInd < 6)); return (m_sTitle[iInd].c_str()); }
 		int						GetNum () { return (6); }
 
 protected:
-		CString		m_sTitle[6];
+		std::string		m_sTitle[6];
 
 #ifdef _DEBUG
 public:
@@ -330,7 +337,7 @@ friend void CStructure::InitSprites ();
 friend void CStructure::InitLang ();
 
 public:
-			CBuildMaterials () : CStructureData (CStructureData::UTmaterials) {}
+CBuildMaterials( ): CStructureData( CStructureData::UTmaterials ), m_aiInput( ), m_aiOutput( ), m_iTime( ) {}
 
 			int			GetTime () const;
 			int			GetInput (int iInd) const;
@@ -414,7 +421,7 @@ friend void CStructure::InitSprites ();
 friend void CStructure::InitLang ();
 
 public:
-			CBuildHousing () : CStructureData (CStructureData::UThousing) {}
+CBuildHousing( ): CStructureData( CStructureData::UThousing ), m_iCapacity( ) {}
 
 			int		GetCapacity () { ASSERT_STRICT_VALID (this); return (m_iCapacity); }
 
@@ -495,7 +502,7 @@ friend void CStructure::InitSprites ();
 friend void CStructure::InitLang ();
 
 public:
-			CBuildPower () : CStructureData (CStructureData::UTpower) {}
+CBuildPower( ): CStructureData( CStructureData::UTpower ), m_iPower( ), m_iInput( ), m_iRate( ) {}
 
 			int		GetPower () { ASSERT_STRICT_VALID (this); return (m_iPower); }
 			int		GetInput () { ASSERT_STRICT_VALID (this); return (m_iInput); }
@@ -523,7 +530,7 @@ friend void CStructure::InitSprites ();
 friend void CStructure::InitLang ();
 
 public:
-			CBuildResearch () : CStructureData (CStructureData::UTresearch) {}
+CBuildResearch( ): CStructureData( CStructureData::UTresearch ), m_iRate( ) {}
 
 			int		GetRate () { ASSERT_STRICT_VALID (this); return (m_iRate); }
 
@@ -619,14 +626,14 @@ friend void CStructure::InitSprites ();
 friend void CStructure::InitLang ();
 
 public:
-			CBuildMine () : CStructureData (CStructureData::UTmine) {}
+CBuildMine( ): CStructureData( CStructureData::UTmine ), m_iTime( ), m_iAmount( ), m_iOutput( ) {}
 
 			int				GetTimeToMine () const { return (m_iTime); }
 			int				GetAmount () const { return (m_iAmount); }
 			int				GetTypeMines () const { return (m_iOutput); }
 
 protected:
-			int			m_iTime;								// time to mine
+			int			m_iTime;							// time to mine
 			int			m_iAmount;							// amount produced in MAX_DENSITY ground
 			int			m_iOutput;							// CMaterialTypes:: it mines
 
@@ -647,9 +654,9 @@ friend void CStructure::InitSprites ();
 friend void CStructure::InitLang ();
 
 public:
-			CBuildFarm () : CStructureData (CStructureData::UTfarm) {}
+CBuildFarm( ): CStructureData( CStructureData::UTfarm ), m_iTime( ), m_iOutput( ), m_iQuantity( ) {}
 
-			void			BuildFarm ();
+			void			BuildFarm (); // apparently unused and unimplemented
 
 			int				GetTimeToFarm () const { return (m_iTime); }
 			int				GetTypeFarm () const { return (m_iOutput); }
@@ -658,7 +665,7 @@ public:
 static int			GetCowDistance () { return (3); }
 
 protected:
-			int			m_iTime;								// time to mine
+			int			m_iTime;							// time to mine
 			int			m_iOutput;							// CMaterialTypes:: it mines
 			int			m_iQuantity;						// how much you get each time
 
@@ -676,8 +683,8 @@ public:
 class CBuilding : public CUnit
 {
 friend class CGame;
-friend CWndOrders;
-friend void CUnit::DecDamagePoints (int iDamage, DWORD dwKiller);
+friend class CWndOrders;
+friend void CUnit::DecDamagePoints (int iDamage, DWORD dwKiller, BOOL bApplyMults);
 
 public:
 									CBuilding () { ctor (); }
@@ -691,7 +698,58 @@ public:
 		virtual void GetAccepts (int * pVals) const;
 		virtual void ConstComplete () { }
 
+		// ---- auto-stock ceilings -------------------------------------------------
+		// How much of iInd the AUTO-ROUTER (CHPRouter) is willing to pile up here.
+		// -1 == uncapped, which is the answer for every building whose demand is
+		// already self-limiting (mines/farms need nothing; smelters and power plants
+		// ask for a bounded number of minutes of input via GetNextMinuteMat).
+		//
+		// Only the sinks that used to grow without bound override this: warehouses
+		// and the rocket (flat ceilings, below) and vehicle factories (a multiple of
+		// the dearest thing they can build). Construction and repair are NEVER capped
+		// -- a building that needs materials to finish gets them regardless.
+		//
+		// This bounds AUTOMATIC hauling only. Hand-loading a truck and a player-drawn
+		// route still move whatever the player asks for.
+		virtual int		GetAutoStockCap (int /*iInd*/) const { return ( -1 ); }
+
+		// Per-material auto-stock veto ("no iron in this warehouse"). Player-set, one
+		// bit per haulable material, riding m_unitFlags -- see CUnit::UNIT_FLAGS. The
+		// sense is BLOCKED-when-set so zero (every pre-existing building, and every
+		// building in an older save) means "accept everything", exactly as before.
+		BOOL					IsMatBlocked (int iInd) const;
+		void					SetMatBlocked (int iInd, BOOL bBlock);
+		// TRUE if this building type exposes the per-material checkboxes at all.
+		BOOL					CanBlockMaterials () const;
+		// TRUE if this building type exposes the per-material checkboxes at all.
+		// TRUE if iInd is one of the materials that HAS a veto bit (the six haulable
+		// ones). Callers index by MATERIAL id, never by bit position, so the UI is
+		// free to list them in whatever order reads best.
+		static BOOL				IsBlockableMat (int iInd);
+
+		// ---- automatic routing membership ---------------------------------------
+		// Is this building part of the auto-router's network? Default TRUE. When a
+		// player turns it off the router stops all OPEN-ENDED stocking of it: no
+		// production inputs, vehicle-build materials, power-plant fuel or warehouse
+		// surplus delivered in; no pickups FROM it; and its own surplus no longer
+		// counts toward what warehouses are told to absorb.
+		//
+		// CONSTRUCTION and REPAIR materials are the exception and keep flowing --
+		// those needs are finite and are what lets the building exist at all, so
+		// stalling them would just be a way to silently strand a half-built or
+		// bombed-out structure. (Same carve-out the auto-stock ceilings make.)
+		//
+		// Player-drawn routes and the Load Truck dialog are unaffected either way --
+		// this is a switch for hand-managing one building, not for shutting it down.
+		BOOL					IsAutoRouteEnabled () const;
+		void					SetAutoRouteEnabled (BOOL bEnable);
+		// TRUE if this building type takes part in material routing at all, i.e.
+		// whether the toggle is worth showing. Housing/command/embassy/fort/research
+		// neither consume nor supply haulable materials, so they never do.
+		BOOL					CanAutoRoute () const;
+
 		void					AnimateOperating (BOOL bOper);
+		void					SetAmbientHalfSpeed (BOOL bHalf);
 		void					StopUnit () { CUnit::StopUnit (); AnimateOperating (FALSE); }
 		void					ResumeUnit () { CUnit::ResumeUnit (); 
 																	if ( ! IsConstructing () )
@@ -712,12 +770,23 @@ public:
 		BOOL					IsLive () const;	// TRUE if we can see it now
 		void					UpdateStore (BOOL bForce);
 
+		// Open the read-only building-info window (storage / power / housing / turret
+		// as applicable). Non-modal; the building owns it and closes it on death.
+		// bOnTop keeps it floating above other dialogs (used when launched from the
+		// build dialog's (I) button, which itself stays on top each frame).
+		void					ShowInfoWindow ( bool bOnTop = false );
+
+		// Production progress 0..100 toward this producer's next output batch (mines /
+		// farms / smelters accumulate toward a threshold then emit a batch). -1 means
+		// "no production cycle" (most buildings). Shown as a bar in the info window.
+		virtual int				GetProductionPer () const { return ( -1 ); }
+
 		void					DrawStatusPer (CDC *pDc, CRect *pRect) const;
 		virtual int		GetNumStatusBars () const;
 		virtual void	PaintStatusBars (CStatInst * pSi, int iNum, CDC * pDc) const;
-		virtual void	ShowStatusText (CString & str);
+		virtual void	ShowStatusText (std::string & str);
 
-		void 					GetDesc (CString & sText) const;
+		void 					GetDesc (std::string & sText) const;
 		CRect					Draw( const CHexCoord & );
 		void					DrawFoundation( const CHexCoord & );
 		CRect					DrawTurret( CPoint );
@@ -741,7 +810,26 @@ public:
 
 		int						GetBuildPer () const { return m_iLastPer; }
 
-		void					AssignToHex (CHexCoord hex, int iAlt);
+		// AltOutput conversion progress 0..100 toward the next secondary-output unit (the runtime
+		// fractional accumulator). Lets the info window show a live progress bar for modes whose
+		// host has no normal production cycle — Fracking (exhausted well, H3) and Coal-Liquefaction
+		// (the power plant in oil mode, C4).
+		int						GetAltProgressPer () const {
+			int p = (int)( m_fAltAccum * 100.0f );
+			return ( p < 0 ) ? 0 : ( p > 100 ? 100 : p );
+		}
+		// eMultiTrickle (Desperate/Scrounging) progress: the FURTHEST-ALONG line as a representative
+		// bar. Line 0 alone sits dead at 0 for a terrain-scaled Scrounging warehouse whose site
+		// yields no lumber, even though its other lines are ticking along fine.
+		int						GetAltProgressPerMulti () const {
+			float fMax = m_afAltAccum[0];
+			for ( int i = 1; i < 4; i++ )
+				if ( m_afAltAccum[i] > fMax ) fMax = m_afAltAccum[i];
+			int p = (int)( fMax * 100.0f );
+			return ( p < 0 ) ? 0 : ( p > 100 ? 100 : p );
+		}
+
+		void					AssignToHex (CHexCoord hex, int iAlt, BOOL bSetAlt = TRUE);
 		CHexCoord &		GetHex ();
 		CHexCoord const &		GetHex () const;
 		int						GetDir () const { return (m_iBldgDir); }
@@ -763,6 +851,16 @@ public:
 		int						GetBldgMatRepair (int iInd) const;
 		virtual int		GetBldgResReq (int iInd, BOOL) const { return GetBldgMatReq (iInd, TRUE); }
 		virtual int		GetNextMinuteMat (int iInd) const { return GetBldgResReq (iInd, FALSE); }
+
+		// Per-building MATERIAL ROLE -- the single source of truth for "what does THIS building
+		// want delivered / hand out / need on hand right now". Virtual because a per-BUILDING mode
+		// (an AltOutput toggle) can answer differently from the static per-TYPE structure data, which
+		// by construction cannot see it. Base = "no material role"; only CPowerBuilding overrides
+		// these today (a later pass could adopt them for CMaterialBuilding).
+		virtual int		EffInputMat () const { return -1; }		// material it wants delivered NOW (-1 = none)
+		virtual int		EffOutputMat () const { return -1; }	// material it hands out NOW      (-1 = none)
+		virtual int		EffInputPerMin () const { return 0; }	// TRUE units/min of EffInputMat consumed (0 = none)
+		virtual int		EffInputBatch () const { return 1; }	// units of EffInputMat on hand to run ONE batch (1 = any)
 
 		void					AddConstDone (int iDone);
 		CStructureSprite *GetSprite() const
@@ -817,6 +915,8 @@ protected:
 		void					DropUnits (int iVehTyp, int iWheelTyp, int iNum, int iNumSkip, int *piTime, int iBlkSiz, CHexCoord const & hex, CHexCoord const & hexUL);
 		BOOL					InitRocket (CHexCoord const & hex, BOOL bMe);
 
+		SDL2BuildingWindow*		m_pSdlInfoWin = nullptr;		// read-only info window (non-modal)
+
 		CHexCoord			m_hex;							// CHex we are assigned to
 		LONG					m_iBldgDir;
 
@@ -830,6 +930,17 @@ protected:
 
 		// remainder from last operate loop
 		float					m_fOperMod;					// apply to next operate
+
+		// AltOutput (alt-output toggle) runtime fractional accumulator -- carries the
+		// sub-unit secondary-output remainder between production calls so small yields
+		// aren't lost. Runtime-only, NOT serialized -- losing a sub-unit fraction on save
+		// is harmless. (NOTE: unlike this accumulator, the alt_oil toggle ITSELF does
+		// persist -- it rides m_unitFlags. The old "like the alt_oil toggle" wording here
+		// was wrong; see unit.h.)
+		float					m_fAltAccum = 0.0f;
+		// eMultiTrickle (Desperate Measures / Scrounging): one accumulator per output line
+		// (size must match AltOutput::kMaxMulti = 4; hardcoded to avoid an altoutput.h include here).
+		float					m_afAltAccum[4] = { 0.0f, 0.0f, 0.0f, 0.0f };
 
 		// construction vars
 		LONG					m_iConstDone;						// -1 == done, else time building so far
@@ -874,7 +985,8 @@ public:
 
 		virtual BOOL	IsOperating () const;
 		virtual int		GetNextMinuteMat (int iInd) const;
-		virtual void	ShowStatusText (CString & str);
+		virtual void	ShowStatusText (std::string & str);
+		virtual int		GetProductionPer () const;
 
 		virtual void GetInputs (int * pVals) const;
 		virtual void GetAccepts (int * pVals) const { GetInputs (pVals); }
@@ -892,7 +1004,7 @@ public:
 
 class CVehicleBuilding : public CBuilding
 {
-friend CDlgBuildTransport;
+friend class CDlgBuildTransport;
 public:
 
 									CVehicleBuilding () { ctor (); }
@@ -902,6 +1014,13 @@ public:
 
 		virtual void GetInputs (int * pVals) const;
 		virtual void GetAccepts (int * pVals) const { GetInputs (pVals); }
+
+		// A factory hoards up to STOCK_UNITS times the largest per-material demand of
+		// anything it can currently build -- so a plant whose dearest unit takes 200
+		// steel tops out at 1000 steel, and never accumulates a material nothing in
+		// its catalogue uses. Inherited unchanged by CShipyardBuilding.
+		enum { STOCK_UNITS = 5 };
+		virtual int		GetAutoStockCap (int iInd) const;
 
 		void					DestroyAllWindows ();
 
@@ -918,7 +1037,7 @@ public:
 		void					MaterialChange ();
 		int						GetNumStatusBars () const { return 3; }
 		void					PaintStatusBars (CStatInst * pSi, int iNum, CDC * pDc) const;
-		void					ShowStatusText (CString & str);
+		void					ShowStatusText (std::string & str);
 
 									// iInd material needed to finish vehicle building
 		int						NeedToFinish (int iInd) const;
@@ -933,10 +1052,12 @@ protected:
 		void					ctor ();
 
 		CDlgBuildTransport *	m_pDlgTransport;
+		SDL2BuildTransport*     m_pSdlBuildTransport = nullptr;  // SDL2 non-modal build dialog
 
 		CBuildUnit const *	m_pBldUnt;				// vehicle building
 		LONG								m_aiUsed [CMaterialTypes::num_build_types];	// materials used for this vehicle
 		int									m_iNum;						// number to build
+		DWORD								m_dwNextPplLog = 0;	// [VEHPPL] probe throttle (transient)
 
 #ifdef _DEBUG
 public:
@@ -968,9 +1089,13 @@ public:
 		void					MaterialChange ();
 		int						GetNumStatusBars () const { return 3; }
 		void					PaintStatusBars (CStatInst * pSi, int iNum, CDC * pDc) const;
-		void					ShowStatusText (CString & str);
+		void					ShowStatusText (std::string & str);
 
 		CVehicle *		GetVehRepairing () { return (m_pVehRepairing); }
+
+		// Read-only access to the waiting queue (for the repair info window).
+		int						GetRepairQueueCount () const { return ((int) m_lstNext.GetCount ()); }
+		CVehicle *		GetRepairQueueAt (int idx) const;
 
 		void 					Serialize (CArchive & ar);
 		virtual void	FixUp ();
@@ -1019,7 +1144,7 @@ public:
 		void					MaterialChange ();
 		int						GetNumStatusBars () const { return 3; }
 		void					PaintStatusBars (CStatInst * pSi, int iNum, CDC * pDc) const;
-		void					ShowStatusText (CString & str);
+		void					ShowStatusText (std::string & str);
 
 									// iInd material needed to finish vehicle building
 		int						NeedToFinish (int iInd) const;
@@ -1059,13 +1184,30 @@ public:
 
 		virtual BOOL	IsOperating () const;
 		void					BuildPower ();
-		void					ShowStatusText (CString & str);
+		void					ShowStatusText (std::string & str);
 		virtual int		GetNextMinuteMat (int iInd) const;
 
 		virtual void GetInputs (int * pVals) const;
 		virtual void GetAccepts (int * pVals) const { GetInputs (pVals); }
 
+		// Material role (see CBuilding::EffInputMat). A plant normally burns its fuel and hands out
+		// nothing; with a TIME-DRIVEN AltOutput conversion on it consumes the def's input instead.
+		virtual int		EffInputMat () const;
+		virtual int		EffOutputMat () const;
+		virtual int		EffInputPerMin () const;
+		virtual int		EffInputBatch () const;
+
+		// Conversion-cycle progress for a TIME-DRIVEN alt mode (the batch timer). A fuel plant
+		// keeps the CBuilding base answer of -1 ("no production cycle").
+		virtual int		GetProductionPer () const;
+
 protected:
+
+		// The def driving this plant's TIME-DRIVEN alt mode, or NULL: toggle on, def Available()
+		// for the owner, and m_eDrive == eTimeDriven. One source of truth for all four Eff*
+		// answers and for BuildPower's gates. NULL unless this plant is actively running a kiln
+		// (Charcoal) or liquefaction conversion; every other def is fuel-driven.
+		AltOutput::AltOutputDef const *	TimeDrivenDef () const;
 
 #ifdef _DEBUG
 public:
@@ -1081,12 +1223,55 @@ class CWarehouseBuilding : public CBuilding
 public:
 
 									CWarehouseBuilding () { }
-									CWarehouseBuilding (int iBldg, int iBldgDir, int iOwner=0, DWORD ID = 0) : 
+									CWarehouseBuilding (int iBldg, int iBldgDir, int iOwner=0, DWORD ID = 0) :
 																	CBuilding (iBldg, iBldgDir, iOwner, ID) { }
 
 		virtual void GetAccepts (int * pVals) const;
 
+		// Scrounging (AltOutput): what the ground around THIS warehouse is made of, on three
+		// 0..10 scales - forest cover, soil fertility (both as the farm and mill placement
+		// preview shows them), and broken ground (rough / hill / desert, mountain double). Every line of
+		// the Scrounging toggle scales with one of them, so the SITE decides what it yields:
+		// woods give lumber, good soil gives food, rough country gives scrap iron and coal,
+		// and a warehouse paved into the city core gives nothing at all. Scanned on first use
+		// and cached; see CWarehouseBuilding::UpdateScrounge.
+		//
+		// Terrain DOES change at runtime -- Slash and Burn retypes forest -> plain -- so this
+		// cache is not write-once. CFarmBuilding::ApplySlash calls InvalidateScrounge on every
+		// warehouse whose scan ring covers the cut hex, and the next getter re-scans.
+		int				GetScroungeForestMult ();
+		int				GetScroungeSoilMult ();
+		int				GetScroungeIronMult ();
+		int				GetScroungeCoalMult ();
+		void			UpdateScrounge ();
+		void			InvalidateScrounge ();
+
+		// Flat per-material ceiling for the auto-router. The rocket is the colony's
+		// central store so it gets the bigger one; a warehouse is a local depot.
+		// Both used to be bottomless: the router hands a warehouse every surplus it
+		// can find (SetExcessMaterials) and never subtracted what the warehouse was
+		// already holding, so idle trucks shuttled forever.
+		//
+		// NOTE a SEAPORT is also UTwarehouse in ENATIONS.DAT -- it is warehouse-class
+		// for every existing router behaviour (it already shows a Storage section and
+		// already absorbs surplus), so it is capped too. Broken out as its own constant
+		// because a dock is a transfer point, not a depot, and may well want a
+		// different number once this has been played.
+		enum { ROCKET_STOCK_CAP = 5000, WAREHOUSE_STOCK_CAP = 2000, SEAPORT_STOCK_CAP = 2000 };
+
+		virtual int		GetAutoStockCap (int iInd) const;
+
 protected:
+
+		// -1 = not scanned yet (also the state after a load, and after InvalidateScrounge)
+		// - these are runtime-only.
+		// HUNDREDTHS of the 0..10 scale (so 0..1000; the two scrap ones reach 2000 because
+		// mountain counts double). MultiLinesFor does the single rounding - do NOT truncate
+		// these to whole multipliers on the way past, that bug shipped once already.
+		LONG			m_iScrForest = -1;
+		LONG			m_iScrSoil   = -1;
+		LONG			m_iScrIron   = -1;
+		LONG			m_iScrCoal   = -1;
 
 #ifdef _DEBUG
 public:
@@ -1107,7 +1292,7 @@ public:
 
 		int						GetNumStatusBars () const { if (m_iConstDone != -1) return (3); return 2; }
 		void					PaintStatusBars (CStatInst * pSi, int iNum, CDC * pDc) const;
-		void					ShowStatusText (CString & str);
+		void					ShowStatusText (std::string & str);
 
 protected:
 };
@@ -1127,15 +1312,27 @@ public:
 		virtual BOOL	IsOperating () const
 												{ if ( ! CBuilding::IsOperating () ) return FALSE;
 													return m_iMinerals > 0; }
+
+		// Fracking (#23): a deposit-exhausted well/mine has nothing left to mine. The
+		// minerals counter is protected, so expose read-only predicates for the AltOutput
+		// fracking def (an EXHAUSTED OIL WELL trickles oil). IsOilWell() = a mine whose
+		// output material is oil.
+		bool			IsExhausted () const { return ( m_iMinerals <= 0 ); }
+		bool			IsOilWell () const
+												{ CBuildMine* pBm = GetData ()->GetBldMine ();
+													return ( pBm && ( pBm->GetTypeMines () == CMaterialTypes::oil ) ); }
+
 		static int		TotalQuantity (CHexCoord const & hex, int iTyp, int iDir);
 		static int		TotalDensity (CHexCoord const & hex, int iTyp, int iDir);
+		virtual int		GetProductionPer () const;
 		void					BuildMine ();
+		void					FrackTick ();		// Fracking (#23): exhausted-well oil trickle + energy
 		void					UpdateMine ();		// copy ground data to mine
 		void					UpdateGround ();	// copy mine data to ground
 
 		// show what we have mined
 		int						GetNumStatusBars () const { if (m_iConstDone != -1) return (3); return 2; }
-		void					ShowStatusText (CString & str);
+		void					ShowStatusText (std::string & str);
 
 		void 					Serialize (CArchive & ar);
 
@@ -1173,15 +1370,62 @@ public:
 									CFarmBuilding () { ctor (); }
 									CFarmBuilding (int iBldg, int iBldgDir, int iOwner=0, DWORD ID = 0) : 
 																	CBuilding (iBldg, iBldgDir, iOwner, ID) { ctor (); }
+								~CFarmBuilding ();
 
 		static int		LandMult (CHexCoord _hex, int iTyp, int iDir);
+
+		// The two halves of LandMult, usable by any building that wants to know what its
+		// own site is made of (Scrounging asks this of a warehouse). Both 0..10: forest
+		// coverage over the footprint+3 ring, soil fertility over the footprint+1 ring.
+		// ScrapMultsAt is the third of the set (not part of LandMult - no farm wants it):
+		// scrap-bearing ground over the footprint+2 ring - rough / hill / desert at full
+		// weight, mountain DOUBLE, forest HALF, plus city (iron only) and road (coal only).
+		// Iron and coal are SEPARATE scales, so it fills two outputs in one pass. Scale is
+		// 0..20, not 0..10: rock beats the cap.
+		// iScale multiplies the result before the divide, so a caller can keep fractional
+		// precision the whole-number average would throw away: Scrounging passes 100 and
+		// rounds ONCE at the end. Farms/mills omit it and get the historic 0..10.
+		static int		ForestMultAt (CHexCoord _hex, int iTyp, int iDir, int iScale = 1);
+		static int		SoilMultAt (CHexCoord _hex, int iTyp, int iDir);
+		static void		ScrapMultsAt (CHexCoord _hex, int iTyp, int iDir, int * piIron, int * piCoal,
+									  int iScale = 1);
+		// SoilMultAt as SCROUNGING sees it - identical except bog and water read 6, so a
+		// warehouse on a marsh or a shoreline forages 1 food. Farms keep SoilMultAt; nothing
+		// of theirs moves.
+		static int		ScroungeSoilMultAt (CHexCoord _hex, int iTyp, int iDir, int iScale = 1);
+		virtual int		GetProductionPer () const;
 		void					BuildFarm ();
+
+		// Slash and Burn: is THIS mill cutting at 250% right now? Lumber mill + alt_oil set +
+		// an Available() eModifier def. The ONE source of truth -- BuildFarm and both UI rate
+		// readouts call it rather than re-deriving the test. FALSE for every food farm by
+		// construction (the lumber check comes first).
+		BOOL					SlashBurnActive () const;
+
+		// Slash and Burn deforestation. SlashTick() accrues destroyed hexes on TIME and is called
+		// from BuildFarm on every tick the mill actually produces. ApplySlash() is the ONE place a
+		// hex is cleared: it retypes the hex and refreshes m_iTerMult on every lumber mill whose
+		// box covers it. Both the local path and the netapi hex_retype RX path call ApplySlash, so
+		// no client can keep a stale multiplier. Static because the RX side has no mill to hand.
+		void					SlashTick ();
+		static BOOL		ApplySlash (CHexCoord hex);
 		void					UpdateFarm ();
+
+		// Soil fertility of the hexes this farm covers (0..10). The status bar and
+		// the farm info window show it as a percent (m_iTerMult * 10), drawn with the
+		// green ICON_DENSITY "X" art.
+		int						GetTerMult () const { return ((int) m_iTerMult); }
+
+		// "Fields grown around farms": paint the farmable ring as crop fields,
+		// animate them through growth stages, and restore the soil on teardown.
+		void					GrowFields ();          // (re)build & paint the plots
+		void					RevertFields ();        // restore plots to their soil
+		void					UpdateFieldStage ( int iTimeToFarm );  // advance growth anim
 
 		// lumber for mill, production rate for farm
 		int						GetNumStatusBars () const;
 		void					PaintStatusBars (CStatInst * pSi, int iNum, CDC * pDc) const;
-		void					ShowStatusText (CString & str);
+		void					ShowStatusText (std::string & str);
 
 		void 					Serialize (CArchive & ar);
 
@@ -1190,8 +1434,20 @@ protected:
 
 		LONG					m_iTerMult;											// multiplier for terrain
 
+		// Slash and Burn: fractional hexes-to-destroy carried between ticks. TRANSIENT -- it is
+		// deliberately NOT serialized. CFarmBuilding::Serialize writes exactly ONE field
+		// (m_iTerMult), so appending anything here would change the on-disk layout of every farm
+		// and lumber mill in every existing save. Losing it on load costs at most one hex of
+		// progress, the same trade CBuilding::m_fAltAccum already makes.
+		float					m_fSlashAccum;
+
 		CList <CLandUse *, CLandUse *>	m_landUse;		// surrounding tiles we are using
 		LONG					m_iTimeToNext;									// time to next change
+
+		// Field plots painted around this farm. Transient - not serialized; rebuilt
+		// on the first operational tick (and after load) by GrowFields().
+		std::vector<DWORD>	m_fieldHexes;									// packed CHexCoord of plots
+		int					m_iFieldStage;									// last growth stage applied (-1 = none)
 
 #ifdef _DEBUG
 public:

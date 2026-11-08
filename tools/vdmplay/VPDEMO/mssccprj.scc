@@ -1,0 +1,7 @@
+SCC = This is a Source Code Control file
+
+[vpdemo.mak]
+SCC_Project_Name = "$/vdmplay/src/vpdemo", BSBAAAAA
+
+[VPDEMODS.MAK]
+SCC_Project_Name = "$/vdmplay/src/vpdemo", HDCAAAAA

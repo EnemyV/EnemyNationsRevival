@@ -1,0 +1,322 @@
+Microsoft (R) COFF/PE Dumper Version 14.29.30140.0
+Copyright (C) Microsoft Corporation.  All rights reserved.
+
+
+Dump of file ddraw.lib
+
+File Type: LIBRARY
+
+COFF SYMBOL TABLE
+000 00000000 SECT1  notype       External     | __IMPORT_DESCRIPTOR_DDRAW
+001 C0000040 SECT1  notype       Section      | .idata$2
+002 00000000 SECT2  notype       Static       | .idata$6
+003 C0000040 UNDEF  notype       Section      | .idata$4
+004 C0000040 UNDEF  notype       Section      | .idata$5
+005 00000000 UNDEF  notype       External     | __NULL_IMPORT_DESCRIPTOR
+006 00000000 UNDEF  notype       External     | DDRAW_NULL_THUNK_DATA
+
+String Table Size = 0x4E bytes
+
+COFF SYMBOL TABLE
+000 00000000 SECT1  notype       External     | __NULL_IMPORT_DESCRIPTOR
+
+String Table Size = 0x1D bytes
+
+COFF SYMBOL TABLE
+000 00000000 SECT1  notype       External     | DDRAW_NULL_THUNK_DATA
+
+String Table Size = 0x1B bytes
+
+COFF SYMBOL TABLE
+000 00000000 SECT1  notype       Static       | .text
+    Section length    6, #relocs    1, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+002 00000000 SECT1  notype ()    External     | _DDHAL32_VidMemAlloc@16
+003 00000000 SECT2  notype       Static       | .idata$5
+    Section length    4, #relocs    1, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+005 00000000 SECT2  notype       External     | __imp__DDHAL32_VidMemAlloc@16
+006 00000000 SECT3  notype       Static       | .idata$4
+    Section length    4, #relocs    1, #linenums    0, checksum        0, selection    5 (pick associative Section 0x46240002)
+008 00000000 SECT4  notype       Static       | .idata$6
+    Section length   16, #relocs    0, #linenums    0, checksum        0, selection    5 (pick associative Section 0x46240002)
+00A 00000000 UNDEF  notype       External     | __IMPORT_DESCRIPTOR_DDRAW
+
+String Table Size = 0x3C bytes
+
+COFF SYMBOL TABLE
+000 00000000 SECT1  notype       Static       | .text
+    Section length    6, #relocs    1, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+002 00000000 SECT1  notype ()    External     | _DDHAL32_VidMemFree@12
+003 00000000 SECT2  notype       Static       | .idata$5
+    Section length    4, #relocs    1, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+005 00000000 SECT2  notype       External     | __imp__DDHAL32_VidMemFree@12
+006 00000000 SECT3  notype       Static       | .idata$4
+    Section length    4, #relocs    1, #linenums    0, checksum        0, selection    5 (pick associative Section 0x46240002)
+008 00000000 SECT4  notype       Static       | .idata$6
+    Section length   16, #relocs    0, #linenums    0, checksum        0, selection    5 (pick associative Section 0x46240002)
+00A 00000000 UNDEF  notype       External     | __IMPORT_DESCRIPTOR_DDRAW
+
+String Table Size = 0x3B bytes
+
+COFF SYMBOL TABLE
+000 00000000 SECT1  notype       Static       | .text
+    Section length    6, #relocs    1, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+002 00000000 SECT1  notype ()    External     | _DDInternalLock@8
+003 00000000 SECT2  notype       Static       | .idata$5
+    Section length    4, #relocs    1, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+005 00000000 SECT2  notype       External     | __imp__DDInternalLock@8
+006 00000000 SECT3  notype       Static       | .idata$4
+    Section length    4, #relocs    1, #linenums    0, checksum        0, selection    5 (pick associative Section 0x46240002)
+008 00000000 SECT4  notype       Static       | .idata$6
+    Section length   12, #relocs    0, #linenums    0, checksum        0, selection    5 (pick associative Section 0x46240002)
+00A 00000000 UNDEF  notype       External     | __IMPORT_DESCRIPTOR_DDRAW
+
+String Table Size = 0x36 bytes
+
+COFF SYMBOL TABLE
+000 00000000 SECT1  notype       Static       | .text
+    Section length    6, #relocs    1, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+002 00000000 SECT1  notype ()    External     | _DDInternalUnlock@4
+003 00000000 SECT2  notype       Static       | .idata$5
+    Section length    4, #relocs    1, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+005 00000000 SECT2  notype       External     | __imp__DDInternalUnlock@4
+006 00000000 SECT3  notype       Static       | .idata$4
+    Section length    4, #relocs    1, #linenums    0, checksum        0, selection    5 (pick associative Section 0x46240002)
+008 00000000 SECT4  notype       Static       | .idata$6
+    Section length   14, #relocs    0, #linenums    0, checksum        0, selection    5 (pick associative Section 0x46240002)
+00A 00000000 UNDEF  notype       External     | __IMPORT_DESCRIPTOR_DDRAW
+
+String Table Size = 0x38 bytes
+
+COFF SYMBOL TABLE
+000 00000000 SECT1  notype       Static       | .text
+    Section length    6, #relocs    1, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+002 00000000 SECT1  notype ()    External     | _DSoundHelp@12
+003 00000000 SECT2  notype       Static       | .idata$5
+    Section length    4, #relocs    1, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+005 00000000 SECT2  notype       External     | __imp__DSoundHelp@12
+006 00000000 SECT3  notype       Static       | .idata$4
+    Section length    4, #relocs    1, #linenums    0, checksum        0, selection    5 (pick associative Section 0x46240002)
+008 00000000 SECT4  notype       Static       | .idata$6
+    Section length    E, #relocs    0, #linenums    0, checksum        0, selection    5 (pick associative Section 0x46240002)
+00A 00000000 UNDEF  notype       External     | __IMPORT_DESCRIPTOR_DDRAW
+
+String Table Size = 0x33 bytes
+
+COFF SYMBOL TABLE
+000 00000000 SECT1  notype       Static       | .text
+    Section length    6, #relocs    1, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+002 00000000 SECT1  notype ()    External     | _DirectDrawCreate@12
+003 00000000 SECT2  notype       Static       | .idata$5
+    Section length    4, #relocs    1, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+005 00000000 SECT2  notype       External     | __imp__DirectDrawCreate@12
+006 00000000 SECT3  notype       Static       | .idata$4
+    Section length    4, #relocs    1, #linenums    0, checksum        0, selection    5 (pick associative Section 0x46240002)
+008 00000000 SECT4  notype       Static       | .idata$6
+    Section length   14, #relocs    0, #linenums    0, checksum        0, selection    5 (pick associative Section 0x46240002)
+00A 00000000 UNDEF  notype       External     | __IMPORT_DESCRIPTOR_DDRAW
+
+String Table Size = 0x39 bytes
+
+COFF SYMBOL TABLE
+000 00000000 SECT1  notype       Static       | .text
+    Section length    6, #relocs    1, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+002 00000000 SECT1  notype ()    External     | _DirectDrawCreateClipper@12
+003 00000000 SECT2  notype       Static       | .idata$5
+    Section length    4, #relocs    1, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+005 00000000 SECT2  notype       External     | __imp__DirectDrawCreateClipper@12
+006 00000000 SECT3  notype       Static       | .idata$4
+    Section length    4, #relocs    1, #linenums    0, checksum        0, selection    5 (pick associative Section 0x46240002)
+008 00000000 SECT4  notype       Static       | .idata$6
+    Section length   1A, #relocs    0, #linenums    0, checksum        0, selection    5 (pick associative Section 0x46240002)
+00A 00000000 UNDEF  notype       External     | __IMPORT_DESCRIPTOR_DDRAW
+
+String Table Size = 0x40 bytes
+
+COFF SYMBOL TABLE
+000 00000000 SECT1  notype       Static       | .text
+    Section length    6, #relocs    1, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+002 00000000 SECT1  notype ()    External     | _DirectDrawEnumerateA@8
+003 00000000 SECT2  notype       Static       | .idata$5
+    Section length    4, #relocs    1, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+005 00000000 SECT2  notype       External     | __imp__DirectDrawEnumerateA@8
+006 00000000 SECT3  notype       Static       | .idata$4
+    Section length    4, #relocs    1, #linenums    0, checksum        0, selection    5 (pick associative Section 0x46240002)
+008 00000000 SECT4  notype       Static       | .idata$6
+    Section length   18, #relocs    0, #linenums    0, checksum        0, selection    5 (pick associative Section 0x46240002)
+00A 00000000 UNDEF  notype       External     | __IMPORT_DESCRIPTOR_DDRAW
+
+String Table Size = 0x3C bytes
+
+COFF SYMBOL TABLE
+000 00000000 SECT1  notype       Static       | .text
+    Section length    6, #relocs    1, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+002 00000000 SECT1  notype ()    External     | _DirectDrawEnumerateW@8
+003 00000000 SECT2  notype       Static       | .idata$5
+    Section length    4, #relocs    1, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+005 00000000 SECT2  notype       External     | __imp__DirectDrawEnumerateW@8
+006 00000000 SECT3  notype       Static       | .idata$4
+    Section length    4, #relocs    1, #linenums    0, checksum        0, selection    5 (pick associative Section 0x46240002)
+008 00000000 SECT4  notype       Static       | .idata$6
+    Section length   18, #relocs    0, #linenums    0, checksum        0, selection    5 (pick associative Section 0x46240002)
+00A 00000000 UNDEF  notype       External     | __IMPORT_DESCRIPTOR_DDRAW
+
+String Table Size = 0x3C bytes
+
+COFF SYMBOL TABLE
+000 00000000 SECT1  notype       Static       | .text
+    Section length    6, #relocs    1, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+002 00000000 SECT1  notype ()    External     | _InternalLock
+003 00000000 SECT2  notype       Static       | .idata$5
+    Section length    4, #relocs    1, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+005 00000000 SECT2  notype       External     | __imp__InternalLock
+006 00000000 SECT3  notype       Static       | .idata$4
+    Section length    4, #relocs    1, #linenums    0, checksum        0, selection    5 (pick associative Section 0x46240002)
+008 00000000 SECT4  notype       Static       | .idata$6
+    Section length   10, #relocs    0, #linenums    0, checksum        0, selection    5 (pick associative Section 0x46240002)
+00A 00000000 UNDEF  notype       External     | __IMPORT_DESCRIPTOR_DDRAW
+
+String Table Size = 0x32 bytes
+
+COFF SYMBOL TABLE
+000 00000000 SECT1  notype       Static       | .text
+    Section length    6, #relocs    1, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+002 00000000 SECT1  notype ()    External     | _InternalUnlock
+003 00000000 SECT2  notype       Static       | .idata$5
+    Section length    4, #relocs    1, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+005 00000000 SECT2  notype       External     | __imp__InternalUnlock
+006 00000000 SECT3  notype       Static       | .idata$4
+    Section length    4, #relocs    1, #linenums    0, checksum        0, selection    5 (pick associative Section 0x46240002)
+008 00000000 SECT4  notype       Static       | .idata$6
+    Section length   12, #relocs    0, #linenums    0, checksum        0, selection    5 (pick associative Section 0x46240002)
+00A 00000000 UNDEF  notype       External     | __IMPORT_DESCRIPTOR_DDRAW
+
+String Table Size = 0x34 bytes
+
+COFF SYMBOL TABLE
+000 00000000 SECT1  notype       Static       | .text
+    Section length    6, #relocs    1, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+002 00000000 SECT1  notype ()    External     | _VidMemAlloc@12
+003 00000000 SECT2  notype       Static       | .idata$5
+    Section length    4, #relocs    1, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+005 00000000 SECT2  notype       External     | __imp__VidMemAlloc@12
+006 00000000 SECT3  notype       Static       | .idata$4
+    Section length    4, #relocs    1, #linenums    0, checksum        0, selection    5 (pick associative Section 0x46240002)
+008 00000000 SECT4  notype       Static       | .idata$6
+    Section length    E, #relocs    0, #linenums    0, checksum        0, selection    5 (pick associative Section 0x46240002)
+00A 00000000 UNDEF  notype       External     | __IMPORT_DESCRIPTOR_DDRAW
+
+String Table Size = 0x34 bytes
+
+COFF SYMBOL TABLE
+000 00000000 SECT1  notype       Static       | .text
+    Section length    6, #relocs    1, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+002 00000000 SECT1  notype ()    External     | _VidMemAmountFree@4
+003 00000000 SECT2  notype       Static       | .idata$5
+    Section length    4, #relocs    1, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+005 00000000 SECT2  notype       External     | __imp__VidMemAmountFree@4
+006 00000000 SECT3  notype       Static       | .idata$4
+    Section length    4, #relocs    1, #linenums    0, checksum        0, selection    5 (pick associative Section 0x46240002)
+008 00000000 SECT4  notype       Static       | .idata$6
+    Section length   14, #relocs    0, #linenums    0, checksum        0, selection    5 (pick associative Section 0x46240002)
+00A 00000000 UNDEF  notype       External     | __IMPORT_DESCRIPTOR_DDRAW
+
+String Table Size = 0x38 bytes
+
+COFF SYMBOL TABLE
+000 00000000 SECT1  notype       Static       | .text
+    Section length    6, #relocs    1, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+002 00000000 SECT1  notype ()    External     | _VidMemFini@4
+003 00000000 SECT2  notype       Static       | .idata$5
+    Section length    4, #relocs    1, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+005 00000000 SECT2  notype       External     | __imp__VidMemFini@4
+006 00000000 SECT3  notype       Static       | .idata$4
+    Section length    4, #relocs    1, #linenums    0, checksum        0, selection    5 (pick associative Section 0x46240002)
+008 00000000 SECT4  notype       Static       | .idata$6
+    Section length    E, #relocs    0, #linenums    0, checksum        0, selection    5 (pick associative Section 0x46240002)
+00A 00000000 UNDEF  notype       External     | __IMPORT_DESCRIPTOR_DDRAW
+
+String Table Size = 0x32 bytes
+
+COFF SYMBOL TABLE
+000 00000000 SECT1  notype       Static       | .text
+    Section length    6, #relocs    1, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+002 00000000 SECT1  notype ()    External     | _VidMemFree@8
+003 00000000 SECT2  notype       Static       | .idata$5
+    Section length    4, #relocs    1, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+005 00000000 SECT2  notype       External     | __imp__VidMemFree@8
+006 00000000 SECT3  notype       Static       | .idata$4
+    Section length    4, #relocs    1, #linenums    0, checksum        0, selection    5 (pick associative Section 0x46240002)
+008 00000000 SECT4  notype       Static       | .idata$6
+    Section length    E, #relocs    0, #linenums    0, checksum        0, selection    5 (pick associative Section 0x46240002)
+00A 00000000 UNDEF  notype       External     | __IMPORT_DESCRIPTOR_DDRAW
+
+String Table Size = 0x32 bytes
+
+COFF SYMBOL TABLE
+000 00000000 SECT1  notype       Static       | .text
+    Section length    6, #relocs    1, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+002 00000000 SECT1  notype ()    External     | _VidMemInit@20
+003 00000000 SECT2  notype       Static       | .idata$5
+    Section length    4, #relocs    1, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+005 00000000 SECT2  notype       External     | __imp__VidMemInit@20
+006 00000000 SECT3  notype       Static       | .idata$4
+    Section length    4, #relocs    1, #linenums    0, checksum        0, selection    5 (pick associative Section 0x46240002)
+008 00000000 SECT4  notype       Static       | .idata$6
+    Section length    E, #relocs    0, #linenums    0, checksum        0, selection    5 (pick associative Section 0x46240002)
+00A 00000000 UNDEF  notype       External     | __IMPORT_DESCRIPTOR_DDRAW
+
+String Table Size = 0x33 bytes
+
+COFF SYMBOL TABLE
+000 00000000 SECT1  notype       Static       | .text
+    Section length    6, #relocs    1, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+002 00000000 SECT1  notype ()    External     | _VidMemLargestFree@4
+003 00000000 SECT2  notype       Static       | .idata$5
+    Section length    4, #relocs    1, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+005 00000000 SECT2  notype       External     | __imp__VidMemLargestFree@4
+006 00000000 SECT3  notype       Static       | .idata$4
+    Section length    4, #relocs    1, #linenums    0, checksum        0, selection    5 (pick associative Section 0x46240002)
+008 00000000 SECT4  notype       Static       | .idata$6
+    Section length   14, #relocs    0, #linenums    0, checksum        0, selection    5 (pick associative Section 0x46240002)
+00A 00000000 UNDEF  notype       External     | __IMPORT_DESCRIPTOR_DDRAW
+
+String Table Size = 0x39 bytes
+
+COFF SYMBOL TABLE
+000 00000000 SECT1  notype       Static       | .text
+    Section length    6, #relocs    1, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+002 00000000 SECT1  notype ()    External     | _thk1632_ThunkData32
+003 00000000 SECT2  notype       Static       | .idata$5
+    Section length    4, #relocs    1, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+005 00000000 SECT2  notype       External     | __imp__thk1632_ThunkData32
+006 00000000 SECT3  notype       Static       | .idata$4
+    Section length    4, #relocs    1, #linenums    0, checksum        0, selection    5 (pick associative Section 0x46240002)
+008 00000000 SECT4  notype       Static       | .idata$6
+    Section length   16, #relocs    0, #linenums    0, checksum        0, selection    5 (pick associative Section 0x46240002)
+00A 00000000 UNDEF  notype       External     | __IMPORT_DESCRIPTOR_DDRAW
+
+String Table Size = 0x39 bytes
+
+COFF SYMBOL TABLE
+000 00000000 SECT1  notype       Static       | .text
+    Section length    6, #relocs    1, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+002 00000000 SECT1  notype ()    External     | _thk3216_ThunkData32
+003 00000000 SECT2  notype       Static       | .idata$5
+    Section length    4, #relocs    1, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+005 00000000 SECT2  notype       External     | __imp__thk3216_ThunkData32
+006 00000000 SECT3  notype       Static       | .idata$4
+    Section length    4, #relocs    1, #linenums    0, checksum        0, selection    5 (pick associative Section 0x46240002)
+008 00000000 SECT4  notype       Static       | .idata$6
+    Section length   16, #relocs    0, #linenums    0, checksum        0, selection    5 (pick associative Section 0x46240002)
+00A 00000000 UNDEF  notype       External     | __IMPORT_DESCRIPTOR_DDRAW
+
+String Table Size = 0x39 bytes
+
+  Summary
+
+          14 .idata$2
+          14 .idata$3
+          50 .idata$4
+          50 .idata$5
+         176 .idata$6
+          72 .text

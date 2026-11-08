@@ -15,6 +15,8 @@
 #include "lastplnt.h"
 #include "bitmaps.h"
 #include "sfx.h"
+#include "SDL2GameDialogs.h"
+#include "resource.h"
 
 #ifdef _DEBUG
 #undef THIS_FILE
@@ -50,14 +52,6 @@ void CCutScene::PlayEnd (int iEnd, BOOL bAsync)
 
 UINT CCutScene::_PlayScene (int iTyp, int iScenario, BOOL bAsync)
 {
-
-	// disable the main window (and all children)
-	theApp.m_wndBar.ShowWindow (SW_HIDE);
-
-	theApp.m_wndCutScene.Create ( iTyp, iScenario );
-	theApp.m_wndCutScene.ShowWindow (SW_SHOW);
-	theApp.m_wndCutScene.UpdateWindow ();
-
 	// kill what was playing
 	theMusicPlayer.SoundsOff ();
 
@@ -76,6 +70,95 @@ UINT CCutScene::_PlayScene (int iTyp, int iScenario, BOOL bAsync)
 			theMusicPlayer.PlayExclusiveMusic (MUSIC::GetID (MUSIC::loose_game));
 			break;
 	  }
+
+	// SDL2 path: use SDL2CutSceneDialog instead of CWndCutScene
+	if ( theApp.m_gameWindow )
+	  {
+		// Load the text
+		std::string sText;
+		switch (iTyp)
+		  {
+			case CWndCutScene::win:
+			  {
+				// The win fires for the last player still holding a landed
+				// rocket. If the local player is a rocketless spectator, the
+				// winner is someone else (e.g. an AI) - name them, don't say
+				// "you".
+				CPlayer* pWinner = NULL;
+				CPlayer* pAny    = NULL;   // fallback: a non-observer still in the game
+				for ( POSITION pos = theGame.GetAll( ).GetHeadPosition( ); pos != NULL; )
+				  {
+					CPlayer* p = theGame.GetAll( ).GetNext( pos );
+					if ( p->m_bSpectator )   // an observer never wins
+						continue;
+					if ( pAny == NULL )
+						pAny = p;
+					if ( p->m_bPlacedRocket ) { pWinner = p; break; }
+				  }
+				// nobody holds a rocket (two players removed in one recount pass):
+				// name whoever is left rather than telling an observer "you won"
+				if ( pWinner == NULL )
+					pWinner = pAny;
+				if ( pWinner != NULL && pWinner != theGame.GetMe( ) )
+				  {
+					sText = EnLoadStdString( IDS_PLAYER_WON );
+					std::string::size_type i = sText.find( "%1" );
+					if ( i != std::string::npos )
+						sText.replace( i, 2, pWinner->GetName( ) );
+					else
+						sText = std::string( pWinner->GetName( ) ) + " has conquered the planet";
+				  }
+				else
+					sText = EnLoadStdString( IDS_YOU_WON );
+			  }
+			  break;
+			case CWndCutScene::lose:
+			  sText = EnLoadStdString(IDS_YOU_LOST); break;
+			case CWndCutScene::scenario_end:
+			  sText = EnLoadStdString(IDS_YOU_END_SCENARIO); break;
+			case CWndCutScene::cut:
+			case CWndCutScene::repeat:
+			  {
+				// Load scenario intro text from LANG data
+				try {
+					CMmio* pMmio = theDataFile.OpenAsMMIO(NULL, "LANG");
+					pMmio->DescendRiff('L', 'A', 'N', 'G');
+					pMmio->DescendList('S', 'C', 'E', 'N');
+					pMmio->DescendChunk('T', 'X', 'T', (char)('A' + iScenario));
+					long lSize = pMmio->ReadLong();
+					std::vector<char> buf(lSize + 2, 0);
+					pMmio->Read(buf.data(), lSize);
+					sText.assign(buf.data(), lSize);
+					delete pMmio;
+				} catch (...) {
+					sText = "(Scenario text unavailable)";
+				}
+				break;
+			  }
+		  }
+
+		SDL2CutSceneDialog dlg(theApp.m_gameWindow.get(), iTyp, sText, iScenario);
+		dlg.DoModal();
+
+		theMusicPlayer.SoundsOff();
+		theMusicPlayer.UnloadGroup(SFXGROUP::cut_scenes);
+
+		if ( (iTyp == CWndCutScene::cut) || (iTyp == CWndCutScene::repeat) )
+		  {
+			theMusicPlayer.StartMidiMusic();
+			theMusicPlayer.PlayMusicGroup(MUSIC::GetID(MUSIC::play_game), MUSIC::num_play_game);
+		  }
+
+		return (UINT)dlg.GetResult();
+	  }
+
+	// MFC path
+	// disable the main window (and all children)
+	theApp.m_wndBar.ShowWindow (SW_HIDE);
+
+	theApp.m_wndCutScene.Create ( iTyp, iScenario );
+	theApp.m_wndCutScene.ShowWindow (SW_SHOW);
+	theApp.m_wndCutScene.UpdateWindow ();
 
 	// loop till done
 	if ( ! bAsync )
@@ -126,11 +209,12 @@ void CWndCutScene::Create (int iTyp, int iScenario)
 
 	if ( m_hWnd == NULL )
 		{
-		const char *pCls = AfxRegisterWndClass (0, theApp.LoadStandardCursor (IDC_ARROW),
-																								NULL, theApp.LoadIcon (IDI_MAIN));
+		const char *pCls = CConquerApp::EnRegisterWndClass ("EnCutSceneWnd", 0,
+		                       theApp.LoadStandardCursor (IDC_ARROW),
+		                       NULL, theApp.LoadIcon ((UINT)IDI_MAIN));
 
 		const DWORD dwSty = WS_POPUP;	
-		if (CreateEx (0, pCls, theApp.m_sAppName, dwSty, 0, 0, theApp.m_iScrnX, 
+		if (CreateEx (0, pCls, theApp.m_sAppName.c_str(), dwSty, 0, 0, theApp.m_iScrnX,
 												theApp.m_iScrnY, theApp.m_wndMain.m_hWnd, NULL, NULL) == 0)
 			ThrowError (ERR_RES_CREATE_WND);
 		return;
@@ -219,10 +303,11 @@ void CWndCutScene::OnCreateCut ()
 	pMmio->DescendChunk ('T', 'X', 'T', (char) ('A' + m_iScenario));
 
 	long lSize = pMmio->ReadLong ();
-	pMmio->Read (m_sText.GetBuffer (lSize+2), lSize);
-	
+	m_sText.resize( lSize + 2 );
+	pMmio->Read (&m_sText[0], lSize);
+
 	delete pMmio;
-	m_sText.ReleaseBuffer (lSize);
+	m_sText.resize( lSize );
 
 	CRect rect;
 	GetClientRect (&rect);
@@ -247,7 +332,7 @@ void CWndCutScene::OnCreateCut ()
 		rect.left = (rect.right * 2) / 3;
 		rect.right = (rect.right * 95) / 100;
 		CFont * pOldFont = dc.SelectObject (&m_font);
-		dc.DrawText ( m_sText, &rect, DT_CALCRECT | DT_NOPREFIX | DT_LEFT | DT_WORDBREAK);
+		dc.DrawText ( m_sText.c_str(), -1, &rect, DT_CALCRECT | DT_NOPREFIX | DT_LEFT | DT_WORDBREAK);
 		dc.SelectObject (pOldFont);
 		iFntHt --;
 		}
@@ -284,12 +369,12 @@ void CWndCutScene::OnCreateOther (int idRes)
 {
 
 	// get the text
-	m_sText.LoadString (idRes);
+	m_sText = EnLoadStdString(idRes);
 
 	CRect rect;
 	GetClientRect (&rect);
 	int iWid = (rect.Width () * 2) / 3;
-	int iFntHt = 2 * rect.Width () / m_sText.GetLength ();
+	int iFntHt = 2 * rect.Width () / (int)m_sText.length ();
 
 	// get the font
 	CWindowDC dc (this);
@@ -307,7 +392,7 @@ void CWndCutScene::OnCreateOther (int idRes)
 		// will this font fit?
 		GetClientRect (&rect);
 		CFont * pOldFont = dc.SelectObject (&m_font);
-		dc.DrawText ( m_sText, &rect, DT_CALCRECT | DT_NOPREFIX | DT_CENTER | DT_TOP | DT_SINGLELINE);
+		dc.DrawText ( m_sText.c_str(), -1, &rect, DT_CALCRECT | DT_NOPREFIX | DT_CENTER | DT_TOP | DT_SINGLELINE);
 		dc.SelectObject (pOldFont);
 		iFntHt --;
 		}
@@ -438,18 +523,18 @@ void CWndCutScene::OnPaintCut (CDC & dc)
 
 	// get height
 	int iHt = rect.Height ();
-	dc.DrawText ( m_sText, &rect, DT_CALCRECT | DT_NOPREFIX | DT_LEFT | DT_WORDBREAK);
+	dc.DrawText ( m_sText.c_str(), -1, &rect, DT_CALCRECT | DT_NOPREFIX | DT_LEFT | DT_WORDBREAK);
 	if (rect.Height () < iHt)
 		rect.OffsetRect (0, (iHt - rect.Height ()) / 2);
 
 	dc.SetTextColor (PALETTERGB (0, 0, 0));
-	dc.DrawText ( m_sText, &rect, DT_NOPREFIX | DT_LEFT | DT_WORDBREAK);
+	dc.DrawText ( m_sText.c_str(), -1, &rect, DT_NOPREFIX | DT_LEFT | DT_WORDBREAK);
 	rect.OffsetRect ( -1, -1 );
-	dc.DrawText ( m_sText, &rect, DT_NOPREFIX | DT_LEFT | DT_WORDBREAK);
+	dc.DrawText ( m_sText.c_str(), -1, &rect, DT_NOPREFIX | DT_LEFT | DT_WORDBREAK);
 	rect.OffsetRect ( -1, -1 );
 	dc.SetTextColor (PALETTERGB (255, 251, 120));
 //BUGBUG	dc.SetTextColor (PALETTERGB (230, 251, 120));
-	dc.DrawText ( m_sText, &rect, DT_NOPREFIX | DT_LEFT | DT_WORDBREAK);
+	dc.DrawText ( m_sText.c_str(), -1, &rect, DT_NOPREFIX | DT_LEFT | DT_WORDBREAK);
 
 	dc.SelectObject (pOldFont);
 }
@@ -468,11 +553,11 @@ void CWndCutScene::OnPaintWin (CDC & dc)
 	rect.top = rect.Height () / 4;
 
 	dc.SetTextColor (PALETTERGB (78, 90, 98));
-	dc.DrawText ( m_sText, &rect, DT_NOPREFIX | DT_CENTER | DT_TOP | DT_SINGLELINE);
+	dc.DrawText ( m_sText.c_str(), -1, &rect, DT_NOPREFIX | DT_CENTER | DT_TOP | DT_SINGLELINE);
 
 	rect.OffsetRect (-4, -4);
 	dc.SetTextColor (PALETTERGB (255, 244, 221));
-	dc.DrawText ( m_sText, &rect, DT_NOPREFIX | DT_CENTER | DT_TOP | DT_SINGLELINE);
+	dc.DrawText ( m_sText.c_str(), -1, &rect, DT_NOPREFIX | DT_CENTER | DT_TOP | DT_SINGLELINE);
 
 	dc.SelectObject (pOldFont);
 }
@@ -491,11 +576,11 @@ void CWndCutScene::OnPaintLose (CDC & dc)
 	rect.top = rect.Height () / 4;
 
 	dc.SetTextColor (PALETTERGB (148, 100, 70));
-	dc.DrawText ( m_sText, &rect, DT_NOPREFIX | DT_CENTER | DT_TOP | DT_SINGLELINE);
+	dc.DrawText ( m_sText.c_str(), -1, &rect, DT_NOPREFIX | DT_CENTER | DT_TOP | DT_SINGLELINE);
 
 	rect.OffsetRect (-4, -4);
 	dc.SetTextColor (PALETTERGB (57, 0, 0));
-	dc.DrawText ( m_sText, &rect, DT_NOPREFIX | DT_CENTER | DT_TOP | DT_SINGLELINE);
+	dc.DrawText ( m_sText.c_str(), -1, &rect, DT_NOPREFIX | DT_CENTER | DT_TOP | DT_SINGLELINE);
 
 	dc.SelectObject (pOldFont);
 }

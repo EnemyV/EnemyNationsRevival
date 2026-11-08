@@ -18,7 +18,7 @@
 #include "stdafx.h"
 #include "player.h"
 #include "lastplnt.h"
-#include "IPCSend.h"
+#include "ipcsend.h"
 
 #ifdef _DEBUG
 #undef THIS_FILE
@@ -251,11 +251,7 @@ void CDlgCompose::OnOK()
 			// CPlayer * or the id of the player
 
 			// testing getting the player pointer
-			CString sName;
 			CPlayer *pPlayer = (CPlayer *)m_pcbPlayers->GetItemDataPtr(i);
-			if( pPlayer != NULL &&
-				(int)pPlayer != -1 )
-				sName = pPlayer->GetName();
 
 			if( m_pMsg == NULL )
 			{				
@@ -392,32 +388,28 @@ BOOL CDlgCompose::OnInitDialog()
 				(CPlayer *)theGame.GetPlayerByPlyr(m_pMsg->m_iTo);
 			if( pPlayer != NULL && (int)pPlayer != -1 )
 			{
-			CString sName = pPlayer->GetName();
+			std::string sName = pPlayer->GetName();
 #if USE_FAKE_NET
-			if( sName.IsEmpty() )
+			if( sName.empty() )
 				sName = "Eric";
 #endif
-			m_pcbPlayers->AddString( sName );
+			m_pcbPlayers->AddString( sName.c_str() );
 			m_pcbPlayers->SetItemDataPtr( m_iNumPlyr, (void*) pPlayer );
 			m_pcbPlayers->SetCurSel(m_iNumPlyr);
 			m_pcbPlayers->SetSelected(m_iNumPlyr); //m_iSelect[0] = 1;
 			m_iNumPlyr = 1;
 
-			CString sTitle;
-			sTitle = "Reply to [" + sName + "]";
-			
-			SetWindowText( sTitle );
-			sName.Empty();
+			std::string sTitle = "Reply to [" + sName + "]";
+
+			SetWindowText( sTitle.c_str() );
 			
 
 			if( m_pMsg != NULL )
 				m_sSubject = "RE:" + m_pMsg->m_sSubject;
 			else
-				m_sSubject = sTitle;
+				m_sSubject = sTitle.c_str();
 
 			m_ctrlSubject.SetWindowText( m_sSubject );
-
-			sTitle.Empty();
 			}
 			else
 				m_sSubject = m_pMsg->m_sSubject;
@@ -473,10 +465,9 @@ void CSendCombo::OnParentInit( UINT uID, CWnd *pParent )
 		m_iSelect[i] = 0;
 
 	CClientDC dc( pParent );
-	CString sTest = "Test String";
-	CSize csName = dc.GetTextExtent( sTest, sTest.GetLength() );
+	const char sTest[] = "Test String";
+	CSize csName = dc.GetTextExtent( sTest, (int)sizeof(sTest) - 1 );
 	m_uCharHeight = csName.cy + 1;
-	sTest.Empty();
 
 	BOOL bRet = SubclassDlgItem( uID, pParent );
 }
@@ -498,10 +489,9 @@ CSendCombo::CSendCombo( UINT uID, CWnd *pParent, CRect& rLoc )
 		m_iSelect[i] = 0;
 
 	CClientDC dc( pParent );
-	CString sTest = "Test String";
-	CSize csName = dc.GetTextExtent( sTest, sTest.GetLength() );
+	const char sTest[] = "Test String";
+	CSize csName = dc.GetTextExtent( sTest, (int)sizeof(sTest) - 1 );
 	m_uCharHeight = csName.cy + 1;
-	sTest.Empty();
 
 	CComboBox();
 
@@ -541,8 +531,8 @@ void CSendCombo::DrawItem( LPDRAWITEMSTRUCT lpDIS )
 		(int)pPlayer == -1 )
 		return;
 
-	CString sName;
-	sName = pPlayer->GetName();
+	const char* sName = pPlayer->GetName();
+	int sNameLen = (int)strlen( sName );
 			
 	BOOL bRet = FALSE;
 	CBitmap workBM;
@@ -588,7 +578,7 @@ void CSendCombo::DrawItem( LPDRAWITEMSTRUCT lpDIS )
 			&workDC, 0, 0, SRCCOPY );
 
 		iX += IPC_MSG_BM_HEIGHT;
-		pDC->TextOut( iX, iY, sName, sName.GetLength() );
+		pDC->TextOut( iX, iY, sName, sNameLen );
 
 		pDC->SetBkColor( crOldBackColor );
 		pDC->SetTextColor( dwOldText );
@@ -611,7 +601,7 @@ void CSendCombo::DrawItem( LPDRAWITEMSTRUCT lpDIS )
 			&workDC, 0, 0, SRCCOPY );
 
 		iX += IPC_MSG_BM_HEIGHT;
-		pDC->TextOut( iX, iY, sName, sName.GetLength() );
+		pDC->TextOut( iX, iY, sName, sNameLen );
 
 		pDC->SetBkColor( crOldBackColor );
 		pDC->SetTextColor( dwOldText );
@@ -634,14 +624,13 @@ void CSendCombo::DrawItem( LPDRAWITEMSTRUCT lpDIS )
 			&workDC, 0, 0, SRCCOPY );
 
 		iX += IPC_MSG_BM_HEIGHT;
-		pDC->TextOut( iX, iY, sName, sName.GetLength() );
+		pDC->TextOut( iX, iY, sName, sNameLen );
 
 		pDC->SetBkColor( crOldBackColor );
 		pDC->SetTextColor( dwOldText );
 		pDC->SetBkMode( iOldMode );
 	}
 
-	sName.Empty();
 	workDC.SelectObject( pOldWork );
 	workDC.DeleteDC();
 	workBM.DeleteObject();

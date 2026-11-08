@@ -2,194 +2,208 @@
 //
 //  CAIOpFor.cpp : CAIOpFor object implementation
 //                 Divide and Conquer AI
-//               
+//
 //  Last update:    09/08/96
 //
 //  Copyright (c) 1995, 1996. Windward Studios, Inc. - All Rights Reserved
 //
 ////////////////////////////////////////////////////////////////////////////
 
-#include "stdafx.h"
-#include "CAIOpFor.hpp"
-#include "CAIData.hpp"
+#include "caiopfor.hpp"
 
-#include "CAI.h"
+#include "cai.h"
+#include "caidata.hpp"
+#include "stdafx.h"
 
 #define new DEBUG_NEW
 
-extern CException *pException;	// standard exception for yielding
-extern CRITICAL_SECTION cs;	// used by threads
-extern CAIData *pGameData;	// pointer to game data interface
+extern CException*      pException;  // standard exception for yielding
+extern CRITICAL_SECTION cs;          // used by threads
+extern CAIData*         pGameData;   // pointer to game data interface
 
 /////////////////////////////////////////////////////////////////////////////
 
-CAIOpFor::CAIOpFor( int iPlayer, const char *pzName )
+CAIOpFor::CAIOpFor( int iPlayer, const char* pzName )
 {
-	m_iPlayer = iPlayer;
-	m_sName = pzName;
-	m_pwaUnits = NULL;
-	m_pwaBldgs = NULL;
-	m_pwaAttackedUnits = NULL;
-	m_pwaAttackedBldgs = NULL;
-	m_pwaRAs = NULL;
-	m_dwRocket = 0;
-	m_iMsgCount = 0;
-	m_cRelations = NEUTRAL;
-	m_iAttitude = (int)m_cRelations;
-	
-	m_bAtWar = FALSE;
-	// allow difficulty to influence opfors to war status
-	// at the start of the game
-	//if( pGameData->m_iSmart >= (NUM_DIFFICUTY_LEVELS/2) )
-	//	m_bAtWar = TRUE;
-	// 
-	// BUGBUG - force at war for CGDC demo, for all levels but easy
-	//
-	//if( pGameData->m_iSmart )
-	//	m_bAtWar = TRUE;
+    m_iPlayer          = iPlayer;
+    // m_sName is std::string (Phase 5 conversion from CString). CString's
+    // operator=(const char*) accepted NULL as an empty-string assignment;
+    // std::string treats NULL as UB and crashes. AddOpFor() at line 1070
+    // explicitly passes NULL, so guard here.
+    m_sName            = pzName ? pzName : "";
+    m_pwaUnits         = NULL;
+    m_pwaBldgs         = NULL;
+    m_pwaAttackedUnits = NULL;
+    m_pwaAttackedBldgs = NULL;
+    m_pwaRAs           = NULL;
+    m_dwRocket         = 0;
+    m_iMsgCount        = 0;
+    m_cRelations       = NEUTRAL;
+    m_iAttitude        = (int)m_cRelations;
 
-	m_bIsAI = FALSE;
-	m_bKnown = FALSE;
-	
-	try
-	{
-		//m_iNumUnits = theTransports.GetNumTransports();
-		m_iNumUnits = CTransportData::num_types;
-		m_pwaUnits = new WORD[m_iNumUnits];
-		
-		//m_iNumBldgs = theStructures.GetNumBuildings();
-		m_iNumBldgs = CStructureData::num_types;
-		m_pwaBldgs = new WORD[m_iNumBldgs];
+    m_bAtWar = FALSE;
+    // allow difficulty to influence opfors to war status
+    // at the start of the game
+    // if( pGameData->m_iSmart >= (NUM_DIFFICUTY_LEVELS/2) )
+    //	m_bAtWar = TRUE;
+    //
+    // BUGBUG - force at war for CGDC demo, for all levels but easy
+    //
+    // if( pGameData->m_iSmart )
+    //	m_bAtWar = TRUE;
+    //
+    // REVIVED scaled-down (operator, 2026-07-15): attitude instead of full
+    // war - Difficult starts at 80 (low neutral), Impossible at 70 (the
+    // HOSTILE line; WAR is <=50). Attitude only ever falls on damage and no
+    // AI fires first, so a neutral start made war unreachable in all-AI games.
+    if ( pGameData != NULL && pGameData->m_iSmart >= ( NUM_DIFFICUTY_LEVELS / 2 ) )
+    {
+        m_iAttitude  = NEUTRAL - 10 * pGameData->m_iSmart;
+        m_cRelations = (BYTE)m_iAttitude;
+    }
 
-		m_iNumRAs = CRaceDef::num_race;
-		m_pwaRAs = new WORD[m_iNumRAs];
+    m_bIsAI  = FALSE;
+    m_bKnown = FALSE;
 
-		m_pwaAttackedUnits = new WORD[m_iNumUnits];
+    try
+    {
+        // m_iNumUnits = theTransports.GetNumTransports();
+        m_iNumUnits = CTransportData::num_types;
+        m_pwaUnits  = new WORD[m_iNumUnits];
 
-		m_pwaAttackedBldgs = new WORD[m_iNumBldgs];
-	}
-	catch( CException e )
-	{
-		if( m_pwaUnits != NULL )
-		{
-			delete [] m_pwaUnits;
-			m_pwaUnits = NULL;
-		}
-		if( m_pwaBldgs != NULL )
-		{
-			delete [] m_pwaBldgs;
-			m_pwaBldgs = NULL;
-		}
-		if( m_pwaRAs != NULL )
-		{
-			delete [] m_pwaRAs;
-			m_pwaRAs = NULL;
-		}
-		throw(ERR_CAI_BAD_NEW);
-	}
+        // m_iNumBldgs = theStructures.GetNumBuildings();
+        m_iNumBldgs = CStructureData::num_types;
+        m_pwaBldgs  = new WORD[m_iNumBldgs];
 
-	for( int i=0; i<m_iNumUnits; i++ )
-	{
-#if 0 //THREADS_ENABLED
-		// BUGBUG this function must yield
+        m_iNumRAs = CRaceDef::num_race;
+        m_pwaRAs  = new WORD[m_iNumRAs];
+
+        m_pwaAttackedUnits = new WORD[m_iNumUnits];
+
+        m_pwaAttackedBldgs = new WORD[m_iNumBldgs];
+    }
+    catch ( CException* e )
+    {
+        if ( m_pwaUnits != NULL )
+        {
+            delete[] m_pwaUnits;
+            m_pwaUnits = NULL;
+        }
+        if ( m_pwaBldgs != NULL )
+        {
+            delete[] m_pwaBldgs;
+            m_pwaBldgs = NULL;
+        }
+        if ( m_pwaRAs != NULL )
+        {
+            delete[] m_pwaRAs;
+            m_pwaRAs = NULL;
+        }
+        throw( ERR_CAI_BAD_NEW );
+    }
+
+    for ( int i = 0; i < m_iNumUnits; i++ )
+    {
+#if AI_THREADS_ENABLED
+       //  BUGBUG this function must yield
 		myYieldThread();
 		//if( myYieldThread() == TM_QUIT )
 		//	throw(ERR_CAI_TM_QUIT); // THROW( pException );
 #endif
-		m_pwaUnits[i] = 0;
-		m_pwaAttackedUnits[i] = 0;
-	}
+        m_pwaUnits[i]         = 0;
+        m_pwaAttackedUnits[i] = 0;
+    }
 
-	for( i=0; i<m_iNumBldgs; i++ )
-	{
-#if 0 //THREADS_ENABLED
-		// BUGBUG this function must yield
+    for ( int i = 0; i < m_iNumBldgs; i++ )
+    {
+#if AI_THREADS_ENABLED
+       //  BUGBUG this function must yield
 		myYieldThread();
 		//if( myYieldThread() == TM_QUIT )
 		//	throw(ERR_CAI_TM_QUIT); // THROW( pException );
 #endif
-		m_pwaBldgs[i] = 0;
-		m_pwaAttackedBldgs[i] = 0;
-	}
+        m_pwaBldgs[i]         = 0;
+        m_pwaAttackedBldgs[i] = 0;
+    }
 
-	for( i=0; i<m_iNumRAs; i++ )
-	{
-#if 0 //THREADS_ENABLED
-		// BUGBUG this function must yield
+    for ( int i = 0; i < m_iNumRAs; i++ )
+    {
+#if AI_THREADS_ENABLED
+       //  BUGBUG this function must yield
 		myYieldThread();
 		//if( myYieldThread() == TM_QUIT )
 		//	throw(ERR_CAI_TM_QUIT); // THROW( pException );
 #endif
-		m_pwaRAs[i] = 0;
-	}
+        m_pwaRAs[i] = 0;
+    }
 }
 
 BOOL CAIOpFor::IsKnown( void )
 {
-	return m_bKnown;
+    return m_bKnown;
 }
 
 void CAIOpFor::SetKnown( BOOL bKnown )
 {
-	m_bKnown = bKnown;
+    m_bKnown = bKnown;
 }
 
 
 /*
-	construction,		2
-	*light_truck,
-	med_truck,
-	heavy_truck,
-	light_scout,			1
-	med_scout,				2
-	heavy_scout,			4
-	infantry_carrier,		1
-	light_tank,				2
-	med_tank,				4
-	heavy_tank,				6
-	light_art,				2
-	med_art,				4
-	heavy_art,				6
-	*bridging,
-	light_cargo,
-	med_cargo,
-	*heavy_cargo,
-	gun_boat,				2
-	destroyer,				4
-	cruiser,				6
-	*battleship,
-	landing_craft,			1
-	infantry,				1
-	rangers,				1
-	marines, 				1
+    construction,		2
+    *light_truck,
+    med_truck,
+    heavy_truck,
+    light_scout,			1
+    med_scout,				2
+    heavy_scout,			4
+    infantry_carrier,		1
+    light_tank,				2
+    med_tank,				4
+    heavy_tank,				6
+    light_art,				2
+    med_art,				4
+    heavy_art,				6
+    *bridging,
+    light_cargo,
+    med_cargo,
+    *heavy_cargo,
+    gun_boat,				2
+    destroyer,				4
+    cruiser,				6
+    *battleship,
+    landing_craft,			1
+    infantry,				1
+    rangers,				1
+    marines, 				1
 
-	barracks_2,				2
-	barracks_3,				4
-	command_center,			2
-	embassy,
-	farm,				1
-	fort_1,					2
-	fort_2,					4
-	fort_3,					6
-	heavy,					6
-	light_1,				4
-	light_2,				6
-	lumber,				1
-	oil_well,			4
-	refinery,			4
-	coal,				1
-	iron,				1
-	copper,				1
-	power_1,			2
-	power_2,			2
-	power_3,			4
-	research,			4
-	repair,					6
-	seaport,			4
-	shipyard_1,				4
-	shipyard_3,				6
-	smelter,			2
-	warehouse,
+    barracks_2,				2
+    barracks_3,				4
+    command_center,			2
+    embassy,
+    farm,				1
+    fort_1,					2
+    fort_2,					4
+    fort_3,					6
+    heavy,					6
+    light_1,				4
+    light_2,				6
+    lumber,				1
+    oil_well,			4
+    refinery,			4
+    coal,				1
+    iron,				1
+    copper,				1
+    power_1,			2
+    power_2,			2
+    power_3,			4
+    research,			4
+    repair,					6
+    seaport,			4
+    shipyard_1,				4
+    shipyard_3,				6
+    smelter,			2
+    warehouse,
 */
 
 //
@@ -197,10 +211,10 @@ void CAIOpFor::SetKnown( BOOL bKnown )
 //
 int CAIOpFor::GetStrengths( void )
 {
-	int iIndustrial = GetIndustrial();
-	int iWarfare = GetWarfare();
-	int iCombat = GetCombat();
-	return( (iIndustrial + iWarfare + iCombat) );
+    int iIndustrial = GetIndustrial( );
+    int iWarfare    = GetWarfare( );
+    int iCombat     = GetCombat( );
+    return ( ( iIndustrial + iWarfare + iCombat ) );
 }
 //
 // calculate this opfor's combat vehicle strength
@@ -208,47 +222,61 @@ int CAIOpFor::GetStrengths( void )
 int CAIOpFor::GetCombat( void )
 {
 #if THREADS_ENABLED
-		// BUGBUG this function must yield
-	myYieldThread();
-		//if( myYieldThread() == TM_QUIT )
-		//	throw(ERR_CAI_TM_QUIT); // THROW( pException );
+    // BUGBUG this function must yield
+    myYieldThread( );
+    // if( myYieldThread() == TM_QUIT )
+    //	throw(ERR_CAI_TM_QUIT); // THROW( pException );
 #endif
 
-	int iStrength = 0;
-	for( int i=0; i<m_iNumUnits; i++ )
-	{
-		switch( i )
-		{
-			case CTransportData::light_scout:
-			case CTransportData::infantry_carrier:
-			case CTransportData::landing_craft:
-			case CTransportData::infantry:
-			case CTransportData::rangers:
-			case CTransportData::marines:
-				iStrength += (m_pwaUnits[i] * 1 );
-				break;
-			case CTransportData::med_scout:
-			case CTransportData::light_tank:
-			case CTransportData::light_art:
-			case CTransportData::gun_boat:
-				iStrength += (m_pwaUnits[i] * 2 );
-				break;
-			case CTransportData::heavy_scout:
-			case CTransportData::med_tank:
-			case CTransportData::med_art:
-			case CTransportData::destroyer:
-				iStrength += (m_pwaUnits[i] * 4 );
-				break;
-			case CTransportData::heavy_tank:
-			case CTransportData::heavy_art:
-			case CTransportData::cruiser:
-				iStrength += (m_pwaUnits[i] * 6 );
-				break;
-			default:
-				break;
-		}
-	}
-	return( iStrength );
+    int iStrength = 0;
+    for ( int i = 0; i < m_iNumUnits; i++ )
+    {
+        switch ( i )
+        {
+        case CTransportData::light_scout:
+        case CTransportData::infantry_carrier:
+        case CTransportData::landing_craft:
+        case CTransportData::infantry:
+        case CTransportData::rangers:
+            iStrength += ( m_pwaUnits[i] * 1 );
+            break;
+        case CTransportData::marines:
+            iStrength += ( m_pwaUnits[i] * 1 );
+            break;
+        case CTransportData::med_scout:
+        case CTransportData::light_tank:
+            iStrength += ( m_pwaUnits[i] * 1 );
+            break;
+        case CTransportData::light_art:
+            iStrength += ( m_pwaUnits[i] * 1 );
+            break;
+        case CTransportData::gun_boat:
+            iStrength += ( m_pwaUnits[i] * 2 );
+            break;
+        case CTransportData::heavy_scout:
+        case CTransportData::med_tank:
+            iStrength += ( m_pwaUnits[i] * 3 );
+            break;
+        case CTransportData::med_art:
+            iStrength += ( m_pwaUnits[i] * 3 );
+            break;
+        case CTransportData::destroyer:
+            iStrength += ( m_pwaUnits[i] * 4 );
+            break;
+        case CTransportData::heavy_tank:
+            iStrength += ( m_pwaUnits[i] * 5 );
+            break;
+        case CTransportData::heavy_art:
+            iStrength += ( m_pwaUnits[i] * 5 );
+            break;
+        case CTransportData::cruiser:
+            iStrength += ( m_pwaUnits[i] * 6 );
+            break;
+        default:
+            break;
+        }
+    }
+    return ( iStrength );
 }
 //
 // calculate this opfor's ability to wage warfare
@@ -256,40 +284,40 @@ int CAIOpFor::GetCombat( void )
 int CAIOpFor::GetWarfare( void )
 {
 #if THREADS_ENABLED
-		// BUGBUG this function must yield
-	myYieldThread();
-		//if( myYieldThread() == TM_QUIT )
-		//	throw(ERR_CAI_TM_QUIT); // THROW( pException );
+    // BUGBUG this function must yield
+    myYieldThread( );
+    // if( myYieldThread() == TM_QUIT )
+    //	throw(ERR_CAI_TM_QUIT); // THROW( pException );
 #endif
 
-	int iStrength = 0;
-	for( int i=0; i<m_iNumBldgs; i++ )
-	{
-		switch( i )
-		{
-			case CStructureData::barracks_2:
-			case CStructureData::command_center:
-			case CStructureData::fort_1:
-				iStrength += (m_pwaBldgs[i] * 2 );
-				break;
-			case CStructureData::barracks_3:
-			case CStructureData::fort_2:
-			case CStructureData::light_1:
-			case CStructureData::shipyard_1:
-				iStrength += (m_pwaBldgs[i] * 4 );
-				break;
-			case CStructureData::fort_3:
-			case CStructureData::light_2:
-			case CStructureData::repair:
-			case CStructureData::shipyard_3:
-			case CStructureData::heavy:
-				iStrength += (m_pwaBldgs[i] * 6 );
-				break;
-			default:
-				break;
-		}
-	}
-	return( iStrength );
+    int iStrength = 0;
+    for ( int i = 0; i < m_iNumBldgs; i++ )
+    {
+        switch ( i )
+        {
+        case CStructureData::barracks_2:
+        case CStructureData::command_center:
+        case CStructureData::fort_1:
+            iStrength += ( m_pwaBldgs[i] * 2 );
+            break;
+        case CStructureData::barracks_3:
+        case CStructureData::fort_2:
+        case CStructureData::light_1:
+        case CStructureData::shipyard_1:
+            iStrength += ( m_pwaBldgs[i] * 4 );
+            break;
+        case CStructureData::fort_3:
+        case CStructureData::light_2:
+        case CStructureData::repair:
+        case CStructureData::shipyard_3:
+        case CStructureData::heavy:
+            iStrength += ( m_pwaBldgs[i] * 6 );
+            break;
+        default:
+            break;
+        }
+    }
+    return ( iStrength );
 }
 //
 // calculate the industrial strength of this opfor
@@ -297,43 +325,43 @@ int CAIOpFor::GetWarfare( void )
 int CAIOpFor::GetIndustrial( void )
 {
 #if THREADS_ENABLED
-		// BUGBUG this function must yield
-	myYieldThread();
-		//if( myYieldThread() == TM_QUIT )
-		//	throw(ERR_CAI_TM_QUIT); // THROW( pException );
+    // BUGBUG this function must yield
+    myYieldThread( );
+    // if( myYieldThread() == TM_QUIT )
+    //	throw(ERR_CAI_TM_QUIT); // THROW( pException );
 #endif
 
-	// initialize with construction trucks
-	int iStrength = (m_pwaUnits[CTransportData::construction] * 2);
+    // initialize with construction trucks
+    int iStrength = ( m_pwaUnits[CTransportData::construction] * 2 );
 
-	for( int i=0; i<m_iNumBldgs; i++ )
-	{
-		switch( i )
-		{
-			case CStructureData::farm:
-			case CStructureData::lumber:
-			case CStructureData::coal:
-			case CStructureData::iron:
-			case CStructureData::copper:
-				iStrength += (m_pwaBldgs[i] * 1 );
-				break;
-			case CStructureData::power_1:
-			case CStructureData::power_2:
-			case CStructureData::smelter:
-				iStrength += (m_pwaBldgs[i] * 2 );
-				break;
-			case CStructureData::oil_well:
-			case CStructureData::refinery:
-			case CStructureData::power_3:
-			case CStructureData::research:
-			case CStructureData::seaport:
-				iStrength += (m_pwaBldgs[i] * 4 );
-				break;
-			default:
-				break;
-		}
-	}
-	return( iStrength );
+    for ( int i = 0; i < m_iNumBldgs; i++ )
+    {
+        switch ( i )
+        {
+        case CStructureData::farm:
+        case CStructureData::lumber:
+        case CStructureData::coal:
+        case CStructureData::iron:
+        case CStructureData::copper:
+            iStrength += ( m_pwaBldgs[i] * 1 );
+            break;
+        case CStructureData::power_1:
+        case CStructureData::power_2:
+        case CStructureData::smelter:
+            iStrength += ( m_pwaBldgs[i] * 2 );
+            break;
+        case CStructureData::oil_well:
+        case CStructureData::refinery:
+        case CStructureData::power_3:
+        case CStructureData::research:
+        case CStructureData::seaport:
+            iStrength += ( m_pwaBldgs[i] * 4 );
+            break;
+        default:
+            break;
+        }
+    }
+    return ( iStrength );
 }
 //
 // called when non-attack messages are received, to create
@@ -341,21 +369,27 @@ int CAIOpFor::GetIndustrial( void )
 //
 void CAIOpFor::AdjustThreat( void )
 {
-	// count messages received until threshhold is reached
-	if( m_iMsgCount < THREATHOLD )
-	{
-		m_iMsgCount++;
-	}
-	else	// threshhold was reached
-	{
-		m_iMsgCount = 0;
+    // count messages received until threshhold is reached
+    if ( m_iMsgCount < THREATHOLD )
+    {
+        m_iMsgCount++;
+    }
+    else  // threshhold was reached
+    {
+        m_iMsgCount = 0;
 
-		// allow attitude to migrate towards PEACE
-		if( (BYTE)m_iAttitude <= PEACE )
-			m_iAttitude++;
+        // allow attitude to migrate towards PEACE
+        // AI opfors on Difficult+ drift only back to the difficulty start
+        // line: per-message drift at 12-AI volume (~100x 1996) otherwise
+        // forces alliance and makes peace an absorbing state
+        BYTE cCeil = PEACE;
+        if ( m_bIsAI && pGameData != NULL && pGameData->m_iSmart >= ( NUM_DIFFICUTY_LEVELS / 2 ) )
+            cCeil = (BYTE)( NEUTRAL - 10 * pGameData->m_iSmart );
+        if ( (BYTE)m_iAttitude < cCeil )
+            m_iAttitude++;
 
-		SetRelations();
-	}
+        SetRelations( );
+    }
 }
 
 //
@@ -363,198 +397,198 @@ void CAIOpFor::AdjustThreat( void )
 //
 // otherwise update based on message type
 //
-void CAIOpFor::UpdateCounts( CAIMsg *pMsg )
+void CAIOpFor::UpdateCounts( CAIMsg* pMsg )
 {
-	ASSERT_VALID (this);
-	ASSERT_VALID (&theVehicleMap);
-	ASSERT_VALID (&theBuildingMap);
-	
-	m_bKnown = TRUE;
+    ASSERT_VALID( this );
+    ASSERT_VALID( &theVehicleMap );
+    ASSERT_VALID( &theBuildingMap );
 
-	if( pMsg == NULL )
-	{
-		// clear count of known units (vehicles)
-		for( int i=0; i<m_iNumUnits; i++ )
-		{
-#if 0 //THREADS_ENABLED
-			// BUGBUG this function must yield
+    m_bKnown = TRUE;
+
+    if ( pMsg == NULL )
+    {
+        // clear count of known units (vehicles)
+        for ( int i = 0; i < m_iNumUnits; i++ )
+        {
+#if 0  // THREADS_ENABLED
+       //  BUGBUG this function must yield
 			myYieldThread();
 			//if( myYieldThread() == TM_QUIT )
 			//	throw(ERR_CAI_TM_QUIT); // THROW( pException );
 #endif
-			m_pwaUnits[i] = 0;
-		}
+            m_pwaUnits[i] = 0;
+        }
 
-		// first do vehicles
-		POSITION pos = theVehicleMap.GetStartPosition ();
-		while (pos != NULL)
-		{
+        // first do vehicles
+        POSITION pos = theVehicleMap.GetStartPosition( );
+        while ( pos != NULL )
+        {
 #if THREADS_ENABLED
-			// BUGBUG this function must yield
+            // BUGBUG this function must yield
+            myYieldThread( );
+            // if( myYieldThread() == TM_QUIT )
+            //	throw(ERR_CAI_TM_QUIT); // THROW( pException );
+#endif
+            EnterCriticalSection( &cs );
+
+            CVehicle* pVehicle;
+            DWORD     dwDumb;
+            theVehicleMap.GetNextAssoc( pos, dwDumb, pVehicle );
+
+            ASSERT_VALID( pVehicle );
+
+            // consider only those vehicles of this player
+            if ( pVehicle->GetOwner( )->GetPlyrNum( ) == m_iPlayer )
+            {
+                if ( pVehicle->GetData( )->GetType( ) < m_iNumUnits )
+                {
+
+                    // count this vehicle type
+                    m_pwaUnits[pVehicle->GetData( )->GetType( )]++;
+                }
+            }
+            LeaveCriticalSection( &cs );
+        }
+
+        // now do buildings
+
+        for ( int i = 0; i < m_iNumBldgs; i++ )
+        {
+#if 0  // THREADS_ENABLED
+       //  BUGBUG this function must yield
 			myYieldThread();
 			//if( myYieldThread() == TM_QUIT )
 			//	throw(ERR_CAI_TM_QUIT); // THROW( pException );
 #endif
-			EnterCriticalSection (&cs);
+            m_pwaBldgs[i] = 0;
+        }
 
-			CVehicle *pVehicle;
-			DWORD dwDumb;
-			theVehicleMap.GetNextAssoc( pos, dwDumb, pVehicle);
-
-			ASSERT_VALID (pVehicle);
-
-			// consider only those vehicles of this player
-			if( pVehicle->GetOwner()->GetPlyrNum() == m_iPlayer )
-			{
-				if( pVehicle->GetData()->GetType() < m_iNumUnits )
-				{
-					
-					// count this vehicle type
-					m_pwaUnits[pVehicle->GetData()->GetType()]++;  
-				}
-			}
-			LeaveCriticalSection (&cs);
-		}
-
-		// now do buildings
-	
-		for( i=0; i<m_iNumBldgs; i++ )
-		{
-#if 0 //THREADS_ENABLED
-			// BUGBUG this function must yield
-			myYieldThread();
-			//if( myYieldThread() == TM_QUIT )
-			//	throw(ERR_CAI_TM_QUIT); // THROW( pException );
-#endif
-			m_pwaBldgs[i] = 0;
-		}
-
-		pos = theBuildingMap.GetStartPosition ();
-		while (pos != NULL)
-		{
+        pos = theBuildingMap.GetStartPosition( );
+        while ( pos != NULL )
+        {
 #if THREADS_ENABLED
-			// BUGBUG this function must yield
-			myYieldThread();
-			//if( myYieldThread() == TM_QUIT )
-			//throw(ERR_CAI_TM_QUIT); // THROW( pException );
+            // BUGBUG this function must yield
+            myYieldThread( );
+            // if( myYieldThread() == TM_QUIT )
+            // throw(ERR_CAI_TM_QUIT); // THROW( pException );
 #endif
-			EnterCriticalSection (&cs);
+            EnterCriticalSection( &cs );
 
-			//CBuilding *pBldg = theBuildingList.GetNext (pos);
-			CBuilding *pBldg;
-			DWORD dwDumb;
-			theBuildingMap.GetNextAssoc( pos, dwDumb, pBldg );
+            // CBuilding *pBldg = theBuildingList.GetNext (pos);
+            CBuilding* pBldg;
+            DWORD      dwDumb;
+            theBuildingMap.GetNextAssoc( pos, dwDumb, pBldg );
 
-			ASSERT_VALID (pBldg);
+            ASSERT_VALID( pBldg );
 
-			// consider only those building of this player
-			if( pBldg->GetOwner()->GetPlyrNum() == m_iPlayer )
-			{
-				if( pBldg->GetData()->GetType() < m_iNumBldgs )
-				{
-					// record the id of the opfor rocket building
-					if( pBldg->GetData()->GetType() ==
-						CStructureData::rocket && !m_dwRocket )
-						m_dwRocket = pBldg->GetID();
-					
-					// count this building type
-					m_pwaBldgs[pBldg->GetData()->GetType()]++;
-				}
-			}
-			LeaveCriticalSection (&cs);
-		}
-	} 
-	else // pMsg != NULL 
-	{
-		// use pMsg data to update the sighted vehicle/building
-		// or destroyed vehicle/building
-		if( pMsg->m_iMsg == CNetCmd::unit_damage )
-		{
-			// attitude migrates toward WAR
-			if( m_iAttitude )
-				m_iAttitude--;
-			// effect of difficulty level
-			if( m_iAttitude )
-				m_iAttitude -= pGameData->m_iSmart;
-			if( m_iAttitude < 0 )
-				m_iAttitude = 0;
+            // consider only those building of this player
+            if ( pBldg->GetOwner( )->GetPlyrNum( ) == m_iPlayer )
+            {
+                if ( pBldg->GetData( )->GetType( ) < m_iNumBldgs )
+                {
+                    // record the id of the opfor rocket building
+                    if ( pBldg->GetData( )->GetType( ) == CStructureData::rocket && !m_dwRocket )
+                        m_dwRocket = pBldg->GetID( );
 
-			SetRelations();
+                    // count this building type
+                    m_pwaBldgs[pBldg->GetData( )->GetType( )]++;
+                }
+            }
+            LeaveCriticalSection( &cs );
+        }
+    }
+    else  // pMsg != NULL
+    {
+        // use pMsg data to update the sighted vehicle/building
+        // or destroyed vehicle/building
+        if ( pMsg->m_iMsg == CNetCmd::unit_damage )
+        {
+            // attitude migrates toward WAR
+            if ( m_iAttitude )
+                m_iAttitude--;
+            // effect of difficulty level
+            if ( m_iAttitude )
+                m_iAttitude -= pGameData->m_iSmart;
+            if ( m_iAttitude < 0 )
+                m_iAttitude = 0;
 
-			// reset message tracking
-			m_iMsgCount = 0;
-		}
-		WORD wCnt;
-		if( pMsg->m_iMsg == CNetCmd::veh_new )
-		{
-			wCnt = m_pwaUnits[pMsg->m_idata1];
-			m_pwaUnits[pMsg->m_idata1] = wCnt + 1;
-		}
-		if( pMsg->m_iMsg == CNetCmd::bldg_new )
-		{
-			wCnt = m_pwaBldgs[pMsg->m_idata1];
-			m_pwaBldgs[pMsg->m_idata1] = wCnt + 1;
-		}
-	}
+            SetRelations( );
+
+            // reset message tracking
+            m_iMsgCount = 0;
+        }
+        WORD wCnt;
+        if ( pMsg->m_iMsg == CNetCmd::veh_new )
+        {
+            wCnt                       = m_pwaUnits[pMsg->m_idata1];
+            m_pwaUnits[pMsg->m_idata1] = wCnt + 1;
+        }
+        if ( pMsg->m_iMsg == CNetCmd::bldg_new )
+        {
+            wCnt                       = m_pwaBldgs[pMsg->m_idata1];
+            m_pwaBldgs[pMsg->m_idata1] = wCnt + 1;
+        }
+    }
 }
 
 void CAIOpFor::SetRelations( void )
 {
-	// use attitude factor to set a relations state
-	if( (BYTE)m_iAttitude <= WAR )
-		m_cRelations = WAR;
-	else if( (BYTE)m_iAttitude <= HOSTILE )
-		m_cRelations = HOSTILE;
-	else if( (BYTE)m_iAttitude > HOSTILE &&
-		(BYTE)m_iAttitude < PEACE )
-		m_cRelations = NEUTRAL;
-	else if( (BYTE)m_iAttitude >= PEACE &&
-		(BYTE)m_iAttitude < ALLIANCE )
-		m_cRelations = PEACE;
-	else
-		m_cRelations = ALLIANCE;
+    // use attitude factor to set a relations state
+    if ( (BYTE)m_iAttitude <= WAR )
+        m_cRelations = WAR;
+    else if ( (BYTE)m_iAttitude <= HOSTILE )
+        m_cRelations = HOSTILE;
+    else if ( (BYTE)m_iAttitude > HOSTILE && (BYTE)m_iAttitude < PEACE )
+        m_cRelations = NEUTRAL;
+    else if ( (BYTE)m_iAttitude >= PEACE && (BYTE)m_iAttitude < ALLIANCE )
+        m_cRelations = PEACE;
+    else
+        m_cRelations = ALLIANCE;
 
-	// apply attitude to 'at war' status
-	if( m_cRelations <= HOSTILE )
-		m_bAtWar = TRUE;
-	else
-		m_bAtWar = FALSE;
+    // apply attitude to 'at war' status
+    if ( m_cRelations <= HOSTILE )
+        m_bAtWar = TRUE;
+    else
+        m_bAtWar = FALSE;
 
-	if( m_bIsAI && pGameData->m_iSmart >= 2 )
-	{
-		m_bAtWar = FALSE;
-		m_cRelations = ALLIANCE;
-	}
+    // OPERATOR DIRECTIVE (#2, AI-vs-AI war): the auto-alliance override that used to live here
+    // (`if ( m_bIsAI && pGameData->m_iSmart >= 2 ) { m_bAtWar = FALSE; m_cRelations = ALLIANCE; }`)
+    // unconditionally forced EVERY AI opfor to permanent ALLIANCE on high difficulty, discarding the
+    // attitude-driven relations computed just above. The operator wants AIs to ALSO go to war at high
+    // difficulty (not always ally), so the override is removed — relations now follow m_iAttitude for
+    // all difficulties (attitude still yields ALLIANCE when high, so allies still happen; they're just
+    // no longer forced, allowing war/hostile when attitude warrants). Deterministic (no RandNum), so
+    // no MP-desync risk. (newwin root-cause; combat-node to verify AI-vs-AI war emerges in-game.)
 }
 
 BYTE CAIOpFor::GetRelations( void )
 {
-	return m_cRelations;
+    return m_cRelations;
 }
 
 void CAIOpFor::SetRelations( BYTE bNewRelationship )
 {
-	m_cRelations = bNewRelationship;
+    m_cRelations = bNewRelationship;
 }
 
 BOOL CAIOpFor::AtWar( void )
 {
-	ASSERT_VALID( this );
-	return m_bAtWar;
+    ASSERT_VALID( this );
+    return m_bAtWar;
 }
 
 void CAIOpFor::SetWar( BOOL bWar )
 {
-	ASSERT_VALID( this );
-	m_bAtWar = bWar;
+    ASSERT_VALID( this );
+    m_bAtWar = bWar;
 }
 //
 // return the flag indicating control by this AI
 //
 BOOL CAIOpFor::IsAI( void )
 {
-	ASSERT_VALID( this );
-	return m_bIsAI;
+    ASSERT_VALID( this );
+    return m_bIsAI;
 }
 //
 // record the fact this OpFor is controlled
@@ -562,8 +596,8 @@ BOOL CAIOpFor::IsAI( void )
 //
 void CAIOpFor::SetIsAI( BOOL bAI )
 {
-	ASSERT_VALID( this );
-	m_bIsAI = bAI;
+    ASSERT_VALID( this );
+    m_bIsAI = bAI;
 }
 //
 // return the count of vehicles indicated
@@ -571,31 +605,31 @@ void CAIOpFor::SetIsAI( BOOL bAI )
 //
 WORD CAIOpFor::GetVehicle( WORD wOffset )
 {
-	ASSERT_VALID( this );
-	if( m_pwaUnits != NULL )
-	{
-		//ASSERT_VALID( m_pwaUnits );
-		//ASSERT( (int)wOffset < m_iNumUnits );
-		
-		if( (int)wOffset < m_iNumUnits )
-			return( m_pwaUnits[wOffset] );
-		else
-		{
-			WORD wCnt = 0;
-			for(int i=0; i<m_iNumUnits; ++i)
-			{
-#if 0 //THREADS_ENABLED
-				// BUGBUG this function must yield
+    ASSERT_VALID( this );
+    if ( m_pwaUnits != NULL )
+    {
+        // ASSERT_VALID( m_pwaUnits );
+        // ASSERT( (int)wOffset < m_iNumUnits );
+
+        if ( (int)wOffset < m_iNumUnits )
+            return ( m_pwaUnits[wOffset] );
+        else
+        {
+            WORD wCnt = 0;
+            for ( int i = 0; i < m_iNumUnits; ++i )
+            {
+#if 0  // THREADS_ENABLED
+       //  BUGBUG this function must yield
 				myYieldThread();
 				//if( myYieldThread() == TM_QUIT )
 				//	throw(ERR_CAI_TM_QUIT); // THROW( pException );
 #endif
-				wCnt += m_pwaUnits[i];
-			}
-			return( wCnt );
-		}
-	}
-	return( FALSE );
+                wCnt += m_pwaUnits[i];
+            }
+            return ( wCnt );
+        }
+    }
+    return ( FALSE );
 }
 // BUGBUG: This needs to consider that the specific vehicle
 //         or building needs to only be counted once
@@ -604,15 +638,15 @@ WORD CAIOpFor::GetVehicle( WORD wOffset )
 //
 void CAIOpFor::SetVehicle( WORD wOffset, WORD wCnt )
 {
-	ASSERT_VALID( this );
-	if( m_pwaUnits != NULL )
-	{
-		//ASSERT_VALID( m_pwaUnits );
-		ASSERT( (int)wOffset < m_iNumUnits );
-		
-		if( (int)wOffset < m_iNumUnits )
-			m_pwaUnits[wOffset] = wCnt;
-	}
+    ASSERT_VALID( this );
+    if ( m_pwaUnits != NULL )
+    {
+        // ASSERT_VALID( m_pwaUnits );
+        ASSERT( (int)wOffset < m_iNumUnits );
+
+        if ( (int)wOffset < m_iNumUnits )
+            m_pwaUnits[wOffset] = wCnt;
+    }
 }
 //
 // return the racial characteristic known about this OPFOR
@@ -620,16 +654,16 @@ void CAIOpFor::SetVehicle( WORD wOffset, WORD wCnt )
 //
 WORD CAIOpFor::GetAttribute( WORD wOffset )
 {
-	ASSERT_VALID( this );
-	if( m_pwaRAs != NULL )
-	{
-		//ASSERT_VALID( m_pwaRAs );
-		ASSERT( (int)wOffset < m_iNumRAs );
-		
-		if( (int)wOffset < m_iNumRAs )
-			return( m_pwaRAs[wOffset] );
-	}
-	return( FALSE );
+    ASSERT_VALID( this );
+    if ( m_pwaRAs != NULL )
+    {
+        // ASSERT_VALID( m_pwaRAs );
+        ASSERT( (int)wOffset < m_iNumRAs );
+
+        if ( (int)wOffset < m_iNumRAs )
+            return ( m_pwaRAs[wOffset] );
+    }
+    return ( FALSE );
 }
 //
 // set the racial characteristic known about this OPFOR
@@ -637,15 +671,15 @@ WORD CAIOpFor::GetAttribute( WORD wOffset )
 //
 void CAIOpFor::SetAttribute( WORD wOffset, WORD wValue )
 {
-	ASSERT_VALID( this );
-	if( m_pwaRAs != NULL )
-	{
-		//ASSERT_VALID( m_pwaRAs );
-		ASSERT( (int)wOffset < m_iNumRAs );
-		
-		if( (int)wOffset < m_iNumRAs )
-			m_pwaRAs[wOffset] = wValue;
-	}
+    ASSERT_VALID( this );
+    if ( m_pwaRAs != NULL )
+    {
+        // ASSERT_VALID( m_pwaRAs );
+        ASSERT( (int)wOffset < m_iNumRAs );
+
+        if ( (int)wOffset < m_iNumRAs )
+            m_pwaRAs[wOffset] = wValue;
+    }
 }
 
 //
@@ -654,31 +688,31 @@ void CAIOpFor::SetAttribute( WORD wOffset, WORD wValue )
 //
 WORD CAIOpFor::GetBuilding( WORD wOffset )
 {
-	ASSERT_VALID( this );
-	if( m_pwaBldgs != NULL )
-	{
-		//ASSERT_VALID( m_pwaBldgs );
-		ASSERT( (int)wOffset < m_iNumBldgs );
-		
-		if( (int)wOffset < m_iNumBldgs )
-			return( m_pwaBldgs[wOffset] );
-		else
-		{
-			WORD wCnt = 0;
-			for(int i=0; i<m_iNumBldgs; ++i)
-			{
-#if 0 //THREADS_ENABLED
-				// BUGBUG this function must yield
+    ASSERT_VALID( this );
+    if ( m_pwaBldgs != NULL )
+    {
+        // ASSERT_VALID( m_pwaBldgs );
+        ASSERT( (int)wOffset < m_iNumBldgs );
+
+        if ( (int)wOffset < m_iNumBldgs )
+            return ( m_pwaBldgs[wOffset] );
+        else
+        {
+            WORD wCnt = 0;
+            for ( int i = 0; i < m_iNumBldgs; ++i )
+            {
+#if 0  // THREADS_ENABLED
+       //  BUGBUG this function must yield
 				myYieldThread();
 				//if( myYieldThread() == TM_QUIT )
 				//	throw(ERR_CAI_TM_QUIT); // THROW( pException );
 #endif
-				wCnt += m_pwaBldgs[i];
-			}
-			return( wCnt );
-		}
-	}
-	return( FALSE );
+                wCnt += m_pwaBldgs[i];
+            }
+            return ( wCnt );
+        }
+    }
+    return ( FALSE );
 }
 // BUGBUG: This needs to consider that the specific vehicle
 //         or building needs to only be counted once
@@ -687,15 +721,15 @@ WORD CAIOpFor::GetBuilding( WORD wOffset )
 //
 void CAIOpFor::SetBuilding( WORD wOffset, WORD wCnt )
 {
-	ASSERT_VALID( this );
-	if( m_pwaBldgs != NULL )
-	{
-		//ASSERT_VALID( m_pwaBldgs );
-		ASSERT( (int)wOffset < m_iNumBldgs );
-		
-		if( (int)wOffset < m_iNumBldgs )
-			m_pwaBldgs[wOffset] = wCnt;
-	}
+    ASSERT_VALID( this );
+    if ( m_pwaBldgs != NULL )
+    {
+        // ASSERT_VALID( m_pwaBldgs );
+        ASSERT( (int)wOffset < m_iNumBldgs );
+
+        if ( (int)wOffset < m_iNumBldgs )
+            m_pwaBldgs[wOffset] = wCnt;
+    }
 }
 //
 // add one to the count of attacks by this OpFor
@@ -703,50 +737,50 @@ void CAIOpFor::SetBuilding( WORD wOffset, WORD wCnt )
 //
 void CAIOpFor::AddUnitAttack( int iVeh )
 {
-	ASSERT_VALID( this );
-	if( m_pwaAttackedUnits != NULL )
-	{
-		//ASSERT_VALID( m_pwaAttackedUnits );
-		ASSERT( iVeh < m_iNumUnits );
-		
-		if( iVeh < m_iNumUnits )
-		{
-			m_pwaAttackedUnits[iVeh]++; 
-		}
-	}
+    ASSERT_VALID( this );
+    if ( m_pwaAttackedUnits != NULL )
+    {
+        // ASSERT_VALID( m_pwaAttackedUnits );
+        ASSERT( iVeh < m_iNumUnits );
+
+        if ( iVeh < m_iNumUnits )
+        {
+            m_pwaAttackedUnits[iVeh]++;
+        }
+    }
 }
 
 WORD CAIOpFor::GetTotalAttacks( void )
 {
-	ASSERT_VALID( this );
-	WORD wCnt = 0;
-	if( m_pwaAttackedUnits != NULL )
-	{
+    ASSERT_VALID( this );
+    WORD wCnt = 0;
+    if ( m_pwaAttackedUnits != NULL )
+    {
 #if THREADS_ENABLED
-			// BUGBUG this function must yield
-		myYieldThread();
-			//if( myYieldThread() == TM_QUIT )
-			//	throw(ERR_CAI_TM_QUIT); // THROW( pException );
+        // BUGBUG this function must yield
+        myYieldThread( );
+        // if( myYieldThread() == TM_QUIT )
+        //	throw(ERR_CAI_TM_QUIT); // THROW( pException );
 #endif
-		for(int i=0; i<m_iNumUnits; ++i)
-		{
-			wCnt += m_pwaAttackedUnits[i];
-		}
-	}
-	if( m_pwaAttackedBldgs != NULL )
-	{
+        for ( int i = 0; i < m_iNumUnits; ++i )
+        {
+            wCnt += m_pwaAttackedUnits[i];
+        }
+    }
+    if ( m_pwaAttackedBldgs != NULL )
+    {
 #if THREADS_ENABLED
-			// BUGBUG this function must yield
-		myYieldThread();
-			//if( myYieldThread() == TM_QUIT )
-			//	throw(ERR_CAI_TM_QUIT); // THROW( pException );
+        // BUGBUG this function must yield
+        myYieldThread( );
+        // if( myYieldThread() == TM_QUIT )
+        //	throw(ERR_CAI_TM_QUIT); // THROW( pException );
 #endif
-		for(int i=0; i<m_iNumBldgs; ++i)
-		{
-			wCnt += m_pwaAttackedBldgs[i];
-		}
-	}
-	return( wCnt );
+        for ( int i = 0; i < m_iNumBldgs; ++i )
+        {
+            wCnt += m_pwaAttackedBldgs[i];
+        }
+    }
+    return ( wCnt );
 }
 
 //
@@ -754,33 +788,33 @@ WORD CAIOpFor::GetTotalAttacks( void )
 //
 WORD CAIOpFor::GetUnitAttack( int iVeh )
 {
-	ASSERT_VALID( this );
-	if( m_pwaAttackedUnits != NULL )
-	{
-		//ASSERT_VALID( m_pwaAttackedUnits );
-		//ASSERT( iVeh < m_iNumUnits );
-		
-		if( iVeh < m_iNumUnits )
-		{
-			return( m_pwaAttackedUnits[iVeh] );
-		}
-		else
-		{
-			WORD wCnt = 0;
-			for(int i=0; i<m_iNumUnits; ++i)
-			{
-#if 0 //THREADS_ENABLED
-				// BUGBUG this function must yield
+    ASSERT_VALID( this );
+    if ( m_pwaAttackedUnits != NULL )
+    {
+        // ASSERT_VALID( m_pwaAttackedUnits );
+        // ASSERT( iVeh < m_iNumUnits );
+
+        if ( iVeh < m_iNumUnits )
+        {
+            return ( m_pwaAttackedUnits[iVeh] );
+        }
+        else
+        {
+            WORD wCnt = 0;
+            for ( int i = 0; i < m_iNumUnits; ++i )
+            {
+#if 0  // THREADS_ENABLED
+       //  BUGBUG this function must yield
 				myYieldThread();
 				//if( myYieldThread() == TM_QUIT )
 				//	throw(ERR_CAI_TM_QUIT); // THROW( pException );
 #endif
-				wCnt += m_pwaAttackedUnits[i];
-			}
-			return( wCnt );
-		}
-	}
-	return(0);
+                wCnt += m_pwaAttackedUnits[i];
+            }
+            return ( wCnt );
+        }
+    }
+    return ( 0 );
 }
 
 //
@@ -789,17 +823,17 @@ WORD CAIOpFor::GetUnitAttack( int iVeh )
 //
 void CAIOpFor::AddBldgAttack( int iBldg )
 {
-	ASSERT_VALID( this );
-	if( m_pwaAttackedBldgs != NULL )
-	{
-		//ASSERT_VALID( m_pwaAttackedBldgs );
-		ASSERT( iBldg < m_iNumBldgs );
-		
-		if( iBldg < m_iNumBldgs )
-		{
-			m_pwaAttackedBldgs[iBldg]++;
-		}
-	}
+    ASSERT_VALID( this );
+    if ( m_pwaAttackedBldgs != NULL )
+    {
+        // ASSERT_VALID( m_pwaAttackedBldgs );
+        ASSERT( iBldg < m_iNumBldgs );
+
+        if ( iBldg < m_iNumBldgs )
+        {
+            m_pwaAttackedBldgs[iBldg]++;
+        }
+    }
 }
 
 //
@@ -807,153 +841,187 @@ void CAIOpFor::AddBldgAttack( int iBldg )
 //
 WORD CAIOpFor::GetBldgAttack( int iBldg )
 {
-	ASSERT_VALID( this );
-	if( m_pwaAttackedBldgs != NULL )
-	{
-		//ASSERT_VALID( m_pwaAttackedBldgs );
-		//ASSERT( iBldg < m_pwaAttackedBldgs->GetSize() );
-		
-		if( iBldg < m_iNumBldgs )
-		{
-			return( m_pwaAttackedBldgs[iBldg] );
-		}
-		else
-		{
-			WORD wCnt = 0;
-			for(int i=0; i<m_iNumBldgs; ++i)
-			{
-#if 0 //THREADS_ENABLED
-				// BUGBUG this function must yield
+    ASSERT_VALID( this );
+    if ( m_pwaAttackedBldgs != NULL )
+    {
+        // ASSERT_VALID( m_pwaAttackedBldgs );
+        // ASSERT( iBldg < m_pwaAttackedBldgs->GetSize() );
+
+        if ( iBldg < m_iNumBldgs )
+        {
+            return ( m_pwaAttackedBldgs[iBldg] );
+        }
+        else
+        {
+            WORD wCnt = 0;
+            for ( int i = 0; i < m_iNumBldgs; ++i )
+            {
+#if 0  // THREADS_ENABLED
+       //  BUGBUG this function must yield
 				myYieldThread();
 				//if( myYieldThread() == TM_QUIT )
 				//	throw(ERR_CAI_TM_QUIT); // THROW( pException );
 #endif
-				wCnt += m_pwaAttackedBldgs[i];
-			}
-			return( wCnt );
-		}
-	}
-	return(0);
+                wCnt += m_pwaAttackedBldgs[i];
+            }
+            return ( wCnt );
+        }
+    }
+    return ( 0 );
 }
 
 int CAIOpFor::GetPlayerID( void )
 {
-	ASSERT_VALID( this );
-	return m_iPlayer;
+    ASSERT_VALID( this );
+    return m_iPlayer;
 }
 
 
 DWORD CAIOpFor::GetRocket( void )
 {
-	ASSERT_VALID( this );
-	return m_dwRocket;
+    ASSERT_VALID( this );
+    return m_dwRocket;
 }
 
 int CAIOpFor::GetMsgCount( void )
 {
-	ASSERT_VALID( this );
-	return m_iMsgCount;
+    ASSERT_VALID( this );
+    return m_iMsgCount;
 }
 
 void CAIOpFor::SetRocket( DWORD dwRocket )
 {
-	ASSERT_VALID( this );
-	m_dwRocket = dwRocket;
+    ASSERT_VALID( this );
+    m_dwRocket = dwRocket;
 }
 
-			
+
 void CAIOpFor::SetMsgCount( int iCnt )
 {
-	ASSERT_VALID( this );
-	m_iMsgCount = iCnt;
+    ASSERT_VALID( this );
+    m_iMsgCount = iCnt;
 }
 
 int CAIOpFor::GetAttitude( void )
 {
-	ASSERT_VALID( this );
-	return m_iAttitude;
+    ASSERT_VALID( this );
+    return m_iAttitude;
 }
 
 void CAIOpFor::SetAttitude( int iAttitude )
 {
-	ASSERT_VALID( this );
-	if( iAttitude > 0 &&
-		(BYTE)iAttitude <= ALLIANCE )
-		m_iAttitude = iAttitude;
+    ASSERT_VALID( this );
+    if ( iAttitude > 0 && (BYTE)iAttitude <= ALLIANCE )
+    {
+        m_iAttitude = iAttitude;
+        SetRelations( );  // requantize relations + war flag consistently
+    }
 }
 
 //
 // return the name of the CAIOpFor
 //
-CString& CAIOpFor::GetName( void )
+std::string& CAIOpFor::GetName( void )
 {
-	ASSERT_VALID( this );
-	return m_sName;
+    ASSERT_VALID( this );
+    return m_sName;
 }
-CAIOpFor::~CAIOpFor()
+CAIOpFor::~CAIOpFor( )
 {
-	ASSERT_VALID( this );
+    ASSERT_VALID( this );
 
 
-	if( m_pwaUnits != NULL )
-	{
-		delete [] m_pwaUnits;
-		m_pwaUnits = NULL;
-	}
-	if( m_pwaBldgs != NULL )
-	{
-		delete [] m_pwaBldgs;
-		m_pwaBldgs = NULL;
-	}
-	if( m_pwaRAs != NULL )
-	{
-		delete [] m_pwaRAs;
-		m_pwaRAs = NULL;
-	}
-	if( m_pwaAttackedUnits != NULL )
-	{
-		delete [] m_pwaAttackedUnits;
-		m_pwaAttackedUnits = NULL;
-	}
-	if( m_pwaAttackedBldgs != NULL )
-	{
-		delete [] m_pwaAttackedBldgs;
-		m_pwaAttackedBldgs = NULL;
-	}
-	m_sName.Empty();
+    if ( m_pwaUnits != NULL )
+    {
+        delete[] m_pwaUnits;
+        m_pwaUnits = NULL;
+    }
+    if ( m_pwaBldgs != NULL )
+    {
+        delete[] m_pwaBldgs;
+        m_pwaBldgs = NULL;
+    }
+    if ( m_pwaRAs != NULL )
+    {
+        delete[] m_pwaRAs;
+        m_pwaRAs = NULL;
+    }
+    if ( m_pwaAttackedUnits != NULL )
+    {
+        delete[] m_pwaAttackedUnits;
+        m_pwaAttackedUnits = NULL;
+    }
+    if ( m_pwaAttackedBldgs != NULL )
+    {
+        delete[] m_pwaAttackedBldgs;
+        m_pwaAttackedBldgs = NULL;
+    }
 }
-
-void CAIOpFor::Save( CFile *pFile )
+void CAIOpFor::Save( CArchive& ar )
 {
-	pFile->Write( (const void*)m_pwaUnits, 
-		(sizeof(WORD) * m_iNumUnits) );
-	pFile->Write( (const void*)m_pwaBldgs, 
-		(sizeof(WORD) * m_iNumBldgs) );
-	pFile->Write( (const void*)m_pwaRAs, 
-		(sizeof(WORD) * m_iNumRAs) );
-	pFile->Write( (const void*)m_pwaAttackedUnits, 
-		(sizeof(WORD) * m_iNumUnits) );
-	pFile->Write( (const void*)m_pwaAttackedBldgs, 
-		(sizeof(WORD) * m_iNumBldgs) );
-}
+    // validate arrays
+    if ( m_pwaUnits == NULL || m_pwaBldgs == NULL || m_pwaRAs == NULL || m_pwaAttackedUnits == NULL ||
+         m_pwaAttackedBldgs == NULL )
+    {
+        throw( ERR_CAI_BAD_NEW );
+    }
 
-void CAIOpFor::Load( CFile *pFile )
-{
-	pFile->Read( (void*)m_pwaUnits, (sizeof(WORD) * m_iNumUnits) );
-	pFile->Read( (void*)m_pwaBldgs, (sizeof(WORD) * m_iNumBldgs) );
-	pFile->Read( (void*)m_pwaRAs, (sizeof(WORD) * m_iNumRAs) );
-	pFile->Read( (void*)m_pwaAttackedUnits, 
-		(sizeof(WORD) * m_iNumUnits) );
-	pFile->Read( (void*)m_pwaAttackedBldgs, 
-		(sizeof(WORD) * m_iNumBldgs) );
+    try
+    {
+        ar.Write( (const void*)m_pwaUnits, (UINT)( sizeof( WORD ) * m_iNumUnits ) );
+        ar.Write( (const void*)m_pwaBldgs, (UINT)( sizeof( WORD ) * m_iNumBldgs ) );
+        ar.Write( (const void*)m_pwaRAs, (UINT)( sizeof( WORD ) * m_iNumRAs ) );
+        ar.Write( (const void*)m_pwaAttackedUnits, (UINT)( sizeof( WORD ) * m_iNumUnits ) );
+        ar.Write( (const void*)m_pwaAttackedBldgs, (UINT)( sizeof( WORD ) * m_iNumBldgs ) );
+    }
+    catch ( CFileException* /*e*/ )
+    {
+        throw( ERR_CAI_BAD_FILE );
+    }
 }
 
+void CAIOpFor::Load( CArchive& ar )
+{
+    // validate arrays
+    if ( m_pwaUnits == NULL || m_pwaBldgs == NULL || m_pwaRAs == NULL || m_pwaAttackedUnits == NULL ||
+         m_pwaAttackedBldgs == NULL )
+    {
+        throw( ERR_CAI_BAD_NEW );
+    }
+
+    try
+    {
+        UINT uBytes = ar.Read( (void*)m_pwaUnits, (UINT)( sizeof( WORD ) * m_iNumUnits ) );
+        if ( uBytes != (UINT)( sizeof( WORD ) * m_iNumUnits ) )
+            throw( ERR_CAI_BAD_FILE );
+
+        uBytes = ar.Read( (void*)m_pwaBldgs, (UINT)( sizeof( WORD ) * m_iNumBldgs ) );
+        if ( uBytes != (UINT)( sizeof( WORD ) * m_iNumBldgs ) )
+            throw( ERR_CAI_BAD_FILE );
+
+        uBytes = ar.Read( (void*)m_pwaRAs, (UINT)( sizeof( WORD ) * m_iNumRAs ) );
+        if ( uBytes != (UINT)( sizeof( WORD ) * m_iNumRAs ) )
+            throw( ERR_CAI_BAD_FILE );
+
+        uBytes = ar.Read( (void*)m_pwaAttackedUnits, (UINT)( sizeof( WORD ) * m_iNumUnits ) );
+        if ( uBytes != (UINT)( sizeof( WORD ) * m_iNumUnits ) )
+            throw( ERR_CAI_BAD_FILE );
+
+        uBytes = ar.Read( (void*)m_pwaAttackedBldgs, (UINT)( sizeof( WORD ) * m_iNumBldgs ) );
+        if ( uBytes != (UINT)( sizeof( WORD ) * m_iNumBldgs ) )
+            throw( ERR_CAI_BAD_FILE );
+    }
+    catch ( CFileException* /*e*/ )
+    {
+        throw( ERR_CAI_BAD_FILE );
+    }
+}
 /////////////////////////////////////////////////////////////////////////////
 
 CAIOpForList::~CAIOpForList( void )
 {
-	ASSERT_VALID( this );
-    DeleteList();
+    ASSERT_VALID( this );
+    DeleteList( );
 }
 
 #if 0
@@ -1017,72 +1085,71 @@ WORD CAIOpForList::GetNextId( void )
 }
 #endif
 
-CAIOpFor *CAIOpForList::AddOpFor( int iPlayer )
+CAIOpFor* CAIOpForList::AddOpFor( int iPlayer )
 {
-	ASSERT_VALID( this );
+    ASSERT_VALID( this );
 
-	CAIOpFor *pOpFor = NULL;
+    CAIOpFor* pOpFor = NULL;
 
-	try
-	{
-		pOpFor = new CAIOpFor( iPlayer, NULL );
-		AddTail( (CObject *)pOpFor );
-	}
-	catch( CException e )
-	{
-		pOpFor = NULL;
+    try
+    {
+        pOpFor = new CAIOpFor( iPlayer, NULL );
+        AddTail( (CObject*)pOpFor );
+    }
+    catch ( CException* e )
+    {
+        pOpFor = NULL;
 
-		throw(ERR_CAI_BAD_NEW);
-	}
+        throw( ERR_CAI_BAD_NEW );
+    }
 
-	// access the game data for this player
-	EnterCriticalSection (&cs);
-	CPlayer *pPlayer = 
-		pGameData->GetPlayerData( iPlayer );
-	if( pPlayer == NULL )
-	{
-		// for some reason this player is gone now
-		LeaveCriticalSection (&cs);
+    // access the game data for this player
+    EnterCriticalSection( &cs );
+    CPlayer* pPlayer = pGameData->GetPlayerData( iPlayer );
+    if ( pPlayer == NULL )
+    {
+        // for some reason this player is gone now
+        LeaveCriticalSection( &cs );
 
-		RemoveOpFor( iPlayer );
-		delete pOpFor;
+        RemoveOpFor( iPlayer );
+        delete pOpFor;
 
-		throw(ERR_CAI_BAD_NEW);
-	}
-	// record if this player is AI or not
-	pOpFor->SetIsAI( pPlayer->IsAI() );
-	LeaveCriticalSection (&cs);
+        throw( ERR_CAI_BAD_NEW );
+    }
+    // record if this player is AI or not
+    pOpFor->SetIsAI( pPlayer->IsAI( ) );
+    LeaveCriticalSection( &cs );
 
-	return( pOpFor );
+    return ( pOpFor );
 }
 
 //
 // return a pointer to the CAIOpFor object matching the id passed
 //
-CAIOpFor *CAIOpForList::GetOpFor( int iPlayer )
+CAIOpFor* CAIOpForList::GetOpFor( int iPlayer )
 {
-	ASSERT_VALID( this );
+    ASSERT_VALID( this );
 
 #if THREADS_ENABLED
-		// BUGBUG this function must yield
-	myYieldThread();
-		//if( myYieldThread() == TM_QUIT )
-		//	throw(ERR_CAI_TM_QUIT); // THROW( pException );
+    // BUGBUG this function must yield
+    myYieldThread( );
+    // if( myYieldThread() == TM_QUIT )
+    //	throw(ERR_CAI_TM_QUIT); // THROW( pException );
 #endif
 
-    POSITION pos = GetHeadPosition();
-    while( pos != NULL )
-    {   
-        CAIOpFor *pOpFor = (CAIOpFor *)GetNext( pos );
-        if( pOpFor != NULL )
+    POSITION pos = GetHeadPosition( );
+    while ( pos != NULL )
+    {
+        CAIOpFor* pOpFor = (CAIOpFor*)GetNext( pos );
+        if ( pOpFor != NULL )
         {
-        	ASSERT_VALID( pOpFor );
+            ASSERT_VALID( pOpFor );
 
-            if( pOpFor->GetPlayerID() == iPlayer )
-                return( pOpFor );
+            if ( pOpFor->GetPlayerID( ) == iPlayer )
+                return ( pOpFor );
         }
     }
-    return( NULL );
+    return ( NULL );
 }
 
 //
@@ -1090,89 +1157,87 @@ CAIOpFor *CAIOpForList::GetOpFor( int iPlayer )
 //
 void CAIOpForList::DeleteList( void )
 {
-	ASSERT_VALID( this );
+    ASSERT_VALID( this );
 
-    if( GetCount() )
+    if ( GetCount( ) )
     {
-        POSITION pos = GetHeadPosition();
-        while( pos != NULL )
-        {   
-            CAIOpFor *pOpFor = (CAIOpFor *)GetNext( pos );
-            if( pOpFor != NULL )
+        POSITION pos = GetHeadPosition( );
+        while ( pos != NULL )
+        {
+            CAIOpFor* pOpFor = (CAIOpFor*)GetNext( pos );
+            if ( pOpFor != NULL )
             {
-            	ASSERT_VALID( pOpFor );
+                ASSERT_VALID( pOpFor );
 
                 delete pOpFor;
             }
         }
     }
-    RemoveAll();
+    RemoveAll( );
 }
 
 void CAIOpForList::RemoveOpFor( int iPlayer )
 {
-	ASSERT_VALID( this );
+    ASSERT_VALID( this );
 
     POSITION pos1, pos2;
-    for( pos1 = GetHeadPosition(); 
-        ( pos2 = pos1 ) != NULL; )
+    for ( pos1 = GetHeadPosition( ); ( pos2 = pos1 ) != NULL; )
     {
-#if 0 //THREADS_ENABLED
-		// BUGBUG this function must yield
+#if 0  // THREADS_ENABLED
+       //  BUGBUG this function must yield
 			myYieldThread();
 		//if( myYieldThread() == TM_QUIT )
 		//	throw(ERR_CAI_TM_QUIT); // THROW( pException );
 #endif
-        CAIOpFor *pOpFor = (CAIOpFor *)GetNext( pos1 );
-        if( pOpFor != NULL )
+        CAIOpFor* pOpFor = (CAIOpFor*)GetNext( pos1 );
+        if ( pOpFor != NULL )
         {
             ASSERT_VALID( pOpFor );
 
-        	if( pOpFor->GetPlayerID() != iPlayer )
-            	continue;
+            if ( pOpFor->GetPlayerID( ) != iPlayer )
+                continue;
         }
 
-        pOpFor = (CAIOpFor *)GetAt( pos2 );
-        if( pOpFor != NULL )
+        pOpFor = (CAIOpFor*)GetAt( pos2 );
+        if ( pOpFor != NULL )
         {
             ASSERT_VALID( pOpFor );
 
-        	RemoveAt( pos2 );
-        	delete pOpFor;
-        	break;
+            RemoveAt( pos2 );
+            delete pOpFor;
+            break;
         }
     }
 }
 
 WORD CAIOpForList::GetBuildingCnt( int iBldg )
 {
-	WORD wCnt = 0;
-	if( iBldg >= CStructureData::num_types || 
-		iBldg < 0 )
-		return( wCnt );
-	
-    if( GetCount() )
+    WORD wCnt = 0;
+    if ( iBldg >= CStructureData::num_types || iBldg < 0 )
+        return ( wCnt );
+
+    if ( GetCount( ) )
     {
-        POSITION pos = GetHeadPosition();
-        while( pos != NULL )
-        {   
-#if 0 //THREADS_ENABLED
-			// BUGBUG this function must yield
+        POSITION pos = GetHeadPosition( );
+        while ( pos != NULL )
+        {
+#if 0  // THREADS_ENABLED
+       //  BUGBUG this function must yield
 			myYieldThread();
 			//if( myYieldThread() == TM_QUIT )
 			//	throw(ERR_CAI_TM_QUIT); // THROW( pException );
 #endif
 
-            CAIOpFor *pOpFor = (CAIOpFor *)GetNext( pos );
-            if( pOpFor != NULL )
+            CAIOpFor* pOpFor = (CAIOpFor*)GetNext( pos );
+            if ( pOpFor != NULL )
             {
-            	ASSERT_VALID( pOpFor );
-				
-				wCnt += pOpFor->GetBuilding(iBldg);
-			}
-		}
-	}
-	return( wCnt );
+                ASSERT_VALID( pOpFor );
+
+                wCnt += pOpFor->GetBuilding( iBldg );
+            }
+        }
+    }
+    return ( wCnt );
 }
 
 //
@@ -1182,48 +1247,48 @@ WORD CAIOpForList::GetBuildingCnt( int iBldg )
 //
 WORD CAIOpForList::GetVehicleCnt( int iVeh, BOOL bAve /*=FALSE*/ )
 {
-	WORD wCnt = 0;
-	
-    if( GetCount() )
+    WORD wCnt = 0;
+
+    if ( GetCount( ) )
     {
-        POSITION pos = GetHeadPosition();
-        while( pos != NULL )
-        {   
-#if 0 //THREADS_ENABLED
-			// BUGBUG this function must yield
+        POSITION pos = GetHeadPosition( );
+        while ( pos != NULL )
+        {
+#if 0  // THREADS_ENABLED
+       //  BUGBUG this function must yield
 			myYieldThread();
 			//if( myYieldThread() == TM_QUIT )
 			//	throw(ERR_CAI_TM_QUIT); // THROW( pException );
 #endif
 
-            CAIOpFor *pOpFor = (CAIOpFor *)GetNext( pos );
-            if( pOpFor != NULL )
+            CAIOpFor* pOpFor = (CAIOpFor*)GetNext( pos );
+            if ( pOpFor != NULL )
             {
-            	ASSERT_VALID( pOpFor );
+                ASSERT_VALID( pOpFor );
 
-				if( iVeh < CTransportData::num_types )
-					wCnt += pOpFor->GetVehicle(iVeh);
-				else
-				{
-					for(int i=0; i<CTransportData::num_types; ++i)
-					{
-						wCnt += pOpFor->GetVehicle(i);
-					}
-				}
+                if ( iVeh < CTransportData::num_types )
+                    wCnt += pOpFor->GetVehicle( iVeh );
+                else
+                {
+                    for ( int i = 0; i < CTransportData::num_types; ++i )
+                    {
+                        wCnt += pOpFor->GetVehicle( i );
+                    }
+                }
             }
         }
 
-		// if at least one of that type of vehicle and the
-		// average count switch is set, then add 1 for each opfor
-		if( bAve && wCnt )
-			wCnt += GetCount();
+        // if at least one of that type of vehicle and the
+        // average count switch is set, then add 1 for each opfor
+        if ( bAve && wCnt )
+            wCnt += GetCount( );
     }
 
-	// take an average
-	if( bAve && GetCount() )
-		wCnt /= GetCount();
+    // take an average
+    if ( bAve && GetCount( ) )
+        wCnt /= GetCount( );
 
-	return( wCnt );
+    return ( wCnt );
 }
 
 //
@@ -1234,264 +1299,272 @@ WORD CAIOpForList::GetVehicleCnt( int iVeh, BOOL bAve /*=FALSE*/ )
 //
 WORD CAIOpForList::GetAttackCnt( int iType, int iTypeUnit )
 {
-	WORD wCnt = 0;
-    if( GetCount() )
+    WORD wCnt = 0;
+    if ( GetCount( ) )
     {
-        POSITION pos = GetHeadPosition();
-        while( pos != NULL )
-        {   
+        POSITION pos = GetHeadPosition( );
+        while ( pos != NULL )
+        {
 
-            CAIOpFor *pOpFor = (CAIOpFor *)GetNext( pos );
-            if( pOpFor != NULL )
+            CAIOpFor* pOpFor = (CAIOpFor*)GetNext( pos );
+            if ( pOpFor != NULL )
             {
-            	ASSERT_VALID( pOpFor );
+                ASSERT_VALID( pOpFor );
 
-				if( iTypeUnit == CUnit::vehicle )
-				{
-					wCnt += pOpFor->GetUnitAttack( iType );
-				}
-				else if( iTypeUnit == CUnit::building )
-				{
-					wCnt += pOpFor->GetBldgAttack( iType );
-				}
-				else
-				{
-					wCnt += pOpFor->GetTotalAttacks();
-				}
+                if ( iTypeUnit == CUnit::vehicle )
+                {
+                    wCnt += pOpFor->GetUnitAttack( iType );
+                }
+                else if ( iTypeUnit == CUnit::building )
+                {
+                    wCnt += pOpFor->GetBldgAttack( iType );
+                }
+                else
+                {
+                    wCnt += pOpFor->GetTotalAttacks( );
+                }
             }
         }
     }
-	return( wCnt );
+    return ( wCnt );
 }
 
-CAIOpFor *CAIOpForList::GetNearest( CHexCoord& hexFrom, BOOL bKnown )
+// GetNearest (Rocket?)
+CAIOpFor* CAIOpForList::GetNearest( CHexCoord& hexFrom, BOOL bKnown )
 {
-	CHexCoord hexCity;
-	CAIOpFor *pBest = NULL;
-	int iDist;
-	int iBest = 0xFFFE;
+    CHexCoord hexCity;
+    CAIOpFor* pBest = NULL;
+    int       iDist;
+    int       iBest = 0xFFFE;
 
-    if( GetCount() )
+    if ( GetCount( ) )
     {
-        POSITION pos = GetHeadPosition();
-        while( pos != NULL )
-        {   
+        POSITION pos = GetHeadPosition( );
+        while ( pos != NULL )
+        {
 #if THREADS_ENABLED
-			// BUGBUG this function must yield
-			myYieldThread();
-			//if( myYieldThread() == TM_QUIT )
-			//	throw(ERR_CAI_TM_QUIT); // THROW( pException );
+            // BUGBUG this function must yield
+            myYieldThread( );
+            // if( myYieldThread() == TM_QUIT )
+            //	throw(ERR_CAI_TM_QUIT); // THROW( pException );
 #endif
-            CAIOpFor *pOpFor = (CAIOpFor *)GetNext( pos );
-            if( pOpFor != NULL )
+            CAIOpFor* pOpFor = (CAIOpFor*)GetNext( pos );
+            if ( pOpFor != NULL )
             {
-            	ASSERT_VALID( pOpFor );
-				
-				if( bKnown )
-				{
-					if( !pOpFor->IsKnown() )
-						continue;
-				}
+                ASSERT_VALID( pOpFor );
 
-				hexCity = hexFrom;
-				pGameData->FindBuilding( 
-					CStructureData::rocket, pOpFor->GetPlayerID(), hexCity );
-				iDist = pGameData->GetRangeDistance( hexFrom, hexCity );
-				if( iDist && iDist < iBest )
-				{
-					iBest = iDist;
-					pBest = pOpFor;
-				}
-			}
-		}
-	}
-	return( pBest );
+                if ( bKnown )
+                {
+                    if ( !pOpFor->IsKnown( ) )
+                        continue;
+                }
+
+                hexCity = hexFrom;
+                pGameData->FindBuilding( CStructureData::rocket, pOpFor->GetPlayerID( ), hexCity ); // todo attack here maybe this is where the ai decides a building to attack?
+                iDist = pGameData->GetRangeDistance( hexFrom, hexCity );
+                if ( iDist && iDist < iBest )
+                {
+                    iBest = iDist;
+                    pBest = pOpFor;
+                }
+            }
+        }
+    }
+
+#ifdef SPECTATE
+    // skip human players when spectating
+    if ( pOpFor->isAI( ) == FALSE )
+        continue;
+#endif
+
+    return ( pBest );
 }
 
 //
 // get a pointer to the opfor with the lowest overall strength
 //
-CAIOpFor *CAIOpForList::GetWeakest( BOOL bKnown )
+CAIOpFor* CAIOpForList::GetWeakest( BOOL bKnown )
 {
-	int iBest = 0xFFFE;
-	int iStrength;
-	CAIOpFor *pBest = NULL;
+    int       iBest = 0xFFFE;
+    int       iStrength;
+    CAIOpFor* pBest = NULL;
 
-    if( GetCount() )
+    if ( GetCount( ) )
     {
-        POSITION pos = GetHeadPosition();
-        while( pos != NULL )
-        {   
-#if 0 //THREADS_ENABLED
-			// BUGBUG this function must yield
+        POSITION pos = GetHeadPosition( );
+        while ( pos != NULL )
+        {
+#if AI_THREADS_ENABLED
+       //  BUGBUG this function must yield
 			myYieldThread();
 			//if( myYieldThread() == TM_QUIT )
 			//	throw(ERR_CAI_TM_QUIT); // THROW( pException );
 #endif
 
-            CAIOpFor *pOpFor = (CAIOpFor *)GetNext( pos );
-            if( pOpFor != NULL )
+            CAIOpFor* pOpFor = (CAIOpFor*)GetNext( pos );
+            if ( pOpFor != NULL )
             {
-            	ASSERT_VALID( pOpFor );
+                ASSERT_VALID( pOpFor );
 
-				if( bKnown )
-				{
-					if( !pOpFor->IsKnown() )
-						continue;
-				}
+                if ( bKnown )
+                {
+                    if ( !pOpFor->IsKnown( ) )
+                        continue;
+                }
+#ifdef SPECTATE
+                // skip human players when spectating
+                if ( pOpFor ->isAI() == FALSE )
+                    continue;
+#endif
 
-				iStrength = pOpFor->GetStrengths();
-				if( iStrength < iBest )
-				{
-					iBest = iStrength;
-					pBest = pOpFor;
-				}
-			}
-		}
-	}
-	return( pBest );
+                iStrength = pOpFor->GetStrengths( );
+                if ( iStrength < iBest )
+                {
+                    iBest = iStrength;
+                    pBest = pOpFor;
+                }
+            }
+        }
+    }
+    return ( pBest );
 }
 
 BOOL CAIOpForList::AllKnown( void )
 {
-    if( GetCount() )
+    if ( GetCount( ) )
     {
-        POSITION pos = GetHeadPosition();
-        while( pos != NULL )
-        {   
-#if 0 //THREADS_ENABLED
-			// BUGBUG this function must yield
+        POSITION pos = GetHeadPosition( );
+        while ( pos != NULL )
+        {
+#if AI_THREADS_ENABLED
+       //  BUGBUG this function must yield
 			myYieldThread();
 			//if( myYieldThread() == TM_QUIT )
 			//	throw(ERR_CAI_TM_QUIT); // THROW( pException );
 #endif
 
-            CAIOpFor *pOpFor = (CAIOpFor *)GetNext( pos );
-            if( pOpFor != NULL )
+            CAIOpFor* pOpFor = (CAIOpFor*)GetNext( pos );
+            if ( pOpFor != NULL )
             {
-            	ASSERT_VALID( pOpFor );
+                ASSERT_VALID( pOpFor );
 
-				if( !pOpFor->IsKnown() )
-					return FALSE;
-			}
-		}
-	}
-	return TRUE;
+                if ( !pOpFor->IsKnown( ) )
+                    return FALSE;
+            }
+        }
+    }
+    return TRUE;
 }
-
-void CAIOpForList::Save( CFile *pFile )
+void CAIOpForList::Save( CArchive& ar )
 {
-	int iCnt = GetCount();
-	try
-	{
-		pFile->Write( (const void*)&iCnt, sizeof(int) );
-	}
-    catch( CFileException theException )
+    int iCnt = GetCount( );
+    try
     {
-		// how should write errors be reported?
-    	throw(ERR_CAI_BAD_FILE);
+        ar << iCnt;
+    }
+    catch ( CFileException* theException )
+    {
+        // how should write errors be reported?
+        throw( ERR_CAI_BAD_FILE );
     }
 
-	if( iCnt )
-	{
-		OpForBuff ofb;
-
-       	POSITION pos = GetHeadPosition();
-        while( pos != NULL )
-        {
-            CAIOpFor *pOpFor = (CAIOpFor *)GetNext( pos );
-            if( pOpFor != NULL )
-            {
-				ofb.iPlayer = pOpFor->GetPlayerID();
-				ofb.dwRocket = pOpFor->GetRocket();
-				ofb.iMsgCount = pOpFor->GetMsgCount();
-				ofb.iAttitude = pOpFor->GetAttitude();
-				ofb.cRelations = pOpFor->GetRelations();
-				ofb.bAtWar = pOpFor->AtWar();
-				ofb.bIsAI = pOpFor->IsAI();
-				ofb.bIsKnown = pOpFor->IsKnown();
-
-				pFile->Write( (const void*)&ofb, sizeof(OpForBuff) );
-
-// BUGBUG these arrays are all protected so the opfor list can't see
-// them and will need to inerate throught the get*() of the opfor
-				pOpFor->Save( pFile );
-			}
-		}
-	}
-}
-
-void CAIOpForList::Load( CFile *pFile )
-{
-	// make any old opfors go away
-	DeleteList();
-
-	OpForBuff ofb;
-
-	// now get count of opfors
-	int iCnt;
-	pFile->Read( (void*)&iCnt, sizeof(int) );
-
-	if( iCnt )
-	{
-		int iBytes;
-		for( int i=0; i<iCnt; ++i )
-		{
-			// read file data into buffer
-			iBytes = 
-				pFile->Read( (void*)&ofb, sizeof(OpForBuff) );
-
-			// BUGBUG how should read errors be reported?
-			if( iBytes != sizeof(OpForBuff) )
-				return;
-
-			CAIOpFor *pOpFor = NULL;
-			try
-			{
-				//CAIOpFor( int iPlayer, const char *pzName )
-				pOpFor = new CAIOpFor( ofb.iPlayer, "" );
-			}
-			catch( CException anException )
-			{
-				// how should memory errors be reported?
-				throw(ERR_CAI_BAD_NEW);
-			}
-			pOpFor->SetRocket(ofb.dwRocket);
-			pOpFor->SetMsgCount(ofb.iMsgCount);
-			pOpFor->SetAttitude(ofb.iAttitude);
-			pOpFor->SetRelations(ofb.cRelations);
-			pOpFor->SetWar(ofb.bAtWar);
-			pOpFor->SetIsAI(ofb.bIsAI);
-			pOpFor->SetKnown( ofb.bIsKnown );
-
-// BUGBUG these arrays are all protected so the opfor list can't see
-// them and will need to inerate throught the get*() of the opfor
-			pOpFor->Load( pFile );
-
-			// put the opfor in the list
-			AddTail( (CObject *)pOpFor );
-		}
-	}
-
-    if( GetCount() )
+    if ( iCnt )
     {
-        POSITION pos = GetHeadPosition();
-        while( pos != NULL )
-        {   
-            CAIOpFor *pOpFor = (CAIOpFor *)GetNext( pos );
-            if( pOpFor != NULL )
-            {
-            	ASSERT_VALID( pOpFor );
-				CPlayer *pPlayer = 
-					pGameData->GetPlayerData( pOpFor->GetPlayerID() );
+        OpForBuff ofb;
 
-				// confirm this player is AI or not in
-				// case an HP switched players
-				if( pPlayer != NULL )
-					pOpFor->SetIsAI( pPlayer->IsAI() );
+        POSITION pos = GetHeadPosition( );
+        while ( pos != NULL )
+        {
+            CAIOpFor* pOpFor = (CAIOpFor*)GetNext( pos );
+            if ( pOpFor != NULL )
+            {
+                ofb.iPlayer    = pOpFor->GetPlayerID( );
+                ofb.dwRocket   = pOpFor->GetRocket( );
+                ofb.iMsgCount  = pOpFor->GetMsgCount( );
+                ofb.iAttitude  = pOpFor->GetAttitude( );
+                ofb.cRelations = pOpFor->GetRelations( );
+                ofb.bAtWar     = pOpFor->AtWar( );
+                ofb.bIsAI      = pOpFor->IsAI( );
+                ofb.bIsKnown   = pOpFor->IsKnown( );
+
+                ar.Write( (const void*)&ofb, sizeof( OpForBuff ) );
+
+                // BUGBUG these arrays are all protected so the opfor list can't see
+                // them and will need to inerate throught the get*() of the opfor
+                pOpFor->Save( ar );
             }
         }
     }
 }
 
+void CAIOpForList::Load( CArchive& ar )
+{
+    // make any old opfors go away
+    DeleteList( );
+
+    OpForBuff ofb;
+
+    // now get count of opfors
+    int iCnt;
+    ar >> iCnt;
+
+    if ( iCnt )
+    {
+        UINT uBytes;
+        for ( int i = 0; i < iCnt; ++i )
+        {
+            // read file data into buffer
+            uBytes = ar.Read( (void*)&ofb, sizeof( OpForBuff ) );
+
+            // BUGBUG how should read errors be reported?
+            if ( uBytes != sizeof( OpForBuff ) )
+                return;
+
+            CAIOpFor* pOpFor = NULL;
+            try
+            {
+                // CAIOpFor( int iPlayer, const char *pzName )
+                pOpFor = new CAIOpFor( ofb.iPlayer, "" );
+            }
+            catch ( CException* anException )
+            {
+                // how should memory errors be reported?
+                throw( ERR_CAI_BAD_NEW );
+            }
+            pOpFor->SetRocket( ofb.dwRocket );
+            pOpFor->SetMsgCount( ofb.iMsgCount );
+            pOpFor->SetAttitude( ofb.iAttitude );
+            pOpFor->SetRelations( ofb.cRelations );
+            pOpFor->SetWar( ofb.bAtWar );
+            pOpFor->SetIsAI( ofb.bIsAI );
+            pOpFor->SetKnown( ofb.bIsKnown );
+
+            // BUGBUG these arrays are all protected so the opfor list can't see
+            // them and will need to inerate throught the get*() of the opfor
+            pOpFor->Load( ar );
+
+            // put the opfor in the list
+            AddTail( (CObject*)pOpFor );
+        }
+    }
+
+    if ( GetCount( ) )
+    {
+        POSITION pos = GetHeadPosition( );
+        while ( pos != NULL )
+        {
+            CAIOpFor* pOpFor = (CAIOpFor*)GetNext( pos );
+            if ( pOpFor != NULL )
+            {
+                ASSERT_VALID( pOpFor );
+                CPlayer* pPlayer = pGameData->GetPlayerData( pOpFor->GetPlayerID( ) );
+
+                // confirm this player is AI or not in
+                // case an HP switched players
+                if ( pPlayer != NULL )
+                    pOpFor->SetIsAI( pPlayer->IsAI( ) );
+            }
+        }
+    }
+}
 // end of CAIOpFor.cpp

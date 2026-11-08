@@ -1,0 +1,457 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project DefaultTargets="Build" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup Label="ProjectConfigurations">
+    <ProjectConfiguration Include="Debug|Win32">
+      <Configuration>Debug</Configuration>
+      <Platform>Win32</Platform>
+    </ProjectConfiguration>
+    <ProjectConfiguration Include="Release|Win32">
+      <Configuration>Release</Configuration>
+      <Platform>Win32</Platform>
+    </ProjectConfiguration>
+    <ProjectConfiguration Include="Debug|x64">
+      <Configuration>Debug</Configuration>
+      <Platform>x64</Platform>
+    </ProjectConfiguration>
+    <ProjectConfiguration Include="Release|x64">
+      <Configuration>Release</Configuration>
+      <Platform>x64</Platform>
+    </ProjectConfiguration>
+  </ItemGroup>
+  <PropertyGroup Label="Globals">
+    <VCProjectVersion>16.0</VCProjectVersion>
+    <Keyword>Win32Proj</Keyword>
+    <ProjectGuid>{f687d627-68e0-4bd2-9178-5245b8df6d7b}</ProjectGuid>
+    <RootNamespace>enationsproj</RootNamespace>
+    <WindowsTargetPlatformVersion>10.0</WindowsTargetPlatformVersion>
+  </PropertyGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'" Label="Configuration">
+    <ConfigurationType>Application</ConfigurationType>
+    <UseDebugLibraries>true</UseDebugLibraries>
+    <PlatformToolset>v142</PlatformToolset>
+    <CharacterSet>MultiByte</CharacterSet>
+    <UseOfMfc>Static</UseOfMfc>
+    <EnableUnitySupport>false</EnableUnitySupport>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'" Label="Configuration">
+    <ConfigurationType>Application</ConfigurationType>
+    <UseDebugLibraries>false</UseDebugLibraries>
+    <PlatformToolset>v142</PlatformToolset>
+    <WholeProgramOptimization>true</WholeProgramOptimization>
+    <CharacterSet>MultiByte</CharacterSet>
+    <UseOfMfc>Static</UseOfMfc>
+    <EnableUnitySupport>false</EnableUnitySupport>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'" Label="Configuration">
+    <ConfigurationType>Application</ConfigurationType>
+    <UseDebugLibraries>true</UseDebugLibraries>
+    <PlatformToolset>v142</PlatformToolset>
+    <CharacterSet>MultiByte</CharacterSet>
+    <UseOfMfc>Static</UseOfMfc>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'" Label="Configuration">
+    <ConfigurationType>Application</ConfigurationType>
+    <UseDebugLibraries>false</UseDebugLibraries>
+    <PlatformToolset>v142</PlatformToolset>
+    <WholeProgramOptimization>true</WholeProgramOptimization>
+    <CharacterSet>MultiByte</CharacterSet>
+    <UseOfMfc>Static</UseOfMfc>
+  </PropertyGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.props" />
+  <ImportGroup Label="ExtensionSettings">
+  </ImportGroup>
+  <ImportGroup Label="Shared">
+  </ImportGroup>
+  <ImportGroup Label="PropertySheets" Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
+    <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
+  </ImportGroup>
+  <ImportGroup Label="PropertySheets" Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">
+    <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
+  </ImportGroup>
+  <ImportGroup Label="PropertySheets" Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
+    <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
+  </ImportGroup>
+  <ImportGroup Label="PropertySheets" Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
+    <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
+  </ImportGroup>
+  <PropertyGroup Label="UserMacros" />
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
+    <LinkIncremental>true</LinkIncremental>
+    <LibraryPath>D:\Enemy Nations\src\tools\mss\;D:\Enemy Nations\src\tools\lib\;D:\Enemy Nations\src\Release;D:\Enemy Nations\src\windward\wind22\Debug;D:\Enemy Nations\src\tools\vdmplay\WINREL\;$(VC_LibraryPath_x86);$(WindowsSDK_LibraryPath_x86)</LibraryPath>
+    <ExternalIncludePath>D:\Enemy Nations\src\tools\;D:\Enemy Nations\src\wing\INCLUDE\;D:\Enemy Nations\src\windward\;D:\Enemy Nations\src\windward\;D:\Enemy Nations\src\wing\INCLUDE\;D:\Enemy Nations\src\tools\;$(ExternalIncludePath)</ExternalIncludePath>
+    <IncludePath>D:\Enemy Nations\src\enations\src\lang\;D:\Enemy Nations\src\enations\src\lang\;$(IncludePath)</IncludePath>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">
+    <LinkIncremental>false</LinkIncremental>
+    <LibraryPath>D:\Enemy Nations\src\tools\mss\;D:\Enemy Nations\src\tools\lib\;D:\Enemy Nations\src\Release;D:\Enemy Nations\src\windward\wind22\Release;D:\Enemy Nations\src\tools\vdmplay\WINREL\;$(VC_LibraryPath_x86);$(WindowsSDK_LibraryPath_x86)</LibraryPath>
+    <ExternalIncludePath>D:\Enemy Nations\src\tools\;D:\Enemy Nations\src\wing\INCLUDE\;D:\Enemy Nations\src\windward\;D:\Enemy Nations\src\windward\;D:\Enemy Nations\src\wing\INCLUDE\;D:\Enemy Nations\src\tools\;$(ExternalIncludePath)</ExternalIncludePath>
+    <IncludePath>D:\Enemy Nations\src\enations\src\lang\;D:\Enemy Nations\src\enations\src\lang\;$(IncludePath)</IncludePath>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
+    <LinkIncremental>true</LinkIncremental>
+    <LibraryPath>D:\Enemy Nations\src\tools\mss\;D:\Enemy Nations\src\tools\lib\;D:\Enemy Nations\src\Release;D:\Enemy Nations\src\windward\wind22\x64\Debug;D:\Enemy Nations\src\tools\vdmplay\WINREL\;$(VC_LibraryPath_x86);$(WindowsSDK_LibraryPath_x86)</LibraryPath>
+    <ExternalIncludePath>D:\Enemy Nations\src\tools\;D:\Enemy Nations\src\wing\INCLUDE\;D:\Enemy Nations\src\windward\;$(VC_IncludePath);$(WindowsSDK_IncludePath);</ExternalIncludePath>
+    <IncludePath>D:\Enemy Nations\src\enations\src\lang\;$(VC_IncludePath);$(WindowsSDK_IncludePath);</IncludePath>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
+    <LinkIncremental>false</LinkIncremental>
+    <LibraryPath>D:\Enemy Nations\src\tools\mss\;D:\Enemy Nations\src\tools\lib\;D:\Enemy Nations\src\Release;D:\Enemy Nations\src\windward\wind22\x64\Release;D:\Enemy Nations\src\tools\vdmplay\WINREL\;$(VC_LibraryPath_x86);$(WindowsSDK_LibraryPath_x86)</LibraryPath>
+    <ExternalIncludePath>D:\Enemy Nations\src\tools\;D:\Enemy Nations\src\wing\INCLUDE\;D:\Enemy Nations\src\windward\;$(VC_IncludePath);$(WindowsSDK_IncludePath);</ExternalIncludePath>
+    <IncludePath>D:\Enemy Nations\src\enations\src\lang\;$(VC_IncludePath);$(WindowsSDK_IncludePath);</IncludePath>
+  </PropertyGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
+    <ClCompile>
+      <WarningLevel>Level3</WarningLevel>
+      <SDLCheck>true</SDLCheck>
+      <PreprocessorDefinitions>_AFXDLL;WIN32;_WINDOWS;_CRT_SECURE_NO_WARNINGS;_WIN32_WINNT=_WIN32_WINNT_WS03;_DEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <ConformanceMode>true</ConformanceMode>
+      <MultiProcessorCompilation>false</MultiProcessorCompilation>
+      <BrowseInformation>true</BrowseInformation>
+      <RuntimeLibrary>MultiThreadedDebugDLL</RuntimeLibrary>
+    </ClCompile>
+    <Link>
+      <SubSystem>Windows</SubSystem>
+      <GenerateDebugInformation>true</GenerateDebugInformation>
+      <LinkStatus>true</LinkStatus>
+      <AdditionalDependencies>hamfc4m.lib;haw32m.lib;mss32.lib;vdmplay.lib;vfw32.lib;winmm.lib;version.lib;wind22.lib;tapi32.lib</AdditionalDependencies>
+    </Link>
+    <ResourceCompile>
+      <AdditionalIncludeDirectories>D:\Enemy Nations\src\enations\src\lang\;D:\Enemy Nations\src\enations\src\lang\;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+    </ResourceCompile>
+  </ItemDefinitionGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">
+    <ClCompile>
+      <WarningLevel>Level3</WarningLevel>
+      <FunctionLevelLinking>true</FunctionLevelLinking>
+      <IntrinsicFunctions>true</IntrinsicFunctions>
+      <SDLCheck>true</SDLCheck>
+      <PreprocessorDefinitions>_AFXDLL;WIN32;_WINDOWS;_CRT_SECURE_NO_WARNINGS;_WIN32_WINNT=_WIN32_WINNT_WS03;NDEBUG;_RELEASE_INLINE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <ConformanceMode>true</ConformanceMode>
+      <MultiProcessorCompilation>false</MultiProcessorCompilation>
+      <BrowseInformation>true</BrowseInformation>
+      <RuntimeLibrary>MultiThreadedDLL</RuntimeLibrary>
+    </ClCompile>
+    <Link>
+      <SubSystem>Windows</SubSystem>
+      <EnableCOMDATFolding>true</EnableCOMDATFolding>
+      <OptimizeReferences>true</OptimizeReferences>
+      <GenerateDebugInformation>true</GenerateDebugInformation>
+      <LinkStatus>true</LinkStatus>
+      <AdditionalDependencies>hamfc4m.lib;haw32m.lib;mss32.lib;vdmplay.lib;vfw32.lib;winmm.lib;version.lib;wind22.lib;tapi32.lib</AdditionalDependencies>
+    </Link>
+    <ResourceCompile>
+      <AdditionalIncludeDirectories>D:\Enemy Nations\src\enations\src\lang\;D:\Enemy Nations\src\enations\src\lang\;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+    </ResourceCompile>
+  </ItemDefinitionGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
+    <ClCompile>
+      <WarningLevel>Level3</WarningLevel>
+      <SDLCheck>true</SDLCheck>
+      <PreprocessorDefinitions>_AFXDLL;_WINDOWS;_CRT_SECURE_NO_WARNINGS;_WIN32_WINNT=_WIN32_WINNT_WS03;_DEBUG;_CONSOLE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <ConformanceMode>true</ConformanceMode>
+      <RuntimeLibrary>MultiThreadedDebugDLL</RuntimeLibrary>
+      <MultiProcessorCompilation>false</MultiProcessorCompilation>
+    </ClCompile>
+    <Link>
+      <SubSystem>Windows</SubSystem>
+      <GenerateDebugInformation>true</GenerateDebugInformation>
+      <AdditionalDependencies>hamfc4m.lib;haw32m.lib;mss32.lib;vdmplay.lib;vfw32.lib;winmm.lib;version.lib;wind22.lib;tapi32.lib</AdditionalDependencies>
+      <LinkStatus>true</LinkStatus>
+    </Link>
+    <ResourceCompile>
+      <AdditionalIncludeDirectories>D:\Enemy Nations\src\enations\src\lang\;</AdditionalIncludeDirectories>
+    </ResourceCompile>
+  </ItemDefinitionGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
+    <ClCompile>
+      <WarningLevel>Level3</WarningLevel>
+      <FunctionLevelLinking>true</FunctionLevelLinking>
+      <IntrinsicFunctions>true</IntrinsicFunctions>
+      <SDLCheck>true</SDLCheck>
+      <PreprocessorDefinitions>_AFXDLL;_WINDOWS;_CRT_SECURE_NO_WARNINGS;_WIN32_WINNT=_WIN32_WINNT_WS03;NDEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <ConformanceMode>true</ConformanceMode>
+      <RuntimeLibrary>MultiThreadedDLL</RuntimeLibrary>
+      <MultiProcessorCompilation>false</MultiProcessorCompilation>
+    </ClCompile>
+    <Link>
+      <SubSystem>Windows</SubSystem>
+      <EnableCOMDATFolding>true</EnableCOMDATFolding>
+      <OptimizeReferences>true</OptimizeReferences>
+      <GenerateDebugInformation>true</GenerateDebugInformation>
+      <AdditionalDependencies>hamfc4m.lib;haw32m.lib;mss32.lib;vdmplay.lib;vfw32.lib;winmm.lib;version.lib;wind22.lib;tapi32.lib</AdditionalDependencies>
+    </Link>
+    <ResourceCompile>
+      <AdditionalIncludeDirectories>D:\Enemy Nations\src\enations\src\lang\;</AdditionalIncludeDirectories>
+    </ResourceCompile>
+  </ItemDefinitionGroup>
+  <ItemGroup>
+    <ClCompile Include="src\ADVANCED.CPP">
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release|x64'">true</ExcludedFromBuild>
+    </ClCompile>
+    <ClCompile Include="src\ADVDLG.CPP">
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release|x64'">true</ExcludedFromBuild>
+    </ClCompile>
+    <ClCompile Include="src\Ai.cpp" />
+    <ClCompile Include="src\area.cpp" />
+    <ClCompile Include="src\bmbutton.cpp" />
+    <ClCompile Include="src\bridge.cpp" />
+    <ClCompile Include="src\CAICOPY.CPP" />
+    <ClCompile Include="src\Caidata.cpp" />
+    <ClCompile Include="src\Caigmgr.cpp" />
+    <ClCompile Include="src\CAIGOAL.CPP" />
+    <ClCompile Include="src\CAIHEX.CPP" />
+    <ClCompile Include="src\CAIINIT.CPP" />
+    <ClCompile Include="src\CAILOG.CPP" />
+    <ClCompile Include="src\CAIMAP.CPP" />
+    <ClCompile Include="src\Caimaput.cpp" />
+    <ClCompile Include="src\CAIMGR.CPP" />
+    <ClCompile Include="src\CAIMSG.CPP" />
+    <ClCompile Include="src\CAIOPFOR.CPP" />
+    <ClCompile Include="src\CAIQUEUE.CPP" />
+    <ClCompile Include="src\Cairoute.cpp" />
+    <ClCompile Include="src\CAISAVLD.CPP" />
+    <ClCompile Include="src\CAISTART.CPP" />
+    <ClCompile Include="src\CAITASK.CPP" />
+    <ClCompile Include="src\CAITMGR.CPP" />
+    <ClCompile Include="src\CAIUNIT.CPP" />
+    <ClCompile Include="src\CdLoc.cpp" />
+    <ClCompile Include="src\chat.cpp" />
+    <ClCompile Include="src\CHATBAR.CPP" />
+    <ClCompile Include="src\Chproute.cpp" />
+    <ClCompile Include="src\Citizen.cpp" />
+    <ClCompile Include="src\CPATHMAP.CPP" />
+    <ClCompile Include="src\CPATHMGR.CPP" />
+    <ClCompile Include="src\Creatmul.cpp" />
+    <ClCompile Include="src\CREATSIN.CPP" />
+    <ClCompile Include="src\credits.cpp" />
+    <ClCompile Include="src\Cutscene.cpp" />
+    <ClCompile Include="src\dlgflic.cpp">
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release|x64'">true</ExcludedFromBuild>
+    </ClCompile>
+    <ClCompile Include="src\DlgMsg.cpp" />
+    <ClCompile Include="src\DlgReg.cpp" />
+    <ClCompile Include="src\Dxfer.cpp" />
+    <ClCompile Include="src\Event.cpp" />
+    <ClCompile Include="src\icons.cpp" />
+    <ClCompile Include="src\IPCCHAT.CPP" />
+    <ClCompile Include="src\IPCCOMM.CPP" />
+    <ClCompile Include="src\IPCMSG.CPP" />
+    <ClCompile Include="src\IPCPLAY.CPP" />
+    <ClCompile Include="src\IPCREAD.CPP" />
+    <ClCompile Include="src\IPCSEND.CPP" />
+    <ClCompile Include="src\Join.cpp" />
+    <ClCompile Include="src\lastplnt.cpp" />
+    <ClCompile Include="src\License.cpp" />
+    <ClCompile Include="src\loadtruk.cpp" />
+    <ClCompile Include="src\main.cpp" />
+    <ClCompile Include="src\Mainloop.cpp" />
+    <ClCompile Include="src\minerals.cpp" />
+    <ClCompile Include="src\movie.cpp" />
+    <ClCompile Include="src\Netapi.cpp" />
+    <ClCompile Include="src\netcmd.cpp" />
+    <ClCompile Include="src\newworld.cpp" />
+    <ClCompile Include="src\new_game.cpp" />
+    <ClCompile Include="src\new_unit.cpp" />
+    <ClCompile Include="src\options.cpp" />
+    <ClCompile Include="src\pickrace.cpp" />
+    <ClCompile Include="src\Player.cpp" />
+    <ClCompile Include="src\PlyrList.cpp" />
+    <ClCompile Include="src\projbase.cpp" />
+    <ClCompile Include="src\Racedata.cpp" />
+    <ClCompile Include="src\relation.cpp" />
+    <ClCompile Include="src\research.cpp" />
+    <ClCompile Include="src\scenario.cpp" />
+    <ClCompile Include="src\sprite.cpp" />
+    <ClCompile Include="src\sprtinit.cpp" />
+    <ClCompile Include="src\STDAFX.CPP" />
+    <ClCompile Include="src\terrain.cpp" />
+    <ClCompile Include="src\toolbar.cpp" />
+    <ClCompile Include="src\tstsnds.cpp" />
+    <ClCompile Include="src\UI.CPP" />
+    <ClCompile Include="src\unit.cpp" />
+    <ClCompile Include="src\unit_wnd.cpp" />
+    <ClCompile Include="src\vehicle.cpp" />
+    <ClCompile Include="src\Vehmove.cpp" />
+    <ClCompile Include="src\vehoppo.cpp" />
+    <ClCompile Include="src\VPXFER.CPP" />
+    <ClCompile Include="src\world.cpp" />
+    <ClCompile Include="src\wrldinit.cpp" />
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="ClassDiagram.cd" />
+    <None Include="src\CREATMUL.INL" />
+    <None Include="src\LASTPLNT.DEF" />
+    <None Include="src\MINERALS.INL" />
+    <None Include="src\res\cur00001.cur" />
+    <None Include="src\RES\CUR00002.CUR" />
+    <None Include="src\RES\CUR00003.CUR" />
+    <None Include="src\RES\CUR00004.CUR" />
+    <None Include="src\RES\CUR00005.CUR" />
+    <None Include="src\RES\CUR00006.CUR" />
+    <None Include="src\RES\CUR00007.CUR" />
+    <None Include="src\RES\CUR00008.CUR" />
+    <None Include="src\RES\CUR00010.CUR" />
+    <None Include="src\RES\CUR00011.CUR" />
+    <None Include="src\res\cur00012.cur" />
+    <None Include="src\res\cur00013.cur" />
+    <None Include="src\res\cur00014.cur" />
+    <None Include="src\res\cur00015.cur" />
+    <None Include="src\res\cursor1.cur" />
+    <None Include="src\RES\GOTO1.CUR" />
+    <None Include="src\RES\GOTO3.CUR" />
+    <None Include="src\res\load1.cur" />
+    <None Include="src\res\load2.cur" />
+    <None Include="src\res\load3.cur" />
+    <None Include="src\res\load4.cur" />
+    <None Include="src\res\move1.cur" />
+    <None Include="src\res\move2.cur" />
+    <None Include="src\res\move3.cur" />
+    <None Include="src\res\move4.cur" />
+    <None Include="src\res\move5.cur" />
+    <None Include="src\res\move6.cur" />
+    <None Include="src\res\move7.cur" />
+    <None Include="src\RES\REPAIR1.CUR" />
+    <None Include="src\res\road_beg.cur" />
+    <None Include="src\res\road_set.cur" />
+    <None Include="src\RES\SELECT1.CUR" />
+    <None Include="src\RES\SELECT2.CUR" />
+    <None Include="src\RES\SELECT3.CUR" />
+    <None Include="src\RES\TARGET1.CUR" />
+    <None Include="src\RES\TARGET2.CUR" />
+    <None Include="src\RES\TARGET3.CUR" />
+    <None Include="src\res\unload1.cur" />
+    <None Include="src\res\unload2.cur" />
+    <None Include="src\res\unload3.cur" />
+    <None Include="src\STDGTA.DAT" />
+    <None Include="src\TERRAIN.INL" />
+    <None Include="src\UI.INL" />
+    <None Include="src\UNIT.INL" />
+    <None Include="src\vehicle.inl" />
+  </ItemGroup>
+  <ItemGroup>
+    <ResourceCompile Include="src\lang\ENLang7.rc" />
+    <ResourceCompile Include="src\lang\wind7.rc" />
+    <ResourceCompile Include="src\Lastplnt.rc" />
+    <ResourceCompile Include="src\RES\VERSION.RC" />
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="src\ADVDLG.H" />
+    <ClInclude Include="src\ai.h" />
+    <ClInclude Include="src\area.h" />
+    <ClInclude Include="src\base.h" />
+    <ClInclude Include="src\bitmaps.h" />
+    <ClInclude Include="src\BMBUTTON.H" />
+    <ClInclude Include="src\bridge.h" />
+    <ClInclude Include="src\building.h" />
+    <ClInclude Include="src\CAI.H" />
+    <ClInclude Include="src\CAICOPY.HPP" />
+    <ClInclude Include="src\CAIDATA.HPP" />
+    <ClInclude Include="src\CAIGMGR.HPP" />
+    <ClInclude Include="src\CAIGOAL.HPP" />
+    <ClInclude Include="src\CAIGOALM.HPP" />
+    <ClInclude Include="src\CAIHEX.HPP" />
+    <ClInclude Include="src\CAIINIT.HPP" />
+    <ClInclude Include="src\CAILOG.HPP" />
+    <ClInclude Include="src\CAIMAP.HPP" />
+    <ClInclude Include="src\CAIMAPUT.HPP" />
+    <ClInclude Include="src\CAIMGR.HPP" />
+    <ClInclude Include="src\CAIMSG.HPP" />
+    <ClInclude Include="src\CAIOPFOR.HPP" />
+    <ClInclude Include="src\CAIQUEUE.HPP" />
+    <ClInclude Include="src\CAIROUTE.HPP" />
+    <ClInclude Include="src\CAISAVLD.HPP" />
+    <ClInclude Include="src\CAISTART.HPP" />
+    <ClInclude Include="src\CAITARGT.H" />
+    <ClInclude Include="src\CAITASK.HPP" />
+    <ClInclude Include="src\CAITASKM.HPP" />
+    <ClInclude Include="src\CAITMGR.HPP" />
+    <ClInclude Include="src\CAIUNIT.HPP" />
+    <ClInclude Include="src\CdLoc.h" />
+    <ClInclude Include="src\chat.h" />
+    <ClInclude Include="src\CHATBAR.H" />
+    <ClInclude Include="src\CHPROUTE.HPP" />
+    <ClInclude Include="src\CPATHMAP.H" />
+    <ClInclude Include="src\CPATHMGR.H" />
+    <ClInclude Include="src\CREATMUL.H" />
+    <ClInclude Include="src\CREATSIN.H" />
+    <ClInclude Include="src\credits.h" />
+    <ClInclude Include="src\CUTSCENE.H" />
+    <ClInclude Include="src\dlgflic.h" />
+    <ClInclude Include="src\DlgMsg.h" />
+    <ClInclude Include="src\DlgReg.h" />
+    <ClInclude Include="src\DXFER.H" />
+    <ClInclude Include="src\ERROR.H" />
+    <ClInclude Include="src\EVENT.H" />
+    <ClInclude Include="src\HELP.H" />
+    <ClInclude Include="src\icons.h" />
+    <ClInclude Include="src\IPCCHAT.H" />
+    <ClInclude Include="src\IPCCOMM.H" />
+    <ClInclude Include="src\IPCMSG.HPP" />
+    <ClInclude Include="src\IPCPLAY.H" />
+    <ClInclude Include="src\IPCREAD.H" />
+    <ClInclude Include="src\IPCSEND.H" />
+    <ClInclude Include="src\JOIN.H" />
+    <ClInclude Include="src\lang\_res.h" />
+    <ClInclude Include="src\lastplnt.h" />
+    <ClInclude Include="src\License.h" />
+    <ClInclude Include="src\loadtruk.h" />
+    <ClInclude Include="src\MINERALS.H" />
+    <ClInclude Include="src\movie.h" />
+    <ClInclude Include="src\MSGS.H" />
+    <ClInclude Include="src\NETAPI.H" />
+    <ClInclude Include="src\NETCMD.H" />
+    <ClInclude Include="src\NEW_GAME.H" />
+    <ClInclude Include="src\options.h" />
+    <ClInclude Include="src\ourlog.h" />
+    <ClInclude Include="src\PICKRACE.H" />
+    <ClInclude Include="src\PLAYER.H" />
+    <ClInclude Include="src\PlyrList.h" />
+    <ClInclude Include="src\Racedata.h" />
+    <ClInclude Include="src\relation.h" />
+    <ClInclude Include="src\RESEARCH.H" />
+    <ClInclude Include="src\resource.h" />
+    <ClInclude Include="src\RES\resource.h" />
+    <ClInclude Include="src\SCENARIO.H" />
+    <ClInclude Include="src\SFX.H" />
+    <ClInclude Include="src\sprite.h" />
+    <ClInclude Include="src\STDAFX.H" />
+    <ClInclude Include="src\terrain.h" />
+    <ClInclude Include="src\toolbar.h" />
+    <ClInclude Include="src\TO_WNDRD.H" />
+    <ClInclude Include="src\tstsnds.h" />
+    <ClInclude Include="src\ui.h" />
+    <ClInclude Include="src\unit.h" />
+    <ClInclude Include="src\unit_wnd.h" />
+    <ClInclude Include="src\us_eng.h" />
+    <ClInclude Include="src\VDMPLAY.H" />
+    <ClInclude Include="src\vehicle.h" />
+    <ClInclude Include="src\VERSION.H" />
+    <ClInclude Include="src\VPXFER.H" />
+    <ClInclude Include="src\world.h" />
+  </ItemGroup>
+  <ItemGroup>
+    <Image Include="src\RES\BITMAP1.BMP" />
+    <Image Include="src\RES\CHAT_MSG.BMP" />
+    <Image Include="src\RES\CLOSED.DIB" />
+    <Image Include="src\RES\EMAIL_MS.BMP" />
+    <Image Include="src\RES\EMAIL_RE.BMP" />
+    <Image Include="src\res\main.ico" />
+    <Image Include="src\RES\NO_SELEC.BMP" />
+    <Image Include="src\RES\PLYR_SEL.BMP" />
+    <Image Include="src\RES\toolbar.bmp" />
+    <Image Include="src\RES\VOC_MSG.BMP" />
+  </ItemGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
+  <ImportGroup Label="ExtensionTargets">
+  </ImportGroup>
+</Project>

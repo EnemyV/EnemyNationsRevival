@@ -11,10 +11,11 @@
 
 // unit.h : header file for all unit stuff (buildings & vehicles)
 //
-
 #include "base.h"
-#include "sprite.h"
 #include "icons.h"
+#include "sprite.h"
+
+#include "mem_pool.h"
 
 class CStatInst;
 class CWndUnitStat;
@@ -39,16 +40,26 @@ class CProjMap;
 class CUnit;
 
 
+// A hex just crossed from unseen to seen for pViewer: re-sync the remembered ground
+// (road / bridge / slash-and-burn), drop a building that died out of sight, and reveal +
+// refresh an enemy building standing on it. Lives in unit.cpp, lifted out of
+// CUnit::IncrementSpotting so the Resonance Sweep edict can light a ring of hexes around an
+// enemy rocket under exactly the same reveal rules a scouting unit uses.
+// The CALLER owns the visibility counter: IncVisible( ) first, and call this only on the
+// transition (GetVisibility( ) has just become 1).
+void EnHexBecameVisible( CHex* pHex, CHexCoord& hex, CPlayer* pViewer );
+
+
 // this is so we don't have to keep allocating & sizing CDib on each call
 class CUnitShowStat
 {
-public:
-	CUnitShowStat () {}
-	void Init ();
-	void Close ();
+  public:
+    CUnitShowStat( ) {}
+    void Init( );
+    void Close( );
 
-	CStatInst		m_siText;
-	CStatInst		m_si[3][3];
+    CStatInst m_siText;
+    CStatInst m_si[3][3];
 };
 
 extern CUnitShowStat uShowStat;
@@ -58,51 +69,47 @@ extern CUnitShowStat uShowStat;
 class CFlameSpot
 {
 
-public:
+  public:
+    enum
+    {
+        SMOKE_START_PERCENT = 20,
+        FLAME_START_PERCENT = 50
+    };
 
-	enum
-	{
-		SMOKE_START_PERCENT = 20,
-		FLAME_START_PERCENT = 50
-	};
+    void  SetAge( int iAgePercent );
+    CRect Draw( CPoint ptHotSpotClient );
+    BOOL  IsHit( CPoint ptHotSpotClient, CPoint ptCursor ) const;
 
-	void	SetAge( int iAgePercent );
-	CRect	Draw	( CPoint ptHotSpotClient );
-	BOOL	IsHit ( CPoint ptHotSpotClient, CPoint ptCursor ) const;
+  private:
+    static Ptr<CEffectTile> m_fake;
 
-private:
-	
-	static Ptr< CEffectTile >	  m_fake;
-
-	Ptr< CEffectTile >	m_ptrtileSmoke;
-	Ptr< CEffectTile >	m_ptrtileFlame;
+    Ptr<CEffectTile> m_ptrtileSmoke;
+    Ptr<CEffectTile> m_ptrtileFlame;
 };
 
 //-------------------------C D a m a g e D i s p l a y ----------------------
-// 
+//
 //	Manage smoke/flame sprites
 
 class CDamageDisplay
 {
 
-public:
+  public:
+    enum
+    {
+        LAST_START_PERCENT = 70  // When the last flame hotspot starts
+    };
 
-	enum 
-	{ 
-		LAST_START_PERCENT = 70		// When the last flame hotspot starts
-	};
+    CDamageDisplay( CSprite const& );
+    ~CDamageDisplay( );
 
-	CDamageDisplay( CSprite const & );
-  ~CDamageDisplay();
+    void  SetDamage( int iPercent );
+    CRect Draw( CSpriteView const&, CDrawParms const& );
+    BOOL  IsHit( CSpriteView const&, CDrawParms const&, CPoint ptCursor ) const;
 
-	void	SetDamage( int iPercent );
-	CRect	Draw		( CSpriteView const &, CDrawParms const & );
-	BOOL	IsHit 	( CSpriteView const &, CDrawParms const &, CPoint ptCursor ) const;
-		 
-private:
-
-	int		 	  m_nSpots;
-	CFlameSpot	* m_pflamespot;
+  private:
+    int         m_nSpots;
+    CFlameSpot* m_pflamespot;
 };
 
 /////////////////////////////////////////////////////////////////////////////
@@ -128,94 +135,113 @@ class CUnitData
 #endif
 {
 #ifdef _DEBUG
-friend class CUnit;
-friend class CBuilding;
-friend class CVehicle;
+    friend class CUnit;
+    friend class CBuilding;
+    friend class CVehicle;
 #endif
 
-public:
-		enum { soft, hard, naval, num_attacks };		// target type
+  public:
+    enum
+    {
+        soft,
+        hard,
+        naval,
+        num_attacks
+    };  // target type
 
-							CUnitData ();
-		virtual		~CUnitData () {}
+    CUnitData( );
+    virtual ~CUnitData( ) {}
 
-						enum { structure, transport, unknown };
-			virtual int			GetClassType () { return unknown; }
+    enum
+    {
+        structure,
+        transport,
+        unknown
+    };
+    virtual int GetClassType( ) { return unknown; }
 
-			int			GetPeople () const;
-			int			GetDamagePoints () const;
-			int			GetTargetType () const;
-			int			GetExpRadius () const { return m_iExpRadius; }
-			int			_GetFireRate () const;		// == 0 if can't shoot
+    int GetPeople( ) const;
+    int GetDamagePoints( ) const;
+    int GetTargetType( ) const;
+    int GetExpRadius( ) const { return m_iExpRadius; }
+    int _GetFireRate( ) const;  // == 0 if can't shoot
 
-						enum UNIT_DATA_FLAGS { FLfixed = 0x02, FLflash1 = 0x04, FLflash2 = 0x08, 
-									FLhaveArt = 0x10 };
-			UNIT_DATA_FLAGS	GetUnitFlags () const { return (m_udFlags); }
-			int			GetSoundIdle () const { return (m_iSoundIdle); }
-			int			GetSoundGo () const { return (m_iSoundGo); }
-			int			GetSoundRun () const { return (m_iSoundRun); }
-			int			GetSoundShoot () const { return (m_iSoundShoot); }
-			int			GetProjectile () const { return (m_dwIDProj); }
+    enum UNIT_DATA_FLAGS
+    {
+        FLfixed   = 0x02,
+        FLflash1  = 0x04,
+        FLflash2  = 0x08,
+        FLhaveArt = 0x10
+    };
+    UNIT_DATA_FLAGS GetUnitFlags( ) const { return ( m_udFlags ); }
+    int             GetSoundIdle( ) const { return ( m_iSoundIdle ); }
+    int             GetSoundGo( ) const { return ( m_iSoundGo ); }
+    int             GetSoundRun( ) const { return ( m_iSoundRun ); }
+    int             GetSoundShoot( ) const { return ( m_iSoundShoot ); }
+    int             GetProjectile( ) const { return ( m_dwIDProj ); }
 
-			int			_GetSpottingRange () const;
-			int			_GetRange () const;
-			int			_GetAttack ( int iInd ) const { return m_iAttack [iInd]; }
-			int			_GetDefense () const { return m_iDefense; }
-			int			_GetAccuracy () const;
+    int _GetSpottingRange( ) const;
+    int _GetRange( ) const;
+    int _GetAttack( int iInd ) const { return m_iAttack[iInd]; }
+    int _GetDefense( ) const { return m_iDefense; }
+    int _GetAccuracy( ) const;
 
-			CString const & GetDesc () const;
-			CString const & GetText () const;
-			int			GetCX () const;
-			int			GetCY () const;
+    std::string const& GetDesc( ) const;
+    std::string const& GetText( ) const;
+    int            GetCX( ) const;
+    int            GetCY( ) const;
 
-			void		ReadUnitData (CMmio & mmio);
+    void ReadUnitData( CMmio& mmio );
 
-			int			GetRsrchReq (int iInd) const;
-			int			GetScenario () const { return m_iScenario; }
+    int GetRsrchReq( int iInd ) const;
+    int GetScenario( ) const { return m_iScenario; }
 
-			// R&D can change these
-			BOOL		IsDiscovered () const;
-			BOOL		PlyrIsDiscovered (CPlayer * pPlyr) const;
-			void		IncSpotting ();
-			void		IncRange ();
-			void		IncAttack ();
-			void		IncDefense ();
+    // R&D can change these
+    BOOL IsDiscovered( ) const;
+    BOOL PlyrIsDiscovered( CPlayer* pPlyr ) const;
+    void IncSpotting( );
+    void IncRange( );
+    void IncAttack( );
+    void IncDefense( );
 
-protected:
+  protected:
+    UNIT_DATA_FLAGS m_udFlags;      // see enums
+    int             m_iSoundIdle;   // sound this unit makes idling
+    int             m_iSoundGo;     // vehicles only - sound when starting
+    int             m_iSoundRun;    // sound this unit makes when running
+    int             m_iSoundShoot;  // sound when shooting
+    int             m_dwIDProj;     // projectile
 
-			UNIT_DATA_FLAGS m_udFlags;								// see enums
-			int			m_iSoundIdle;						// sound this unit makes idling
-			int			m_iSoundGo;							// vehicles only - sound when starting
-			int			m_iSoundRun;						// sound this unit makes when running
-			int			m_iSoundShoot;					// sound when shooting
-			int			m_dwIDProj;							// projectile
+    // R&D dependency here
+    int m_iRsrchReq[4];  // can't build till this level of R&D reached
+    int m_iScenario;     // can't build till this scenario
 
-			// R&D dependency here
-			int			m_iRsrchReq[4];					// can't build till this level of R&D reached
-			int			m_iScenario;						// can't build till this scenario
+    int m_iPeople;         // people needed to operate it
+    int m_iMaxMaterials;   // how much it can hold
+    int m_iSpottingRange;  // how many hexes away it can see
+    int m_iDamagePoints;   // points of damage required to destroy
 
-			int			m_iPeople;							// people needed to operate it
-			int			m_iMaxMaterials;				// how much it can hold
-			int			m_iSpottingRange;				// how many hexes away it can see
-			int			m_iDamagePoints;				// points of damage required to destroy
+    int m_iRange;       // maximum range it can shoot
+    int m_iRangeRaw;    // .dat range BEFORE ReadUnitData's clamp-to-10 — the artillery
+                        // range tweak multiplies from this (the clamp silently neutered
+                        // the +20%/+35% buffs for weeks: 13 raw -> 10 -> "13"). Runtime
+                        // only, never serialized.
+    int m_iAttack[3];   // attack - defense, not affected by defense, naval targets
+    int m_iExpRadius;   // how far away from impact it damages units
+    int m_iTargetType;  // soft, hard, naval
+    int m_iDefense;     // defense against
+    int m_iFireRate;    // how often it fires
+    int m_iAccuracy;    // how accurate it is
 
-			int			m_iRange;								// maximum range it can shoot
-			int			m_iAttack [3];					// attack - defense, not affected by defense, naval targets
-			int			m_iExpRadius;						// how far away from impact it damages units
-			int			m_iTargetType;					// soft, hard, naval
-			int			m_iDefense;							// defense against 
-			int			m_iFireRate;						// how often it fires
-			int			m_iAccuracy;						// how accurate it is
+    std::string m_sDesc;  // what its called
+    std::string m_sText;  // explanation about it
 
-			CString	m_sDesc;								// what its called
-			CString	m_sText;								// explanation about it
-
-			int			m_cx;										// size in hexes
-			int			m_cy;
+    int m_cx;  // size in hexes
+    int m_cy;
 
 #ifdef _DEBUG
-public:
-	virtual void AssertValid() const;
+  public:
+    virtual void AssertValid( ) const;
 #endif
 };
 
@@ -225,80 +251,76 @@ public:
 // the reason I did was I was seperating out the sprites for the units from all
 // the other data.
 
-template <class T>
+template<class T>
 class CSpriteStore : public CSpriteCollection
 {
-public:
+  public:
+    CSpriteStore( char const* pszRifName ): CSpriteCollection( pszRifName ) {}
 
-	CSpriteStore ( char const * pszRifName ) : CSpriteCollection( pszRifName ) {}
+    T* GetSprite( int iID, int iIndex = 0, BOOL bStrict = FALSE ) const
+    {
+        return (T*)CSpriteCollection::GetSprite( iID, iIndex, bStrict );
+    }
 
-	T * GetSprite( int iID, int iIndex = 0, BOOL bStrict = FALSE ) const
-	{ return ( T  * )CSpriteCollection::GetSprite( iID, iIndex, bStrict ); }
-
-	T * GetSpriteByIndex( int iIndex ) const
-	{ return ( T  * )CSpriteCollection::GetSpriteByIndex( iIndex ); }
+    T* GetSpriteByIndex( int iIndex ) const { return (T*)CSpriteCollection::GetSpriteByIndex( iIndex ); }
 };
 
 //-------------------------------C T u r r e t s -----------------------------
 //
 // Collection of turrets
 
-class CTurrets : public CSpriteStore< CVehicleSprite >
+class CTurrets : public CSpriteStore<CVehicleSprite>
 {
 
-public:
+  public:
+    enum TURRET_TYPE
+    {
+        light_tank,
+        boss8800,
+        num_types
+    };
 
-	enum TURRET_TYPE
-	{
-		light_tank,
-		boss8800,
-		num_types
-	};
+    CTurrets( char const* pszRifName );
 
-	CTurrets( char const * pszRifName );
+    void InitData( );
+    void InitSprites( );
 
-	void	InitData ();
-	void	InitSprites ();
+#ifdef _DEBUG
+    virtual void AssertValid( ) const;
+#endif
 
-	#ifdef _DEBUG
-	virtual void AssertValid() const;
-	#endif
-
-private:
-
+  private:
 };
 
 //-------------------------------C F l a s h e s -----------------------------
 //
 // Collection of muzzle flashes
 
-class CMuzzleFlashes : public CSpriteStore< CVehicleSprite >
+class CMuzzleFlashes : public CSpriteStore<CVehicleSprite>
 {
 
-public:
+  public:
+    enum MUZZLE_FLASH_TYPE
+    {
+        small_flash,
+        large_flash,
+        num_types
+    };
 
-	enum MUZZLE_FLASH_TYPE
-	{
-		small_flash,
-		large_flash,
-		num_types
-	};
+    CMuzzleFlashes( char const* pszRifName );
 
-	CMuzzleFlashes( char const * pszRifName );
+    void InitData( );
+    void InitSprites( );
 
-	void	InitData ();
-	void	InitSprites ();
+#ifdef _DEBUG
+    virtual void AssertValid( ) const;
+#endif
 
-	#ifdef _DEBUG
-	virtual void AssertValid() const;
-	#endif
-
-private:
-
+  private:
 };
 
 /////////////////////////////////////////////////////////////////////////////
-// From here down we are now into the classes that represent a specific unit 
+// From here down we are now into the classes that represent a specific unit
 // on the board. So there is 1 instance of the appropiate class below for
 // each unit. And in each case, that class points to the appropiate instance
 // of the above fixed data class so you can easily access them.
@@ -308,54 +330,57 @@ private:
 
 class CTree : public CEffectTile
 {
-	public:
-
-		CRect		Draw( const CHexCoord & );
-		CPoint	GetDrawCorner( const CHexCoord & ) const;
+  public:
+    CRect  Draw( const CHexCoord& );
+    CPoint GetDrawCorner( const CHexCoord& ) const;
 };
 
 //-------------------------------C E f f e c t -----------------------------
 //
 // Collection of single-view sprites
 
-class CEffect : public CSpriteStore< CEffectSprite >
+class CEffect : public CSpriteStore<CEffectSprite>
 {
 
-public:
+  public:
+    enum EFFECT_TYPE
+    {
+        tree,
+        projectile,
+        explosion,
+        smoke,
+        fire,
+        flag,
+        num_types
+    };
 
-	enum EFFECT_TYPE
-	{
-		tree,
-		projectile,
-		explosion,
-		smoke,
-		fire,
-		flag,
-		num_types
-	};
+    CEffect( char const* pszRifName );
+    ~CEffect( );
 
-	CEffect( char const * pszRifName );
-  ~CEffect();
+    void InitData( );
+    void InitSprites( );
+    void Close( );
 
-	void	InitData ();
-	void	InitSprites ();
-	void	Close();
+    int    TreeCount( ) const { return m_nTrees; }
+    CTree* GetTree( int iIndex )
+    {
+        ASSERT( 0 <= iIndex && iIndex < m_nTrees );
+        ASSERT_VALID( m_ptrees + iIndex );
+        return m_ptrees + iIndex;
+    }
 
-	int		TreeCount() const				{ return m_nTrees; }
-	CTree  * GetTree( int iIndex )		{
-														ASSERT( 0 <= iIndex && iIndex < m_nTrees );
-													  	ASSERT_VALID( m_ptrees + iIndex );
-													  	return m_ptrees + iIndex;
-													}
+    // flag matching the team palette: base art for colors 0..6, synthesized beyond
+    CEffectSprite* GetFlagSprite( int iPlayer );
 
-	#ifdef _DEBUG
-	virtual void AssertValid() const;
-	#endif
+#ifdef _DEBUG
+    virtual void AssertValid( ) const;
+#endif
 
-private:
+  private:
+    int    m_nTrees;
+    CTree* m_ptrees;
 
-	int		 m_nTrees;
-	CTree 	*m_ptrees;
+    Ptr<CSprite>* m_pptrFlagClrs;  // lazy team-color flag clones, [GetNumTeamColors()]; survives Close()
 };
 
 
@@ -364,24 +389,22 @@ private:
 class CFlag : public CEffectTile
 {
 
-public:
+  public:
+    CFlag( );
+    CFlag( int iPlayer );
 
-	CFlag();
-	CFlag( int iPlayer );
+    CRect Draw( CPoint const& ptHotSpot );
 
-	CRect	Draw( CPoint const & ptHotSpot );
+    void Init( int iPlayer );
 
-	void	Init( int iPlayer );
+    virtual void Serialize( CArchive& ar );
 
-	virtual void	Serialize( CArchive & ar );
+#ifdef _DEBUG
+    virtual void AssertValid( ) const;
+#endif
 
-	#ifdef _DEBUG
-	virtual void AssertValid() const;
-	#endif
-
-private:
-
-	int	m_iPlayer;	// For serializing
+  private:
+    int m_iPlayer;  // For serializing
 };
 
 //-------------------------- C M u z z l e F l a s h -------------------------
@@ -389,13 +412,12 @@ private:
 class CMuzzleFlash : public CUnitTile
 {
 
-public:
+  public:
+    CMuzzleFlash( );
 
-	CMuzzleFlash();
+    CVehicleSprite* GetSprite( ) const { return (CVehicleSprite*)CTile::GetSprite( ); }
 
-	CVehicleSprite * GetSprite() const { return ( CVehicleSprite * )CTile::GetSprite(); }
-
-	virtual void	Serialize( CArchive & ar );
+    virtual void Serialize( CArchive& ar );
 };
 
 //------------------------------ C T u r r e t ------------------------------
@@ -403,34 +425,31 @@ public:
 class CTurret : public CUnitTile
 {
 
-public:
+  public:
+    CTurret( );
+    CTurret( int iTurretID );
 
-	CTurret();
-	CTurret( int iTurretID );
+    void DoMuzzleFlash( );
 
-	void	DoMuzzleFlash();
+    CMuzzleFlash*   GetMuzzleFlash( ) { return &m_muzzleflash; }
+    CVehicleSprite* GetSprite( ) const { return (CVehicleSprite*)CTile::GetSprite( ); }
 
-	CMuzzleFlash	* GetMuzzleFlash()  { return &m_muzzleflash;	}
-	CVehicleSprite * GetSprite() const { return ( CVehicleSprite * )CTile::GetSprite(); }
+    LONG GetDir( ) const { return m_iDir; }
+    void SetDir( LONG iDir ) { m_iDir = iDir; }
 
-	LONG	GetDir() const			{ return m_iDir; }
-	void	SetDir( LONG iDir )	{ m_iDir = iDir; }
+    virtual void Serialize( CArchive& ar );
 
-	virtual void	Serialize( CArchive & ar );
+    LONG m_iDir;  // angle turret is facing (0..63)
 
-	LONG	m_iDir;	// angle turret is facing (0..63)
+#ifdef _DEBUG
+    virtual void AssertValid( ) const;
+#endif
 
-	#ifdef _DEBUG
-	virtual void AssertValid() const;
-	#endif
+  protected:
+    void Init( int iTurretID );
 
-protected:
-
-	void	Init( int iTurretID );
-
-private:
-
-	CMuzzleFlash	m_muzzleflash;
+  private:
+    CMuzzleFlash m_muzzleflash;
 };
 
 
@@ -441,254 +460,329 @@ private:
 class CUnit : public CUnitTile
 {
 #ifdef _DEBUG
-friend class CGameMap;		// for AssertValid w/o infinite recursion
+    friend class CGameMap;  // for AssertValid w/o infinite recursion
 #endif
-friend class CWndOrdFrame;
-friend class CWndOrders;
+    friend class CWndOrdFrame;
+    friend class CWndOrders;
 
-public:
+  public:
+    enum UNIT_TYPE
+    {  // run time type identification - use GetUnitType ()
+        building,
+        vehicle
+    };
 
-	enum UNIT_TYPE {			// run time type identification - use GetUnitType ()
-		building,
-		vehicle };
+    CUnit( );
+    virtual ~CUnit( );
 
-									CUnit ();
-		virtual				~CUnit ();
+    virtual void AddUnit( );
+    virtual void RemoveUnit( );
 
-		virtual void	AddUnit ();
-		virtual void	RemoveUnit ();
+    void AssignData( CUnitData const* pData );
 
-		void		AssignData (CUnitData const * pData);
+    CDamageDisplay*       GetDamageDisplay( ) { return m_ptrdamagedisplay.Value( ); }
+    CDamageDisplay const* GetDamageDisplay( ) const { return m_ptrdamagedisplay.Value( ); }
 
-		CDamageDisplay			* GetDamageDisplay()			{ return m_ptrdamagedisplay.Value(); }
-		CDamageDisplay const * GetDamageDisplay() const { return m_ptrdamagedisplay.Value(); }
+    int GetSpottingRange( ) const;
+    int GetRange( ) const;
+    int GetAttack( int iInd ) const { return m_iAttack[iInd]; }
+    int GetDefense( ) const { return m_iDefense; }
+    int GetAccuracy( ) const;
+    int GetFireRate( ) const;  // == 0 if can't shoot
 
-		int			GetSpottingRange () const;
-		int			GetRange () const;
-		int			GetAttack ( int iInd ) const { return m_iAttack [iInd]; }
-		int			GetDefense () const { return m_iDefense; }
-		int			GetAccuracy () const;
-		int			GetFireRate () const;		// == 0 if can't shoot
+    int  GetDamageInflicted( CUnit const* pTarget, BOOL bRand ) const;
+    void AssessDamage( CMapLoc const& ml, int iNumShots, CUnit* pTarget );
 
-		int			GetDamageInflicted (CUnit const * pTarget, BOOL bRand) const;
-		void		AssessDamage ( CMapLoc const & ml, int iNumShots, CUnit * pTarget );
+    void Shoot( CUnit* pUnit, int iLOS );
 
-		void					Shoot (CUnit * pUnit, int iLOS);
+    virtual BOOL IsHit( CHexCoord, CPoint ) const PURE_FUNC virtual void GetDesc( std::string& sText ) const PURE_FUNC
+        virtual void InvalidateStatus( ) const PURE_FUNC virtual void MaterialChange( );
 
-		virtual BOOL	IsHit( CHexCoord, CPoint ) const PURE_FUNC
-		virtual void	GetDesc (CString & sText) const PURE_FUNC
-		virtual void	InvalidateStatus () const PURE_FUNC
-		virtual void	MaterialChange ();
+    virtual int  GetNumStatusBars( ) const { return 1; }
+    virtual void PaintStatusBars( CStatInst* pSi, int iNum, CDC* pDc ) const;
+    void         PaintStatusMaterials( CStatInst* pSi, CDC* pDc ) const;
+    virtual void ShowStatusText( std::string& str );
 
-		virtual int		GetNumStatusBars () const { return 1; }
-		virtual void	PaintStatusBars (CStatInst * pSi, int iNum, CDC * pDc) const;
-		void					PaintStatusMaterials (CStatInst * pSi, CDC * pDc) const;
-		virtual void	ShowStatusText (CString & str);
+    enum UNIT_FLAGS
+    {
+        dying           = 0x01,
+        selected        = 0x02,
+        stopped         = 0x04,
+        event           = 0x08,
+        destroying      = 0x10,
+        scenario        = 0x20,
+        repair_stop     = 0x40,
+        abandoned       = 0x80,
+        dead            = 0x100,
+        unit_set_damage = 0x200,
+        show_bldg       = 0x0400,
+        // Per-building alternate-output toggle (AltOutput, altoutput.h): ON = a farm also
+        // makes Bio Oil (#33) / an exhausted oil well fracks (#23) / a coal plant liquefies
+        // coal / a lumber yard burns charcoal. Gated on the def's tech (CanBioFuel() /
+        // CanFrack() / CanCoalLiq() / ...); set via the building info-window toggle.
+        // PERSISTS ACROSS SAVE/LOAD: it rides m_unitFlags, which CUnit::Serialize writes
+        // and reads (new_unit.cpp ~5770 / ~5812), and CBuilding::Serialize chains through
+        // it. Nothing clears the flag on load. (This comment previously claimed the exact
+        // opposite — "runtime-only, m_unitFlags isn't serialized" — which was true when the
+        // flag was added and went stale once serialization covered the flags word. The
+        // stale note cost an investigation and nearly a needless save-format change on
+        // 2026-08-02; verified against the serialize code before rewriting it.)
+        alt_oil         = 0x0800,
 
-								enum UNIT_FLAGS { dying = 0x01, selected = 0x02, stopped = 0x04, event = 0x08, 
-												destroying = 0x10, scenario = 0x20, repair_stop = 0x40, abandoned = 0x80,
-												dead = 0x100, unit_set_damage = 0x200, show_bldg = 0x0400 };
-		void					SetFlag (UNIT_FLAGS fl) { m_unitFlags = (UNIT_FLAGS) ((int) m_unitFlags | (int) fl); }
-		void					ClrFlag (UNIT_FLAGS fl) { m_unitFlags = (UNIT_FLAGS) ((int) m_unitFlags & ~ (int) fl); }
-		BOOL					IsFlag (UNIT_FLAGS fl) { return ((BOOL) ((int) m_unitFlags & (int) fl)); }
-		virtual void	CancelUnit () {}
-		virtual void	StopUnit () { SetFlag (stopped); }
-		virtual void	ResumeUnit () { ClrFlag (stopped); ClrFlag (event); ClrFlag (repair_stop); }
+        // Per-material auto-stock veto, one bit per HAULABLE material, in the order
+        // given by CBuilding's kBlockableMat table (unit.cpp): lumber, steel, copper,
+        // oil, coal, iron. SET = "the auto-router must not bring me this", so a zeroed
+        // flags word -- every existing building, and every building loaded out of a
+        // save written before this existed -- means "accept everything", i.e. exactly
+        // the old behaviour. That is what lets this ship with NO save-format bump:
+        // CUnit::Serialize already writes the flags word as a full DWORD
+        // (new_unit.cpp), so these bits round-trip and read back 0 from old saves.
+        // Only warehouses and the rocket expose the checkboxes (CanBlockMaterials).
+        no_stock_base   = 0x1000,
+        no_stock_mask   = 0x3F000,    // 6 materials, 0x1000 .. 0x20000
 
-		UNIT_FLAGS		GetFlags () const { return (m_unitFlags); }
-		void					EventOff () { ClrFlag (event); ClrFlag (repair_stop); }
-		virtual void	SetDestroyUnit () { SetFlag (destroying); }
-		virtual void	StopDestroyUnit () { ClrFlag (destroying); }
+        // Player has taken this building OUT of the automatic truck network entirely:
+        // the router will neither deliver to it nor collect from it, and it stops
+        // contributing surplus to warehouse demand. Manual routes and hand-loading are
+        // unaffected. Same inverted sense as the veto bits above -- SET = excluded --
+        // so a zeroed flags word (and therefore every older save) means "in the
+        // network", which is the pre-existing behaviour.
+        no_autoroute    = 0x40000,
 
-		virtual void	DestroyAllWindows () {}
+        // The OR of every flag above -- kept last, derived, so CUnit::AssertValid's
+        // flag-mask check (new_unit.cpp) can assert against ~all_flags instead of a
+        // hand-written mask that silently goes stale each time a flag is added
+        // (BUGS #89: alt_oil shipped without the mask being widened, so the assert
+        // rejected a valid, in-use flag under STRICTER_ASSERTS). Never remove the
+        // assert -- if a new flag is added, add it here and the assert stays correct.
+        all_flags       = dying | selected | stopped | event | destroying | scenario
+                        | repair_stop | abandoned | dead | unit_set_damage | show_bldg
+                        | alt_oil | no_stock_mask | no_autoroute
+    };
+    void         SetFlag( UNIT_FLAGS fl ) { m_unitFlags = (UNIT_FLAGS)( (int)m_unitFlags | (int)fl ); }
+    void         ClrFlag( UNIT_FLAGS fl ) { m_unitFlags = (UNIT_FLAGS)( (int)m_unitFlags & ~(int)fl ); }
+    BOOL         IsFlag( UNIT_FLAGS fl ) { return ( (BOOL)( (int)m_unitFlags & (int)fl ) ); }
+    virtual void CancelUnit( ) {}
+    virtual void StopUnit( ) { SetFlag( stopped ); }
+    virtual void ResumeUnit( )
+    {
+        ClrFlag( stopped );
+        ClrFlag( event );
+        ClrFlag( repair_stop );
+    }
 
-		void					ShowWindow ();
-		virtual void	UpdateChoices () {}
+    UNIT_FLAGS GetFlags( ) const { return ( m_unitFlags ); }
+    void       EventOff( )
+    {
+        ClrFlag( event );
+        ClrFlag( repair_stop );
+    }
+    virtual void SetDestroyUnit( ) { SetFlag( destroying ); }
+    virtual void StopDestroyUnit( ) { ClrFlag( destroying ); }
 
-		void					MsgSetTarget (CHexCoord const & hex);
-		void					MsgSetTarget (CSubHex const & sub);
-		void					MsgSetTarget (CUnit * pUnit);
-		void					_SetTarget (CUnit * pUnit);
-		void					SetOppo (CUnit * pUnit);
-		CUnit *				GetTarget () const { return m_pUnitTarget; }
-		CUnit *				GetOppo () const { return m_pUnitOppo; }
+    virtual void DestroyAllWindows( ) {}
 
-		CUnitData const *	GetData () const;
-		DWORD					GetID () const;
-		CPlayer * 		GetOwner () const;
-		void					_SetOwner ( CPlayer * pPlyr );
-		int						GetStore (int iInd) const;
-		int						GetTotalStore () const;
-		UNIT_TYPE			GetUnitType () const;
+    void         ShowWindow( );
+    virtual void UpdateChoices( ) {}
 
-		void					SetSelected ( BOOL bDoList );
-		void					SetUnselected ( BOOL bDoList );
-		BOOL					IsSelected () const { return (m_unitFlags & selected); }
-		BOOL					IsPaused () const;
-		BOOL					IsWaiting () const;
+    void   MsgSetTarget( CHexCoord const& hex );
+    void   MsgSetTarget( CSubHex const& sub );
+    void   MsgSetTarget( CUnit* pUnit );
+    void   _SetTarget( CUnit* pUnit );
+    void   SetOppo( CUnit* pUnit );
+    CUnit* GetTarget( ) const { return m_pUnitTarget; }
+    CUnit* GetOppo( ) const { return m_pUnitOppo; }
 
-		void					StoreMsg (CMsgBldgMat * pMsg);
-		void					SetStore (int iInd, int iNum);
-		void					AddToStore (int iInd, int iNum);
-		int						GetStoreDiff (int iInd, BOOL bReset = FALSE);
-		void					ZeroStore ();
+    CUnitData const* GetData( ) const;
+    DWORD            GetID( ) const;
+    CPlayer*         GetOwner( ) const;
+    void             _SetOwner( CPlayer* pPlyr );
+    int              GetStore( int iInd ) const;
+    int              GetTotalStore( ) const;
+    UNIT_TYPE        GetUnitType( ) const;
 
-		CMapLoc const & GetWorldPixels () const { return (m_maploc); }
+    void SetSelected( BOOL bDoList );
+    void SetUnselected( BOOL bDoList );
+    BOOL IsSelected( ) const { return ( m_unitFlags & selected ); }
+    BOOL IsPaused( ) const;
+    BOOL IsWaiting( ) const;
 
-		int						GetDamagePoints () const;
-		int						GetDamagePer () const;
-		int						GetLastShowDamagePer () const;
-		float					GetDamageMult () const;
-		float					GetDamPerfMult () const;
-		void					DecDamagePoints (int iDamage, DWORD dwKiller = 0);
-		void					UpdateDamageLevel ();
-		void					MsgSetFire (CMsgShootElem * pMsg);
-		void					PrepareToDie (DWORD dwIDKiller);
-		DWORD					GetKiller () const { return m_dwPlyrKiller; }
+    void StoreMsg( CMsgBldgMat* pMsg );
+    void SetStore( int iInd, int iNum );
+    void AddToStore( int iInd, int iNum );
+    int  GetStoreDiff( int iInd, BOOL bReset = FALSE );
+    void ZeroStore( );
 
-		// 1 damage message per frame
-		//   to server
-		int						GetDamageThisTurn () { int iRtn = m_iDamageThisTurn;
-																					m_iDamageThisTurn = 0;
-																					return ( iRtn ); }
-		void					AddDamageThisTurn ( CUnit * pKiller, int iDam ) 
-																				{ m_iDamageThisTurn += iDam;
-																					if ( pKiller == NULL )
-																						m_dwLastShooter = 0;
-																					else
-																						m_dwLastShooter = pKiller->GetID (); }
-		DWORD		 			GetLastShooter ( ) const { return m_dwLastShooter; }
-		//   from server
-		void					SetUnitSetDamage ( CUnit * pKiller ) 
-																				{	if ( pKiller == NULL )
-																						m_dwLastShooter = 0;
-																					else
-																						m_dwLastShooter = pKiller->GetID ();
-																					SetFlag ( unit_set_damage ); }
-		void					ClrUnitSetDamage () { ClrFlag ( unit_set_damage ); }
+    CMapLoc const& GetWorldPixels( ) const { return ( m_maploc ); }
 
-		// visibility, spotting, come into view, etc.
-		BOOL					IsVisible () const { return (m_iVisible); }
-		void					IncVisible () { m_iVisible++; }
-		void					IncVisible (int iNum) { m_iVisible += iNum; }
-		int						GetVisible () const { return (m_iVisible); }
-		void					DecVisible () { m_iVisible--; }
-		void					DecSee (int iPlyrNum);
-		void					IncSee (CUnit * pUnitSee);
-		BOOL					GetSee (CUnit * pUnitSee);
+    int   GetDamagePoints( ) const;
+    int   GetDamagePer( ) const;
+    int   GetLastShowDamagePer( ) const;
+    float GetDamageMult( ) const;
+    float GetDamPerfMult( ) const;
+    void  DecDamagePoints( int iDamage, DWORD dwKiller = 0, BOOL bApplyMults = TRUE );
+    void  UpdateDamageLevel( );
+    void  MsgSetFire( CMsgShootElem* pMsg );
+    void  PrepareToDie( DWORD dwIDKiller );
+    DWORD GetKiller( ) const { return m_dwPlyrKiller; }
 
-		void					DetermineSpotting () { ASSERT (FALSE); }
-		void					DecrementSpotting ();
-		void					IncrementSpotting (CHexCoord const & hex);
-		BOOL					SpottingOn () const { return m_bSpotted; }
+    // 1 damage message per frame
+    //   to server
+    int GetDamageThisTurn( )
+    {
+        int iRtn          = m_iDamageThisTurn;
+        m_iDamageThisTurn = 0;
+        return ( iRtn );
+    }
+    void AddDamageThisTurn( CUnit* pKiller, int iDam )
+    {
+        m_iDamageThisTurn += iDam;
+        if ( pKiller == NULL )
+            m_dwLastShooter = 0;
+        else
+            m_dwLastShooter = pKiller->GetID( );
+    }
+    DWORD GetLastShooter( ) const { return m_dwLastShooter; }
+    //   from server
+    void SetUnitSetDamage( CUnit* pKiller )
+    {
+        if ( pKiller == NULL )
+            m_dwLastShooter = 0;
+        else
+            m_dwLastShooter = pKiller->GetID( );
+        SetFlag( unit_set_damage );
+    }
+    void ClrUnitSetDamage( ) { ClrFlag( unit_set_damage ); }
 
-		void					OppoAndOthers ();
-		void					OtherOppo ();
-		virtual void	DetermineOppo () {}
-		void					DetermineAiSee ();
+    // visibility, spotting, come into view, etc.
+    BOOL IsVisible( ) const { return ( m_iVisible ); }
+    void IncVisible( ) { m_iVisible++; }
+    void IncVisible( int iNum ) { m_iVisible += iNum; }
+    int  GetVisible( ) const { return ( m_iVisible ); }
+    void DecVisible( ) { m_iVisible--; }
+    void DecSee( int iPlyrNum );
+    void IncSee( CUnit* pUnitSee );
+    BOOL GetSee( CUnit* pUnitSee );
 
-		CTurret *			GetTurret() { ASSERT_VALID_OR_NULL( m_ptrturret.Value() );
-												  return m_ptrturret.Value();	}
+    void DetermineSpotting( ) { ASSERT( FALSE ); }
+    void DecrementSpotting( );
+    void IncrementSpotting( CHexCoord const& hex );
+    BOOL SpottingOn( ) const { return m_bSpotted; }
 
-		CTurret const *	GetTurret() const { ASSERT_VALID_OR_NULL( m_ptrturret.Value() );
-												  		  return m_ptrturret.Value();	}
+    void         OppoAndOthers( );
+    void         OtherOppo( );
+    virtual void DetermineOppo( ) {}
+    void         DetermineAiSee( );
 
-		CFlag *			GetFlag() 		 { return &m_flag; }
-		CFlag const *	GetFlag() const { return &m_flag; }
+    CTurret* GetTurret( )
+    {
+        ASSERT_VALID_OR_NULL( m_ptrturret.Value( ) );
+        return m_ptrturret.Value( );
+    }
 
-		static COLORREF		GetOk () { return (m_clrOk); }
-		static COLORREF		GetWarn () { return (m_clrWarn); }
-		static COLORREF		GetBad () { return (m_clrBad); }
-		static char const * GetsDamage () { return (m_sDamage); }
+    CTurret const* GetTurret( ) const
+    {
+        ASSERT_VALID_OR_NULL( m_ptrturret.Value( ) );
+        return m_ptrturret.Value( );
+    }
 
-		static CString 		m_sDamage;
-		static COLORREF		m_clrOk;
-		static COLORREF		m_clrWarn;
-		static COLORREF		m_clrBad;
+    CFlag*       GetFlag( ) { return &m_flag; }
+    CFlag const* GetFlag( ) const { return &m_flag; }
 
-		virtual void	Serialize (CArchive & ar);
-		virtual void	FixUp ();
-		virtual void	FixForPlayer () {}
+    static COLORREF    GetOk( ) { return ( m_clrOk ); }
+    static COLORREF    GetWarn( ) { return ( m_clrWarn ); }
+    static COLORREF    GetBad( ) { return ( m_clrBad ); }
+    static char const* GetsDamage( ) { return ( m_sDamage.c_str( ) ); }
 
-		void					CheckOppo (CUnit * pTarget, int & iDamageOppo, CUnit * * ppOppo);
+    static std::string m_sDamage;
+    static COLORREF m_clrOk;
+    static COLORREF m_clrWarn;
+    static COLORREF m_clrBad;
 
-		int						m_iFrameHit;					// show it being hit in the world map
+    virtual void Serialize( CArchive& ar );
+    virtual void FixUp( );
+    virtual void FixForPlayer( ) {}
 
-		DWORD					m_dwLastMatTime;			// last time it broadcast materials on hand
-		char					m_iUpdateMat;					// 0 - no update
-																				// 1 - update soon
-																				// 2 - update now
-		int						GetVoice ();
+    void CheckOppo( CUnit* pTarget, int& iDamageOppo, CUnit** ppOppo );
 
-protected:
+    int m_iFrameHit;  // show it being hit in the world map
 
-		void	InitSmokeAndFlame();
+    DWORD m_dwHitFlash;  // timeGetTime() of last damage taken; area-map hit-flash tint (0 = none)
 
-		void					CheckAiOppo (CUnit * pTarget, CUnit * * ppOppo, BOOL bIsSet);
+    DWORD m_dwLastMatTime;  // last time it broadcast materials on hand
+    char  m_iUpdateMat;     // 0 - no update
+                            // 1 - update soon
+                            // 2 - update now
+    int GetVoice( );
 
-		void					SetTurret( int iTurretID );
+  protected:
+    void InitSmokeAndFlame( );
 
-		// we dupe this here to handle units at different levels due to R&D
-		LONG					m_iSpottingRange;				// how many hexes away it can see
-		LONG					m_iRange;								// maximum range it can shoot
-		LONG					m_iAttack [3];					// attack - defense, not affected by defense, naval targets
-		LONG					m_iDefense;							// ground defense power
-		LONG					m_iAccuracy;						// how accurate it is
-		LONG					m_iFireRate;						// fire rate (affected by damage)
+    void CheckAiOppo( CUnit* pTarget, CUnit** ppOppo, BOOL bIsSet );
 
-		int						m_iVoice;						// which voice we used
+    void SetTurret( int iTurretID );
 
-		CPlayer *			m_pOwner;						// pointer to our owner
-		CUnitData const * m_pUnitData;		// building or vehicle type data
-		DWORD					m_dwID;							// unique ID for each unit
-		UNIT_TYPE			m_iUnitType;				// if building or vehicle
+    // we dupe this here to handle units at different levels due to R&D
+    LONG m_iSpottingRange;  // how many hexes away it can see
+    LONG m_iRange;          // maximum range it can shoot
+    LONG m_iAttack[3];      // attack - defense, not affected by defense, naval targets
+    LONG m_iDefense;        // ground defense power
+    LONG m_iAccuracy;       // how accurate it is
+    LONG m_iFireRate;       // fire rate (affected by damage)
 
-		// attacking a unit
-		CUnit *				m_pUnitTarget;			// unit want to attack
-		CSubHex				m_ptTarget;					// m_ptHead of target last time we checked LOS
-		CSubHex				m_ptUs;							// m_ptHead of us last time we checked LOS
-		LONG					m_iLOS;							// LOS to hexTarget
-		CUnit *				m_pUnitOppo;				// unit attacking now
-		CSubHex				m_ptOppo;						// m_ptHead of target last time we checked LOS
-		CSubHex				m_ptUsOppo;					// m_ptHead of us last time we checked LOS
-		LONG					m_iOppoLOS;					// LOS to hexTarget
-		DWORD					m_dwReloadMod;			// time already spent reloading
+    int m_iVoice;  // which voice we used
 
-		LONG					m_aiStore [CMaterialTypes::num_types];	// materials on hand
-		LONG					m_aiBeforeUpdate[CMaterialTypes::num_types];	// change from for net message
+    CPlayer*         m_pOwner;     // pointer to our owner
+    CUnitData const* m_pUnitData;  // building or vehicle type data
+    DWORD            m_dwID;       // unique ID for each unit
+    UNIT_TYPE        m_iUnitType;  // if building or vehicle
 
-		// who can see us, who is shooting at us - counted by number of units of that player
-		DWORD *				m_pdwPlyrsSee;			// which players can see this unit
-		// spotting bitmap
-		DWORD					m_dwaSpot [SPOTTING_ARRAY_SIZE]; // a bitmask of hexes this unit can see in
-		int						m_iVisible;							// number of HP units that can see me
-		BOOL					m_bSpotted;					// TRUE when it has spotted (set visibility for the map)
-		CHexCoord			m_hexSpotting;			// hex on when did spotting
+    // attacking a unit
+    CUnit*  m_pUnitTarget;  // unit want to attack
+    CSubHex m_ptTarget;     // m_ptHead of target last time we checked LOS
+    CSubHex m_ptUs;         // m_ptHead of us last time we checked LOS
+    LONG    m_iLOS;         // LOS to hexTarget
+    CUnit*  m_pUnitOppo;    // unit attacking now
+    CSubHex m_ptOppo;       // m_ptHead of target last time we checked LOS
+    CSubHex m_ptUsOppo;     // m_ptHead of us last time we checked LOS
+    LONG    m_iOppoLOS;     // LOS to hexTarget
+    DWORD   m_dwReloadMod;  // time already spent reloading
 
-		// damage level of the building
-		LONG					m_iDamagePoints;		// points of damage remaining required to destroy (0 == destroy it)
-		LONG					m_iDamagePer;				// 0 == destoryed, 100 == ok - this is set so we don't have to calc it all the time
-		float					m_fDamageMult;			// 0.0 == destroyed, 1.0 == ok
-		float					m_fDamPerfMult;			// 0.5 == destroyed, 1.0 == ok
-		LONG					m_iLastShowDamagePer;
+    LONG m_aiStore[CMaterialTypes::num_types];         // materials on hand
+    LONG m_aiBeforeUpdate[CMaterialTypes::num_types];  // change from for net message
 
-		int						m_iDamageThisTurn;
-		DWORD					m_dwLastShooter;
+    // who can see us, who is shooting at us - counted by number of units of that player
+    DWORD* m_pdwPlyrsSee;  // which players can see this unit
+    // spotting bitmap
+    SPOT_WORD m_dwaSpot[SPOTTING_ARRAY_SIZE];  // a bitmask of hexes this unit can see in (64-bit/row)
+    int       m_iVisible;                      // number of HP units that can see me
+    BOOL      m_bSpotted;                      // TRUE when it has spotted (set visibility for the map)
+    CHexCoord m_hexSpotting;                   // hex on when did spotting
 
-		DWORD					m_dwPlyrKiller;			// the player that killed us
+    // damage level of the building
+    LONG  m_iDamagePoints;  // points of damage remaining required to destroy (0 == destroy it)
+    LONG  m_iDamagePer;     // 0 == destoryed, 100 == ok - this is set so we don't have to calc it all the time
+    float m_fDamageMult;    // 0.0 == destroyed, 1.0 == ok
+    float m_fDamPerfMult;   // 0.5 == destroyed, 1.0 == ok
+    LONG  m_iLastShowDamagePer;
 
-		UNIT_FLAGS		m_unitFlags;
+    int   m_iDamageThisTurn;
+    DWORD m_dwLastShooter;
 
-		Ptr< CTurret >	 	m_ptrturret;
-		CFlag					m_flag;
+    DWORD m_dwPlyrKiller;  // the player that killed us
 
-		Ptr< CDamageDisplay >	m_ptrdamagedisplay;
+    UNIT_FLAGS m_unitFlags;
+
+    Ptr<CTurret> m_ptrturret;
+    CFlag        m_flag;
+
+    Ptr<CDamageDisplay> m_ptrdamagedisplay;
 
 #ifdef _DEBUG
-		BOOL					m_Initialized;			// TRUE when can be asserted
+    BOOL m_Initialized;  // TRUE when can be asserted
 
-public:
-	virtual void AssertValid() const;
+  public:
+    virtual void AssertValid( ) const;
 #endif
 };
 
@@ -699,37 +793,58 @@ public:
 
 class CExplData
 {
-public:
-						CExplData ();
-		void		InitData (CMmio * pMmio);
-		void		PostSpriteInit ();
+  public:
+    CExplData( );
+    void InitData( CMmio* pMmio );
+    void PostSpriteInit( );
 
-		CSprite *	m_pProjSprite;		// sprite for the projectile
-		int			m_iProjDelay;			// frames to delay before starting
+    CSprite* m_pProjSprite;  // sprite for the projectile
+    int      m_iProjDelay;   // frames to delay before starting
 
-						// when it arrives
-		CSprite *	m_pExpSprite;		// sprite for the explosion
-		int			m_iExplSound;			// explosion sound
+    // when it arrives
+    CSprite* m_pExpSprite;  // sprite for the explosion
+    int      m_iExplSound;  // explosion sound
 
-		int			m_iFlags;
-					enum { has_dir = 0x01 };
+    int m_iFlags;
+    enum
+    {
+        has_dir = 0x01
+    };
+
+    // Render-side projectile trail style (client-local eye-candy; not networked, not a
+    // sim object). Set in code (see CExplData ctor) — keyed by projectile type here so a
+    // future rocket entry can ask for trail_smoke without disturbing the data file.
+    enum TRAIL_TYPE
+    {
+        trail_none,
+        trail_tracer,  // stretched additive orange streak (bullets/shells)
+        trail_smoke    // TODO: drifting smoke puffs (rockets) — not implemented yet
+    };
+    int m_iTrailType;
 };
 
 class CExplGrp
 {
-enum { NUM_EXPL_DATA = 6 };
-public:
-						CExplGrp () { m_iNumExpl = 0; }
-		void		InitData ();
-		void		PostSpriteInit ();
+    enum
+    {
+        NUM_EXPL_DATA = 6
+    };
 
-		int									GetNum () const { return (m_iNumExpl); }
-		CExplData const *		GetData (int iIndex) const
-																		{ ASSERT ((0 < iIndex) && (iIndex < m_iNumExpl));
-																			return (&m_Data[iIndex]); }
-protected:
-		int					m_iNumExpl;
-		CExplData		m_Data [NUM_EXPL_DATA];
+  public:
+    CExplGrp( ) { m_iNumExpl = 0; }
+    void InitData( );
+    void PostSpriteInit( );
+
+    int              GetNum( ) const { return ( m_iNumExpl ); }
+    CExplData const* GetData( int iIndex ) const
+    {
+        ASSERT( ( 0 < iIndex ) && ( iIndex < m_iNumExpl ) );
+        return ( &m_Data[iIndex] );
+    }
+
+  protected:
+    int       m_iNumExpl;
+    CExplData m_Data[NUM_EXPL_DATA];
 };
 
 
@@ -738,111 +853,144 @@ protected:
 
 class CInitProjMem;
 
+// Fixed-block size for CProjBase::m_memPool. Must be >= the largest pooled
+// derived object (CProjectile / CExplosion). It can't be written as
+// sizeof(CProjectile) here because those classes aren't defined yet, so it's a
+// generous constant guarded by a static_assert below (after the classes are
+// complete). The original hardcoded 188 was sized for the 32-bit build; on x64
+// the wider pointers/vtable pushed sizeof(CProjectile) past 188, so every fired
+// projectile overran its pool block -> combat heap corruption. Bumped 256->320
+// when the projectile-trail fix (4d5b959e) added m_fStrength/m_iStepsStart/
+// m_iTrailTeamR,G,B to CProjectile, pushing it back past the old block size.
+constexpr unsigned PROJ_POOL_BLOCK = 320;
+
 class CProjBase : public CEffectTile
 {
-friend CProjMap;
-friend CInitProjMem;
-public:
-		enum TILE_TYPE { projectile, explosion };	// GG: Need it for drawing explosions in front of vehicles
+    friend class CProjMap;
+    friend class CInitProjMem;
 
-		void *	operator new ( size_t iSiz );
-		void *	operator new ( size_t iSiz, const char * pFile, int iLine );
-		void operator delete ( void * pBuf );
+  public:
+    enum TILE_TYPE
+    {
+        projectile,
+        explosion
+    };  // GG: Need it for drawing explosions in front of vehicles
 
-		CProjBase (BYTE bTyp);
+    void* operator new( size_t iSiz );
+    void* operator new( size_t iSiz, const char* pFile, int iLine );
+    void  operator delete( void* pBuf );
 
-		virtual void					Operate () { TRAP (); }
-		CRect	Draw( const CHexCoord & );
+    CProjBase( BYTE bTyp );
 
-		Fixed	GetAlt() const	{ return m_fixAlt; }
+    virtual void Operate( ) { TRAP( ); }
+    CRect        Draw( const CHexCoord& );
 
-		TILE_TYPE	GetType() const { return ( TILE_TYPE )m_bType; }
+    Fixed GetAlt( ) const { return m_fixAlt; }
 
-		DWORD			m_dwIDTarget;						// who we are going to hit (may be 0)
-		DWORD			m_dwIDShooter;					// who did the shooting
+    TILE_TYPE GetType( ) const { return (TILE_TYPE)m_bType; }
 
-protected:
-		BYTE			m_bType;
-// GG						enum { projectile, explosion };
-		Fixed			m_fixAlt;
+    DWORD m_dwIDTarget;   // who we are going to hit (may be 0)
+    DWORD m_dwIDShooter;  // who did the shooting
 
-		static MEM_POOL		m_memPool;
+  protected:
+    BYTE m_bType;
+    // GG						enum { projectile, explosion };
+    Fixed m_fixAlt;
 
-		// for linked list in CProjMap
-		CProjBase *		m_pNext;
+    static memory_pool<mempool_std_heap<PROJ_POOL_BLOCK, 64>> m_memPool;
+
+    // for linked list in CProjMap
+    CProjBase* m_pNext;
 };
 
 class CInitProjMem
 {
-public:
-			CInitProjMem ();
+  public:
+    CInitProjMem( );
 };
 
 class CProjectile : public CProjBase
 {
-public:
-		CProjectile (CUnit const * pUnit, CMapLoc const & end, DWORD dwIDTarget, int iNumShots);
-		void					Operate ();
-		CRect					Draw( const CHexCoord & );
+  public:
+    CProjectile( CUnit const* pUnit, CMapLoc const& end, DWORD dwIDTarget, int iNumShots );
+    void  Operate( );
+    CRect Draw( const CHexCoord& );
+    void  EmitTrail( );  // GPU tracer streak (see projbase.cpp)
 
-		int								m_xAdd;									// added to m_maploc.x each step
-		int								m_yAdd;									// added to .y
-		Fixed							m_faAdd;								// added to m_fixAlt
-		int								m_iSteps;								// steps remaining to operate
-		int								m_iStepMod;							// mod of steps inc
-		int								m_iProjDelay;						// frames to delay before starting
-		CMapLoc						m_mlEnd;								// our destination
-		int								m_iNumShots;						// num shots fired
-		CExplData const *	m_pEd;									// the explosion data
+    int              m_xAdd;        // added to m_maploc.x each step
+    int              m_yAdd;        // added to .y
+    Fixed            m_faAdd;       // added to m_fixAlt
+    int              m_iSteps;      // steps remaining to operate
+    int              m_iStepMod;    // mod of steps inc
+    int              m_iProjDelay;  // frames to delay before starting
+    CMapLoc          m_mlEnd;       // our destination
+    int              m_iNumShots;   // num shots fired
+    CExplData const* m_pEd;         // the explosion data
+    float            m_fStrength;   // shooter attack normalised 0..1 (tracer colour gradient)
+    int              m_iStepsStart; // steps at flight start (trail grows 0 -> max as it flies)
+    int              m_iTrailTeamR, m_iTrailTeamG, m_iTrailTeamB; // shooter team colour (trail outline)
 };
 
 class CExplosion : public CProjBase
 {
-public:
-		CExplosion (CProjectile const * pProj, CUnit * pTarget);
-		CExplosion ( CUnit const * pTarget, CMapLoc const & ml, DWORD dwIDShooter );
-		void					Operate ();
-		CRect					Draw( const CHexCoord & );
+  public:
+    CExplosion( CProjectile const* pProj, CUnit* pTarget );
+    CExplosion( CUnit const* pTarget, CMapLoc const& ml, DWORD dwIDShooter );
+    void  Operate( );
+    CRect Draw( const CHexCoord& );
+    void  EmitFlash( const CPoint& ptCenter, int iSprW, int iSprH );  // additive impact pop
 
-		int			m_iKillFrame;			// on or after this frame kill the building
+    int m_iKillFrame;  // on or after this frame of OUR OWN life, release the corpse
+                       // (enexpl::EXPL_KILLFRAME, or EXPL_NO_KILLFRAME = no corpse)
+    int m_iFrames;     // frames this explosion has lived. Counted here and not read
+                       // off the animation, so a replaced sprite cannot move a
+                       // simulation event (015 phase 3, explframe.h).
 };
 
-const int PROJ_BASE_ALLOC_SIZE = __max ( sizeof (CProjectile), sizeof (CExplosion) );
+const int PROJ_BASE_ALLOC_SIZE = __max(sizeof(CProjectile), sizeof(CExplosion));
+
+// Guarantee the pool block actually fits the largest pooled object. If this
+// ever fails, bump PROJ_POOL_BLOCK (above) to at least PROJ_BASE_ALLOC_SIZE.
+static_assert( PROJ_BASE_ALLOC_SIZE <= (int)PROJ_POOL_BLOCK,
+               "CProjBase::m_memPool block is smaller than CProjectile/CExplosion - bump PROJ_POOL_BLOCK" );
 
 // we map based on CHex
-class CProjMap : public CMap <DWORD, DWORD, CProjBase *, CProjBase *>
+class CProjMap : public CMap<DWORD, DWORD, CProjBase*, CProjBase*>
 {
-public:
-	CProjMap () { InitHashTable (HASH_INIT); }
+  public:
+    CProjMap( ) { InitHashTable( HASH_INIT ); }
 
-	void					Add (CProjBase * pProj);
-	void					Move (CHexCoord const & _hex, CProjBase * pProj);
-	void					Remove (CProjBase * pProj);
-	void					Remove (CHexCoord const & _hex, CProjBase * pProj);
+    void Add( CProjBase* pProj );
+    void Move( CHexCoord const& _hex, CProjBase* pProj );
+    void Remove( CProjBase* pProj );
+    void Remove( CHexCoord const& _hex, CProjBase* pProj );
 
-	CProjBase *		GetFirst ( CHexCoord _hex ) const;
-	static CProjBase *		GetNext ( CProjBase * pOn );
+    CProjBase*        GetFirst( CHexCoord _hex ) const;
+    static CProjBase* GetNext( CProjBase* pOn );
+    // Count occupied hex buckets containing at least one in-flight projectile.
+    // Visual explosion lifetimes are deliberately excluded from the firing cap.
+    int GetProjectileHexCount( ) const;
 
-protected:
-	DWORD					ToArg (CMapLoc const & ml) const;
-	DWORD					ToArg (CHexCoord const & _hex) const;
+  protected:
+    DWORD ToArg( CMapLoc const& ml ) const;
+    DWORD ToArg( CHexCoord const& _hex ) const;
 };
 
 
-CUnit * _GetUnit (DWORD dwID);
-CUnit * GetUnit (DWORD dwID);
-CUnit * GetUnit (CSubHex const & sub);	// bldg takes priority
-CSubHex Rotate (int iDir, CSubHex const & ptHead, CSubHex const & ptTail);
-void UnitShowStatus (void * pData, CDC * pDc, CRect const & rDraw, CDIB * pDib, CPoint const & ptOff);
-void _UnitShowStatus (BOOL bText, void * pData, CDC * pDc, CRect const & rDraw, CDIB * pDibBack, CPoint const & ptOff);
-void UnitStatusText (void * pData, CString & str);
+CUnit*  _GetUnit( DWORD dwID );
+CUnit*  GetUnit( DWORD dwID );
+CUnit*  GetUnit( CSubHex const& sub );  // bldg takes priority
+CSubHex Rotate( int iDir, CSubHex const& ptHead, CSubHex const& ptTail );
+void    UnitShowStatus( void* pData, CDC* pDc, CRect const& rDraw, CDIB* pDib, CPoint const& ptOff );
+void    _UnitShowStatus( BOOL bText, void* pData, CDC* pDc, CRect const& rDraw, CDIB* pDibBack, CPoint const& ptOff );
+void    UnitStatusText( void* pData, std::string& str );
 
 
-extern CTurrets			theTurrets;
-extern CMuzzleFlashes 	theFlashes;
-extern CEffect				theEffects;
-extern CExplGrp			theExplGrp;
-extern CProjMap			theProjMap;
+extern CTurrets       theTurrets;
+extern CMuzzleFlashes theFlashes;
+extern CEffect        theEffects;
+extern CExplGrp       theExplGrp;
+extern CProjMap       theProjMap;
 
 
 #endif

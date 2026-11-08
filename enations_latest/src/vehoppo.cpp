@@ -161,36 +161,36 @@ void CVehicle::DetermineSpotting ()
 	  {
 		case 0 :	// just us
 			TRAP ();
-			m_dwaSpot [MAX_SPOTTING] = 1 << MAX_SPOTTING;
+			m_dwaSpot [MAX_SPOTTING] = 1ULL << MAX_SPOTTING;
 			break;
 		case 1 :	// a PLUS
-			m_dwaSpot [MAX_SPOTTING-1] = 1 << MAX_SPOTTING;
-			m_dwaSpot [MAX_SPOTTING] = (1 << MAX_SPOTTING) | (1 << (MAX_SPOTTING + 1)) |
-																													(1 << (MAX_SPOTTING - 1));
-			m_dwaSpot [MAX_SPOTTING+1] = 1 << MAX_SPOTTING;
+			m_dwaSpot [MAX_SPOTTING-1] = 1ULL << MAX_SPOTTING;
+			m_dwaSpot [MAX_SPOTTING] = (1ULL << MAX_SPOTTING) | (1ULL << (MAX_SPOTTING + 1)) |
+																													(1ULL << (MAX_SPOTTING - 1));
+			m_dwaSpot [MAX_SPOTTING+1] = 1ULL << MAX_SPOTTING;
 			break;
 
 		case 2 : {	// a 2*PLUS & 1 into the diamonds
-			m_dwaSpot [MAX_SPOTTING-1] = (1 << MAX_SPOTTING) | (1 << (MAX_SPOTTING + 1)) |
-																													(1 << (MAX_SPOTTING - 1));
-			m_dwaSpot [MAX_SPOTTING] = (1 << MAX_SPOTTING) | (1 << (MAX_SPOTTING + 1)) |
-																													(1 << (MAX_SPOTTING - 1));
-			m_dwaSpot [MAX_SPOTTING+1] = (1 << MAX_SPOTTING) | (1 << (MAX_SPOTTING + 1)) |
-																													(1 << (MAX_SPOTTING - 1));
+			m_dwaSpot [MAX_SPOTTING-1] = (1ULL << MAX_SPOTTING) | (1ULL << (MAX_SPOTTING + 1)) |
+																													(1ULL << (MAX_SPOTTING - 1));
+			m_dwaSpot [MAX_SPOTTING] = (1ULL << MAX_SPOTTING) | (1ULL << (MAX_SPOTTING + 1)) |
+																													(1ULL << (MAX_SPOTTING - 1));
+			m_dwaSpot [MAX_SPOTTING+1] = (1ULL << MAX_SPOTTING) | (1ULL << (MAX_SPOTTING + 1)) |
+																													(1ULL << (MAX_SPOTTING - 1));
 
 			CHexCoord hexOrig (m_ptHead);
 			hexOrig.Ydec ();
-			m_dwaSpot [MAX_SPOTTING-2] |= 1 << MAX_SPOTTING;
+			m_dwaSpot [MAX_SPOTTING-2] |= 1ULL << MAX_SPOTTING;
 
 			hexOrig.Y (hexOrig.Y () + 2);
-			m_dwaSpot [MAX_SPOTTING+2] |= 1 << MAX_SPOTTING;
+			m_dwaSpot [MAX_SPOTTING+2] |= 1ULL << MAX_SPOTTING;
 
 			hexOrig.Ydec ();
 			hexOrig.Xdec ();
-			m_dwaSpot [MAX_SPOTTING] |= 1 << (MAX_SPOTTING - 2);
+			m_dwaSpot [MAX_SPOTTING] |= 1ULL << (MAX_SPOTTING - 2);
 
 			hexOrig.X (hexOrig.X () + 2);
-			m_dwaSpot [MAX_SPOTTING] |= 1 << (MAX_SPOTTING + 2);
+			m_dwaSpot [MAX_SPOTTING] |= 1ULL << (MAX_SPOTTING + 2);
 			break; }
 
 		default: {	// spotting > 2
@@ -212,7 +212,7 @@ void CVehicle::DetermineSpotting ()
 			int iMode = 0;
 		
 			// set the hex we are on to visible
-			m_dwaSpot [MAX_SPOTTING] = 1 << MAX_SPOTTING;
+			m_dwaSpot [MAX_SPOTTING] = 1ULL << MAX_SPOTTING;
 			BOOL bBlocked = FALSE;
 		
 			for (; TRUE; )
@@ -257,7 +257,7 @@ void CVehicle::DetermineSpotting ()
 					int iShft = CHexCoord::Diff (hexOn.X () - hexOrig.X ()) + MAX_SPOTTING;
 					ASSERT ((0 <= iInd) && (iInd < SPOTTING_LINE));
 					ASSERT ((0 <= iShft) && (iShft < SPOTTING_LINE));
-					m_dwaSpot [iInd] |= 1 << iShft;
+					m_dwaSpot [iInd] |= 1ULL << iShft;
 					if (NextVisible (&piOn, piRange, iXmax, iYmin, iYmax, hexOrig, hexDest, iMode, max (abs (xDif), abs (yDif))))
 						break;
 					bBlocked = FALSE;
@@ -284,7 +284,7 @@ void CVehicle::DetermineSpotting ()
 					int iShft = CHexCoord::Diff (hexOn.X () - hexOrig.X ()) + MAX_SPOTTING;
 					ASSERT ((0 <= iInd) && (iInd < SPOTTING_LINE));
 					ASSERT ((0 <= iShft) && (iShft < SPOTTING_LINE));
-					m_dwaSpot [iInd] |= 1 << iShft;
+					m_dwaSpot [iInd] |= 1ULL << iShft;
 					}
 				}
 			
@@ -319,7 +319,8 @@ void CVehicle::DetermineOppo ()
 		for (int y=-GetRange (); y<GetRange(); y++)
 			{
 			_hex.X (m_ptHead.x / 2 - *piOn);
-			CHex * pHex = theMap._GetHex (_hex);
+			_hex.WrapX ();                       // torus: this X can fall off the left/right
+			CHex * pHex = theMap._GetHex (_hex); // edge, and _GetHex does NOT wrap its index
 
 			for (int x=(*piOn)*2; x>=0; x--)
 				{
@@ -347,9 +348,9 @@ void CVehicle::DetermineOppo ()
 						}
 					}
 
-				_hex.Xinc ();
-				pHex = theMap._Xinc (pHex);
-				}
+				_hex.Xinc ();                  // wraps X across the right edge, so the raw
+				pHex = theMap._GetHex (_hex);  // pHex+1 of _Xinc would desync and run off
+				}                              // the hex array — re-fetch from the wrapped hex
 			_hex.Yinc ();
 			piOn++;
 			}
@@ -378,7 +379,8 @@ void CVehicle::DetermineOppo ()
 	for (int y=-iMax; y<iMax; y++)
 		{
 		_hex.X (m_ptHead.x / 2 - *piOn);
-		CHex * pHex = theMap._GetHex (_hex);
+		_hex.WrapX ();                       // torus: this X can fall off the left/right
+		CHex * pHex = theMap._GetHex (_hex); // edge, and _GetHex does NOT wrap its index
 		for (int x=(*piOn)*2; x>=0; x--)
 			{
 			if (pHex->GetUnits () & (CHex::ul | CHex::ur | CHex::ll | CHex::lr | CHex::bldg))
@@ -403,103 +405,284 @@ void CVehicle::DetermineOppo ()
 					SetOppo (pOppo);
 					}
 				}
-			_hex.Xinc ();
-			pHex = theMap._Xinc (pHex);
-			}
+			_hex.Xinc ();                  // wraps X across the right edge, so the raw
+			pHex = theMap._GetHex (_hex);  // pHex+1 of _Xinc would desync and run off
+			}                              // the hex array — re-fetch from the wrapped hex
 		_hex.Yinc ();
 		piOn++;
 		}
 }
+/*
+// finds if anyone local can oppo fire on unit that just moved
+void CUnit::OtherOppo( )
+{
+    // get the position of the unit for fast testing
+    const CHexCoord _hex( GetUnitType( ) == CUnit::vehicle ? ( (CVehicle*)this )->GetHexHead( )
+                                                           : ( (CBuilding*)this )->GetHex( ) );
+
+    // Cache commonly used values
+    const int hexX     = _hex.X( );
+    const int hexY     = _hex.Y( );
+    CPlayer*  pMyOwner = GetOwner( );
+
+    // Process buildings
+    POSITION pos = theBuildingMap.GetStartPosition( );
+    while ( pos != NULL )
+    {
+        DWORD      dwID;
+        CBuilding* pBldg;
+        theBuildingMap.GetNextAssoc( pos, dwID, pBldg );
+        ASSERT_STRICT_VALID( pBldg );
+
+        // Early exit checks - combined and optimized
+        if ( ( pBldg->GetFlags( ) & CUnit::dying ) != 0 )
+            continue;
+
+        CPlayer* pBldgOwner = pBldg->GetOwner( );
+        if ( !pBldgOwner->IsLocal( ) || pBldgOwner == pMyOwner )
+            continue;
+
+        // Cache building position
+        const CHexCoord& bldgHex = pBldg->GetHex( );
+        int              diffX   = CHexCoord::Diff( hexX - bldgHex.X( ) );
+        int              diffY   = CHexCoord::Diff( hexY - bldgHex.Y( ) );
+
+        // Quick distance check before expensive operations
+        if ( diffX > MAX_SPOTTING || diffY > MAX_SPOTTING )
+            continue;
+
+        // Opportunity fire check
+        if ( pBldg->m_pUnitOppo == NULL && pBldg->GetRange( ) > 0 )
+        {
+            if ( theMap.GetRangeDistance( this, pBldg ) <= pBldg->GetRange( ) )
+            {
+                CUnit* pOppo = NULL;
+                if ( pBldgOwner->IsAI( ) )
+                    pBldg->CheckAiOppo( this, &pOppo, FALSE );
+                else
+                {
+                    int iDamageOppo = 0;
+                    pBldg->CheckOppo( this, iDamageOppo, &pOppo );
+                }
+                if ( pOppo != NULL )
+                    pBldg->SetOppo( this );
+            }
+        }
+
+        // AI spotting check
+        if ( m_pdwPlyrsSee[pBldgOwner->GetPlyrNum( )] == 0 )
+        {
+            int spotRange = pBldg->GetSpottingRange( );
+            if ( diffX <= spotRange && diffY <= spotRange )
+            {
+                if ( theMap.GetRangeDistance( this, pBldg ) <= spotRange )
+                    IncSee( pBldg );
+            }
+        }
+    }
+
+    // Process vehicles
+    pos = theVehicleMap.GetStartPosition( );
+    while ( pos != NULL )
+    {
+        DWORD     dwID;
+        CVehicle* pVeh;
+        theVehicleMap.GetNextAssoc( pos, dwID, pVeh );
+        ASSERT_STRICT_VALID( pVeh );
+
+        // Early exit checks
+        if ( ( pVeh->GetFlags( ) & CUnit::dying ) != 0 )
+            continue;
+
+        CPlayer* pVehOwner = pVeh->GetOwner( );
+        if ( !pVehOwner->IsLocal( ) || pVehOwner == pMyOwner )
+            continue;
+
+        // Cache vehicle position (divided by 2)
+        const POINT& vehPt   = pVeh->GetPtHead( );
+        int          vehHexX = vehPt.x / 2;
+        int          vehHexY = vehPt.y / 2;
+        int          diffX   = CHexCoord::Diff( hexX - vehHexX );
+        int          diffY   = CHexCoord::Diff( hexY - vehHexY );
+
+        // Quick distance check
+        if ( diffX > MAX_SPOTTING || diffY > MAX_SPOTTING )
+            continue;
+
+        // Opportunity fire check
+        if ( pVeh->m_pUnitOppo == NULL && pVeh->GetRange( ) > 0 )
+        {
+            if ( theMap.GetRangeDistance( this, pVeh ) <= pVeh->GetRange( ) )
+            {
+                CUnit* pOppo = NULL;
+                if ( pVehOwner->IsAI( ) )
+                    pVeh->CheckAiOppo( this, &pOppo, FALSE );
+                else
+                {
+                    int iDamageOppo = 0;
+                    pVeh->CheckOppo( this, iDamageOppo, &pOppo );
+                }
+                if ( pOppo != NULL )
+                    pVeh->SetOppo( this );
+            }
+        }
+
+        // AI spotting check
+        if ( m_pdwPlyrsSee[pVehOwner->GetPlyrNum( )] == 0 )
+        {
+            int spotRange = pVeh->GetSpottingRange( );
+            if ( diffX <= spotRange && diffY <= spotRange )
+            {
+                int iLOS = theMap.LineOfSight( this, pVeh );
+                if ( iLOS >= 0 && iLOS <= spotRange )
+                    IncSee( pVeh );
+            }
+        }
+    }
+}
+*/
 
 // finds if anyone local can oppo fire on unit that just moved
-void CUnit::OtherOppo ()
+void CUnit::OtherOppo( )
 {
+    // get the position of the unit for fast testing
+    const CHexCoord _hex( GetUnitType( ) == CUnit::vehicle ? ( (CVehicle*)this )->GetHexHead( )
+                                                           : ( (CBuilding*)this )->GetHex( ) );
 
-	// get the position of the unit for fast testing
-	CHexCoord _hex (GetUnitType () == CUnit::vehicle ? ((CVehicle*)this)->GetHexHead () : ((CBuilding*)this)->GetHex ());
+    // Cache commonly used values
+    const int hexX     = _hex.X( );
+    const int hexY     = _hex.Y( );
+    CPlayer*  pMyOwner = GetOwner( );
+    CHexCoord hexCheck;
+    const int iRad = MAX_SPOTTING;
 
-	POSITION pos = theBuildingMap.GetStartPosition ();
-	while (pos != NULL)
-		{
-		DWORD dwID;
-		CBuilding *pBldg;
-		theBuildingMap.GetNextAssoc (pos, dwID, pBldg);
-		ASSERT_STRICT_VALID (pBldg);
+    // Optimized: Iterate spatially within spotting range instead of
+    // looping through the entire global unit list.
+    for ( int y = -iRad; y <= iRad; y++ )
+    {
+        hexCheck.Y( CHexCoord::Wrap( hexY + y ) );
 
-		// if we're dying forget it
-		if (pBldg->GetFlags() & CUnit::dying)
-			continue;
+        for ( int x = -iRad; x <= iRad; x++ )
+        {
+            hexCheck.X( CHexCoord::Wrap( hexX + x ) );
 
-		// we don't do squat if its too far away
-		if ((! pBldg->GetOwner()->IsLocal ()) || (pBldg->GetOwner () == GetOwner ()) ||
-						((CHexCoord::Diff (_hex.X() - pBldg->GetHex().X()) > MAX_SPOTTING) ||
-						(CHexCoord::Diff (_hex.Y() - pBldg->GetHex().Y()) > MAX_SPOTTING)))
-			continue;
+            CHex* pHex  = theMap.GetHex( hexCheck );
+            BYTE  units = pHex->GetUnits( );
 
-		// can it oppo fire on this unit?
-		if ((pBldg->m_pUnitOppo == NULL) && (pBldg->GetRange () > 0))
-			if (theMap.GetRangeDistance (this, pBldg) <= pBldg->GetRange ())
-				{
-				int iDamageOppo = 0;
-				CUnit * pOppo = NULL;
-				if (pBldg->GetOwner()->IsAI ())
-					pBldg->CheckAiOppo (this, &pOppo, FALSE);
-				else
-					pBldg->CheckOppo (this, iDamageOppo, &pOppo);
-				if (pOppo != NULL)
-					pBldg->SetOppo (this);
-				}
+            // If empty, skip
+            if ( !( units & ( CHex::bldg | CHex::ul | CHex::ur | CHex::ll | CHex::lr ) ) )
+                continue;
 
-		// check for AI spotting
-		if (m_pdwPlyrsSee [pBldg->GetOwner()->GetPlyrNum ()] == 0)
-			if ((CHexCoord::Diff (_hex.X() - pBldg->GetHex().X()) <= pBldg->GetSpottingRange ()) &&
-						(CHexCoord::Diff (_hex.Y() - pBldg->GetHex().Y()) <= pBldg->GetSpottingRange ()))
-				if (theMap.GetRangeDistance (this, pBldg) <= pBldg->GetSpottingRange ())
-					IncSee (pBldg);
-		}
+            int diffX = abs( x );
+            int diffY = abs( y );
 
-	// check other vehicles
-	pos = theVehicleMap.GetStartPosition ();
-	while (pos != NULL)
-		{
-		DWORD dwID;
-		CVehicle *pVeh;
-		theVehicleMap.GetNextAssoc (pos, dwID, pVeh);
-		ASSERT_STRICT_VALID (pVeh);
+            // Process building on this hex
+            if ( units & CHex::bldg )
+            {
+                CBuilding* pBldg = theBuildingHex._GetBuilding( hexCheck );
+                if ( pBldg && !( pBldg->GetFlags( ) & CUnit::dying ) )
+                {
+                    CPlayer* pBldgOwner = pBldg->GetOwner( );
+                    if ( pBldgOwner->IsLocal( ) && pBldgOwner != pMyOwner )
+                    {
+                        // Opportunity fire check
+                        if ( pBldg->m_pUnitOppo == NULL && pBldg->GetRange( ) > 0 )
+                        {
+                            if ( theMap.GetRangeDistance( this, pBldg ) <= pBldg->GetRange( ) )
+                            {
+                                CUnit* pOppo = NULL;
+                                if ( pBldgOwner->IsAI( ) )
+                                    pBldg->CheckAiOppo( this, &pOppo, FALSE );
+                                else
+                                {
+                                    int iDamageOppo = 0;
+                                    pBldg->CheckOppo( this, iDamageOppo, &pOppo );
+                                }
+                                if ( pOppo != NULL )
+                                    pBldg->SetOppo( this );
+                            }
+                        }
 
-		// if we're dying forget it
-		if (pVeh->GetFlags() & CUnit::dying)
-			continue;
+                        // AI spotting check
+                        if ( m_pdwPlyrsSee[pBldgOwner->GetPlyrNum( )] == 0 )
+                        {
+                            int spotRange = pBldg->GetSpottingRange( );
+                            if ( diffX <= spotRange && diffY <= spotRange )
+                            {
+                                if ( theMap.GetRangeDistance( this, pBldg ) <= spotRange )
+                                    IncSee( pBldg );
+                            }
+                        }
+                    }
+                }
+            }
 
-		// we don't do squat if its too far away
-		if ((! pVeh->GetOwner()->IsLocal ()) || (pVeh->GetOwner () == GetOwner ()) ||
-						((CHexCoord::Diff (_hex.X() - pVeh->GetPtHead().x/2) > MAX_SPOTTING) ||
-							(CHexCoord::Diff (_hex.Y() - pVeh->GetPtHead().y/2) > MAX_SPOTTING)))
-			continue;
+            // Process vehicles on this hex (check all 4 sub-hexes)
+            if ( units & ( CHex::ul | CHex::ur | CHex::ll | CHex::lr ) )
+            {
+                const BYTE subHexFlags[4]      = { CHex::ul, CHex::ur, CHex::ll, CHex::lr };
+                const int  subHexOffsets[4][2] = {
+                    { 0, 0 },  // ul:  upper-left
+                    { 1, 0 },  // ur:  upper-right
+                    { 0, 1 },  // ll: lower-left
+                    { 1, 1 }   // lr: lower-right
+                };
 
-		if ((pVeh->m_pUnitOppo == NULL) && (pVeh->GetRange () > 0))
-			if (theMap.GetRangeDistance (this, pVeh) <= pVeh->GetRange ())
-				{
-				int iDamageOppo = 0;
-				CUnit * pOppo = NULL;
-				if (pVeh->GetOwner()->IsAI ())
-					pVeh->CheckAiOppo (this, &pOppo, FALSE);
-				else
-					pVeh->CheckOppo (this, iDamageOppo, &pOppo);
-				if (pOppo != NULL)
-					pVeh->SetOppo (this);
-				}
+                for ( int i = 0; i < 4; i++ )
+                {
+                    // Check if this sub-hex has a vehicle
+                    if ( !( units & subHexFlags[i] ) )
+                        continue;
 
-		// check for AI spotting
-		if (m_pdwPlyrsSee [pVeh->GetOwner()->GetPlyrNum ()] == 0)
-			if ((abs (CHexCoord::Diff (_hex.X() - pVeh->GetPtHead().x/2)) <= pVeh->GetSpottingRange ()) &&
-						(abs (CHexCoord::Diff (_hex.Y() - pVeh->GetPtHead().y/2)) <= pVeh->GetSpottingRange ()))
-				{
-				int iLOS = theMap.LineOfSight (this, pVeh);
-				if ((iLOS >= 0) && (iLOS <= pVeh->GetSpottingRange ()))
-					IncSee (pVeh);
-				}
-		}
+                    // Compute subhex coordinates
+                    int     subX = hexCheck.X( ) * 2 + subHexOffsets[i][0];
+                    int     subY = hexCheck.Y( ) * 2 + subHexOffsets[i][1];
+                    CSubHex sub( subX, subY );
+
+                    CVehicle* pVeh = theVehicleHex._GetVehicle( sub );
+
+                    // Check vehicle exists, alive, and this subhex is its head (prevents processing same vehicle
+                    // multiple times)
+                    if ( pVeh && !( pVeh->GetFlags( ) & CUnit::dying ) && pVeh->GetPtHead( ) == sub )
+                    {
+                        CPlayer* pVehOwner = pVeh->GetOwner( );
+                        if ( pVehOwner->IsLocal( ) && pVehOwner != pMyOwner )
+                        {
+                            // Opportunity fire check
+                            if ( pVeh->m_pUnitOppo == NULL && pVeh->GetRange( ) > 0 )
+                            {
+                                if ( theMap.GetRangeDistance( this, pVeh ) <= pVeh->GetRange( ) )
+                                {
+                                    CUnit* pOppo = NULL;
+                                    if ( pVehOwner->IsAI( ) )
+                                        pVeh->CheckAiOppo( this, &pOppo, FALSE );
+                                    else
+                                    {
+                                        int iDamageOppo = 0;
+                                        pVeh->CheckOppo( this, iDamageOppo, &pOppo );
+                                    }
+                                    if ( pOppo != NULL )
+                                        pVeh->SetOppo( this );
+                                }
+                            }
+
+                            // AI spotting check
+                            if ( m_pdwPlyrsSee[pVehOwner->GetPlyrNum( )] == 0 )
+                            {
+                                int spotRange = pVeh->GetSpottingRange( );
+                                if ( diffX <= spotRange && diffY <= spotRange )
+                                {
+                                    int iLOS = theMap.LineOfSight( this, pVeh );
+                                    if ( iLOS >= 0 && iLOS <= spotRange )
+                                        IncSee( pVeh );
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
 }
 
 void CUnit::CheckOppo (CUnit * pTarget, int & iDamageOppo, CUnit * * ppOppo)

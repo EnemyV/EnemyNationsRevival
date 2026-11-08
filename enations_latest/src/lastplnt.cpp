@@ -5,91 +5,98 @@
 //
 //---------------------------------------------------------------------------
 
-
+#include "CdLoc.h"
+#include "cpufeatures.h"   // EnCpu — runtime ISA detection/dispatch (GH #8)
+#ifndef _WIN32
+#include <fcntl.h>     // open  — POSIX single-instance flock guard (see FindWindow site)
+#include <unistd.h>    // close, getuid
+#include <sys/file.h>  // flock
+#include <errno.h>     // errno    — report WHY the singleton lock could not be opened
+#include <string.h>    // strerror
+#endif
+#include "GameWindow.h"
+#include "en_hangdump.h"   // EnHangWatchdogStop (exit) + EnHangModalScope (native boxes)
+#include "SDL2Compositor.h"
+#include "SDL2Video.h"
+#include "SDL2MainMenu.h"
+#include "SDL2GameDialogs.h"
+#include "SDL2Options.h"
+#include "w22_settings.h"
+#include "ai.h"
+#include "area.h"
+#include "bitmaps.h"
+#include "bmbutton.h"
+#include "chat.h"
+#include "creatmul.inl"
+#include "creatsin.h"
+#include "datahash.h"
+//#include "dlgflic.h"
+#include "error.h"
+#include "join.h"
+#include "license.h"
+#include "pathservice.h"
+#include "racedata.h"
+#include "scenario.h"
+#include "sfx.h"
+#include "sprite.h"
 #include "stdafx.h"
-#include <new.h>
+#include "terrain.inl"
+
+#include <processenv.h>
+
 #include <ctype.h>
 #include <locale.h>
-
+#include <new.h>
 #include <windward.h>
 
+#ifndef __INCLUDE_THIS_LAST__
 #include "lastplnt.h"
-#include "creatsin.h"
-#include "join.h"
-#include "scenario.h"
-#include "racedata.h"
-#include "sprite.h"
-#include "options.h"
-#include "error.h"
-#include "ai.h"
-#include "chat.h"
-#include "bmbutton.h"
-#include "bitmaps.h"
-#include "sfx.h"
-#include "dlgflic.h"
-#include "area.h"
-#include "license.h"
-#include "tstsnds.h"
-#include "cdloc.h"
-#include "dlgreg.h"
-
-#include "terrain.inl"
-#include "creatmul.inl"
+#endif
+#include "cpuspeed.hpp"
 
 
 #ifdef _DEBUG
+
 #undef THIS_FILE
 static char BASED_CODE THIS_FILE[] = __FILE__;
 #endif
 #define new DEBUG_NEW
 
 
-#define USE_SMARTHEAP
-#ifdef USE_SMARTHEAP
-#include <smrtheap.h>
-unsigned MemDefaultPoolFlags = MEM_POOL_SERIALIZE;
-#endif
+
 
 extern HANDLE hRenderEvent;
-extern BOOL bDoSubclass;
+extern BOOL   bDoSubclass;
 
 
-CString GetDefaultApp ( char const *pExt, char const *pDef, char const *pCmdLine );
-LRESULT CALLBACK PerBarProc (HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam);
+std::string      GetDefaultApp( char const* pExt, char const* pDef, char const* pCmdLine );
+LRESULT CALLBACK PerBarProc( HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam );
 
 
-static int aiBtns[] = 	{ IDC_MAIN_CAMPAIGN,
-													IDC_MAIN_SINGLE,
-													IDC_MAIN_CREATE,
-													IDC_MAIN_JOIN,
-													IDC_MAIN_LOAD,
-													IDC_MAIN_LOAD_MUL,
-													IDC_MAIN_INTRO,
-													IDC_MAIN_CREDITS,
-													IDC_MAIN_OPTIONS,
-													IDCANCEL,
-													IDC_MINIMIZE };
-const int NUM_BTNS = sizeof (aiBtns) / sizeof (int);
+static int aiBtns[] = { IDC_MAIN_CAMPAIGN, IDC_MAIN_SINGLE,   IDC_MAIN_CREATE, IDC_MAIN_JOIN,
+                        IDC_MAIN_LOAD,     IDC_MAIN_LOAD_MUL, IDC_MAIN_INTRO,  IDC_MAIN_CREDITS,
+                        IDC_MAIN_OPTIONS,  IDCANCEL,          IDC_MINIMIZE };
+const int  NUM_BTNS = sizeof( aiBtns ) / sizeof( int );
 
 
 #ifdef _CHEAT
-BOOL _bShowRate = FALSE;
-BOOL _bClickAny = FALSE;
-BOOL _bMaxMaterials = FALSE;
-BOOL _bMaxRocket = FALSE;
-BOOL _bMaxPower = FALSE;
-BOOL _iFrameRate = 1;
-BOOL _bShowWorld = FALSE;
-BOOL _bShowStatus = FALSE;
-BOOL _bSeeAll = FALSE;
-BOOL _bShowPos = FALSE;
+BOOL _bShowRate       = FALSE;
+BOOL _bClickAny       = FALSE;
+BOOL _bMaxMaterials   = FALSE;
+BOOL _bMaxRocket      = FALSE;
+BOOL _bMaxPower       = FALSE;
+BOOL _iFrameRate      = 1;
+BOOL _bShowWorld      = FALSE;
+BOOL _bShowStatus     = FALSE;
+BOOL _bSeeAll         = FALSE;
+BOOL _bShowPos        = FALSE;
 BOOL _bShowAISelected = FALSE;
-int _iScenarioOn = -1;
+int  _iScenarioOn     = -1;
 #endif
 
 static char sCopyright[] = "Copyright (c) 1995 - 1997. Windward Studios, Inc. All Rights Reserved.";
 
-extern COLORREF GetOurSysClr (int iInd);
+extern COLORREF GetOurSysClr( int iInd );
 
 
 /////////////////////////////////////////////////////////////////////////////
@@ -98,245 +105,276 @@ extern COLORREF GetOurSysClr (int iInd);
 
 TRANS_FUNC prevFn = NULL;
 
-void trans_func (unsigned int u, EXCEPTION_POINTERS * pExp)
+void trans_func( unsigned int u, EXCEPTION_POINTERS* pExp )
 {
 
-	SE_Exception exp (u, pExp->ExceptionRecord->ExceptionAddress);
+    SE_Exception exp( u, pExp->ExceptionRecord->ExceptionAddress );
 
-	// get the call stack
-	memset ( exp.m_stack, 0, sizeof (exp.m_stack) );
+    // get the call stack
+    memset( exp.m_stack, 0, sizeof( exp.m_stack ) );
 
-	// no clean way to do this so we walk the stack looking for pointers to code
-	DWORD * pCall = (DWORD *) pExp->ContextRecord->Esp;
-	for (int iInd=0; iInd<NUM_EXCEP; pCall++)
-		{
-		// if the pointer is bad - we're done (we don't write but the stack is writeable)
-		if ( IsBadWritePtr (pCall, 4) )
-			break;
+    // no clean way to do this so we walk the stack looking for pointers to code
+#ifdef _WIN64
+    DWORD* pCall = (DWORD*)pExp->ContextRecord->Rsp;   // x64 stack pointer (Esp is 32-bit only)
+#else
+    DWORD* pCall = (DWORD*)pExp->ContextRecord->Esp;
+#endif
+    for ( int iInd = 0; iInd < NUM_EXCEP; pCall++ )
+    {
+        // if the pointer is bad - we're done (we don't write but the stack is writeable)
+        if ( IsBadWritePtr( pCall, 4 ) )
+            break;
 
-		// if it's code we save it (write because badcode only checks if can read)
-		if ( ( IsBadWritePtr ( (void *) * pCall, 4) ) && ( ! IsBadCodePtr ( (FARPROC) * pCall ) ) )
-			if ( (iInd < 3) || ((*pCall & 0x80000000) == 0) )
-				exp.m_stack [iInd++] = * pCall;
-		}
+        // if it's code we save it (write because badcode only checks if can read)
+        if ( ( IsBadWritePtr( (void*)(uintptr_t)*pCall, 4 ) ) && ( !IsBadCodePtr( (FARPROC)(uintptr_t)*pCall ) ) )
+            if ( ( iInd < 3 ) || ( ( *pCall & 0x80000000 ) == 0 ) )
+                exp.m_stack[iInd++] = *pCall;
+    }
 
-	throw exp;
+    throw exp;
 }
 
-void CatchNum (int iNum)
+void CatchNum( int iNum )
 {
+    fprintf( stderr, "[CatchNum] game exception %d - shutting the game down\n", iNum );
 
-	bDoSubclass = FALSE;
+    bDoSubclass = FALSE;
 
-	// turn the game off
-	theGame.SetAnim ( FALSE );
-	theGame.SetOper ( FALSE );
-	theGame.SetMsgs (FALSE);
-	theGame.EmptyQueue ();
+    // turn the game off
+    theGame.SetShouldAnimate(FALSE);
+    theGame.SetShouldOperate(FALSE);
+    theGame.SetShouldProcessMessages(FALSE);
+    theGame.EmptyQueue( );
 
-	// no message if quitting
-	if (iNum == ERR_TLP_QUIT)
-		return;
+    // no message if quitting
+    if ( iNum == ERR_TLP_QUIT )
+        return;
 
-	CString sMsg;
-	sMsg.LoadString (IDS_ERR_LOAD_1);
-	char sNum [20];
-	if ( iNum >= ERR_BASE_USER_ERROR )
-		iNum -= ERR_BASE_USER_ERROR;
-	else
-		iNum += 100;
-	itoa (iNum, sNum, 10);
-	csPrintf (&sMsg, (char const *) sNum);
-	AfxMessageBox (sMsg, MB_OK | MB_ICONSTOP);
+    char sNum[20];
+    if ( iNum >= ERR_BASE_USER_ERROR )
+        iNum -= ERR_BASE_USER_ERROR;
+    else
+        iNum += 100;
+    itoa( iNum, sNum, 10 );
+    std::string sMsg = strPrintf( EnLoadStdString( IDS_ERR_LOAD_1 ).c_str(), sNum );
+    EnMessageBox( sMsg.c_str(), MB_OK | MB_ICONSTOP );
 
-	bDoSubclass = TRUE;
+    bDoSubclass = TRUE;
 }
 
-void CatchSE ( SE_Exception e )
+void CatchSE( SE_Exception e )
 {
 
-	bDoSubclass = FALSE;
+    bDoSubclass = FALSE;
 
-	// turn the game off
-	theGame.SetAnim ( FALSE );
-	theGame.SetOper ( FALSE );
-	theGame.SetMsgs (FALSE);
-	theGame.EmptyQueue ();
+    // turn the game off
+    theGame.SetShouldAnimate(FALSE);
+    theGame.SetShouldOperate(FALSE);
+    theGame.SetShouldProcessMessages(FALSE);
+    theGame.EmptyQueue( );
 
-	CDlgStackDump dlg;
-	dlg.m_pe = &e;
-	dlg.m_sText.LoadString (IDS_ERR_LOAD_3);
+    std::string sDumpText = EnLoadStdString( IDS_ERR_LOAD_3 );
 
-	MEMORYSTATUS	ms;
-	ms.dwLength = sizeof (ms);
-	GlobalMemoryStatus( &ms );
-	const ONE_MEG = 1024 * 1024;
-	if ( ms.dwAvailPageFile/ONE_MEG < 8 )
-		{
-		CString sMsg;
-		sMsg.LoadString ( IDS_OUT_OF_MEMORY );
-		dlg.m_sText = sMsg + "\r\n" + dlg.m_sText;
-		}
+    MEMORYSTATUS ms;
+    ms.dwLength = sizeof( ms );
+    GlobalMemoryStatus( &ms );
+    const int ONE_MEG = 1024 * 1024;
+    if ( ms.dwAvailPageFile / ONE_MEG < 8 )
+    {
+        sDumpText = EnLoadStdString( IDS_OUT_OF_MEMORY ) + "\r\n" + sDumpText;
+    }
 
-	char sNum1 [20], sNum2[80], sNumS[5][20];
-	itoa (e.m_uEc, sNum1, 16);
-	switch ( (int) e.m_pExCode )
-		{
-		case STATUS_ACCESS_VIOLATION :
-			strcpy ( sNum2, "Access Violation" );
-			break;
-		case STATUS_IN_PAGE_ERROR :
-			strcpy ( sNum2, "Page Error" );
-			break;
-		case STATUS_FLOAT_INVALID_OPERATION :
-			strcpy ( sNum2, "FPU Invalid Op" );
-			break;
-		case STATUS_STACK_OVERFLOW :
-			strcpy ( sNum2, "Stack Overflow" );
-			break;
-		default:
-			itoa ((int) e.m_pExCode, sNum2, 16);
-			break;
-		}
-	for (int iOn=0; iOn<5; iOn++)
-		itoa (e.m_stack[iOn], sNumS[iOn], 16);
-	csPrintf (&dlg.m_sText, (char const *) VER_STRING, (char const *) sNum1, 
-																				(char const *) sNum2, (char const *) sNumS[0], 
-																				(char const *) sNumS[1], (char const *) sNumS[2], 
-																				(char const *) sNumS[3], (char const *) sNumS[4] );
-	try
-		{
-		dlg.DoModal ();
-		}
-	catch (...)
-		{
-		AfxMessageBox (dlg.m_sText, MB_OK | MB_ICONSTOP);
-		}
+    char sNum1[20], sNum2[80], sNumS[5][20];
+    itoa( e.m_uEc, sNum1, 16 );
+    switch ( (uint64_t)e.m_pExCode )
+    {
+    case STATUS_ACCESS_VIOLATION:
+        strcpy( sNum2, "Access Violation" );
+        break;
+    case STATUS_IN_PAGE_ERROR:
+        strcpy( sNum2, "Page Error" );
+        break;
+    case STATUS_FLOAT_INVALID_OPERATION:
+        strcpy( sNum2, "FPU Invalid Op" );
+        break;
+    case STATUS_STACK_OVERFLOW:
+        strcpy( sNum2, "Stack Overflow" );
+        break;
+    default:
+        itoa( (int)(intptr_t)e.m_pExCode, sNum2, 16 );   // NT exception codes fit 32 bits (display only)
+        break;
+    }
+    for ( int iOn = 0; iOn < 5; iOn++ ) itoa( e.m_stack[iOn], sNumS[iOn], 16 );
+    sDumpText = strPrintf( sDumpText.c_str(), VER_STRING, sNum1, sNum2,
+                           sNumS[0], sNumS[1], sNumS[2], sNumS[3], sNumS[4] );
+    {
+        EnHangModalScope modal;
+        ::MessageBoxA( NULL, sDumpText.c_str(), "Enemy Nations - Exception", MB_OK | MB_ICONSTOP );
+    }
 
-	bDoSubclass = TRUE;
+    bDoSubclass = TRUE;
 }
 
-void CatchOther ()
+#include <exception>
+#include <typeinfo>
+
+// Name the in-flight exception. Valid while a catch(...) handler is running, which
+// is the only place CatchOther is called from. A bare "Unknown error" told a tester
+// (and us) nothing; bad_alloc vs a game int-code vs something else are different bugs.
+static std::string DescribeCurrentException( )
 {
+    std::exception_ptr p = std::current_exception( );
+    if ( !p )
+        return "no active exception";
+    try
+    {
+        std::rethrow_exception( p );
+    }
+    catch ( const std::bad_alloc& e )   { return std::string( "std::bad_alloc: " ) + e.what( ); }
+    catch ( const std::exception& e )   { return std::string( typeid( e ).name( ) ) + ": " + e.what( ); }
+    catch ( int i )                     { return "int " + IntToStr( i ); }
+    // Raw `throw( ERR_* )` sites (world.cpp CreateEx, area.cpp, the CAI code) throw the
+    // ENUM type, which catch(int) does not catch — these were the anonymous "Unknown error".
+    catch ( Error e )                   { const char* s = GetWind22ErrString( e );
+                                          return ( s && s[0] ? std::string( s ) : "wind22 error" ) +
+                                                 " (" + IntToStr( (int)e ) + ")"; }
+    catch ( GameError e )               { return "game error " + IntToStr( (int)e - (int)ERR_BASE_USER_ERROR ); }
+    catch ( ... )                       { return "non-standard exception type"; }
+}
 
-	bDoSubclass = FALSE;
+void CatchOther( char const* pContext )
+{
+    std::string sWhat = DescribeCurrentException( );
 
-	// turn the game off
-	theGame.SetAnim ( FALSE );
-	theGame.SetOper ( FALSE );
-	theGame.SetMsgs (FALSE);
-	theGame.EmptyQueue ();
+    fprintf( stderr, "[CatchOther] unknown game exception (%s) - shutting the game down\n", sWhat.c_str( ) );
 
-	CString sMsg;
-	sMsg.LoadString (IDS_ERR_LOAD_2);
-	AfxMessageBox (sMsg, MB_OK | MB_ICONSTOP);
+    bDoSubclass = FALSE;
 
-	bDoSubclass = TRUE;
+    // turn the game off
+    theGame.SetShouldAnimate(FALSE);
+    theGame.SetShouldOperate(FALSE);
+    theGame.SetShouldProcessMessages(FALSE);
+    theGame.EmptyQueue( );
+
+    // Headline stays the shipped string; the detail lines are what a bug report needs.
+    std::string sMsg = EnLoadStdString( IDS_ERR_LOAD_2 );
+    sMsg += "\r\n\r\nException: " + sWhat;
+    if ( pContext && *pContext )
+        sMsg += "\r\n" + std::string( pContext );
+    sMsg += "\r\nVersion: " + std::string( VER_STRING );
+
+    OutputDebugStringA( ( "[CatchOther] " + sMsg + "\n" ).c_str( ) );
+    EnMessageBox( sMsg.c_str( ), MB_OK | MB_ICONSTOP );
+
+    bDoSubclass = TRUE;
 }
 
 
-LRESULT CALLBACK RedTextProc (HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
+LRESULT CALLBACK RedTextProc( HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam )
 {
 
-	switch (uMsg)
-		{
-		case WM_PAINT : {
-			PAINTSTRUCT ps;
-			::BeginPaint (hWnd, &ps);
-			RECT rect;
-			char sText[20];
-			::GetClientRect (hWnd, &rect);
-			::GetWindowText (hWnd, sText, 19);
-			::SetBkColor (ps.hdc, RGB (192, 192, 192));
-			if (sText[0] == '-')
-				::SetTextColor (ps.hdc, RGB (255, 0, 0));
-			else
-				::SetTextColor (ps.hdc, RGB (0, 0, 0));
-			::SetTextAlign (ps.hdc, TA_RIGHT);
-			::ExtTextOut (ps.hdc, rect.right, 0, ETO_CLIPPED | ETO_OPAQUE,
-																&rect, sText, strlen (sText), NULL);
-			::EndPaint (hWnd, &ps);
-			return (0); }
+    switch ( uMsg )
+    {
+    case WM_PAINT: {
+        PAINTSTRUCT ps;
+        ::BeginPaint( hWnd, &ps );
+        RECT rect;
+        char sText[20];
+        ::GetClientRect( hWnd, &rect );
+        ::GetWindowTextA( hWnd, sText, 19 );
+        ::SetBkColor( ps.hdc, RGB( 192, 192, 192 ) );
+        if ( sText[0] == '-' )
+            ::SetTextColor( ps.hdc, RGB( 255, 0, 0 ) );
+        else
+            ::SetTextColor( ps.hdc, RGB( 0, 0, 0 ) );
+        ::SetTextAlign( ps.hdc, TA_RIGHT );
+        ::ExtTextOut( ps.hdc, rect.right, 0, ETO_CLIPPED | ETO_OPAQUE, &rect, sText, strlen( sText ), NULL );
+        ::EndPaint( hWnd, &ps );
+        return ( 0 );
+    }
 
-		case WM_SETTEXT : {
-			LPCSTR pStr = (LPCSTR) lParam;
-			if (pStr != NULL)
-				{
-				HDC hdc = ::GetDC (hWnd);
-				RECT rect;
-				::GetClientRect (hWnd, &rect);
-				::SetBkColor (hdc, RGB (192, 192, 192));
-				if (*pStr == '-')
-					::SetTextColor (hdc, RGB (255, 0, 0));
-				else
-					::SetTextColor (hdc, RGB (0, 0, 0));
-				::SetTextAlign (hdc, TA_RIGHT);
-				::ExtTextOut (hdc, rect.right, 0, ETO_CLIPPED | ETO_OPAQUE,
-																	&rect, pStr, strlen (pStr), NULL);
-				::ReleaseDC (hWnd, hdc);
-				}
+    case WM_SETTEXT: {
+        LPCSTR pStr = (LPCSTR)lParam;
+        if ( pStr != NULL )
+        {
+            HDC  hdc = ::GetDC( hWnd );
+            RECT rect;
+            ::GetClientRect( hWnd, &rect );
+            ::SetBkColor( hdc, RGB( 192, 192, 192 ) );
+            if ( *pStr == '-' )
+                ::SetTextColor( hdc, RGB( 255, 0, 0 ) );
+            else
+                ::SetTextColor( hdc, RGB( 0, 0, 0 ) );
+            ::SetTextAlign( hdc, TA_RIGHT );
+            ::ExtTextOut( hdc, rect.right, 0, ETO_CLIPPED | ETO_OPAQUE, &rect, pStr, strlen( pStr ), NULL );
+            ::ReleaseDC( hWnd, hdc );
+        }
 
-			return (DefWindowProc (hWnd, uMsg, wParam, lParam)); }
-		}
+        return ( DefWindowProc( hWnd, uMsg, wParam, lParam ) );
+    }
+    }
 
-	return (DefWindowProc (hWnd, uMsg, wParam, lParam));
+    return ( DefWindowProc( hWnd, uMsg, wParam, lParam ) );
 }
 
 /////////////////////////////////////////////////////////////////////////////
 // CConquerApp
 
-BEGIN_MESSAGE_MAP(CConquerApp, CWinApp)
-	//{{AFX_MSG_MAP(CConquerApp)
-	//}}AFX_MSG_MAP
-END_MESSAGE_MAP()
+BEGIN_MESSAGE_MAP( CConquerApp, CWinApp )
+//{{AFX_MSG_MAP(CConquerApp)
+//}}AFX_MSG_MAP
+END_MESSAGE_MAP( )
 
 /////////////////////////////////////////////////////////////////////////////
 // CConquerApp construction
 
-CConquerApp::CConquerApp() : m_MapClrFmt (CColorFormat::DEPTH_EIGHT),
-								m_OtherClrFmt (CColorFormat::DEPTH_EIGHT)
+CConquerApp::CConquerApp( ): m_MapClrFmt( CColorFormat::DEPTH_EIGHT ), 
+                m_OtherClrFmt( CColorFormat::DEPTH_EIGHT )
 {
 
-	m_bInGame = FALSE;
-	m_pdlgRelations = NULL;
-	m_pdlgFile = NULL;
-	m_pdlgRsrch = NULL;
-	m_hAccel = NULL;
-	m_hLibLang = NULL;
-	m_iLangCode = 0;
-	m_piLangAvail = NULL;
-	m_iNumLang = 0;
-	m_bSetSysColors = FALSE;
+    m_bInGame       = FALSE;
+    m_bWorldTearingDown = FALSE;
+    m_hAccel        = NULL;
+    m_hLibLang      = NULL;
+    m_iLangCode     = 0;
+    m_piLangAvail   = NULL;
+    m_iNumLang      = 0;
+    m_bSetSysColors = FALSE;
 
-	m_bSubClass = FALSE;
-	m_iRequireCD = FALSE;
-	m_iMultVoices = TRUE;
-	m_iHaveIntro = TRUE;
-	m_pdlgPause = NULL;
-	m_pdlgChat = NULL;
-	
-	m_pLogFile = NULL;
+    m_bSubClass   = FALSE;
+    m_iRequireCD  = FALSE;
+    m_iMultVoices = TRUE;
+    m_iHaveIntro  = TRUE;
+    m_pdlgPause   = NULL;
 
-	m_dwNextRender = m_dwMaxNextRender = 0;
+    m_pLogFile = NULL;
 
-	// 0 == NoEvent
-	// 1 == Event
-	// 2 == Just Say No
-	m_bUseEvents = W32s != iWinType;
+    m_dwNextRender = m_dwMaxNextRender = 0;
 
-	m_iRestoreRes = FALSE;
-	m_iOldWidth = 640;
-	m_iOldHeight = 480;
-	m_iOldDepth = 8;
+    // 0 == NoEvent
+    // 1 == Event
+    // 2 == Just Say No
+    m_bUseEvents = W32s != iWinType;
+
+    m_iRestoreRes = FALSE;
+    m_iOldWidth   = 640;
+    m_iOldHeight  = 480;
+    m_iOldDepth   = 8;
 }
 
-CConquerApp::~CConquerApp()
+CConquerApp::~CConquerApp( )
 {
 
-	CRaceDef::Close ( ptheRaces );
-	ptheRaces = NULL;
+    CRaceDef::Close( ptheRaces );
+    ptheRaces = NULL;
 
-	CGlobalSubClass::UnSubClass();
+    CGlobalSubClass::UnSubClass( );
+
+    // Phase 4c prep: HFONT cleanup (was automatic via CFont dtor)
+    if ( m_Fnt )     { ::DeleteObject( m_Fnt );     m_Fnt = NULL; }
+    if ( m_FntRD )   { ::DeleteObject( m_FntRD );   m_FntRD = NULL; }
+    if ( m_FntDesc ) { ::DeleteObject( m_FntDesc ); m_FntDesc = NULL; }
+    if ( m_FntCost ) { ::DeleteObject( m_FntCost ); m_FntCost = NULL; }
 }
 
 /////////////////////////////////////////////////////////////////////////////
@@ -345,2775 +383,2723 @@ CConquerApp::~CConquerApp()
 CConquerApp theApp;
 
 
-int _excep_new_handler ( size_t )
+int _excep_new_handler( size_t size )
 {
+    // Log the failed allocation. The size is the SINGLE request that exceeded
+    // available address space — for a 32-bit process this is almost always a
+    // corrupted count read from a save / archive (e.g. 0xFFFFFFFF interpreted
+    // as a length). Capturing the size and a stack snapshot here makes it
+    // possible to pinpoint the bad reader instead of guessing.
+    char head[256];
+    _snprintf_s( head, sizeof( head ), _TRUNCATE,
+                 "[bad_alloc] requested %zu bytes (%.2f MB)",
+                 size, (double)size / (1024.0 * 1024.0) );
+    ::OutputDebugStringA( head );
+    ::OutputDebugStringA( "\n" );
+    theApp.Log( head );
 
-	AfxMessageBox (IDS_NO_MEMORY, MB_OK | MB_SYSTEMMODAL | MB_ICONSTOP);
-	::PostQuitMessage (0);
-	throw;
-	return (0);
+#ifdef _WIN32
+    // Brief stack snapshot — symbols only resolve if dbghelp + PDB present,
+    // but raw module+offset is still searchable in the map file.
+    void*  frames[ 24 ];
+    USHORT count = ::CaptureStackBackTrace( 1, 24, frames, nullptr );
+    for ( USHORT i = 0; i < count; ++i )
+    {
+        HMODULE hMod = NULL;
+        char line[ 256 ];
+        if ( ::GetModuleHandleExA( GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS |
+                                   GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
+                                   (LPCSTR)frames[ i ], &hMod ) && hMod )
+        {
+            char modPath[ MAX_PATH ] = { 0 };
+            ::GetModuleFileNameA( hMod, modPath, sizeof( modPath ) );
+            const char* base = strrchr( modPath, '\\' );
+            base = base ? base + 1 : modPath;
+            uintptr_t off = (uintptr_t)frames[ i ] - (uintptr_t)hMod;
+            _snprintf_s( line, sizeof( line ), _TRUNCATE,
+                         "  [%02u] %p  %s+0x%zX", i, frames[ i ], base, (size_t)off );
+        }
+        else
+        {
+            _snprintf_s( line, sizeof( line ), _TRUNCATE,
+                         "  [%02u] %p", i, frames[ i ] );
+        }
+        ::OutputDebugStringA( line );
+        ::OutputDebugStringA( "\n" );
+        theApp.Log( line );
+    }
+#endif
+
+    // Show the size in the message box so users can flag huge requests
+    // (e.g. 4 GB) immediately instead of just seeing a generic OOM.
+    char msg[ 512 ];
+    std::string stdMsg = EnLoadStdString( IDS_NO_MEMORY );
+    _snprintf_s( msg, sizeof( msg ), _TRUNCATE,
+                 "%s\n\n(Requested %zu bytes / %.2f MB. See log for stack.)",
+                 stdMsg.c_str(), size, (double)size / (1024.0 * 1024.0) );
+    EnMessageBox( msg, MB_OK | MB_SYSTEMMODAL | MB_ICONSTOP );
+    ::PostQuitMessage( 0 );
+    throw;
+    return ( 0 );
 }
 
 /////////////////////////////////////////////////////////////////////////////
 // CConquerApp initialization
 
-	const int MEM_NEEDED_BASE = 60;
-	const int MEM_NEEDED_8_BIT_ZOOM_0 = 150;
-	const int MEM_NEEDED_MUSIC_MIXED = 70;
-	const int MEM_NEEDED_MUSIC_DIGITAL = 80;
-	const int MEM_PHYS_NEEDED_16_BIT = 16;
-	const int MEM_NEEDED_16_BIT = 130;
-	const int MEM_NEEDED_16_BIT_ZOOM_0 = 300;
-	const int MEM_PHYS_NEEDED_24_BIT = 24;
-	const int MEM_NEEDED_24_BIT = 180;
-	const int MEM_NEEDED_24_BIT_ZOOM_0 = 450;
-	const int MEM_PHYS_NEEDED_32_BIT = 32;
-	const int MEM_NEEDED_32_BIT = 240;
-	const int MEM_NEEDED_32_BIT_ZOOM_0 = 600;
+const int MEM_NEEDED_BASE          = 60;
+const int MEM_NEEDED_8_BIT_ZOOM_0  = 150;
+const int MEM_NEEDED_MUSIC_MIXED   = 70;
+const int MEM_NEEDED_MUSIC_DIGITAL = 80;
+const int MEM_PHYS_NEEDED_16_BIT   = 16;
+const int MEM_NEEDED_16_BIT        = 130;
+const int MEM_NEEDED_16_BIT_ZOOM_0 = 300;
+const int MEM_PHYS_NEEDED_24_BIT   = 24;
+const int MEM_NEEDED_24_BIT        = 180;
+const int MEM_NEEDED_24_BIT_ZOOM_0 = 450;
+const int MEM_PHYS_NEEDED_32_BIT   = 32;
+const int MEM_NEEDED_32_BIT        = 240;
+const int MEM_NEEDED_32_BIT_ZOOM_0 = 600;
 
-void CConquerApp::Log (char const * pText)
+
+void CConquerApp::Log( char const* pText )
 {
+#ifdef LOGGINGON
+    OutputDebugStringA( pText);
+    OutputDebugStringA( "\n" );
+#endif
+    if ( m_pLogFile == NULL )
+        return;
 
-	if ( m_pLogFile == NULL )
-		return;
+    // elim any existing \n
+    int         iLen = strlen( pText );
+    char const* pEnd = pText + iLen - 1;
+    while ( ( iLen >= 1 ) && ( ( *pEnd == '\n' ) || ( *pEnd == '\r' ) ) )
+    {
+        pEnd--;
+        iLen--;
+    }
 
-	// elim any existing \n
-	int iLen = strlen ( pText );
-	char const * pEnd = pText + iLen - 1;
-	while ( (iLen >= 1) && ((*pEnd == '\n') || (*pEnd == '\r')) )
-		{
-		pEnd --;
-		iLen --;
-		}
+    fwrite( pText, 1, iLen, m_pLogFile );
+    fwrite( "\r\n", 1, 2, m_pLogFile );
 
-	m_pLogFile->Write ( pText, iLen );
-	m_pLogFile->Write ( "\r\n", 2 );
-
-	m_pLogFile->Flush ();
+    fflush( m_pLogFile );
 }
 
-BOOL CConquerApp::InitInstance()
+BOOL CConquerApp::InitInstance( )
 {
-
-#ifdef USE_SMARTHEAP
-	MemRegisterTask ();
-	MemSetErrorHandler ( NULL );
+#ifdef LOGGINGON
+    OutputDebugStringA( "InitInstance\n" );
 #endif
 
-	InitWindwardLib1 (this);
+    // Wire the "locate the data file" picker. wind22 throws ERR_DATAFILE_OPEN when
+    // it cannot open the .dat and retries with whatever this returns. Registered
+    // here because wind22 sits below the game UI and must not include it.
+    // NOTE: this runs at theDataFile.Init (~line 922) but m_gameWindow is not
+    // created until ~1495, so an SDL2 dialog is not available yet. Use the OS
+    // picker, which needs no game state.
+    SetLocateDataFileHandler( []( const char* pszWanted, char* pszOut, int cbOut ) -> bool
+    {
+#ifdef _WIN32
+        EnHangModalScope modal;   // the box + OS picker below run their own loops
+        // Ask first: an unattended/harness run must not block on a modal dialog.
+        CString sMsg;
+        sMsg.Format( "ENations.dat could not be found.\n\nLooked for:\n%s\n\n"
+                     "Locate it now?", pszWanted ? pszWanted : "" );
+        if ( ::MessageBoxA( NULL, sMsg, "Enemy Nations", MB_YESNO | MB_ICONWARNING ) != IDYES )
+            return false;
 
-	WriteProfileString ( "ADPCM", "Error", "OK" );
+        char szFile[ 1024 ] = { 0 };
+        strcpy( szFile, "ENations.dat" );
+        OPENFILENAMEA ofn = { 0 };
+        ofn.lStructSize = sizeof( ofn );
+        ofn.hwndOwner   = NULL;
+        ofn.lpstrFilter = "Enemy Nations data (ENations.dat)\0ENations.dat\0"
+                          "Data files (*.dat)\0*.dat\0All files (*.*)\0*.*\0";
+        ofn.lpstrFile   = szFile;
+        ofn.nMaxFile    = sizeof( szFile );
+        ofn.lpstrTitle  = "Locate ENations.dat";
+        ofn.Flags       = OFN_FILEMUSTEXIST | OFN_PATHMUSTEXIST | OFN_NOCHANGEDIR;
+        if ( !::GetOpenFileNameA( &ofn ) )
+            return false;
+        if ( !szFile[ 0 ] || (int)strlen( szFile ) >= cbOut )
+            return false;
+        strcpy( pszOut, szFile );
+        return true;
+#else
+        // POSIX has no OS picker we can call this early (SDL2 has no file dialog
+        // and the game window does not exist yet). Returning false leaves the
+        // clean "could not open" failure + log line. Needs zenity/kdialog on
+        // Linux and NSOpenPanel on mac.
+        (void)pszWanted; (void)pszOut; (void)cbOut;
+        return false;
+#endif
+    } );
 
-	if ( GetProfileInt ( "Advanced", "Log", 0 ) )
-		{
-		AfxMessageBox ( IDS_EN_LOGGING, MB_OK | MB_ICONINFORMATION );
-		m_pLogFile = new CFile ();
-		CString sName = GetProfileString ( "Advanced", "LogName", GameLogFile );
-		if ( m_pLogFile->Open (sName, CFile::modeCreate | CFile::modeWrite | CFile::shareDenyWrite) == 0 )
-			{
-			m_pLogFile->Close ();
-			delete m_pLogFile;
-			m_pLogFile = NULL;
-			}
-		else
-			{
-			time_t t;
-			time ( &t );
-			struct tm * _now = localtime ( &t );
-			Log ( asctime ( _now ) );
-			Log ( VER_STRING );
-			}
-		}
-	else
-		if ( ::GetPrivateProfileInt ( "vdmplay", "UseLogFile", 0, "vdmplay.ini" ) )
-			AfxMessageBox ( IDS_VP_LOGGING, MB_OK | MB_ICONINFORMATION );
+    // FIRST thing, before anything can fail: record what this CPU supports.
+    // GH #8 was a silent illegal-instruction death on pre-AVX2 hardware with
+    // nothing in any log to say so — the user saw the splash and then nothing.
+    // Logging the ISA level here means the next "it just closes" report arrives
+    // with the one fact needed to classify it. Also primes the EnCpu cache
+    // before any dispatch can consult it.
+    EnCpu::LogFeatures( );
 
-	WriteProfileString ( "Advanced", "Version", VER_STRING );
+    // Set application name first (used by SetRegistryKey internally)
+    m_pszAppName = _tcsdup( _T("Second Chance") );
+    // this redirects profile strings to HKEY_CURRENT_USER
+    SetRegistryKey( _T("Second Chance") );
 
-	// over-ride default event method
-	m_bUseEvents = GetProfileInt ( "Advanced", "Events", m_bUseEvents );
-	m_bPauseOnAct = GetProfileInt ( "Advanced", "Pause", TRUE );
+    InitWindwardLib1( this );
 
-	// load the correct language
-	m_iLangCode = GetProfileInt ( "Advanced", "Language", 
-										PRIMARYLANGID ( LANGIDFROMLCID ( ::GetUserDefaultLCID () ) ) );
-	CString sLib = "ENLang" + IntToCString ( m_iLangCode ) + ".DLL";
-	if ( (m_hLibLang = LoadLibrary ( sLib )) != NULL )
-		AfxSetResourceHandle ( m_hLibLang );
+    
 
-	// init critical section (before maybe exiting below)
-	memset (&cs, 0, sizeof (cs));
-	InitializeCriticalSection (&cs);
-	hRenderEvent = CreateEvent ( NULL, TRUE, FALSE, "RenderEvent" );
 
-	m_sAppName.LoadString (IDS_MAIN_TITLE);
+    EnWriteProfileString( "ADPCM", "Error", "OK" );
 
-	// get the CPU speed (needed before screen res)
-	if ( (m_iCpuSpeed = GetProfileInt ("Advanced", "CPUspeed", 0)) < 60 )
-		{
-		BOOL bGotSpeed = FALSE;
-		SYSTEM_INFO si;
-		::GetSystemInfo ( &si );
+    if ( EnGetProfileInt( "Advanced", "Log", 0 ) )
+    {
+        EnMessageBox( IDS_EN_LOGGING, MB_OK | MB_ICONINFORMATION );
+        std::string sName = EnGetProfileStdString( "Advanced", "LogName", GameLogFile );
+        m_pLogFile = fopen( sName.c_str(), "wb" );  // Phase 4c prep — replaces CFile
+        if ( m_pLogFile != NULL )
+        {
+            time_t t;
+            time( &t );
+            struct tm* _now = localtime( &t );
+            Log( asctime( _now ) );
+            Log( VER_STRING );
+        }
+    }
+    else if ( ::GetPrivateProfileInt( "vdmplay", "UseLogFile", 0, "vdmplay.ini" ) )
+        EnMessageBox( IDS_VP_LOGGING, MB_OK | MB_ICONINFORMATION );
 
-		if ( (si.wProcessorArchitecture == PROCESSOR_ARCHITECTURE_INTEL) && (si.wProcessorLevel >= 5) )
-			{
-			// in case processor can't handle rdtsc
-			try
-				{
-				static int dwStart, dwHigh, dwEnd;
-				m_iCpuSpeed = INT_MAX;
-				for (int iTry=0; iTry<4; iTry++)
-					{
-					::Sleep (10);
+    EnWriteProfileString( "Advanced", "Version", VER_STRING );
 
-					// get the clock count
-					__asm	
-						{
-						_emit 0fh
-						_emit 31h	// rdtsc
-						mov [dwStart], eax
-						mov [dwHigh], edx
-						}
+    // over-ride default event method
+    m_bUseEvents  = EnGetProfileInt( "Advanced", "Events", m_bUseEvents );
+    m_bPauseOnAct = EnGetProfileInt( "Advanced", "Pause", TRUE );
 
-					// wait 250 ms
-					DWORD dwTime = timeGetTime () + 250;
-					while ( timeGetTime () < dwTime )
-						;
+    // load the correct language
+    m_iLangCode  = EnGetProfileInt( "Advanced", "Language", PRIMARYLANGID( LANGIDFROMLCID( ::GetUserDefaultLCID( ) ) ) );
+    std::string sLib = "ENLang" + IntToStr( m_iLangCode ) + ".DLL";
+    if ( ( m_hLibLang = LoadLibrary( sLib.c_str() ) ) != NULL )
+        AfxSetResourceHandle( m_hLibLang );
 
-					__asm	
-						{
-						_emit 0fh
-						_emit 31h	// rdtsc
-						mov [dwEnd], eax
-						sub [dwHigh], edx
-						}
+    // init critical section (before maybe exiting below)
+    memset( &cs, 0, sizeof( cs ) );
+    InitializeCriticalSection( &cs );
+    hRenderEvent = CreateEvent( NULL, TRUE, FALSE, "RenderEvent" );
 
-					if ( dwHigh == 0 )
-						{
-						int iTime = dwEnd - dwStart;
-						m_iCpuSpeed = __min ( iTime, m_iCpuSpeed );
-						}
-					}
-				m_iCpuSpeed = ( (m_iCpuSpeed >> 12) * 133 + (0x1FAD / 2) ) / 0x1FAD;
-				bGotSpeed = TRUE;
-				}
+    m_sAppName = EnLoadStdString( IDS_MAIN_TITLE );
 
-			catch (...)
-				{
-				}
-			}
+    // Get CPU Speed
+    CPUInfo cpu;
+    double  mhz = cpu.get_cpu_mhz( );
 
-		if ( ! bGotSpeed )
-			{
-			m_iCpuSpeed = INT_MAX;
-			int iPri = GetThreadPriority ();
-			::Sleep (100);
+    // get the CPU speed (needed before screen res)
+    m_iCpuSpeed = mhz;
 
-			for (int iTry=0; iTry<16; iTry++)
-				{
-				SetThreadPriority ( THREAD_PRIORITY_HIGHEST );
-				::Sleep (10);
-				DWORD dwStart = timeGetTime ();
-				_asm
-					{
-					push	ebx
-					mov	ecx, 100000h
-					jmp	_flush2
-_flush2:
-					mov eax, 01234h
-					mov edx, 10h
-					mov	ebx, 100
-					div ebx
-					div	ebx
-					loop	_flush2
-					pop	ebx
-					}
-				DWORD dwTime = timeGetTime () - dwStart;
-				SetThreadPriority ( iPri );
-				::Sleep (10);
-				m_iCpuSpeed = __min ( m_iCpuSpeed, (int) dwTime );
-				}
-		
-			m_iCpuSpeed = __max ( 1, m_iCpuSpeed );
-			m_iCpuSpeed = ( 133 * 703 + 351 ) / m_iCpuSpeed;
-			}
-		}
-	m_iCpuSpeed = __max ( 60, m_iCpuSpeed );
+    // if we can't switch to 640x480 then we punt on all of this
+    if ( iWinType != W32s )
+    {
+#ifdef LOGGINGON
+        OutputDebugStringA( "iWinType != W32s" );
+#endif
+        DEVMODE dev;
+        memset( &dev, 0, sizeof( dev ) );
+        dev.dmPelsWidth  = 640;
+        dev.dmPelsHeight = 480;
+        dev.dmSize       = sizeof( dev );
+        dev.dmFields     = DM_BITSPERPEL | DM_PELSWIDTH | DM_PELSHEIGHT;
+        dev.dmBitsPerPel = 8;
 
-	// if we can't switch to 640x480 then we punt on all of this
-	if ( iWinType != W32s )
-		{
-		DEVMODE dev;
-		memset ( &dev, 0, sizeof (dev) );
-		dev.dmPelsWidth = 640;
-		dev.dmPelsHeight = 480;
-		dev.dmSize = sizeof (dev);
-		dev.dmFields = DM_BITSPERPEL | DM_PELSWIDTH | DM_PELSHEIGHT;
-		dev.dmBitsPerPel = 8;
+        LONG lRtn = ChangeDisplaySettings( &dev, CDS_TEST );
+        char sBuf[80];
+        sprintf( sBuf, "ChangeDisplaySettings (test) = %d", lRtn );
+        Log( sBuf );
+        if ( lRtn == DISP_CHANGE_SUCCESSFUL )
+        {
+            // do we set the screen resolution?
+            int iRes     = EnGetProfileInt( "Advanced", "ScreenResolution", 0 );
+            m_iOldWidth  = GetSystemMetrics( SM_CXSCREEN );
+            m_iOldHeight = GetSystemMetrics( SM_CYSCREEN );
+            HDC hdc      = GetDC( NULL );
+            m_iOldDepth  = GetDeviceCaps( hdc, BITSPIXEL ) * GetDeviceCaps( hdc, PLANES );
+            ReleaseDC( NULL, hdc );
 
-		LONG lRtn = ChangeDisplaySettings ( &dev, CDS_TEST );
-		char sBuf [80];
-		sprintf ( sBuf, "ChangeDisplaySettings (test) = %d", lRtn );
-		Log ( sBuf );
-		if ( lRtn == DISP_CHANGE_SUCCESSFUL )
-			{
-			// do we set the screen resolution?
-			int iRes = GetProfileInt ( "Advanced", "ScreenResolution", 0 );
-			m_iOldWidth = GetSystemMetrics (SM_CXSCREEN);
-			m_iOldHeight = GetSystemMetrics (SM_CYSCREEN);
-			HDC hdc = GetDC (NULL);
-			m_iOldDepth = GetDeviceCaps (hdc, BITSPIXEL) * GetDeviceCaps (hdc, PLANES);
-			ReleaseDC (NULL, hdc);
+            // get best res
+            dev.dmPelsWidth  = 640;
+            dev.dmPelsHeight = 480;
+            int   iBest      = 2;
+            char* pRes       = "640x480x8";
+            if ( m_iCpuSpeed > 100 )  // 800x600
+            {
+                iBest            = 3;
+                pRes             = "800x600x8";
+                dev.dmPelsWidth  = 800;
+                dev.dmPelsHeight = 600;
+                if ( m_iCpuSpeed > 130 )  // 1024x768
+                {
+                    iBest            = 4;
+                    pRes             = "1024x768x8";
+                    dev.dmPelsWidth  = 1024;
+                    dev.dmPelsHeight = 768;
+                    if ( m_iCpuSpeed > 160 )  // 1280x1024
+                        iBest = 5;
+                }
+            }
 
-			// get best res
-			dev.dmPelsWidth = 640;
-			dev.dmPelsHeight = 480;
-			int iBest = 2;
-			char * pRes = "640x480x8";
-			if ( m_iCpuSpeed > 100 )		// 800x600
-				{
-				iBest = 3;
-				pRes = "800x600x8";
-				dev.dmPelsWidth = 800;
-				dev.dmPelsHeight = 600;
-				if ( m_iCpuSpeed > 130 )	// 1024x768
-					{
-					iBest = 4;
-					pRes = "1024x768x8";
-					dev.dmPelsWidth = 1024;
-					dev.dmPelsHeight = 768;
-					if ( m_iCpuSpeed > 160 )// 1280x1024
-						iBest = 5;
-					}
-				}
+            sprintf( sBuf, "ChangeDisplaySettings ScreenResolution=%d, Best=%d", iRes, iBest );
+            Log( sBuf );
 
-			sprintf ( sBuf, "ChangeDisplaySettings ScreenResolution=%d, Best=%d", iRes, iBest );
-			Log ( sBuf );
+            // if we are not on use native OR native is ok - no message
+            BOOL bNativeOk =
+                ( m_iOldWidth * m_iOldHeight * ( ( m_iOldDepth + 7 ) / 8 ) ) / m_iCpuSpeed <= ( 640 * 480 ) / 60;
+            if ( ( iBest < 5 ) && ( iRes == 0 ) && !bNativeOk )
+            {
+                std::string sRes = IntToStr( m_iOldWidth ) + "x" + IntToStr( m_iOldHeight ) + "x" +
+                                   IntToStr( m_iOldDepth );
+                std::string sMsg = strPrintf( EnLoadStdString( IDS_KILLER_RES ).c_str(),
+                                              sRes.c_str(), pRes );
+                if ( EnMessageBoxOnce( sMsg.c_str(), MB_YESNO | MB_ICONSTOP | MB_TASKMODAL, "Warnings", "ScreenRes", IDNO ) == IDYES )
+                    iRes = iBest;
+            }
+            else if ( iRes == 1 )
+                iRes = iBest;
 
-			// if we are not on use native OR native is ok - no message
-			BOOL bNativeOk = ( m_iOldWidth * m_iOldHeight * ((m_iOldDepth + 7) / 8) ) /
-																				m_iCpuSpeed <= ( 640 * 480 ) / 60;
-			if ( (iBest < 5) && (iRes == 0) && ! bNativeOk )
-				{
-				CDlgMsg dlg;
-				CString sMsg;
-				sMsg.LoadString ( IDS_KILLER_RES );
-				CString sRes = IntToCString (m_iOldWidth) + "x" + IntToCString (m_iOldHeight) +
-																			"x" + IntToCString (m_iOldDepth);
-				csPrintf (&sMsg, (char const *) sRes, pRes);
-				if ( dlg.MsgBox (sMsg, MB_YESNO | MB_ICONSTOP | MB_TASKMODAL, "Warnings", "ScreenRes", IDNO ) == IDYES)
-					iRes = iBest;
-				}
-			else
-				if ( iRes == 1 )
-					iRes = iBest;
+            // ok - we change if iRes is 2 - 4
+            if ( ( 2 <= iRes ) && ( iRes <= 4 ) )
+            {
+                switch ( iRes )
+                {
+                case 3:
+                    dev.dmPelsWidth  = 800;
+                    dev.dmPelsHeight = 600;
+                    break;
+                case 4:
+                    dev.dmPelsWidth  = 1024;
+                    dev.dmPelsHeight = 768;
+                    break;
+                default:
+                    dev.dmPelsWidth  = 640;
+                    dev.dmPelsHeight = 480;
+                    break;
+                }
 
-			// ok - we change if iRes is 2 - 4
-			if ( (2 <= iRes) && (iRes <= 4) )
-				{
-				switch ( iRes )
-					{
-					case 3 :
-						dev.dmPelsWidth = 800;
-						dev.dmPelsHeight = 600;
-						break;
-					case 4 :
-						dev.dmPelsWidth = 1024;
-						dev.dmPelsHeight = 768;
-						break;
-					default:
-						dev.dmPelsWidth = 640;
-						dev.dmPelsHeight = 480;
-						break;
-					}
+                m_iRestoreRes    = TRUE;
+                dev.dmSize       = sizeof( dev );
+                dev.dmFields     = DM_BITSPERPEL | DM_PELSWIDTH | DM_PELSHEIGHT;
+                dev.dmBitsPerPel = 8;
 
-				m_iRestoreRes = TRUE;
-				dev.dmSize = sizeof (dev);
-				dev.dmFields = DM_BITSPERPEL | DM_PELSWIDTH | DM_PELSHEIGHT;
-				dev.dmBitsPerPel = 8;
-				
-				LONG lRtn = ChangeDisplaySettings ( &dev, 0 );
-				sprintf ( sBuf, "ChangeDisplaySettings (%dx%dx%d) = %d", 
-													dev.dmPelsWidth, dev.dmPelsHeight, dev.dmBitsPerPel, lRtn );
-				Log ( sBuf );
-				}
-			}
-		}
+                LONG lRtn = ChangeDisplaySettings( &dev, 0 );
+                sprintf( sBuf, "ChangeDisplaySettings (%dx%dx%d) = %d", dev.dmPelsWidth, dev.dmPelsHeight,
+                         dev.dmBitsPerPel, lRtn );
+                Log( sBuf );
+            }
+        }
+    }
 
-	m_sClsName = "EnemyNationsMainWindow";
-	WNDCLASS wc;
-	memset ( &wc, 0, sizeof (wc) );
-	wc.lpfnWndProc = ::DefWindowProc;
-	wc.hInstance = AfxGetInstanceHandle ();
-	wc.hIcon = LoadIcon ( IDI_MAIN );
-	wc.hCursor = LoadStandardCursor ( IDC_ARROW );
-	wc.lpszClassName = m_sClsName;
-	if ( ! AfxRegisterClass ( &wc ) )
-		return FALSE;
+    m_sClsName = "EnemyNationsMainWindow";
+    WNDCLASS wc;
+    memset( &wc, 0, sizeof( wc ) );
+    // Route the main window class through CWndStub::StaticWndProc so
+    // CWndMain::OnCreate / OnPaint / OnEraseBkgnd / etc. virtuals actually fire.
+    wc.lpfnWndProc   = &CWndStub::StaticWndProc;
+    wc.hInstance     = ::GetModuleHandle( NULL );  // Phase 4c prep: was AfxGetInstanceHandle
+    wc.hIcon         = LoadIcon( IDI_MAIN );
+    wc.hCursor       = LoadStandardCursor( IDC_ARROW );
+    wc.lpszClassName = m_sClsName.c_str();
+    if ( !::RegisterClass( &wc ) ) {  // Phase 4c prep: was AfxRegisterClass
+        return FALSE;
+    }
 
-	HWND hPrevWnd = ::FindWindow (m_sClsName, m_sAppName);
-	if (hPrevWnd != NULL)
-		if (AfxMessageBox (IDS_MULT_INST, MB_YESNO | MB_ICONQUESTION) == IDYES)
-			{
-			::SetForegroundWindow (hPrevWnd);
-			return (FALSE);
-			}
+    HWND hPrevWnd = ::FindWindow( m_sClsName.c_str(), m_sAppName.c_str() );
+#ifndef _WIN32
+    // POSIX single-instance guard. FindWindow is a NULL stub on POSIX (win32_compat.h),
+    // so the Win check never fires and repeated launches stack live clients — which
+    // corrupts MP sessions (ghost players, contradictory inputs, append-mode log
+    // contamination) and invalidates every smoke a POSIX node joins. This is a release
+    // gate (LinuxOpus root-cause f70a02b). Hold an advisory flock for our whole lifetime:
+    // the FIRST instance acquires it; a second launch cannot and is REFUSED OUTRIGHT below
+    // (it must NOT be routed to the IDS_MULT_INST prompt — see the note at that site). The
+    // lock releases automatically on exit OR crash (kernel drops the fd) — no stale-PID file.
+    // EN_ALLOW_MULTI=1 bypasses it for dev/harness scenarios that intentionally run two.
+    {
+        const char* allowMulti = getenv( "EN_ALLOW_MULTI" );
+        if ( !( allowMulti && allowMulti[0] == '1' ) )
+        {
+            // Per-USER lock path, and DELIBERATELY NOT taken from the environment.
+            //
+            // Two constraints have to hold at once. (1) It must be per-uid: a fixed
+            // "/tmp/.enations.singleton.lock" is a shared namespace and was created 0644
+            // (owner-write only), so a SECOND user's open(O_RDWR) returned EACCES, the fd
+            // stayed -1, the guard's && short-circuited, and single-instance protection
+            // turned itself off *silently* — the exact failure this gate exists to stop.
+            // (2) It must resolve to the SAME file for every launch by that user, however
+            // the process was started. Deriving it from $XDG_RUNTIME_DIR (with a $TMPDIR
+            // fallback) satisfied (1) but broke (2): a desktop/terminal launch has
+            // XDG_RUNTIME_DIR and a script/cron/systemd/setsid/su launch usually does not,
+            // so the two locked DIFFERENT files, BOTH flocks succeeded and BOTH copies ran.
+            // That was measured on this binary — /run/user/<uid>/enations.lock held, a
+            // launch with XDG_RUNTIME_DIR unset was NOT refused, created and locked
+            // /tmp/enations-<uid>.lock, and kept running. Every earlier test held the
+            // environment constant across both launches, which is why it read as closed.
+            //
+            // A hardcoded path carrying the uid satisfies both: env-independent by
+            // construction, per-user by name, still opened 0600 so no cross-uid EACCES.
+            // /tmp is guaranteed to exist on linux and mac. (A PrivateTmp / per-namespace
+            // /tmp would still diverge, but that is true of any filesystem lock and is far
+            // rarer than the env difference this replaces.)
+            std::string sLock = "/tmp/enations-" + std::to_string( (long) getuid( ) ) + ".lock";
 
-	// set up exception handling
-	::_set_new_handler (_excep_new_handler);
-	prevFn = _set_se_translator (trans_func);
+            static int s_singletonFd = -1;   // held for the whole process lifetime
+            s_singletonFd = ::open( sLock.c_str( ), O_CREAT | O_RDWR | O_CLOEXEC, 0600 );
+            if ( s_singletonFd < 0 )
+                // Still fail OPEN — an unwritable lock dir must never stop someone
+                // playing — but never fail SILENTLY, or "the guard protected us" and
+                // "the guard could not run" look identical in the logs.
+                fprintf( stderr, "[singleton] cannot open lock file '%s' (%s) — "
+                                 "single-instance protection is OFF for this run\n",
+                         sLock.c_str( ), strerror( errno ) );
+            else if ( ::flock( s_singletonFd, LOCK_EX | LOCK_NB ) != 0 )
+            {
+                ::close( s_singletonFd );
+                s_singletonFd = -1;
+                // HARD-REFUSE on POSIX — do NOT fall through to the IDS_MULT_INST prompt.
+                // The prompt offers "start a second copy anyway", and a headless/scripted
+                // launch (the smoke harness) never answers IDYES, so it fell through and
+                // STACKED copies — the exact multi-instance contamination this gate exists
+                // to stop (QA hard-blocked hours on it). A second POSIX instance now exits
+                // immediately. EN_ALLOW_MULTI=1 (checked above) is the escape hatch for
+                // anyone who deliberately wants two. Windows keeps its FindWindow+prompt.
+                fprintf( stderr, "[singleton] another Second Chance instance is running — "
+                                 "refusing to start a second copy (set EN_ALLOW_MULTI=1 to override)\n" );
+                return ( FALSE );
+            }
+        }
+    }
+#endif
+    if ( hPrevWnd != NULL )
+        if ( EnMessageBox( IDS_MULT_INST, MB_YESNO | MB_ICONQUESTION ) == IDYES )
+        {
+            ::SetForegroundWindow( hPrevWnd );
+            return ( FALSE );
+        }
 
-	// needed for autoplay, etc.
-	Log ( "Create main window" );
-	m_wndMain.Create ();
-	m_wndMain.ShowWindow (SW_SHOW);
-	m_wndMain.InvalidateRect (NULL);
-	m_wndMain.UpdateWindow ();
+    // set up exception handling
+    ::_set_new_handler( _excep_new_handler );
+    prevFn = _set_se_translator( trans_func );
 
-	Log ( "Initialize windward.lib" );
+    // needed for autoplay, etc.
+    Log( "Create main window" );
+    m_wndMain.Create( );
+    m_wndMain.ShowWindow( SW_SHOW );
+    m_wndMain.InvalidateRect( NULL );
+    m_wndMain.UpdateWindow( );
 
-	// set it up
-	if (! InitWindwardLib2 ())
-		return (FALSE);
-			
-	if ( CNetApi::GetVersion () < 0x01000021 )
-		{
-		AfxMessageBox ( IDS_VDMPLAY_VER, MB_OK | MB_ICONSTOP );
-		return (FALSE);
-		}
-	char sTmp [12];
-	strncpy ( sTmp, theMusicPlayer.GetVersion (), 10 );
-	sTmp[10] = 0;
-	int iMajVer = atoi ( sTmp );
-	char *pBuf = sTmp;
-	while ( isdigit (*pBuf) )
-		pBuf++;
-	while ( ! isdigit (*pBuf) )
-		pBuf++;
-	int iMinVer = atoi ( pBuf );
-	if ( (iMajVer < 3) || ( (iMajVer == 3) && (iMinVer < 6) ) )
-		{
-		AfxMessageBox ( IDS_MSS_VER, MB_OK | MB_ICONSTOP );
-		return (FALSE);
-		}
+    // Tell wind22 about our main window so it doesn't need ptheApp->m_pMainWnd
+    w22::SetMainHWND( m_wndMain.m_hWnd );
 
-	// list out version
-	switch (iWinType)
-	  {
-		case W32s :
-			m_sOs = "Win32s";
-			break;
-		case W95 :
-			m_sOs = "Windows95";
-			break;
-		case WNT :
-			m_sOs = "Win/NT";
-			break;
-		default:
-			m_sOs = "Unknown";
-			break;
-	  }
-	OSVERSIONINFO ovi;
-	memset ( &ovi, 0, sizeof (ovi) );
-	ovi.dwOSVersionInfoSize = sizeof (ovi);
-	GetVersionEx ( &ovi );
-	m_sOs += " " + LongToCString (ovi.dwMajorVersion) + "." +
-										LongToCString (ovi.dwMinorVersion) + " (";
-	if ( (ovi.dwBuildNumber & 0xFFFF0000) == 0 )
-		m_sOs += LongToCString (ovi.dwBuildNumber) + ")";
-	else
-		m_sOs += LongToCString (ovi.dwBuildNumber >> 16) + "," +
-										LongToCString (ovi.dwBuildNumber & 0xFFFF) + ")";
-	if (iWinType == W32s)
-		{
-		WORD wVer = LOWORD (GetVersion ());
-		m_sOs += " [Windows " + IntToCString (LOBYTE (wVer)) + "." + IntToCString (HIBYTE (wVer)) + "]";
-		}
-	Log ( m_sOs );
+    Log( "Initialize windward.lib" );
 
-	long lVer = CNetApi::GetVersion ();
-	m_sNet = "VDMPlay API " + IntToCString (HIBYTE (HIWORD (lVer))) + "." +
-											IntToCString (LOBYTE (HIWORD (lVer))) + "." +
-											IntToCString (LOWORD (lVer));
-	Log ( m_sNet );
+    // set it up
+    if ( !InitWindwardLib2( ) )
+        return ( FALSE );
 
-	MEMORYSTATUS	ms;
-	ms.dwLength = sizeof (ms);
-	GlobalMemoryStatus( &ms );
-	const ONE_MEG = 1024 * 1024;
-	CString sMemory = "Memory (avail/total) Physical: " + IntToCString (ms.dwAvailPhys/ONE_MEG) + "M/" +
-															IntToCString (ms.dwTotalPhys/ONE_MEG) + "M Virtual: " + 
-															IntToCString (ms.dwAvailPageFile/ONE_MEG) + "M/" +
-															IntToCString (ms.dwTotalPageFile/ONE_MEG) + "M";
-	Log ( sMemory );
+    if ( CNetApi::GetVersion( ) < 0x01000021 )
+    {
+        EnMessageBox( IDS_VDMPLAY_VER, MB_OK | MB_ICONSTOP );
+        return ( FALSE );
+    }
+    // SDL_mixer version (MSS version check removed)
 
-	// enough memory?
-	// need 8M system
-	if (ms.dwTotalPhys < 1024 * 1024 * 7)
-		{
-		CDlgMsg dlg;
-		if ( dlg.MsgBox (IDS_ERROR_LOW_PHYS_MEM, MB_YESNO | MB_ICONSTOP | MB_TASKMODAL, "Warnings", "LessThan8Meg" ) != IDYES)
-			return (0);
-		Log ( "Error: Not enough physical memory to run" );
-		m_wndMain.UpdateWindow ();
-		}
-	if (ms.dwTotalPageFile < 1024 * 1024 * MEM_NEEDED_BASE)
-		{
-		CString sText;
-		sText.LoadString (IDS_ERROR_LOW_VIRT_MEM);
-		CString sNum;
-		sNum = IntToCString ( MEM_NEEDED_BASE );
-		csPrintf ( &sText, (char const *) sNum );
-		CDlgMsg dlg;
-		if ( dlg.MsgBox (sText, MB_YESNO | MB_ICONSTOP | MB_TASKMODAL, "Warnings", "LessThan8Meg" ) != IDYES)
-			return (0);
-		Log ( "Error: Not enough virtual memory to run" );
-		m_wndMain.UpdateWindow ();
-		}
-	if ( (ms.dwTotalPhys < 1024 * 1024 * 7) || (ms.dwAvailPageFile < 1024 * 1024 * (MEM_NEEDED_BASE - 10) ) )
-		{
-		CDlgMsg dlg;
-		if ( dlg.MsgBox (IDS_ERROR_LOW_AVAIL_MEM, MB_YESNO | MB_ICONSTOP | MB_TASKMODAL, "Warnings", "NotEnoughFreeMem" ) != IDYES)
-			return (0);
-		m_wndMain.UpdateWindow ();
-		}
+    // list out version
+    switch ( iWinType )
+    {
+    case W32s:
+        m_sOs = "Win32s";
+        break;
+    case W95:
+        m_sOs = "Windows95";
+        break;
+    case WNT:
+        m_sOs = "Win/NT";
+        break;
+    default:
+        m_sOs = "Unknown";
+        break;
+    }
 
-	// figure out what we run at
-	// first - what should we be at
-	HDC hdc = GetDC (NULL);
-	int iBytesPerPixel = (GetDeviceCaps (hdc, BITSPIXEL) * GetDeviceCaps (hdc, PLANES) + 7) / 8;
-	ReleaseDC (NULL, hdc);
-	BOOL bForce8 = FALSE;
-	switch (iBytesPerPixel)
-	  {
-		case 1 :
-			// don't care
-			break;
-			case 2 :
-				if ( (ms.dwAvailPageFile < 1024 * 1024 * MEM_NEEDED_16_BIT) || 
-															(ms.dwTotalPhys < 1024 * 1024 * MEM_PHYS_NEEDED_16_BIT) )
-					bForce8 = TRUE;
-				break;
-			case 3 :
-				if ( (ms.dwAvailPageFile < 1024 * 1024 * MEM_NEEDED_24_BIT) || 
-															(ms.dwTotalPhys < 1024 * 1024 * MEM_PHYS_NEEDED_24_BIT) )
-					bForce8 = TRUE;
-				break;
-			case 4 :
-				if ( (ms.dwAvailPageFile < 1024 * 1024 * MEM_NEEDED_32_BIT) || 
-															(ms.dwTotalPhys < 1024 * 1024 * MEM_PHYS_NEEDED_32_BIT) )
-					bForce8 = TRUE;
-				break;
-		  }
+#ifdef LOGGINGON
+    char msg[256];
+    snprintf( msg, sizeof(msg), "OS Detected: %s\n", m_sOs.c_str() );
+    OutputDebugStringA( msg );
+#endif
 
-	switch (GetProfileInt ("Advanced", "ColorDepth", 1))
-	  {
-		case 2 :
-			m_bUse8Bit = FALSE;
-			if ( iBytesPerPixel == 1 )
-				break;
-			if ( bForce8 )
-				{
-				CDlgMsg dlg;
-				if ( dlg.MsgBox (IDS_ERROR_LOW_COLOR_DEPTH, MB_YESNO | MB_ICONSTOP | MB_TASKMODAL, "Warnings", "LessThanColorDepth" ) == IDYES)
-					m_bUse8Bit = TRUE;
-				m_wndMain.UpdateWindow ();
-				}
-			else
-				if ( m_iCpuSpeed <= 200 )
-					{
-					CDlgMsg dlg;
-					if ( dlg.MsgBox (IDS_ERROR_LOW_COLOR_DEPTH2, MB_YESNO | MB_ICONSTOP | MB_TASKMODAL, "Warnings", "LessThanColorDepth" ) == IDYES)
-						m_bUse8Bit = TRUE;
-					m_wndMain.UpdateWindow ();
-					}
-			break;
+    OSVERSIONINFO ovi;
+    memset( &ovi, 0, sizeof( ovi ) );
+    ovi.dwOSVersionInfoSize = sizeof( ovi );
+    GetVersionEx( &ovi );
+    m_sOs += " " + LongToStr( ovi.dwMajorVersion ) + "." + LongToStr( ovi.dwMinorVersion ) + " (";
+    if ( ( ovi.dwBuildNumber & 0xFFFF0000 ) == 0 )
+        m_sOs += LongToStr( ovi.dwBuildNumber ) + ")";
+    else
+        m_sOs += LongToStr( ovi.dwBuildNumber >> 16 ) + "," + LongToStr( ovi.dwBuildNumber & 0xFFFF ) + ")";
+    if ( iWinType == W32s )
+    {
+        WORD wVer = LOWORD( GetVersion( ) );
+        m_sOs += " [Windows " + IntToStr( LOBYTE( wVer ) ) + "." + IntToStr( HIBYTE( wVer ) ) + "]";
+    }
+    Log( m_sOs.c_str( ) );
 
-	  case 0 :
-			// if a P/200 or less stay at 8-bit
-			if (m_iCpuSpeed <= 200)
-				m_bUse8Bit = TRUE;
-			else
-				m_bUse8Bit = bForce8;
-	  	break;
+    long lVer = CNetApi::GetVersion( );
+    m_sNet    = "VDMPlay API " + IntToStr( HIBYTE( HIWORD( lVer ) ) ) + "." +
+             IntToStr( LOBYTE( HIWORD( lVer ) ) ) + "." + IntToStr( LOWORD( lVer ) );
+    Log( m_sNet.c_str( ) );
 
-		default :
-			m_bUse8Bit = TRUE;
-			break;
-		}
+    MEMORYSTATUS ms;
+    ms.dwLength = sizeof( ms );
+    GlobalMemoryStatus( &ms );
+    const int ONE_MEG   = 1024 * 1024;
+    std::string sMemory = "Memory (avail/total) Physical: " + IntToStr( ms.dwAvailPhys / ONE_MEG ) + "M/" +
+                          IntToStr( ms.dwTotalPhys / ONE_MEG ) +
+                          "M Virtual: " + IntToStr( ms.dwAvailPageFile / ONE_MEG ) + "M/" +
+                          IntToStr( ms.dwTotalPageFile / ONE_MEG ) + "M";
+    Log( sMemory.c_str() );
 
-	// now figure the zoom level
-	if (m_bUse8Bit)
-		iBytesPerPixel = 1;
-	BOOL bUse0 = TRUE;
-	switch (iBytesPerPixel)
-	  {
-		case 1 :
-			if (ms.dwAvailPageFile < 1024 * 1024 * MEM_NEEDED_8_BIT_ZOOM_0)
-				bUse0 = FALSE;
-			break;
-		case 2 :
-			if (ms.dwAvailPageFile < 1024 * 1024 * MEM_NEEDED_16_BIT_ZOOM_0)
-				bUse0 = FALSE;
-			break;
-		case 3 :
-			if (ms.dwAvailPageFile < 1024 * 1024 * MEM_NEEDED_24_BIT_ZOOM_0)
-				bUse0 = FALSE;
-			break;
-		case 4 :
-			if (ms.dwAvailPageFile < 1024 * 1024 * MEM_NEEDED_32_BIT_ZOOM_0)
-				bUse0 = FALSE;
-			break;
-	  }
+    // enough memory?
+    // need 8M system
+    if ( ms.dwTotalPhys < 1024 * 1024 * 7 )
+    {
+        if ( EnMessageBoxOnce( IDS_ERROR_LOW_PHYS_MEM, MB_YESNO | MB_ICONSTOP | MB_TASKMODAL, "Warnings", "LessThan8Meg" ) !=
+             IDYES )
+            return ( 0 );
+        Log( "Error: Not enough physical memory to run" );
+        m_wndMain.UpdateWindow( );
+    }
+    if ( ms.dwTotalPageFile < 1024 * 1024 * MEM_NEEDED_BASE )
+    {
+        std::string sNum = IntToStr( MEM_NEEDED_BASE );
+        std::string sText = strPrintf( EnLoadStdString( IDS_ERROR_LOW_VIRT_MEM ).c_str(), sNum.c_str() );
+        if ( EnMessageBoxOnce( sText.c_str(), MB_YESNO | MB_ICONSTOP | MB_TASKMODAL, "Warnings", "LessThan8Meg" ) != IDYES )
+            return ( 0 );
+        Log( "Error: Not enough virtual memory to run" );
+        m_wndMain.UpdateWindow( );
+    }
+    if ( ( ms.dwTotalPhys < 1024 * 1024 * 7 ) || ( ms.dwAvailPageFile < 1024 * 1024 * ( MEM_NEEDED_BASE - 10 ) ) )
+    {
+        if ( EnMessageBoxOnce( IDS_ERROR_LOW_AVAIL_MEM, MB_YESNO | MB_ICONSTOP | MB_TASKMODAL, "Warnings",
+                         "NotEnoughFreeMem" ) != IDYES )
+            return ( 0 );
+        m_wndMain.UpdateWindow( );
+    }
 
-	switch ( theApp.GetProfileInt ("Advanced", "Zoom", 2))
-		{
-		case 1 :
-			m_bUseZoom0 = TRUE;
-			if ( ! bUse0 )
-				{
-				CDlgMsg dlg;
-				if ( dlg.MsgBox (IDS_ERROR_LOW_ZOOM, MB_YESNO | MB_ICONSTOP | MB_TASKMODAL, "Warnings", "LessThanZoom" ) == IDYES)
-					m_bUseZoom0 = FALSE;
-				m_wndMain.UpdateWindow ();
-				}
-			else
-				if ( m_iCpuSpeed <= 200 )
-					{
-					CDlgMsg dlg;
-					if ( dlg.MsgBox (IDS_ERROR_LOW_ZOOM2, MB_YESNO | MB_ICONSTOP | MB_TASKMODAL, "Warnings", "LessThanZoom" ) == IDYES)
-						m_bUseZoom0 = FALSE;
-					m_wndMain.UpdateWindow ();
-					}
-			break;
+    // figure out what we run at
+    // first - what should we be at
+    HDC hdc            = GetDC( NULL );
+    int iBytesPerPixel = ( GetDeviceCaps( hdc, BITSPIXEL ) * GetDeviceCaps( hdc, PLANES ) + 7 ) / 8;
+    ReleaseDC( NULL, hdc );
+    BOOL bForce8 = FALSE;
+    switch ( iBytesPerPixel )
+    {
+    case 1:
+        // don't care
+        break;
+    case 2:
+        if ( ( ms.dwAvailPageFile < 1024 * 1024 * MEM_NEEDED_16_BIT ) ||
+             ( ms.dwTotalPhys < 1024 * 1024 * MEM_PHYS_NEEDED_16_BIT ) )
+            bForce8 = TRUE;
+        break;
+    case 3:
+        if ( ( ms.dwAvailPageFile < 1024 * 1024 * MEM_NEEDED_24_BIT ) ||
+             ( ms.dwTotalPhys < 1024 * 1024 * MEM_PHYS_NEEDED_24_BIT ) )
+            bForce8 = TRUE;
+        break;
+    case 4:
+        if ( ( ms.dwAvailPageFile < 1024 * 1024 * MEM_NEEDED_32_BIT ) ||
+             ( ms.dwTotalPhys < 1024 * 1024 * MEM_PHYS_NEEDED_32_BIT ) )
+            bForce8 = TRUE;
+        break;
+    }
 
-	  case 0 :
-			// if a P/200 or less stay at no zoom 0
-			if (m_iCpuSpeed <= 200)
-				m_bUseZoom0 = FALSE;
-			else
-				m_bUseZoom0 = bUse0;
-	  	break;
+    switch ( EnGetProfileInt( "Advanced", "ColorDepth", 0 ) )
+    {
+    case 2:
+        m_bUse8Bit = FALSE;
+        if ( iBytesPerPixel == 1 )
+            break;
+        if ( bForce8 )
+        {
+            if ( EnMessageBoxOnce( IDS_ERROR_LOW_COLOR_DEPTH, MB_YESNO | MB_ICONSTOP | MB_TASKMODAL, "Warnings",
+                             "LessThanColorDepth" ) == IDYES )
+                m_bUse8Bit = TRUE;
+            m_wndMain.UpdateWindow( );
+        }
+        else if ( m_iCpuSpeed <= 200 )
+        {
+            if ( EnMessageBoxOnce( IDS_ERROR_LOW_COLOR_DEPTH2, MB_YESNO | MB_ICONSTOP | MB_TASKMODAL, "Warnings",
+                             "LessThanColorDepth" ) == IDYES )
+                m_bUse8Bit = TRUE;
+            m_wndMain.UpdateWindow( );
+        }
+        break;
 
-		default :
-			m_bUseZoom0 = FALSE;
-			break;
-		}
+    case 0:
+        // if a P/200 or less stay at 8-bit
+        if ( m_iCpuSpeed <= 200 )
+            m_bUse8Bit = TRUE;
+        else
+            m_bUse8Bit = bForce8;
+        break;
 
-	// init the random number generator
-	MySrand (timeGetTime ());
+    default:
+        m_bUse8Bit = TRUE;
+        break;
+    }
 
-	Log ( "Load .dat file" );
+    // now figure the zoom level
+    if ( m_bUse8Bit )
+        iBytesPerPixel = 1;
+    BOOL bUse0 = TRUE;
+    switch ( iBytesPerPixel )
+    {
+    case 1:
+        if ( ms.dwAvailPageFile < 1024 * 1024 * MEM_NEEDED_8_BIT_ZOOM_0 )
+            bUse0 = FALSE;
+        break;
+    case 2:
+        if ( ms.dwAvailPageFile < 1024 * 1024 * MEM_NEEDED_16_BIT_ZOOM_0 )
+            bUse0 = FALSE;
+        break;
+    case 3:
+        if ( ms.dwAvailPageFile < 1024 * 1024 * MEM_NEEDED_24_BIT_ZOOM_0 )
+            bUse0 = FALSE;
+        break;
+    case 4:
+        if ( ms.dwAvailPageFile < 1024 * 1024 * MEM_NEEDED_32_BIT_ZOOM_0 )
+            bUse0 = FALSE;
+        break;
+    }
 
-	// determine the data file
-	BOOL bErr = FALSE;
-	do
-		{
-		if (! theDataFile.Init (GameDataFile, VER_RIFF, bErr))
-			return (0);
-		m_wndMain.UpdateWindow ();
-		theDataFile.SetCountryCode ( m_iLangCode );
-		
+    // Zoom Levels (SDL2 Advanced Options dialog): 0 = "All 4 levels" (enable the closest zoom,
+    // m_iFirstZoom=0), 1 = "3 levels", 2 = "2 levels" (both start at zoom 1). The legacy MFC dialog
+    // used DIFFERENT values (1 = "force zoom 0"); that dialog is gone, so honor the SDL2 dialog's
+    // semantics directly — this is why picking a zoom level "wasn't respected". "All 4" still respects
+    // the per-bit-depth memory budget (bUse0) so a genuinely low-memory box gracefully drops to 3. The
+    // obsolete P/200 CPU gate is dropped (no modern machine trips it; Linux CPU-speed detect is flaky).
+    switch ( EnGetProfileInt( "Advanced", "Zoom", 0 ) )
+    {
+    case 0:   // All 4 levels
+        m_bUseZoom0 = bUse0;
+        if ( !bUse0 )
+        {
+            if ( EnMessageBoxOnce( IDS_ERROR_LOW_ZOOM, MB_YESNO | MB_ICONSTOP | MB_TASKMODAL, "Warnings", "LessThanZoom" ) ==
+                 IDYES )
+                m_bUseZoom0 = FALSE;
+            m_wndMain.UpdateWindow( );
+        }
+        break;
+
+    default:  // "3 levels" / "2 levels" -> start at zoom 1
+        m_bUseZoom0 = FALSE;
+        break;
+    }
+
+    // init the random number generator
+    MySrand( timeGetTime( ) );
+
+    Log( "Load .dat file" );
+
+    // determine the data file
+    BOOL bErr = FALSE;
+    do
+    {
+        if ( !theDataFile.Init( GameDataFile, VER_RIFF, bErr ) )
+            return ( 0 );
+        m_wndMain.UpdateWindow( );
+        theDataFile.SetCountryCode( m_iLangCode );
+
 #ifdef _DEBUG
-		theDataFile.EnableNegativeSeekChecking ();
+        theDataFile.EnableNegativeSeekChecking( );
 #endif
 
-		// get the RIF version, etc.
-		CMmio *pMmio = theDataFile.OpenAsMMIO ("version", "VERN");
-		pMmio->DescendRiff ('V', 'E', 'R', 'N');
-		pMmio->DescendList ('V', 'E', 'R', 'N');
-		pMmio->DescendChunk ('D', 'A', 'T', 'A');
-		m_iRifVer = pMmio->ReadShort ();
-		m_iFirstZoom = pMmio->ReadShort ();
-		m_nDataZooms = pMmio->ReadShort ();
-		m_bHave24 = pMmio->ReadShort ();
-		m_bShareware = pMmio->ReadShort ();
-		m_bSecondDisk = pMmio->ReadShort ();
-		m_bWAV = pMmio->ReadShort ();
-		m_iRequireCD = pMmio->ReadShort ();
-		m_iMultVoices = pMmio->ReadShort ();
-		m_iHaveIntro = pMmio->ReadShort ();
+        // get the RIF version, etc.
+        CMmio* pMmio = theDataFile.OpenAsMMIO( "version", "VERN" );
+        pMmio->DescendRiff( 'V', 'E', 'R', 'N' );
+        pMmio->DescendList( 'V', 'E', 'R', 'N' );
+        pMmio->DescendChunk( 'D', 'A', 'T', 'A' );
+        m_iRifVer     = pMmio->ReadShort( );
+        m_iFirstZoom  = pMmio->ReadShort( );
+        m_nDataZooms  = pMmio->ReadShort( );
+        m_bHave24     = pMmio->ReadShort( );
+        m_bShareware  = pMmio->ReadShort( );
+        m_bSecondDisk = pMmio->ReadShort( );
+        m_bWAV        = pMmio->ReadShort( );
+        m_iRequireCD  = FALSE; // pMmio->ReadShort( ); // no longer needs CD!
+        m_iMultVoices = pMmio->ReadShort( );
+        m_iHaveIntro  = pMmio->ReadShort( );
 
-		// international versions
-		m_iNumLang = pMmio->ReadShort ();
-		m_piLangAvail = new int [m_iNumLang];
-		for (int iOn=0; iOn<m_iNumLang; iOn++)
-			m_piLangAvail [iOn] = pMmio->ReadShort ();
+        // international versions
+        m_iNumLang    = pMmio->ReadShort( );
+        m_piLangAvail = new int[m_iNumLang];
+        for ( int iOn = 0; iOn < m_iNumLang; iOn++ ) m_piLangAvail[iOn] = pMmio->ReadShort( );
 
-		// are we forced?
-		if (! m_bHave24)
-			m_bUse8Bit = TRUE;
-		if ( m_iFirstZoom != 0 )
-			m_bUseZoom0 = FALSE;
+        // are we forced?
+        if ( !m_bHave24 )
+            m_bUse8Bit = TRUE;
+        if ( m_iFirstZoom != 0 )
+            m_bUseZoom0 = FALSE;
 
-		#ifdef _GG
-		m_bShareware = FALSE;
-		if ( m_bHave24)
-			m_bUse8Bit = FALSE;	// GGTESTING
-		#endif
+#ifdef _GG
+        m_bShareware = FALSE;
+        if ( m_bHave24 )
+            m_bUse8Bit = FALSE;  // GGTESTING
+#endif
 
-		// check the version
-		CString sName;
-		pMmio->AscendChunk ();
-		pMmio->DescendChunk ('N', 'A', 'M', 'E');
-		pMmio->ReadString (sName);
+        // check the version
+        std::string sName;
+        pMmio->AscendChunk( );
+        pMmio->DescendChunk( 'N', 'A', 'M', 'E' );
+        pMmio->ReadString( sName );
 
-		delete pMmio;
+        delete pMmio;
 
-		bErr = FALSE;
-		if ((m_iRifVer != VER_RIFF) || (sName != GameDataName))
-			{
-			TRAP ();
-			CString sMsg, sNum1, sNum2;
-			sMsg.LoadString (IDS_WRONG_DATA_FILE);
-			sNum1 = IntToCString (m_iRifVer);
-			sNum2= IntToCString (VER_RIFF);
-			csPrintf (&sMsg, (char const *) sName, (char const *) sNum1, (char const *) sNum2);
-			if (AfxMessageBox (sMsg, MB_YESNO | MB_ICONSTOP) != IDYES)
-				return (0);
-			bErr = TRUE;
-			}
-		}
-	while (bErr);
+        bErr = FALSE;
+        if ( ( m_iRifVer != VER_RIFF ) || ( sName != GameDataName ) )
+        {
+            TRAP( );
+            std::string sNum1 = IntToStr( m_iRifVer );
+            std::string sNum2 = IntToStr( VER_RIFF );
+            // IDS_WRONG_DATA_FILE has 4 positional placeholders (%1=actualName,
+            // %2=actualVer, %3=expectedName, %4=expectedVer). The legacy code
+            // passed only 3 args, which made strPrintf walk past the va_list
+            // tail and dereference garbage when this branch fired.
+            std::string sMsg = strPrintf( EnLoadStdString( IDS_WRONG_DATA_FILE ).c_str(),
+                                          sName.c_str(), sNum1.c_str(),
+                                          GameDataName, sNum2.c_str() );
+            if ( EnMessageBox( sMsg.c_str(), MB_YESNO | MB_ICONSTOP ) != IDYES )
+                return ( 0 );
+            bErr = TRUE;
+        }
+    } while ( bErr );
 
-	// if .dat < 400M then it's shareware (anti-pirate)
-	CFileStatus fs;
-	CFile::GetStatus ( theDataFile.GetName (), fs );
-	if ( fs.m_size < 400000000 )
-		m_bShareware = TRUE;
+    // 015 phase 3: fingerprint the gameplay data now that the loader is up, so
+    // the join and publish messages can carry it. Printed once so QA can compare
+    // two machines by eye; art, sound and text outside the gameplay tables do not
+    // change it.
+    theGame.m_dwDataHash = EnComputeGameplayDataHash( );
+    {
+        char szHash[64];
+        sprintf( szHash, "[DATAHASH] %08lx", (unsigned long)theGame.m_dwDataHash );
+        Log( szHash );
+        OutputDebugStringA( szHash );
+        OutputDebugStringA( "\n" );
+    }
 
-	// warn on 16-bit
-	if ( ! m_bUse8Bit )
-		{
-		HDC hdc = GetDC (NULL);
-		int iDepth = GetDeviceCaps (hdc, BITSPIXEL) * GetDeviceCaps (hdc, PLANES);
-		ReleaseDC (NULL, hdc);
-		if ( iDepth == 16 )
-			{
-			CDlgMsg dlg;
-			dlg.MsgBox (IDS_ERROR_16_BIT_WARNING, MB_OK | MB_ICONSTOP | MB_TASKMODAL, "Warnings", "16bitWarning" );
-			}
-		}
+    // 015 phase 2: the "< 400 MB .dat means shareware" size check is gone. It read
+    // the size of the CONTAINER, and a loose-only install has no container at all
+    // (theDataFile.GetName() is empty), so the anti-pirate heuristic could only
+    // misfire there. m_bShareware still comes from version.rif above, which is the
+    // authoritative flag and travels with the data whether it is packed or loose.
 
-	// only play demo version for a month
-	if ( IsShareware () )
-		{
-		const int i1Month = 60 * 60 * 24 * 30;
-		int	iToday = (int) time ( NULL );
+    // warn on 16-bit
+    if ( !m_bUse8Bit )
+    {
+        HDC hdc    = GetDC( NULL );
+        int iDepth = GetDeviceCaps( hdc, BITSPIXEL ) * GetDeviceCaps( hdc, PLANES );
+        ReleaseDC( NULL, hdc );
+        if ( iDepth == 16 )
+        {
+            EnMessageBoxOnce( IDS_ERROR_16_BIT_WARNING, MB_OK | MB_ICONSTOP | MB_TASKMODAL, "Warnings", "16bitWarning" );
+        }
+    }
 
-		if ( iWinType != W32s )
-			{
-			HKEY key;
-			if (RegOpenKeyEx (HKEY_LOCAL_MACHINE, 
-								"SOFTWARE\\Microsoft\\DOS Emulation\\xCompatibility",
-								NULL, KEY_ALL_ACCESS, &key) != ERROR_SUCCESS)
-				{
-				Log ( "Expired 1" );
-				AfxMessageBox ( IDS_DEMO_OVER, MB_OK | MB_ICONSTOP );
-				return (0);
-				}
+    // only play demo version for a month
+    if ( IsShareware( ) )
+    {
+        const int i1Month = 60 * 60 * 24 * 30;
+        int       iToday  = (int)time( NULL );
 
-			// fix for bug in old setup
-			RegSetValueEx ( key, NULL, NULL, REG_SZ, (unsigned char *) "4", 2 );
+        if ( iWinType != W32s )
+        {
+            HKEY key;
+            if ( RegOpenKeyEx( HKEY_LOCAL_MACHINE, "SOFTWARE\\Microsoft\\DOS Emulation\\xCompatibility", NULL,
+                               KEY_ALL_ACCESS, &key ) != ERROR_SUCCESS )
+            {
+                Log( "Expired 1" );
+                EnMessageBox( IDS_DEMO_OVER, MB_OK | MB_ICONSTOP );
+                return ( 0 );
+            }
 
-			unsigned long iLen = 256;
-			DWORD dwTyp, dwLen = sizeof (DWORD);
-			time_t dwTime;
-			if (RegQueryValueEx (key, "CD-ROM", NULL, &dwTyp, (unsigned char *) &dwTime, &dwLen ) != ERROR_SUCCESS)
-				{
-				TRAP ();
-				Log ( "Expired 2" );
-				AfxMessageBox ( IDS_DEMO_OVER, MB_OK | MB_ICONSTOP );
-				return (0);
-				}
+            // fix for bug in old setup
+            RegSetValueEx( key, NULL, NULL, REG_SZ, (unsigned char*)"4", 2 );
 
-			if ( dwTyp != REG_DWORD )
-				{
-				TRAP ();
-				Log ( "Expired 3" );
-				AfxMessageBox ( IDS_DEMO_OVER, MB_OK | MB_ICONSTOP );
-				return (0);
-				}
+            unsigned long iLen = 256;
+            DWORD         dwTyp, dwLen = sizeof( DWORD );
+            // The registry value is a REG_DWORD (4 bytes). It MUST be read into a
+            // 32-bit variable: on LP64 (macOS/Linux) `time_t` is 8 bytes, so
+            // reading 4 bytes into a time_t leaves the high half uninitialized and
+            // `dwTime == 41` / the date math below operate on garbage. (On the
+            // original 32-bit Windows build time_t happened to be 4 bytes.)
+            DWORD         dwTime = 0;
+            if ( RegQueryValueEx( key, "CD-ROM", NULL, &dwTyp, (unsigned char*)&dwTime, &dwLen ) != ERROR_SUCCESS )
+            {
+                TRAP( );
+                Log( "Expired 2" );
+                EnMessageBox( IDS_DEMO_OVER, MB_OK | MB_ICONSTOP );
+                return ( 0 );
+            }
 
-			// if it's 41 then we need to set it
-			if ( dwTime == 41 )
-				RegSetValueEx ( key, "CD-ROM", NULL, REG_DWORD, (unsigned char *) &iToday, sizeof (iToday) );
+            if ( dwTyp != REG_DWORD )
+            {
+                TRAP( );
+                Log( "Expired 3" );
+                EnMessageBox( IDS_DEMO_OVER, MB_OK | MB_ICONSTOP );
+                return ( 0 );
+            }
 
-			// have they had a month?
-			else
-				// is it earlier (ie did they advance the date before installing)?
-				if ( iToday < (int) dwTime )
-					{
-					iToday -= i1Month / 2;
-					RegSetValueEx ( key, "CD-ROM", NULL, REG_DWORD, (unsigned char *) &iToday, sizeof (iToday) );
-					}
-				else
-					if ( iToday > (int) dwTime + i1Month )
-						{
-						CTime _time ( dwTime );
-						CString sBuf = _time.Format ( "Installed: %x" );
-						Log ( sBuf );
-						AfxMessageBox ( IDS_DEMO_OVER, MB_OK | MB_ICONSTOP );
-						return (0);
-						}
+            // if it's 41 then we need to set it
+            if ( dwTime == 41 )
+                RegSetValueEx( key, "CD-ROM", NULL, REG_DWORD, (unsigned char*)&iToday, sizeof( iToday ) );
 
-			RegCloseKey ( key );
-			}
+            // have they had a month?
+            else
+                // is it earlier (ie did they advance the date before installing)?
+                if ( iToday < (int)dwTime )
+            {
+                iToday -= i1Month / 2;
+                RegSetValueEx( key, "CD-ROM", NULL, REG_DWORD, (unsigned char*)&iToday, sizeof( iToday ) );
+            }
+            else if ( iToday > (int)dwTime + i1Month )
+            {
+                time_t tInstalled = (time_t)dwTime;
+                char   sBuf[64];
+                strftime( sBuf, sizeof(sBuf), "Installed: %x", localtime( &tInstalled ) );
+                Log( sBuf );
+                EnMessageBox( IDS_DEMO_OVER, MB_OK | MB_ICONSTOP );
+                return ( 0 );
+            }
 
-		else
-			{
-			time_t iTime = ::GetProfileInt ( "DOS Emulation", "_COMM", -1 );
-			if ( iTime == -1 )
-				{
-				TRAP ();
-				char sBuf [20];
-				itoa ( iToday + i1Month, sBuf, 10 );
-				::WriteProfileString ( "DOS Emulation", "_COMM", sBuf );
-				}
-			else
-				// is it earlier (ie did they advance the date before installing)?
-				if ( iToday < (int) iTime )
-					{
-					iToday -= i1Month / 2;
-					char sBuf [20];
-					itoa ( iToday + i1Month, sBuf, 10 );
-					::WriteProfileString ( "DOS Emulation", "_COMM", sBuf );
-					}
-				else
-					if ( iToday > (int) iTime + i1Month )
-						{
-						TRAP ();
-						CTime _time ( iTime );
-						CString sBuf = _time.Format ( "Installed: %x" );
-						Log ( sBuf );
-						AfxMessageBox ( IDS_DEMO_OVER, MB_OK | MB_ICONSTOP );
-						return (0);
-						}
-			}
-		}
+            RegCloseKey( key );
+        }
 
-	Log ( "Check for CD" );
+        else
+        {
+            time_t iTime = ::GetProfileIntA( "DOS Emulation", "_COMM", -1 );
+            if ( iTime == -1 )
+            {
+                TRAP( );
+                char sBuf[20];
+                itoa( iToday + i1Month, sBuf, 10 );
+                ::WriteProfileStringA( "DOS Emulation", "_COMM", sBuf );
+            }
+            else
+                // is it earlier (ie did they advance the date before installing)?
+                if ( iToday < (int)iTime )
+            {
+                iToday -= i1Month / 2;
+                char sBuf[20];
+                itoa( iToday + i1Month, sBuf, 10 );
+                ::WriteProfileStringA( "DOS Emulation", "_COMM", sBuf );
+            }
+            else if ( iToday > (int)iTime + i1Month )
+            {
+                TRAP( );
+                char sBuf[64];
+                strftime( sBuf, sizeof(sBuf), "Installed: %x", localtime( &iTime ) );
+                Log( sBuf );
+                EnMessageBox( IDS_DEMO_OVER, MB_OK | MB_ICONSTOP );
+                return ( 0 );
+            }
+        }
+    }
 
-	// do we have a CD?
-	if ( ! CheckForCD () )
-		return (0);
+    Log( "Check for CD" );
 
-	// shareware notice
-	if ( IsShareware () )
-		{
-		int iTry = GetProfileInt ( "Game", "NumDemo", 1 );
-		WriteProfileInt ( "Game", "NumDemo", iTry + 1 );
-		if ( (iTry % 25) == 0 )
-			{
-			CString sMsg;
-			sMsg.LoadString ( IDS_DEMO_25 );
-			CString sNum = IntToCString ( iTry );
-			csPrintf ( &sMsg, (char const *) sNum );
-			if ( AfxMessageBox ( sMsg, MB_YESNO | MB_ICONSTOP) != IDYES )
-				{
-				WriteProfileInt ( "Game", "NumDemo", iTry );
-				return (0);
-				}
-			}
+    // do we have a CD?
+    if ( !CheckForCD( ) )
+        return ( 0 );
 
-		CDlgLicense dlgLic (4);
-		if (dlgLic.DoModal () != IDOK)
-			return (0);
-		m_wndMain.UpdateWindow ();
-		}
-	else
-		if ( theApp.IsSecondDisk () )
-			{
-			CDlgLicense dlgLic (5);
-			if (dlgLic.DoModal () != IDOK)
-				return (0);
-			m_wndMain.UpdateWindow ();
-			}
+    // shareware notice
+    if ( IsShareware( ) )
+    {
+        int iTry = EnGetProfileInt( "Game", "NumDemo", 1 );
+        EnWriteProfileInt( "Game", "NumDemo", iTry + 1 );
+        if ( ( iTry % 25 ) == 0 )
+        {
+            std::string sNum = IntToStr( iTry );
+            std::string sMsg = strPrintf( EnLoadStdString( IDS_DEMO_25 ).c_str(), sNum.c_str() );
+            if ( EnMessageBox( sMsg.c_str(), MB_YESNO | MB_ICONSTOP ) != IDYES )
+            {
+                EnWriteProfileInt( "Game", "NumDemo", iTry );
+                return ( 0 );
+            }
+        }
 
-	// set up the game
-	Log ( "Setup app" );
-	try
-		{
-		m_hAccel = ::LoadAccelerators (m_hInstance, MAKEINTRESOURCE (IDR_ACCEL));
-		if (m_hAccel == NULL)
-			ThrowError (ERR_RES_NO_ACCEL);
-		Log ( "Accelerators loaded" );
+        CDlgLicense dlgLic( 4 );
+        if ( dlgLic.DoModal( ) != IDOK )
+            return ( 0 );
+        m_wndMain.UpdateWindow( );
+    }
+    else if ( theApp.IsSecondDisk( ) )
+    {
+        CDlgLicense dlgLic( 5 );
+        if ( dlgLic.DoModal( ) != IDOK )
+            return ( 0 );
+        m_wndMain.UpdateWindow( );
+    }
 
-		// screen size, create button brushes
-		m_iScrnX = GetSystemMetrics (SM_CXSCREEN);
-		m_iScrnY = GetSystemMetrics (SM_CYSCREEN);
+    // set up the game
+    Log( "Setup app" );
+    try
+    {
+        m_hAccel = ::LoadAccelerators( m_hInstance, MAKEINTRESOURCE( IDR_ACCEL ) );
+        if ( m_hAccel == NULL )
+#ifdef _WIN32
+            ThrowError( ERR_RES_NO_ACCEL );
+#else
+            // Linux has no embedded accelerator resource; hotkeys come via SDL
+            // key events, so a null accel table is non-fatal here.
+            Log( "No accelerator table (Linux: no embedded resources) — continuing" );
+#endif
+        Log( "Accelerators loaded" );
+
+        // screen size, create button brushes
+        m_iScrnX = GetSystemMetrics( SM_CXSCREEN );
+        m_iScrnY = GetSystemMetrics( SM_CYSCREEN );
 
 #ifdef BUGBUG
-		// use Ctl3D
-		SetDialogBkColor (::GetOurSysClr (COLOR_BTNFACE), ::GetOurSysClr (COLOR_WINDOWTEXT));
-		Enable3dControls ();
+        // use Ctl3D
+        SetDialogBkColor( ::GetOurSysClr( COLOR_BTNFACE ), ::GetOurSysClr( COLOR_WINDOWTEXT ) );
+        Enable3dControls( );
 #endif
-		m_bSetSysColors = GetProfileInt ("Advanced", "SetSysColors", 0);
+        m_bSetSysColors = EnGetProfileInt( "Advanced", "SetSysColors", 0 );
 
-		// RedText class for -#s in dialogs
-		if (m_hPrevInstance == NULL)
-			{
-			WNDCLASS wc;
-			memset (&wc, 0, sizeof (wc));
-			wc.lpfnWndProc = RedTextProc;
-			wc.hInstance = AfxGetInstanceHandle ();
-			wc.lpszClassName = "RedText";
-			if (! RegisterClass (&wc))
-				return (FALSE);
-			memset (&wc, 0, sizeof (wc));
-			wc.lpfnWndProc = PerBarProc;
-			wc.cbWndExtra = 2;
-			wc.hInstance = AfxGetInstanceHandle ();
-			wc.lpszClassName = "dcPerBar";
-			if (! RegisterClass (&wc))
-				return (FALSE);
-			Log ( "Window classes registered");
-			}
+
+        // RedText class for -#s in dialogs
+//        if ( m_hPrevInstance == NULL )  // If statement removed because hPrevInstance is always null in modern windows
+//        {
+        WNDCLASS wc;
+        memset( &wc, 0, sizeof( wc ) );
+        wc.lpfnWndProc   = RedTextProc;
+        wc.hInstance     = ::GetModuleHandle( NULL );  // Phase 4c prep: was AfxGetInstanceHandle
+        wc.lpszClassName = "RedText";
+        if ( !RegisterClass( &wc ) )
+            return ( FALSE );
+        memset( &wc, 0, sizeof( wc ) );
+        wc.lpfnWndProc   = PerBarProc;
+        wc.cbWndExtra    = 2;
+        wc.hInstance     = ::GetModuleHandle( NULL );  // Phase 4c prep: was AfxGetInstanceHandle
+        wc.lpszClassName = "dcPerBar";
+        if ( !RegisterClass( &wc ) )
+            return ( FALSE );
+        Log( "Window classes registered" );
+//        }
 
 #ifdef _CHEAT
-		_bShowRate = GetProfileInt ("Debug", "ShowRate", 0);
-		_bClickAny = GetProfileInt ("Cheat", "ClickAny", 0);
-		_bMaxMaterials = GetProfileInt ("Cheat", "MaxMaterials", 0);
-		_bMaxRocket = GetProfileInt ("Cheat", "MaxRocket", 0);
-		_bMaxPower = GetProfileInt ("Cheat", "MaxPower", 0);
-		_iFrameRate = GetProfileInt ("Cheat", "FrameRate", 1);
-		_iFrameRate = __minmax (1, 48, _iFrameRate);
-		_bSeeAll = GetProfileInt ("Cheat", "SeeAll", 0);
-		_bShowWorld = GetProfileInt ("Cheat", "SeeWorld", 0);
-		_bShowStatus = GetProfileInt ("Cheat", "ShowStatus", 0);
-		_bShowPos = GetProfileInt ("Cheat", "ShowPos", 0);
-		_bShowAISelected = theApp.GetProfileInt( "Cheat", "ShowAISelected", 0 );
-		_iScenarioOn = theApp.GetProfileInt ("Cheat", "Scenario", -1);
+        _bShowRate       = EnGetProfileInt( "Debug", "ShowRate", 0 );
+        _bClickAny       = EnGetProfileInt( "Cheat", "ClickAny", 0 );
+        _bMaxMaterials   = EnGetProfileInt( "Cheat", "MaxMaterials", 0 );
+        _bMaxRocket      = EnGetProfileInt( "Cheat", "MaxRocket", 0 );
+        _bMaxPower       = EnGetProfileInt( "Cheat", "MaxPower", 0 );
+        _iFrameRate      = EnGetProfileInt( "Cheat", "FrameRate", 1 );
+        _iFrameRate      = __minmax( 1, 48, _iFrameRate );
+        _bSeeAll         = EnGetProfileInt( "Cheat", "SeeAll", 0 );
+        _bShowWorld      = EnGetProfileInt( "Cheat", "SeeWorld", 0 );
+        _bShowStatus     = EnGetProfileInt( "Cheat", "ShowStatus", 0 );
+        _bShowPos        = EnGetProfileInt( "Cheat", "ShowPos", 0 );
+        _bShowAISelected = EnGetProfileInt( "Cheat", "ShowAISelected", 0 );
+        _iScenarioOn     = EnGetProfileInt( "Cheat", "Scenario", -1 );
 #endif
 
-		// get screen resolution, default positions for windows
-		m_sResIni = IntToCString (m_iScrnX) + "x" + IntToCString (m_iScrnY);
-		m_iCol1 = m_iScrnX / 5;
-		m_iCol2 = __min ((m_iScrnX * 4) / 5, m_iScrnX - 256);
-		m_iRow1 = m_iScrnY / 4;
-		m_iRow2 = (m_iScrnY * 9) / 16;
-		m_iRow4 = (m_iScrnY * 5) / 32;
+        // get screen resolution, default positions for windows
+        m_sResIni = IntToStr( m_iScrnX ) + "x" + IntToStr( m_iScrnY );
+        m_iCol1   = m_iScrnX / 5;
+        m_iCol2   = __min( ( m_iScrnX * 4 ) / 5, m_iScrnX - 256 );
+        m_iRow1   = m_iScrnY / 4;
+        m_iRow2   = ( m_iScrnY * 9 ) / 16;
+        m_iRow4   = ( m_iScrnY * 5 ) / 32;
 
-		// get the font and sizes for the button bars
-		Log ( "Creating fonts");
-		CWindowDC dc (NULL);
+        // get the font and sizes for the button bars
+        Log( "Creating fonts" );
+        CWindowDC dc( (CWnd*)NULL );
 
-		// get the main font - we try Newtown, then Arial, then Arial condensed till we fit
-		LOGFONT lf;
-		memset (&lf, 0, sizeof (lf));
-		lf.lfHeight = GetProfileInt ("StatusBar", "CharHeight", 16);
-		CString sFont = GetProfileString ("StatusBar", "Font", "Newtown Italic");
-		strncpy (lf.lfFaceName, sFont, LF_FACESIZE-1);
-		m_Fnt.CreateFontIndirect (&lf);
+        // get the main font - we try Newtown, then Arial, then Arial condensed till we fit
+        LOGFONT lf;
+        memset( &lf, 0, sizeof( lf ) );
+        lf.lfHeight   = EnGetProfileInt( "StatusBar", "CharHeight", 16 );
+        std::string sFont = EnGetProfileStdString( "StatusBar", "Font", "Newtown Italic" );
+        strncpy( lf.lfFaceName, sFont.c_str(), LF_FACESIZE - 1 );
+        m_Fnt = ::CreateFontIndirect( &lf );
 
-		TEXTMETRIC tm;
-		dc.GetTextMetrics (&tm);
-		m_iCharHt = tm.tmHeight;
-		m_iCharWid = tm.tmAveCharWidth;
-		m_iBtnBevel = GetSystemMetrics (SM_CXFRAME) / 2;
-		if (m_iBtnBevel < 2)
-			m_iBtnBevel = 2;
+        TEXTMETRIC tm;
+        dc.GetTextMetrics( &tm );
+        m_iCharHt   = tm.tmHeight;
+        m_iCharWid  = tm.tmAveCharWidth;
+        m_iBtnBevel = GetSystemMetrics( SM_CXFRAME ) / 2;
+        if ( m_iBtnBevel < 2 )
+            m_iBtnBevel = 2;
 
-		// dialog fonts
-		int iHt = GetProfileInt ("StatusBar", "RDHeight", 14);
-		sFont = GetProfileString ("StatusBar", "RDFont", "Lucida Console");
-		memset (&lf, 0, sizeof (lf));
-		lf.lfHeight = iHt;
-		strncpy (lf.lfFaceName, sFont, LF_FACESIZE-1);
-		m_FntRD.CreateFontIndirect (&lf);
+        // dialog fonts
+        int iHt = EnGetProfileInt( "StatusBar", "RDHeight", 14 );
+        sFont   = EnGetProfileStdString( "StatusBar", "RDFont", "Lucida Console" );
+        memset( &lf, 0, sizeof( lf ) );
+        lf.lfHeight = iHt;
+        strncpy( lf.lfFaceName, sFont.c_str(), LF_FACESIZE - 1 );
+        m_FntRD = ::CreateFontIndirect( &lf );
 
-		iHt = GetProfileInt ("StatusBar", "DescHeight", 18);
-		sFont = GetProfileString ("StatusBar", "DescFont", "Newtown Italic");
-		memset (&lf, 0, sizeof (lf));
-		lf.lfHeight = iHt;
-		strncpy (lf.lfFaceName, sFont, LF_FACESIZE-1);
-		m_FntDesc.CreateFontIndirect (&lf);
+        iHt   = EnGetProfileInt( "StatusBar", "DescHeight", 18 );
+        sFont = EnGetProfileStdString( "StatusBar", "DescFont", "Newtown Italic" );
+        memset( &lf, 0, sizeof( lf ) );
+        lf.lfHeight = iHt;
+        strncpy( lf.lfFaceName, sFont.c_str(), LF_FACESIZE - 1 );
+        m_FntDesc = ::CreateFontIndirect( &lf );
 
-		iHt = GetProfileInt ("StatusBar", "CostHeight", 11);
-		sFont = GetProfileString ("StatusBar", "CostFont", "Lucida Console");
-		memset (&lf, 0, sizeof (lf));
-		lf.lfHeight = iHt;
-		strncpy (lf.lfFaceName, sFont, LF_FACESIZE-1);
-		m_FntCost.CreateFontIndirect (&lf);
-		Log ( "fonts Created");
+        iHt   = EnGetProfileInt( "StatusBar", "CostHeight", 11 );
+        sFont = EnGetProfileStdString( "StatusBar", "CostFont", "Lucida Console" );
+        memset( &lf, 0, sizeof( lf ) );
+        lf.lfHeight = iHt;
+        strncpy( lf.lfFaceName, sFont.c_str(), LF_FACESIZE - 1 );
+        m_FntCost = ::CreateFontIndirect( &lf );
+        Log( "fonts Created" );
 
-		m_iRow3 = m_iScrnY - TOOLBAR_HT;
+        m_iRow3 = m_iScrnY - TOOLBAR_HT;
 
-		// Determine how many zoom levels to use
-		m_ptrzoomdata = new CZoomData( m_nDataZooms );
+        // Determine how many zoom levels to use
+        m_ptrzoomdata = new CZoomData( m_nDataZooms );
 
-		// read the basics from the RIF file
-		{
-		Log ( "Reading palette");
-		CMmio *pMmio = theDataFile.OpenAsMMIO ("misc", "MISC");
-		Log ( "palette read");
-		pMmio->DescendRiff ('M', 'I', 'S', 'C');
+        // read the basics from the RIF file
+        {
+            Log( "Reading palette" );
+            CMmio* pMmio = theDataFile.OpenAsMMIO( "misc", "MISC" );
+            Log( "palette read" );
+            pMmio->DescendRiff( 'M', 'I', 'S', 'C' );
 
-		pMmio->DescendList ('P', 'A', 'L', 'T');
-		pMmio->DescendChunk ('D', 'A', 'T', 'A');
-		int iLen = (int) pMmio->ReadLong ();
-		char * pBmp = new char [iLen];
-		pMmio->Read (pBmp, iLen);
-		pMmio->AscendChunk ();
-		pMmio->AscendList ();
-		Log ( "Initialize palette");
-		thePal.Init ();
-		Log ( "palette initialized");
-		thePal.SetColors ((RGBQUAD *) (pBmp + sizeof (BITMAPFILEHEADER) +
-										sizeof (BITMAPINFOHEADER)), 0, 256);
-		Log ( "palette colors set");
-		delete [] pBmp;
+            pMmio->DescendList( 'P', 'A', 'L', 'T' );
+            pMmio->DescendChunk( 'D', 'A', 'T', 'A' );
+            int   iLen = (int)pMmio->ReadLong( );
+            char* pBmp = new char[iLen];
+            pMmio->Read( pBmp, iLen );
+            pMmio->AscendChunk( );
+            pMmio->AscendList( );
+            Log( "Initialize palette" );
+            thePal.Init( );
+            Log( "palette initialized" );
+            thePal.SetColors( (RGBQUAD*)( pBmp + sizeof( BITMAPFILEHEADER ) + sizeof( BITMAPINFOHEADER ) ), 0, 256 );
+            Log( "palette colors set" );
+            delete[] pBmp;
 
-		// this is our main window - first created and last destroyed
-		// already created by here but now we can load it's data (palette above)
-		m_wndMain.LoadData ();
-		m_pMainWnd = &m_wndMain;
+            // this is our main window - first created and last destroyed
+            // already created by here but now we can load it's data (palette above)
+            m_wndMain.LoadData( );
+            // m_wndMain is CWndStub-derived (not CWnd), so we can't do
+            // `m_pMainWnd = &m_wndMain` directly. CWnd::FromHandle returns
+            // a *temporary* CWnd that MFC garbage-collects in OnIdle, which
+            // makes storing it in m_pMainWnd dangerous (crashes inside MFC).
+            // Instead: use a permanent proxy CWnd and Attach our HWND to it —
+            // this puts the HWND in MFC's permanent handle map. The proxy
+            // doesn't get message dispatch (that goes through CWndStub via
+            // the registered wndproc), but it lets CWinApp::Run see a valid
+            // m_pMainWnd->m_hWnd.
+            static CWnd s_mfcMainWndProxy;
+            if ( s_mfcMainWndProxy.m_hWnd == NULL )
+                s_mfcMainWndProxy.Attach( m_wndMain.m_hWnd );
+            m_pMainWnd = &s_mfcMainWndProxy;
 
-		// set up the thread code if we're Win32s (after window created)
-		Log ( "Initialize AI multi-threading" );
-		myThreadInit ((AITHREAD) AiThread);
-		Log ( "AI multi-threading initialized" );
+            // set up the thread code if we're Win32s (after window created)
+            Log( "Initialize AI multi-threading" );
+            myThreadInit( (AITHREAD)AiThread );
+            Log( "AI multi-threading initialized" );
 
-		// set up async disk reads
-//BUGBUG		myStartThread (CDiskCache::ThreadFunc, &theDiskCache, pri_high);
-//BUGBUG		theDiskCache.Open ( m_wndMain.m_hWnd );
+            // set up async disk reads
+            // BUGBUG		myStartThread (CDiskCache::ThreadFunc, &theDiskCache, pri_high);
+            // BUGBUG		theDiskCache.Open ( m_wndMain.m_hWnd );
 
-		// set up color depths
-		if ( m_bUse8Bit )
-			ptrthebltformat = new CBLTFormat( CColorFormat( CColorFormat::DEPTH_EIGHT ));
-		else
-			ptrthebltformat = new CBLTFormat;
+            // set up color depths
+            if ( m_bUse8Bit )
+                ptrthebltformat = new CBLTFormat( CColorFormat( CColorFormat::DEPTH_EIGHT ) );
+            else
+                ptrthebltformat = new CBLTFormat;
 
-		if ( 8 == ptrthebltformat->GetBitsPerPixel ())
-			strcpy ( m_szMapBPS, "08" );
-		else
-			strcpy ( m_szMapBPS, "24" );
-		strcpy ( m_szOtherBPS, m_szMapBPS );
+            if ( 8 == ptrthebltformat->GetBitsPerPixel( ) )
+                strcpy( m_szMapBPS, "08" );
+            else
+                strcpy( m_szMapBPS, "24" );
+            strcpy( m_szOtherBPS, m_szMapBPS );
 #ifdef BUGBUG
-		TRAP ();
-		if ( m_bUse8Bit )
-			m_MapClrFmt.SetBitsPerPixel ( CColorFormat::DEPTH_EIGHT );
-		else
-			m_MapClrFmt.CalcScreenFormat();
-		if ( 8 == m_MapClrFmt.GetBitsPerPixel ())
-			strcpy ( m_szMapBPS, "08" );
-		else
-			strcpy ( m_szMapBPS, "24" );
+            TRAP( );
+            if ( m_bUse8Bit )
+                m_MapClrFmt.SetBitsPerPixel( CColorFormat::DEPTH_EIGHT );
+            else
+                m_MapClrFmt.CalcScreenFormat( );
+            if ( 8 == m_MapClrFmt.GetBitsPerPixel( ) )
+                strcpy( m_szMapBPS, "08" );
+            else
+                strcpy( m_szMapBPS, "24" );
 
-		if (! m_bHave24)
-			{
-			TRAP ();
-			m_OtherClrFmt.SetBitsPerPixel ( CColorFormat::DEPTH_EIGHT );
-			strcpy ( m_szOtherBPS, "08" );
-			}
-		else
-			{
-			TRAP ();
-			m_OtherClrFmt.CalcScreenFormat();
-			if ( 8 == m_OtherClrFmt.GetBitsPerPixel ())
-				strcpy ( m_szOtherBPS, "08" );
-			else
-				strcpy ( m_szOtherBPS, "24" );
-			}
+            if ( !m_bHave24 )
+            {
+                TRAP( );
+                m_OtherClrFmt.SetBitsPerPixel( CColorFormat::DEPTH_EIGHT );
+                strcpy( m_szOtherBPS, "08" );
+            }
+            else
+            {
+                TRAP( );
+                m_OtherClrFmt.CalcScreenFormat( );
+                if ( 8 == m_OtherClrFmt.GetBitsPerPixel( ) )
+                    strcpy( m_szOtherBPS, "08" );
+                else
+                    strcpy( m_szOtherBPS, "24" );
+            }
 #endif
 
-		// load the buttons
-		pMmio->DescendList  ( 'B', 'T', m_szOtherBPS[0], m_szOtherBPS[1] );
-		theBmBtnData.Init (pMmio);
-		pMmio->AscendList  ();
+            // load the buttons
+            pMmio->DescendList( 'B', 'T', m_szOtherBPS[0], m_szOtherBPS[1] );
+            theBmBtnData.Init( pMmio );
+            pMmio->AscendList( );
 
-		pMmio->DescendList  ( 'T', 'X', m_szOtherBPS[0], m_szOtherBPS[1] );
-		theTextBtnData.Init (pMmio);
-		theLargeTextBtnData.Init (pMmio);
-		theCutTextBtnData.Init (pMmio);
-		pMmio->AscendList  ();
+            pMmio->DescendList( 'T', 'X', m_szOtherBPS[0], m_szOtherBPS[1] );
+            theTextBtnData.Init( pMmio );
+            theLargeTextBtnData.Init( pMmio );
+            theCutTextBtnData.Init( pMmio );
+            pMmio->AscendList( );
 
-		pMmio->DescendList  ( 'I', 'C', m_szOtherBPS[0], m_szOtherBPS[1] );
-		theIcons.Init (pMmio);
-		pMmio->AscendList  ();
+            pMmio->DescendList( 'I', 'C', m_szOtherBPS[0], m_szOtherBPS[1] );
+            theIcons.Init( pMmio );
+            pMmio->AscendList( );
 
-		// bitmaps
-		pMmio->DescendList  ( 'B', 'M', m_szOtherBPS[0], m_szOtherBPS[1] );
-		theBitmaps.Init (pMmio);
+            // bitmaps
+            pMmio->DescendList( 'B', 'M', m_szOtherBPS[0], m_szOtherBPS[1] );
+            theBitmaps.Init( pMmio );
 
-		pMmio->AscendList  ();
+            pMmio->AscendList( );
 
-		delete pMmio;
+            delete pMmio;
 
-		// time the CD
-		#ifndef _GG
-		if ( (m_iCdSpeed = GetProfileInt ("Advanced", "CDspeed", 0) ) <= 0)
-			{
-			CFile * pFile = theDataFile.OpenAsFile ( "music" );
-			void * pBuf = malloc ( 0x10000 );
-			int iPri = GetThreadPriority ();
-			::Sleep (0);
-			SetThreadPriority ( THREAD_PRIORITY_HIGHEST );
-			pFile->Seek ( 0, CFile::begin );
-			pFile->Read ( pBuf, 0x1000 );
+            // (Compositor wallpaper load moved below, after GameWindow::Create —
+            // m_gameWindow doesn't exist yet here, so a load at this point always
+            // silently skipped and the load-game flow flashed the dark-gold
+            // null-wallpaper fallback.)
 
-			m_iCdSpeed = timeGetTime ();
-			pFile->Seek ( 1234, CFile::begin );
-			pFile->Read ( pBuf, 0x10000 );
-			pFile->Seek ( 1234 + 0x80000, CFile::begin );
-			pFile->Read ( pBuf, 0x10000 );
-			pFile->Seek ( 1234 + 0x20000, CFile::begin );
-			pFile->Read ( pBuf, 0x10000 );
-			m_iCdSpeed = timeGetTime () - m_iCdSpeed;
+// time the CD // we dont have a cd anymore
+            m_iCdSpeed = 100; // assume fast CD drive
+// Was `#ifndef _GG && 0` — the author's intent was to disable the CD-speed timing
+// below (hence the hardcode above), but the preprocessor IGNORES tokens after the
+// identifier (the C4067 warning), and _GG is defined nowhere — so the "dead" block
+// still RAN: it overwrote m_iCdSpeed from the profile / a disk-read timing loop,
+// which on a slow first read could drop below 4 and silently force midi_only music
+// (see the m_iCdSpeed < 4 test below). #if 0 = what was meant. (2026-08-07)
+#if 0
+            if ( ( m_iCdSpeed = EnGetProfileInt( "Advanced", "CDspeed", 0 ) ) <= 0 )
+            {
+                CFile* pFile = theDataFile.OpenAsFile( "music" );
+                void*  pBuf  = malloc( 0x10000 );
+                int    iPri  = GetThreadPriority( );
+                ::Sleep( 0 );
+                SetThreadPriority( THREAD_PRIORITY_HIGHEST );
+                pFile->Seek( 0, CFile::begin );
+                pFile->Read( pBuf, 0x1000 );
 
-			SetThreadPriority ( iPri );
-			m_iCdSpeed = __max ( 1, m_iCdSpeed );
-			m_iCdSpeed = 2137 / m_iCdSpeed;
-			m_iCdSpeed = __max ( 1, m_iCdSpeed );
-			free ( pBuf );
-			delete pFile;
-			}
+                m_iCdSpeed = timeGetTime( );
+                pFile->Seek( 1234, CFile::begin );
+                pFile->Read( pBuf, 0x10000 );
+                pFile->Seek( 1234 + 0x80000, CFile::begin );
+                pFile->Read( pBuf, 0x10000 );
+                pFile->Seek( 1234 + 0x20000, CFile::begin );
+                pFile->Read( pBuf, 0x10000 );
+                m_iCdSpeed = timeGetTime( ) - m_iCdSpeed;
 
-		#endif
-		// read in the music & sound
-		// grab the audio
-		if (! m_bWAV)
-			m_mMode = CMusicPlayer::midi_only;
-		else
-			switch (GetProfileInt ("Advanced", "Music", -1))
-				{
-				case 2 :
-					if ( (ms.dwAvailPageFile < 1000 * 1000 * MEM_NEEDED_MUSIC_MIXED) || (m_iCdSpeed < 4) )
-						m_mMode = CMusicPlayer::midi_only;
-					else
-						m_mMode = CMusicPlayer::mixed;
-					break;
+                SetThreadPriority( iPri );
+                m_iCdSpeed = __max( 1, m_iCdSpeed );
+                m_iCdSpeed = 2137 / m_iCdSpeed;
+                m_iCdSpeed = __max( 1, m_iCdSpeed );
+                free( pBuf );
+                delete pFile;
+            }
 
-				case 1 :
-					m_mMode = CMusicPlayer::wav_only;
-					if ( (ms.dwAvailPageFile < 1000 * 1000 * MEM_NEEDED_MUSIC_DIGITAL) || (m_iCdSpeed < 6) || (m_iCpuSpeed < 120) )
-						{
-						CDlgMsg dlg;
-						if ( dlg.MsgBox (IDS_ERROR_LOW_MUSIC, MB_YESNO | MB_ICONSTOP | MB_TASKMODAL, "Warnings", "LessThanMusic" ) == IDYES)
-							{
-							if ( (ms.dwAvailPageFile < 1000 * 1000 * MEM_NEEDED_MUSIC_MIXED) || (m_iCdSpeed < 4) )
-								m_mMode = CMusicPlayer::midi_only;
-							else
-								m_mMode = CMusicPlayer::mixed;
-							}
-						m_wndMain.UpdateWindow ();
-						}
-					break;
+#endif
+            // read in the music & sound
+            // grab the audio
+            if ( !m_bWAV )
+                m_mMode = CMusicPlayer::MUSIC_MODE::midi_only;
+            else
+                switch ( EnGetProfileInt( "Advanced", "Music", -1 ) )
+                {
+                case 2:
+                    if ( ( ms.dwAvailPageFile < 1000 * 1000 * MEM_NEEDED_MUSIC_MIXED ) || ( m_iCdSpeed < 4 ) )
+                        m_mMode = CMusicPlayer::MUSIC_MODE::midi_only;
+                    else
+                        m_mMode = CMusicPlayer::MUSIC_MODE::mixed;
+                    break;
 
-				default:
-					if ( (ms.dwAvailPageFile < 1000 * 1000 * MEM_NEEDED_MUSIC_MIXED) || (m_iCdSpeed < 4) )
-						m_mMode = CMusicPlayer::midi_only;
-					else
-						if ( (ms.dwAvailPageFile < 1000 * 1000 * MEM_NEEDED_MUSIC_DIGITAL) || (m_iCdSpeed < 6) || (m_iCpuSpeed < 120) )
-							m_mMode = CMusicPlayer::mixed;
-						else
-							m_mMode = CMusicPlayer::wav_only;
-					break;
-				}
-		Log ( "Initialize music & sfx" );
-		theMusicPlayer.InitData (m_mMode, SFXGROUP::global);
-		m_mMode = theMusicPlayer.GetMode ();
-		Log ( "Music & sfx initialized" );
-		}
+                case 1:
+                    m_mMode = CMusicPlayer::MUSIC_MODE::wav_only;
+                    if ( ( ms.dwAvailPageFile < 1000 * 1000 * MEM_NEEDED_MUSIC_DIGITAL ) || ( m_iCdSpeed < 6 ) ||
+                         ( m_iCpuSpeed < 120 ) )
+                    {
+                        if ( EnMessageBoxOnce( IDS_ERROR_LOW_MUSIC, MB_YESNO | MB_ICONSTOP | MB_TASKMODAL, "Warnings",
+                                         "LessThanMusic" ) == IDYES )
+                        {
+                            if ( ( ms.dwAvailPageFile < 1000 * 1000 * MEM_NEEDED_MUSIC_MIXED ) || ( m_iCdSpeed < 4 ) )
+                                m_mMode = CMusicPlayer::MUSIC_MODE::midi_only;
+                            else
+                                m_mMode = CMusicPlayer::MUSIC_MODE::mixed;
+                        }
+                        m_wndMain.UpdateWindow( );
+                    }
+                    break;
 
-		thePal.UpdateDeviceColors( 0, 256 );
+                default:
+                    if ( ( ms.dwAvailPageFile < 1000 * 1000 * MEM_NEEDED_MUSIC_MIXED ) || ( m_iCdSpeed < 4 ) )
+                        m_mMode = CMusicPlayer::MUSIC_MODE::midi_only;
+                    else if ( ( ms.dwAvailPageFile < 1000 * 1000 * MEM_NEEDED_MUSIC_DIGITAL ) || ( m_iCdSpeed < 6 ) ||
+                              ( m_iCpuSpeed < 120 ) )
+                        m_mMode = CMusicPlayer::MUSIC_MODE::mixed;
+                    else
+                        m_mMode = CMusicPlayer::MUSIC_MODE::wav_only;
+                    break;
+                }
+            Log( "Initialize music & sfx" );
+            theMusicPlayer.InitData( m_mMode, SFXGROUP::global );
+            m_mMode = theMusicPlayer.GetMode( );
+            Log( "Music & sfx initialized" );
+        }
 
-		// this is the window class for all our popup windows
-		m_sWndCls = AfxRegisterWndClass (CS_DBLCLKS | CS_HREDRAW | CS_VREDRAW | CS_OWNDC,
-																						LoadStandardCursor (IDC_ARROW), 0, 0);
+        thePal.UpdateDeviceColors( 0, 256 );
+
+        // this is the window class for all our popup windows
+        m_sWndCls = EnRegisterWndClass( "EnPopupWnd",
+                                        CS_DBLCLKS | CS_HREDRAW | CS_VREDRAW | CS_OWNDC,
+                                        LoadStandardCursor( IDC_ARROW ) );
 
 #ifdef _DEBUG
-		theDataFile.DisableNegativeSeekChecking ();
+        theDataFile.DisableNegativeSeekChecking( );
 #endif
 
-		// demo license agreement
-		if ( IsShareware () )
-			if (GetProfileInt ("Game", "NoIntro", 0) == 0)
-				{
-				PostIntro ();
-				goto MovieDone;
-				}
+        // demo license agreement
+        if ( IsShareware( ) )
+            if ( EnGetProfileInt( "Game", "NoIntro", 0 ) == 0 )
+            {
+                PostIntro( );
+                goto MovieDone;
+            }
 
 #ifdef BUGBUG
-		// remind them to register
-		if ( W32s != iWinType )
-			if ( ( ! IsShareware () ) && ( GetProfileInt ( "Warnings", "Register", 0 ) == 0 ) )
-				{
-				CDlgReg dlg ( &m_wndMain );
-				dlg.DoModal ();
-				m_wndMain.UpdateWindow ();
-				}
+        // remind them to register
+        if ( W32s != iWinType )
+            if ( ( !IsShareware( ) ) && ( EnGetProfileInt( "Warnings", "Register", 0 ) == 0 ) )
+            {
+                CDlgReg dlg( &m_wndMain );
+                dlg.DoModal( );
+                m_wndMain.UpdateWindow( );
+            }
 #endif
 
-	  // Play the startup movie
-		if ( (HaveIntro ()) && (GetProfileInt ("Game", "NoIntro", 0) == 0) )
-			{
-			try
-				{
-				m_wndMovie.AddMovie ("logo.avi");
-				m_wndMovie.AddMovie ("headgame.avi");
-				m_wndMovie.AddMovie ("intro.avi");
-				m_wndMovie.Create ( FALSE );
-				}
-			catch (...)
-				{
-				PostIntro ();
-				}
-			}
-		else
-			PostIntro ();
+        // Initialize SDL2 rendering window before PostIntro/CreateMain
+        // so the SDL window is available for the main menu
+        try {
+            m_gameWindow = GameWindow::Create("Enemy Nations - Game View", m_iScrnX, m_iScrnY);
+        } catch (...) {
+            // Non-fatal: fall back to MFC rendering
+        }
 
-MovieDone:
-		;
-		}
+        // Load the compositor's WL tile wallpaper NOW that the window exists. The
+        // earlier attempt (right after theBitmaps.Init above) is guarded by
+        // m_gameWindow — which is only created HERE, so it always silently skipped
+        // and the compositor's wallpaper stayed null. RenderWallpaper's null
+        // fallback is a solid dark-gold fill, which is what flashed during the
+        // load-game flow (status dialog repaints the background every frame) until
+        // DestroyMain transferred the menu's tile mid-load.
+        if ( m_gameWindow && m_gameWindow->GetCompositor() )
+        {
+            if ( m_gameWindow->GetCompositor()->LoadWallpaper() )
+                Log( "SDL2 compositor: wallpaper loaded (post window create)" );
+            else
+                Log( "SDL2 compositor: wallpaper load failed (post window create)" );
+        }
 
-	catch (int iErr)
-		{
-		CatchNum (iErr);
-		return (0);
-		}
-	catch ( SE_Exception e )
-		{
-		CatchSE ( e );
-		return (0);
-		}
-	catch (...)
-		{
-		AfxMessageBox (IDS_ERR_LOAD_2, MB_OK | MB_ICONSTOP);
-		return (0);
-		}
+        // Phase 6 hotfix: make the legacy Win32 main window (EnemyNations-
+        // MainWindow stub) transparent + click-through once the SDL window
+        // is up. Otherwise both windows compete for Z-order during video
+        // playback — clicking to skip a video can land on the Win32 stub
+        // instead, bringing it forward and pushing the SDL render target
+        // behind it.
+        //
+        // Important: do NOT SW_HIDE the window. The MFC vehicle/building
+        // list-box child windows (m_wndVehicles.m_ListBox, etc.) are
+        // created later in newworld.cpp via CreateWindow with this stub
+        // as the parent; if the parent is hidden, MFC's CListBox lazy-
+        // create leaves m_hWnd NULL and AddToList silently bails — which
+        // makes CVehicle::InvalidateStatus FindItem return -1 and trip the
+        // ASSERT at unit.cpp:2914. WS_EX_LAYERED + alpha=0 +
+        // WS_EX_TRANSPARENT keeps the window in the tree but invisible
+        // and click-through. (This mirrors what newworld.cpp:568-570 was
+        // already doing later in the lifecycle for the post-game-create
+        // window; we just need it earlier so videos benefit.)
+        if ( m_gameWindow && m_wndMain.m_hWnd )
+        {
+            LONG ex = ::GetWindowLong( m_wndMain.m_hWnd, GWL_EXSTYLE );
+            ::SetWindowLong( m_wndMain.m_hWnd, GWL_EXSTYLE,
+                             ex | WS_EX_LAYERED | WS_EX_TRANSPARENT );
+            ::SetLayeredWindowAttributes( m_wndMain.m_hWnd, 0, 0, LWA_ALPHA );
+        }
 
-	// list out version
-	m_sRif = "Data Ver: " + IntToCString (theApp.GetRifVer ()) + "." + IntToCString (VER_RIFF);
-	if (theApp.IsShareware ())
-		m_sRif += " {Shareware}";
-	if (theApp.HaveWAV ())
-		m_sRif += ", WAV";
-	else
-		m_sRif += ", MIDI";
-	if (theApp.Have24Bit ())
-		m_sRif += ", 24-bit";
-	else
-		m_sRif += ", 8-bit";
-	if (theApp.GetFirstZoom ())
-		m_sRif += ", Zoom1";
-	else
-		m_sRif += ", Zoom0";
-	Log ( m_sRif );
+        // Play the startup movie via SDL2
+        if ( ( HaveIntro( ) ) && ( EnGetProfileInt( "Game", "NoIntro", 0 ) == 0 ) )
+        {
+            // Temporarily open SDL_mixer so video audio works via Mix_HookMusic.
+            // PostIntro() will call theMusicPlayer.Open() later for the full init.
+            // allowed_changes = 0: the video hook feeds raw 22050/S16/stereo (its 44100→
+            // 22050 downsample ratio is compile-time) — Mix_OpenAudio's default flags let
+            // WASAPI open at the endpoint rate (48kHz) with NO conversion → sped-up intro
+            // audio (same root as the in-game chipmunk fix in CMusicPlayer::OpenDigital).
+            bool tempAudio = false;
+            if ( Mix_OpenAudioDevice( 22050, AUDIO_S16SYS, 2, 2048, NULL, 0 ) == 0 )
+                tempAudio = true;
 
-	// video info
-	m_sVideo = "Video: ";
-	switch ( ptrthebltformat->GetType () )
-		{
-		case CBLTFormat::DIB_DIRECTDRAW :
-			m_sVideo += "DirectDraw";
-			break;
-		case CBLTFormat::DIB_WING :
-			m_sVideo += "WinG";
-			break;
-		case CBLTFormat::DIB_DIBSECTION :
-			m_sVideo += "CreateDIBSection";
-			break;
-		case CBLTFormat::DIB_MEMORY :
-			m_sVideo += "StretchDIBits";
-			break;
-		}
-	m_sVideo += " (";
+            if ( m_gameWindow )
+            {
+                SDL2VideoPlayer::PlayVideo( m_gameWindow.get(), "assets/videos/logo.mpg" );
+                SDL2VideoPlayer::PlayVideo( m_gameWindow.get(), "assets/videos/intro.mpg" );
+            }
 
-	switch ( ptrthebltformat->GetDirection () )
-		{
-		case CBLTFormat::DIR_TOPDOWN :
-			m_sVideo += "top-down";
-			break;
-		case CBLTFormat::DIR_BOTTOMUP :
-			m_sVideo += "bottom-up";
-			break;
-		}
-	m_sVideo += "), " + IntToCString (ptrthebltformat->GetBitsPerPixel ()) + "-bit, (" +
-				IntToCString ( GetSystemMetrics (SM_CXSCREEN) ) + "x" +
-				IntToCString ( GetSystemMetrics (SM_CYSCREEN) ) + "x";
-	hdc = GetDC (NULL);
-	int iBitDepth = GetDeviceCaps (hdc, BITSPIXEL) * GetDeviceCaps (hdc, PLANES);
-	ReleaseDC (NULL, hdc);
-	m_sVideo += IntToCString ( iBitDepth ) + ")";
-	Log ( m_sVideo );
+            if ( tempAudio )
+                Mix_CloseAudio();
 
-		// sound info
-	m_sSound = "Sound: ";
-	switch ( theMusicPlayer.GetMode () )
-	  {
-		case CMusicPlayer::midi_only :
-			m_sSound += "MIDI Music";
-			break;
-		case CMusicPlayer::mixed :
-			m_sSound += "MIDI && Digital Music";
-			break;
-		case CMusicPlayer::wav_only :
-			m_sSound += "Digital Music";
-			break;
-	  }
-	if (theMusicPlayer.UseDirectSound ())
-		m_sSound += " (DirectSound)";
-	else
-		m_sSound += " (MME)";
+            PostIntro( );
+        }
+        else {
+            PostIntro();
+        }
 
-	if ( ( ! theMusicPlayer.MidiOk () ) && ( ! theMusicPlayer.WavOk () ) )
-		m_sSound += " {MIDI and WAV drivers failed}";
-	else
-		if ( ! theMusicPlayer.MidiOk () )
-			m_sSound += " {MIDI driver failed}";
-		else
-			if ( ! theMusicPlayer.WavOk () )
-				m_sSound += " {WAV driver failed}";
-			else
-				if ( ! theMusicPlayer.IsRunning () )
-					m_sSound += " {turned off}";
-	Log ( m_sSound );
+    MovieDone:;
+    }
 
-	if ( theMusicPlayer._GetHDig () == 0 )
-		m_sSoundVer = "MSS: " + CString ( theMusicPlayer.GetVersion () ) + " {off}";
-	else
-		{
-		char sBuf [130], *psFmt;
-		long iRate, iFmt;
-		sBuf[0] = 0;
-		AIL_digital_configuration ( theMusicPlayer._GetHDig (), &iRate, &iFmt, sBuf );
-		switch ( iFmt )
-	  	{
-			case DIG_F_MONO_8 :
-				psFmt = "K/8-bit/Mono, ";
-				break;
-			case DIG_F_MONO_16 :
-				psFmt = "K/16-bit/Mono, ";
-				break;
-			case DIG_F_STEREO_8 :
-				psFmt = "K/8-bit/Stereo, ";
-				break;
-			case DIG_F_STEREO_16 :
-				psFmt = "K/16-bit/Stereo, ";
-				break;
-		  }
-		m_sSoundVer = "MSS: " + CString ( theMusicPlayer.GetVersion () ) + " " +
-															IntToCString ( iRate ) + CString (psFmt) + sBuf;
-		}
-	Log ( m_sSoundVer );
+    catch ( int iErr )
+    {
+        CatchNum( iErr );
+        return ( 0 );
+    }
+    catch ( SE_Exception& e )
+    {
+        CatchSE( e );
+        return ( 0 );
+    }
+    catch ( ... )
+    {
+        EnMessageBox( IDS_ERR_LOAD_2, MB_OK | MB_ICONSTOP );
+        return ( 0 );
+    }
 
-	m_sSpeed = "CPU Speed: ~" + IntToCString (theApp.GetCpuSpeed ()) + "  CD-ROM Speed: ~" + IntToCString (theApp.GetCdSpeed ()) + "X";
-	Log ( m_sSpeed );
+    // list out version
+    m_sRif = "Data Ver: " + IntToStr( theApp.GetRifVer( ) ) + "." + IntToStr( VER_RIFF );
+    if ( theApp.IsShareware( ) )
+        m_sRif += " {Shareware}";
+    if ( theApp.HaveWAV( ) )
+        m_sRif += ", WAV";
+    else
+        m_sRif += ", MIDI";
+    if ( theApp.Have24Bit( ) )
+        m_sRif += ", 24-bit";
+    else
+        m_sRif += ", 8-bit";
+    if ( theApp.GetFirstZoom( ) )
+        m_sRif += ", Zoom1";
+    else
+        m_sRif += ", Zoom0";
+    Log( m_sRif.c_str( ) );
 
-	if (iWinType == W32s)
-		{
-		WORD wVer = myGetThrdUtlsVersion();
-		CString sThunk = "Threads DLL " + IntToCString (HIBYTE (wVer)) + "." + IntToCString (LOBYTE (wVer));
-		Log ( sThunk );
-		}
+    // video info
+    m_sVideo = "Video: ";
+    switch ( ptrthebltformat->GetType( ) )
+    {
+    case CBLTFormat::DIB_WING:
+        m_sVideo += "WinG";
+        break;
+    case CBLTFormat::DIB_DIBSECTION:
+        m_sVideo += "CreateDIBSection";
+        break;
+    case CBLTFormat::DIB_MEMORY:
+        m_sVideo += "StretchDIBits";
+        break;
+    case CBLTFormat::DIB_SDL_SURFACE:
+        m_sVideo += "SDL_Surface";
+        break;
+    default:
+        m_sVideo += "?";
+        break;
+    }
+    m_sVideo += " (";
 
-	Log ( "Initialization complete" );
+    switch ( ptrthebltformat->GetDirection( ) )
+    {
+    case CBLTFormat::DIR_TOPDOWN:
+        m_sVideo += "top-down";
+        break;
+    case CBLTFormat::DIR_BOTTOMUP:
+        m_sVideo += "bottom-up";
+        break;
+    }
+    m_sVideo += "), " + IntToStr( ptrthebltformat->GetBitsPerPixel( ) ) + "-bit, (" +
+                IntToStr( GetSystemMetrics( SM_CXSCREEN ) ) + "x" +
+                IntToStr( GetSystemMetrics( SM_CYSCREEN ) ) + "x";
+    hdc           = GetDC( NULL );
+    int iBitDepth = GetDeviceCaps( hdc, BITSPIXEL ) * GetDeviceCaps( hdc, PLANES );
+    ReleaseDC( NULL, hdc );
+    m_sVideo += IntToStr( iBitDepth ) + ")";
+    Log( m_sVideo.c_str( ) );
 
-	return TRUE;
+    // sound info
+    m_sSound = "Sound: ";
+    switch ( theMusicPlayer.GetMode( ) )
+    {
+    case CMusicPlayer::MUSIC_MODE::midi_only:
+        m_sSound += "MIDI Music";
+        break;
+    case CMusicPlayer::MUSIC_MODE::mixed:
+        m_sSound += "MIDI && Digital Music";
+        break;
+    case CMusicPlayer::MUSIC_MODE::wav_only:
+        m_sSound += "Digital Music";
+        break;
+    }
+    if ( !theMusicPlayer.WavOk( ) )
+        m_sSound += " {WAV driver failed}";
+    else if ( !theMusicPlayer.IsRunning( ) )
+        m_sSound += " {turned off}";
+    Log( m_sSound.c_str( ) );
+
+    {
+        int iRate, iChannels;
+        std::string sDriverName;
+        theMusicPlayer.GetDigitalConfig( &iRate, &iChannels, sDriverName );
+        if ( iRate > 0 )
+            m_sSoundVer = std::string( "Audio: " ) + theMusicPlayer.GetVersion( ) + " " +
+                          IntToStr( iRate ) + "Hz/" + IntToStr( iChannels ) + "ch, " + sDriverName;
+        else
+            m_sSoundVer = std::string( "Audio: " ) + theMusicPlayer.GetVersion( ) + " {off}";
+    }
+    Log( m_sSoundVer.c_str( ) );
+
+    m_sSpeed = "CPU Speed: ~" + IntToStr( theApp.GetCpuSpeed( ) ) + "  CD-ROM Speed: ~" +
+               IntToStr( theApp.GetCdSpeed( ) ) + "X";
+    Log( m_sSpeed.c_str( ) );
+
+    if ( iWinType == W32s )
+    {
+        Log( "iWinType w32s" );
+        WORD        wVer   = myGetThrdUtlsVersion( );
+        std::string sThunk = "Threads DLL " + IntToStr( HIBYTE( wVer ) ) + "." + IntToStr( LOBYTE( wVer ) );
+        Log( sThunk.c_str( ) );
+    }
+
+    Log( "Initialization complete" );
+
+    return TRUE;
 }
 
-CDlgPause * CConquerApp::GetDlgPause ()
+CDlgPause* CConquerApp::GetDlgPause( )
 {
 
-	if (m_pdlgPause == NULL)
-		m_pdlgPause = new CDlgPause ( &m_wndMain );
-	return ( m_pdlgPause );
+    if ( m_pdlgPause == NULL )
+        m_pdlgPause = new CDlgPause( CWnd::FromHandle( m_wndMain.m_hWnd ) );
+    return ( m_pdlgPause );
 }
 
-void CConquerApp::PostIntro ()
+void CConquerApp::PostIntro( )
 {
-static BOOL bDidIt = FALSE;	// could be called twice on exception above
+    static BOOL bDidIt = FALSE;  // could be called twice on exception above
 
-	m_wndMain.SetProgPos ( CWndMain::playing );
-	ShowCursor ( TRUE );
+    m_wndMain.SetProgPos( CWndMain::playing );
+    ShowCursor( TRUE );
 
-	GetDlgPause ();
+    GetDlgPause( );
 
-	if (! bDidIt)
-		{
-		bDidIt = TRUE;
-	
-		// start the audio
-		theMusicPlayer.Open (GetProfileInt ("Game", "Music", 100), 
-											GetProfileInt ("Game", "Sound", 100),
-											m_mMode, SFXGROUP::global);
+    if ( !bDidIt )
+    {
+        bDidIt = TRUE;
 
-		if ( GetProfileInt( "Game", "CustomUI", W32s != iWinType ) )
-			InitCustomUI();
-		theMusicPlayer.YieldPlayer ();
-		}
+        // start the audio
+        theMusicPlayer.Open( EnGetProfileInt( "Game", "Music", 50 ), EnGetProfileInt( "Game", "Sound", 50 ), m_mMode,
+                             SFXGROUP::global );
 
-	CreateMain ();
+        if ( EnGetProfileInt( "Game", "CustomUI", W32s != iWinType ) ) {
+            InitCustomUI();
+        }
+        theMusicPlayer.YieldPlayer( );
+    }
+
+    CreateMain( );
 }
 
-void CConquerApp::CloseApp ()
+void CConquerApp::CloseApp( )
 {
-static BOOL bCalled = FALSE;
+    static BOOL bCalled = FALSE;
 
-	if (bCalled)
-		return;
-	bCalled = TRUE;
+    if ( bCalled )
+        return;
+    bCalled = TRUE;
 
-	DestroyWorld ();
+    DestroyWorld( );
 
-	m_wndMain.SetProgPos ( CWndMain::exiting );
+    m_wndMain.SetProgPos( CWndMain::exiting );
 
-	CGlobalSubClass::UnSubClass();
+    CGlobalSubClass::UnSubClass( );
 
-	::PostQuitMessage (0);
+    ::PostQuitMessage( 0 );
+
+    // The SDL-driven main loop (CConquerApp::Run -> GameWindow::PollEvents) never
+    // sees the WM_QUIT above — SDL's message pump discards the NULL-hwnd thread
+    // message. Push an SDL_QUIT so PollEvents() returns true and the loop exits.
+    if ( m_gameWindow )
+        m_gameWindow->RequestQuit( );
 }
 
 //---------------------------------------------------------------------------
 // CConquerApp::InitCustomUI	Enable global subclassing for NC and controls
 //---------------------------------------------------------------------------
-void
-CConquerApp::InitCustomUI()
+void CConquerApp::InitCustomUI( )
 {
-	CTextColors	textcolorsButton( RGB( 132, 154, 255 ),
-											RGB( 230, 180, 115 ),
-											RGB(  40,  50, 100 ));
+    CTextColors textcolorsButton( RGB( 132, 154, 255 ), RGB( 230, 180, 115 ), RGB( 40, 50, 100 ) );
 
-	CTextColors	textcolorsStatic( RGB( 230, 190, 120 ),
-											RGB(  84,  96, 216 ),
-											RGB( 100,  80,  55 ));
+    CTextColors textcolorsStatic( RGB( 230, 190, 120 ), RGB( 84, 96, 216 ), RGB( 100, 80, 55 ) );
 
-	CGlobalSubClass::Subclass(  theBitmaps.GetByIndex( CBitmapLib::DLG_BKGND ),
-										 theTextBtnData.m_pcDib,
-										 theLargeTextBtnData.m_pcDib,
-										 theBitmaps.GetByIndex( CBitmapLib::DLG_RADIO_BUTTONS ),
-										 theBitmaps.GetByIndex( CBitmapLib::DLG_CHECK_BOXES ),
-										&theLargeTextBtnData.m_fntText,
-										 SOUNDS::GetID( SOUNDS::button ),
-										 textcolorsButton,
-										 textcolorsStatic );
+    auto bkgnd = theBitmaps.GetByIndex(CBitmapLib::DLG_BKGND);
+    auto rdioBtn = theBitmaps.GetByIndex(CBitmapLib::DLG_RADIO_BUTTONS);
+    auto chkBox = theBitmaps.GetByIndex(CBitmapLib::DLG_CHECK_BOXES);
+    auto soundid = SOUNDS::GetID(SOUNDS::button);
 
-	CFramePainter::SetDrawInfo( theBitmaps.m_ppDibs + CBitmapLib::FRAME_LL_CORNER );
+    CGlobalSubClass::Subclass( bkgnd, theTextBtnData.m_pcDib, theLargeTextBtnData.m_pcDib,
+                               rdioBtn, chkBox, &theLargeTextBtnData.m_fntText, soundid,
+                               textcolorsButton, textcolorsStatic );
 
-	m_bSubClass = TRUE;
+    CFramePainter::SetDrawInfo( theBitmaps.m_ppDibs + CBitmapLib::FRAME_LL_CORNER );
+
+    m_bSubClass = TRUE;
 }
 
-void CConquerApp::Minimize ()
+void CConquerApp::Minimize( )
 {
-
-	m_pMainWnd->ShowWindow (SW_MINIMIZE);
+    // The real, visible window is the SDL m_gameWindow on BOTH platforms. Once the
+    // SDL main menu / game is up, the MFC m_pMainWnd (m_wndMain) is SW_HIDE-den, so
+    // m_pMainWnd->ShowWindow(SW_MINIMIZE) minimized a hidden window and the Minimize
+    // button looked dead — on mac (m_pMainWnd is a no-op stub) AND on Windows (real
+    // HWND, but hidden). Minimize the whole SDL window group instead; MinimizeAll()
+    // also hides the detached ALWAYS_ON_TOP panels that otherwise stay up in-game.
+    if ( m_gameWindow )
+        m_gameWindow->MinimizeAll( );
+#ifdef _WIN32
+    else if ( m_pMainWnd )
+        m_pMainWnd->ShowWindow( SW_MINIMIZE );   // fallback: no SDL window yet
+#endif
 }
 
-void CConquerApp::CreateMain ()
+void CConquerApp::CreateMain( )
 {
 
-	// close chat (cancel on multi create)
-	CloseDlgChat ();
+    // close chat (cancel on multi create)
+    CloseDlgChat( );
 
-	// kill movie if running
-	if ((m_wndMovie.m_hWnd != NULL) && (! m_wndMovie.m_bInDestroy))
-		m_wndMovie.DestroyWindow ();
+    // CWndMovie excluded from build (Phase 2d) — SDL2VideoPlayer is synchronous,
+    // nothing to destroy at this point.
 
-	// if coming from a game setup - kill it
-	theGame.SetMsgs (FALSE);
-	DestroyExceptMain ();
+    // if coming from a game setup - kill it
+    theGame.SetShouldProcessMessages(FALSE);
+    DestroyExceptMain( );
 
-	m_wndMain.SetProgPos ( CWndMain::playing );
+    m_wndMain.SetProgPos( CWndMain::playing );
 
-	bDoSubclass = TRUE;
+    bDoSubclass = TRUE;
 
-	if (m_pdlgMain == NULL)
-		{
-		m_pdlgMain = new CDlgMain (m_pMainWnd);
-		m_pdlgMain->Create (IDD_MAIN, m_pMainWnd);
-		}
+    // SDL2 main menu is the only path. CDlgMain MFC fallback excluded from
+    // build (Phase 2d).
+    if ( !m_sdlMainMenu )
+    {
+        m_sdlMainMenu = std::make_unique<SDL2MainMenu>();
+        if ( !m_sdlMainMenu->Initialize( m_gameWindow.get() ) )
+            m_sdlMainMenu.reset();
+    }
+    if ( m_sdlMainMenu && m_sdlMainMenu->IsInitialized() )
+    {
+        m_wndMain.ShowWindow( SW_HIDE );
+        m_gameWindow->Show();
+        m_gameWindow->SetMainMenu( m_sdlMainMenu.get() );
+        m_gameWindow->Raise();
+        // Restore a visible arrow cursor. Cancelling a game mid-creation returns
+        // here while the area map (rocket placement) had hidden the OS cursor via
+        // the app-global SDL_ShowCursor(DISABLE); without this the menu has no
+        // cursor (no window-enter event fires when the pointer is already over us).
+        m_gameWindow->SetArrowCursor();
+        Log( "Using SDL2 main menu" );
+    }
 
-	m_pdlgMain->EnableWindow (TRUE);
-	m_pdlgMain->ShowWindow (SW_SHOW);
-	theGame.SetState (CGame::main);
+    theGame.SetState( CGame::main );
 
-	CheckForCD ();
+    CheckForCD( );
 
-	theMusicPlayer.PlayExclusiveMusic (MUSIC::GetID (MUSIC::main_screen));
+    theMusicPlayer.PlayExclusiveMusic( MUSIC::GetID( MUSIC::main_screen ) );
 }
 
-void CConquerApp::DisableMain ()
+void CConquerApp::DisableMain( )
 {
 
-	if (m_pdlgMain == NULL)
-		return;
+    if ( m_sdlMainMenu )
+    {
+        // Stop rendering the SDL menu but keep SDL window visible
+        // so the create-status dialog can render on it during game creation
+        if ( m_gameWindow )
+        {
+            m_gameWindow->SetMainMenu( nullptr );
+            // Don't hide — the SDL window is needed for the status dialog
+        }
+        return;
+    }
 
-	m_pdlgMain->EnableWindow (FALSE);
-	m_pdlgMain->ShowWindow (SW_HIDE);
+    // CDlgMain excluded from build (Phase 2d).
 }
 
-void CConquerApp::DestroyMain ()
+void CConquerApp::DestroyMain( )
 {
 
-	if (m_pdlgMain == NULL)
-		return;
+    if ( m_sdlMainMenu )
+    {
+        if ( m_gameWindow )
+        {
+            m_gameWindow->SetMainMenu( nullptr );
 
-	CDlgMain * pDm = m_pdlgMain;
-	m_pdlgMain = NULL;
-	pDm->DestroyWindow ();
+            // Transfer the WL24 tile wallpaper to the compositor before
+            // Shutdown() frees it, so it's available during world building.
+            SDL2Compositor* comp = m_gameWindow->GetCompositor();
+            SDL_Surface* tile = m_sdlMainMenu->GetTileWallpaper();
+            if ( comp && tile )
+            {
+                // Duplicate the surface — Shutdown() will free the original
+                SDL_Surface* copy = SDL_ConvertSurface( tile, tile->format, 0 );
+                if ( copy )
+                    comp->SetWallpaperSurface( copy );
+            }
+        }
+        m_sdlMainMenu->Shutdown();
+        m_sdlMainMenu.reset();
+    }
+
+    // Make MFC main window fully transparent during gameplay.
+    // It stays valid and in-place (GetDC/RectVisible work) but invisible.
+    ::SetWindowLong( m_wndMain.m_hWnd, GWL_EXSTYLE,
+                     ::GetWindowLong( m_wndMain.m_hWnd, GWL_EXSTYLE ) | WS_EX_LAYERED );
+    ::SetLayeredWindowAttributes( m_wndMain.m_hWnd, 0, 0, LWA_ALPHA );
+    if ( m_gameWindow )
+    {
+        m_gameWindow->Show();
+        m_gameWindow->Raise();
+    }
+
+    // CDlgMain excluded from build (Phase 2d).
 }
 
-void CConquerApp::DestroyExceptMain ()
+void CConquerApp::DestroyExceptMain( )
 {
 
-	if (m_pCreateGame != NULL)
-		{
-		m_pCreateGame->CloseAll ();
-		delete m_pCreateGame;
-		m_pCreateGame = NULL;
-		}
+    if ( m_pCreateGame != NULL )
+    {
+        m_pCreateGame->CloseAll( );
+        delete m_pCreateGame;
+        m_pCreateGame = NULL;
+    }
 
-	// kill pause window
-	if ( ( m_pdlgPause != NULL ) && ( m_pdlgPause->m_hWnd != NULL ) )
-		{
-		m_pdlgPause->DestroyWindow ();
-		m_pdlgPause = NULL;
-		}
+    // kill pause window
+    if ( ( m_pdlgPause != NULL ) && ( m_pdlgPause->m_hWnd != NULL ) )
+    {
+        m_pdlgPause->DestroyWindow( );
+        m_pdlgPause = NULL;
+    }
 
-	// kill cut scene
-	if ( m_wndCutScene.m_hWnd != NULL )
-		m_wndCutScene.DestroyWindow ();
-}
-	
-CDlgChatAll * CConquerApp::GetDlgChat ()
-{
-
-	if ( m_pdlgChat == NULL )
-		m_pdlgChat = new CDlgChatAll ( &m_wndMain );
-	if ( m_pdlgChat->m_hWnd == NULL )
-		m_pdlgChat->Create ( IDD_CHAT_INIT, &m_wndMain );
-
-	return ( m_pdlgChat );
+    // kill cut scene
+    if ( m_wndCutScene.m_hWnd != NULL )
+        m_wndCutScene.DestroyWindow( );
 }
 
-void CConquerApp::CloseDlgChat ()
+CDlgChatAll* CConquerApp::GetDlgChat( )
 {
-
-	if ( ( m_pdlgChat != NULL ) && ( m_pdlgChat->m_hWnd != NULL ) )
-		m_pdlgChat->DestroyWindow ();
-	m_pdlgChat = NULL;
+    // CDlgChatAll excluded from build (Phase 2d). SDL2ChatWindow is the
+    // intended replacement; until its network routing is wired, no chat UI.
+    return nullptr;
 }
 
-int CConquerApp::ExitInstance ()
+void CConquerApp::CloseDlgChat( )
 {
+    // CDlgChatAll excluded from build (Phase 2d).
+}
 
-	CGlobalSubClass::UnSubClass();
+int CConquerApp::ExitInstance( )
+{
+    // Teardown is not a hang: the WM_QUIT path runs this from INSIDE Run(), before
+    // WinMain's own EnHangWatchdogStop(), so a long teardown wrote a hang dump.
+    // Stop is a one-way atomic store - idempotent, and harmless if never started.
+    EnHangWatchdogStop( );
 
-	// close out sprites
-	theTransports.Close ();
-	theTurrets.Close ();
-	theFlashes.Close ();
-	theStructures.Close ();
-	theEffects.Close ();
-	theTerrain.Close ();
+    // Idempotent: ExitInstance is reached from TWO paths on quit — the message
+    // loop calls it on WM_QUIT (mainloop.cpp `return ExitInstance()`), then WinMain
+    // calls it again unconditionally after Run() returns. Running the full teardown
+    // twice re-entered myThreadClose() with the global thread-lock `cs` already
+    // torn down by the first pass -> EnterCriticalSection on a zeroed CS -> exit-time
+    // 0xC0000005 on every quit. Tear down exactly once; later calls are no-ops.
+    static bool s_bExited = false;
+    if ( s_bExited )
+        return 0;
+    s_bExited = true;
 
-	_set_se_translator (prevFn);
+    CGlobalSubClass::UnSubClass( );
 
-//BUGBUG	theDiskCache.Close ();
+    // The path workers go the same way the AI threads do below, and before them: a
+    // worker owns a CPathMgr and must be joined before any static teardown. DestroyWorld
+    // is conditional on m_wndBar here, so it cannot be relied on to have stopped them.
+    EnPathWorkerStop( );
 
-	theIcons.Close ();
+    // Stop and join the AI worker threads FIRST — before ANY game data is
+    // torn down. They scan the live world (GetCHexData/AiFillHexLiveNoLock,
+    // pathing) right up until they exit; closing sprites/terrain/world under
+    // them was the exit-time 0xC0000005 on every quit (2026-06-11). With the
+    // AiThread bEndThreads check this join completes in ~100ms per worker.
+    myThreadClose( (THREADEXITFUNC)AiExit );
 
-	theMusicPlayer.Close ();
+    // Delete the world while the unit-type data it points at still exists: every building
+    // and vehicle reads its CStructureData/CTransportData in its destructor (a mine's
+    // UpdateGround does), and the sprite Close()s below free that data. Quitting through
+    // the window (SDL_QUIT -> ExitInstance) used to run them first = a read of freed data
+    // on every building, an access violation at quit on large saves. The in-game menu
+    // quit (CloseWorld) already tears the world down in this order.
+    DestroyExceptMain( );  // if in create
+    if ( m_wndBar.IsCreated() )
+        DestroyWorld( );  // game
 
-	myThreadClose ((THREADEXITFUNC) AiExit);
+    // close out sprites
+    theTransports.Close( );
+    theTurrets.Close( );
+    theFlashes.Close( );
+    theStructures.Close( );
+    theEffects.Close( );
+    theTerrain.Close( );
 
-	delete m_pdlgPause;
-	m_pdlgPause = NULL;
+    _set_se_translator( prevFn );
 
-	DestroyExceptMain ();					// if in create
-	if (m_wndBar.m_hWnd != NULL)
-		DestroyWorld ();						// game
-	DestroyMain ();								// main window (dialog)
+    // BUGBUG	theDiskCache.Close ();
 
-	// draw black so no palette uglyness
-	if (m_pMainWnd != NULL)
-		{
-		CWindowDC dc ( &m_wndMain );
-		CBrush brBlack;
-		brBlack.CreateSolidBrush ( RGB (0, 0, 0) );
-		CRect rect ( 0, 0, GetSystemMetrics (SM_CXSCREEN), GetSystemMetrics (SM_CYSCREEN) );
-		dc.FillRect (&rect, &brBlack);
-		dc.SetBkMode (TRANSPARENT);
-		dc.SetTextColor ( RGB (0, 0, 0) );
-		CString sLoad;
-		sLoad.LoadString (IDS_LEAVING);
-		dc.TextOut (0, 0, sLoad);
-		}
+    theIcons.Close( );
 
-	m_wndMain.DestroyWindow ();		// background window
+    theMusicPlayer.Close( );
 
-	DeleteCriticalSection ( &cs );
-	CloseHandle ( hRenderEvent );
+    delete m_pdlgPause;
+    m_pdlgPause = NULL;
+
+    DestroyMain( );       // main window (dialog)
+
+    // draw black so no palette uglyness
+    if ( m_pMainWnd != NULL )
+    {
+        CWindowDC dc( &m_wndMain );
+        CBrush    brBlack;
+        brBlack.CreateSolidBrush( RGB( 0, 0, 0 ) );
+        CRect rect( 0, 0, GetSystemMetrics( SM_CXSCREEN ), GetSystemMetrics( SM_CYSCREEN ) );
+        dc.FillRect( &rect, &brBlack );
+        dc.SetBkMode( TRANSPARENT );
+        dc.SetTextColor( RGB( 0, 0, 0 ) );
+        std::string sLoad = EnLoadStdString( IDS_LEAVING );
+        dc.TextOut( 0, 0, sLoad.c_str(), (int)sLoad.size() );
+    }
+
+    m_wndMain.DestroyWindow( );  // background window
+
+    DeleteCriticalSection( &cs );
+    CloseHandle( hRenderEvent );
 
 #ifdef USE_SMARTHEAP
-	MemUnregisterTask ();
+ //   MemUnregisterTask( );
 #endif
 
-	if ( m_hLibLang != NULL )
-		FreeLibrary ( m_hLibLang );
-	delete [] m_piLangAvail;
+    if ( m_hLibLang != NULL )
+        FreeLibrary( m_hLibLang );
+    delete[] m_piLangAvail;
 
-	if ( m_iRestoreRes )
-		{
-		DEVMODE dev;
-		memset ( &dev, 0, sizeof (dev) );
-		dev.dmSize = sizeof (dev);
-		dev.dmFields = DM_BITSPERPEL | DM_PELSWIDTH | DM_PELSHEIGHT;
-		dev.dmPelsWidth = m_iOldWidth;
-		dev.dmPelsHeight = m_iOldHeight;
-		dev.dmBitsPerPel = m_iOldDepth;
+    if ( m_iRestoreRes )
+    {
+        DEVMODE dev;
+        memset( &dev, 0, sizeof( dev ) );
+        dev.dmSize       = sizeof( dev );
+        dev.dmFields     = DM_BITSPERPEL | DM_PELSWIDTH | DM_PELSHEIGHT;
+        dev.dmPelsWidth  = m_iOldWidth;
+        dev.dmPelsHeight = m_iOldHeight;
+        dev.dmBitsPerPel = m_iOldDepth;
 
-		LONG lRtn = ChangeDisplaySettings ( &dev, 0 );
-		char sBuf [80];
-		sprintf ( sBuf, "restore ChangeDisplaySettings (%dx%dx%d) = %d", 
-													dev.dmPelsWidth, dev.dmPelsHeight, dev.dmBitsPerPel, lRtn );
-		Log ( sBuf );
-		}
+        LONG lRtn = ChangeDisplaySettings( &dev, 0 );
+        char sBuf[80];
+        sprintf( sBuf, "restore ChangeDisplaySettings (%dx%dx%d) = %d", dev.dmPelsWidth, dev.dmPelsHeight,
+                 dev.dmBitsPerPel, lRtn );
+        Log( sBuf );
+    }
 
-	if ( m_pLogFile != NULL )
-		{
-		m_pLogFile->Close ();
-		delete m_pLogFile;
-		m_pLogFile = NULL;
-		}
+    if ( m_pLogFile != NULL )
+    {
+        fclose( m_pLogFile );
+        m_pLogFile = NULL;
+    }
 
-	// show the order form
-	if ( IsShareware () )
-		{
-		CString sCmd = GetDefaultApp ( ".doc", "write", "order.doc" );
+    // show the order form
+    if ( IsShareware( ) )
+    {
+        std::string sCmd = GetDefaultApp( ".doc", "write", "order.doc" );
 
-		STARTUPINFO si;
-		memset ( &si, 0, sizeof (si) );
-		si.cb = sizeof (si);
-		si.wShowWindow = SW_SHOWMAXIMIZED;
-		si.dwFlags = STARTF_USESHOWWINDOW;
-		PROCESS_INFORMATION pi;
+        STARTUPINFO si;
+        memset( &si, 0, sizeof( si ) );
+        si.cb          = sizeof( si );
+        si.wShowWindow = SW_SHOWMAXIMIZED;
+        si.dwFlags     = STARTF_USESHOWWINDOW;
+        PROCESS_INFORMATION pi;
 
-		CreateProcess ( NULL, (char *) (char const *) sCmd, NULL, NULL, FALSE, 0, NULL, NULL, &si, &pi );
-		CloseHandle ( pi.hProcess );
-		CloseHandle ( pi.hThread );
-		}
+        CreateProcess( NULL, &sCmd[0], NULL, NULL, FALSE, 0, NULL, NULL, &si, &pi );
+        CloseHandle( pi.hProcess );
+        CloseHandle( pi.hThread );
+    }
 
-	return (CWinApp::ExitInstance ());
+    return ( CConquerAppSuper::ExitInstance( ) );
+}
+
+// Show a Yes/No or Yes/No/Cancel message box via SDL2 if available, else MFC.
+static int SDL2_MessageBox( int idsString, bool yesNoCancel = false )
+{
+    // Load the string from the resource table
+    std::string msg = EnLoadStdString( idsString );
+
+    // Replace \n with space for single-line display in our dialog
+    for ( auto& c : msg )
+        if ( c == '\n' ) c = ' ';
+
+    if ( theApp.m_gameWindow )
+    {
+        SDL2MessageBox::Style style = yesNoCancel
+            ? SDL2MessageBox::YesNoCancel
+            : SDL2MessageBox::YesNo;
+        SDL2MessageBox dlg( theApp.m_gameWindow.get(), msg, style );
+        return dlg.DoModal();
+    }
+
+    // MFC fallback
+    UINT flags = yesNoCancel
+        ? ( MB_YESNOCANCEL | MB_ICONQUESTION )
+        : ( MB_YESNO | MB_ICONSTOP | MB_TASKMODAL );
+    return EnMessageBox( idsString, flags );
 }
 
 // true - continue
-BOOL CConquerApp::SaveGame (CWnd * pPar)
+BOOL CConquerApp::SaveGame( CWnd* pPar )
 {
 
-	// if we aren't playing - exit
-	if (theGame.GetState () != CGame::play)
-		return (TRUE);
+    // if we aren't playing - exit
+    if ( theGame.GetState( ) != CGame::play )
+        return ( TRUE );
 
-	ASSERT (TestEverything ());
+    ASSERT( TestEverything( ) );
 
-	int iRtn;	
-	if (theGame.AmServer ())
-		{
-		if ( theGame.IsNetGame () )
-			{
-			if (AfxMessageBox (IDS_SERVER_QUIT, MB_YESNO | MB_ICONSTOP | MB_TASKMODAL) == IDNO)
-				return (FALSE);
-			}
-		else
-			if (AfxMessageBox (IDS_SINGLE_QUIT, MB_YESNO | MB_ICONSTOP | MB_TASKMODAL) == IDNO)
-				return (FALSE);
-		}
-	else
-		if (AfxMessageBox (IDS_CLIENT_QUIT, MB_YESNO | MB_ICONSTOP | MB_TASKMODAL) == IDNO)
-			return (FALSE);
+    int iRtn;
+    if ( theGame.AmServer( ) )
+    {
+        if ( theGame.IsNetGame( ) )
+        {
+            if ( SDL2_MessageBox( IDS_SERVER_QUIT ) == IDNO )
+                return ( FALSE );
+        }
+        else if ( SDL2_MessageBox( IDS_SINGLE_QUIT ) == IDNO )
+            return ( FALSE );
+    }
+    else if ( SDL2_MessageBox( IDS_CLIENT_QUIT ) == IDNO )
+        return ( FALSE );
 
-	CWndArea * pWnd = theAreaList.GetTop ();
-	if (pWnd != NULL)
-		if ((pWnd->GetMode () != CWndArea::rocket_ready) &&
-														(pWnd->GetMode () != CWndArea::rocket_pos) &&
-														(pWnd->GetMode () != CWndArea::rocket_wait))
-			{
-			iRtn = AfxMessageBox (IDS_SAVE_OLD, MB_YESNOCANCEL | MB_ICONQUESTION);
-			if (iRtn == IDCANCEL)
-				return (FALSE);
-			if (iRtn == IDYES)
-				if (theGame.SaveGame (pPar) != IDOK)
-					return (FALSE);
-			}
+    CWndArea* pWnd = theAreaList.GetTop( );
+    if ( pWnd != NULL )
+        if ( ( pWnd->GetMode( ) != CWndArea::rocket_ready ) && ( pWnd->GetMode( ) != CWndArea::rocket_pos ) &&
+             ( pWnd->GetMode( ) != CWndArea::rocket_wait ) )
+        {
+            iRtn = SDL2_MessageBox( IDS_SAVE_OLD, true );
+            if ( iRtn == IDCANCEL )
+                return ( FALSE );
+            if ( iRtn == IDYES )
+                if ( theGame.SaveGame( pPar ) != IDOK )
+                    return ( FALSE );
+        }
 
-	return (TRUE);
+    return ( TRUE );
 }
 
-BOOL CConquerApp::PreTranslateMessage (MSG *pMsg)
+BOOL CConquerApp::PreTranslateMessage( MSG* pMsg )
 {
 
-	if (pMsg->message == WM_KEYDOWN)
-		switch (pMsg->wParam)
-			{
-			case VK_F1 :
-				theApp.WinHelp (0, HELP_CONTENTS);
-				return (TRUE);
+    if ( pMsg->message == WM_KEYDOWN )
+        switch ( pMsg->wParam )
+        {
+        case VK_F1:
+            theApp.WinHelp( 0, HELP_CONTENTS );
+            return ( TRUE );
 
 #ifdef _CHEAT
-			// repaint everything
-			case VK_F11 :
-				CWndAnim::InvalidateAllWindows ();
-				break;
+        // repaint everything
+        case VK_F11:
+            CWndAnim::InvalidateAllWindows( );
+            break;
 
-			// erase WinG screen area
-			case VK_F12 : {
-				POSITION pos = theAnimList.GetHeadPosition ();
-				while (pos != NULL)
-					{
-					CWndAnim *pWnd = theAnimList.GetNext (pos);
-					CClientDC dc (pWnd);
-					CBrush br;
-					br.CreateSolidBrush (RGB (0, 0, 0));
-					CRect rect;
-					pWnd->GetClientRect (&rect);
-					dc.FillRect (&rect, &br);
-					}
-				break; }
+        // erase WinG screen area
+        case VK_F12: {
+            for ( CWndAnim* pWnd : theAnimList )
+            {
+                CClientDC dc( pWnd );
+                CBrush    br;
+                br.CreateSolidBrush( RGB( 0, 0, 0 ) );
+                CRect rect;
+                pWnd->GetClientRect( &rect );
+                dc.FillRect( &rect, &br );
+            }
+            break;
+        }
 #endif
-			}
+        }
 
-	return (CWinApp::PreTranslateMessage (pMsg));
+    return ( CConquerAppSuper::PreTranslateMessage( pMsg ) );
 }
 
 #ifdef _DEBUG
-void CConquerApp::AssertValid() const
+void CConquerApp::AssertValid( ) const
 {
 
-	CWinApp::AssertValid ();
+    CConquerAppSuper::AssertValid( );
 
-	ASSERT_VALID (&m_wndWorld);
-	ASSERT_VALID (&m_wndChat);
-	ASSERT_VALID (&m_wndBar);
-	ASSERT_VALID (&m_wndBldgs);
-	ASSERT_VALID (&m_wndVehicles);
+    ASSERT_VALID( &m_wndWorld );
+    // ASSERT_VALID( &m_wndChat );  // ChatStub is not CObject-derived (Phase 2d-cont)
+    ASSERT_VALID( &m_wndBar );
+    ASSERT_VALID( &m_wndBldgs );
+    ASSERT_VALID( &m_wndVehicles );
 
-	ASSERT_VALID (&m_wndMain);
-	ASSERT_VALID_OR_NULL (m_pdlgMain);
-	ASSERT_VALID_OR_NULL (m_pCreateGame);
+    ASSERT_VALID( &m_wndMain );
+    // CDlgMain excluded from build (Phase 2d).
+    ASSERT_VALID_OR_NULL( m_pCreateGame );
 }
 #endif
 
 
 /////////////////////////////////////////////////////////////////////////////
-// CDlgMain dialog
+// CDlgMain dialog — excluded from build (Phase 2d). SDL2MainMenu is the
+// live main-menu path. Body kept in source for reference but not compiled.
+#if 0  // MFC_LEGACY_MAIN_MENU
 
-CDlgMain::CDlgMain(CWnd* pParent /*=NULL*/)
-	: CDialog(CDlgMain::IDD, pParent)
+CDlgMain::CDlgMain( CWnd* pParent /*=NULL*/ ): CDialog( CDlgMain::IDD, pParent )
 {
+    //{{AFX_DATA_INIT(CDlgMain)
+    // NOTE: the ClassWizard will add member initialization here
+    //}}AFX_DATA_INIT
+    m_bTile = FALSE;
 
-	//{{AFX_DATA_INIT(CDlgMain)
-		// NOTE: the ClassWizard will add member initialization here
-	//}}AFX_DATA_INIT
-	m_bTile = FALSE;
-	
-	m_pcdibTmp = NULL;
-	m_pcdibWall = NULL;
-	for (int iInd=0; iInd<NUM_BTNS; iInd++)
-		m_pcdibBtns [iInd] = NULL;
+    m_pcdibTmp  = NULL;
+    m_pcdibWall = NULL;
+    for ( int iInd = 0; iInd < NUM_BTNS; iInd++ ) m_pcdibBtns[iInd] = NULL;
 }
 
-CDlgMain::~CDlgMain ()
+CDlgMain::~CDlgMain( )
 {
 
-	delete m_pcdibWall;
-	for (int iInd=0; iInd<NUM_BTNS; iInd++)
-		delete m_pcdibBtns [iInd];
-	delete m_pcdibTmp;
+    delete m_pcdibWall;
+    for ( int iInd = 0; iInd < NUM_BTNS; iInd++ ) delete m_pcdibBtns[iInd];
+    delete m_pcdibTmp;
 }
 
-void CDlgMain::DoDataExchange(CDataExchange* pDX)
+void CDlgMain::DoDataExchange( CDataExchange* pDX )
 {
-	CDialog::DoDataExchange(pDX);
-	//{{AFX_DATA_MAP(CDlgMain)
-		// NOTE: the ClassWizard will add DDX and DDV calls here
-	//}}AFX_DATA_MAP
+    CDialog::DoDataExchange( pDX );
+    //{{AFX_DATA_MAP(CDlgMain)
+    // NOTE: the ClassWizard will add DDX and DDV calls here
+    //}}AFX_DATA_MAP
 }
 
-BEGIN_MESSAGE_MAP(CDlgMain, CDialog)
-	//{{AFX_MSG_MAP(CDlgMain)
-	ON_WM_CREATE()
-	ON_WM_PAINT()
-	ON_BN_CLICKED(IDC_MAIN_CAMPAIGN, OnMainScenario)
-	ON_BN_CLICKED(IDC_MAIN_SINGLE, OnMainSingle)
-	ON_BN_CLICKED(IDC_MAIN_CREATE, OnMainCreate)
-	ON_BN_CLICKED(IDC_MAIN_JOIN, OnMainJoin)
-	ON_BN_CLICKED(IDC_MAIN_LOAD, OnMainLoad)
-	ON_BN_CLICKED(IDCANCEL, OnMainExit)
-	ON_WM_SIZE()
-	ON_WM_DRAWITEM()
-	ON_BN_CLICKED(IDC_MINIMIZE, OnMinimize)
-	ON_BN_CLICKED(IDC_MAIN_LOAD_MUL, OnMainLoadMulti)
-	ON_BN_CLICKED(IDC_MAIN_CREDITS, OnMainCredits)
-	ON_BN_CLICKED(IDC_MAIN_INTRO, OnMainIntro)
-	ON_BN_CLICKED(IDC_MAIN_OPTIONS, OnMainOptions)
-	ON_WM_SYSCOMMAND()
-	ON_WM_DESTROY()
-	ON_WM_ERASEBKGND()
-	ON_WM_PALETTECHANGED()
-	ON_WM_QUERYNEWPALETTE()
-	//}}AFX_MSG_MAP
-END_MESSAGE_MAP()
+BEGIN_MESSAGE_MAP( CDlgMain, CDialog )
+//{{AFX_MSG_MAP(CDlgMain)
+ON_WM_CREATE( )
+ON_WM_PAINT( )
+ON_BN_CLICKED( IDC_MAIN_CAMPAIGN, OnMainScenario )
+ON_BN_CLICKED( IDC_MAIN_SINGLE, OnMainSingle )
+ON_BN_CLICKED( IDC_MAIN_CREATE, OnMainCreate )
+ON_BN_CLICKED( IDC_MAIN_JOIN, OnMainJoin )
+ON_BN_CLICKED( IDC_MAIN_LOAD, OnMainLoad )
+ON_BN_CLICKED( IDCANCEL, OnMainExit )
+ON_WM_SIZE( )
+ON_WM_DRAWITEM( )
+ON_BN_CLICKED( IDC_MINIMIZE, OnMinimize )
+ON_BN_CLICKED( IDC_MAIN_LOAD_MUL, OnMainLoadMulti )
+ON_BN_CLICKED( IDC_MAIN_CREDITS, OnMainCredits )
+ON_BN_CLICKED( IDC_MAIN_INTRO, OnMainIntro )
+ON_BN_CLICKED( IDC_MAIN_OPTIONS, OnMainOptions )
+ON_WM_SYSCOMMAND( )
+ON_WM_DESTROY( )
+ON_WM_ERASEBKGND( )
+ON_WM_PALETTECHANGED( )
+ON_WM_QUERYNEWPALETTE( )
+//}}AFX_MSG_MAP
+END_MESSAGE_MAP( )
 
 
 // data for each button
-class _BTN_DATA {
-public:
-		_BTN_DATA ( UINT _ID, int _x, int _y, UINT _fmt, CRect _rText, CPoint _ptDnOff)
-				{ ID = _ID; x = _x; y = _y; fmt = _fmt; rText = _rText; ptDnOff = _ptDnOff; }
+class _BTN_DATA
+{
+  public:
+    _BTN_DATA( UINT _ID, int _x, int _y, UINT _fmt, CRect _rText, CPoint _ptDnOff )
+    {
+        ID      = _ID;
+        x       = _x;
+        y       = _y;
+        fmt     = _fmt;
+        rText   = _rText;
+        ptDnOff = _ptDnOff;
+    }
 
-		UINT		ID;
-		int			x;
-		int			y; 
-		UINT		fmt;
-		CRect		rText;
-		CPoint	ptDnOff;
+    UINT   ID;
+    int    x;
+    int    y;
+    UINT   fmt;
+    CRect  rText;
+    CPoint ptDnOff;
 };
 
-static _BTN_DATA _btnData [NUM_BTNS] = {
-		_BTN_DATA ( IDC_MAIN_LOAD, 784, 25, DT_CENTER | DT_VCENTER | DT_SINGLELINE, CRect (18, 10, 213, 84), CPoint (244, 12) ),
-		_BTN_DATA ( IDC_MAIN_OPTIONS, 1060, 28, DT_CENTER | DT_VCENTER | DT_SINGLELINE, CRect (34, 9, 214, 86), CPoint (243, 12) ),
-		_BTN_DATA ( IDC_MAIN_LOAD_MUL, 776, 135, DT_CENTER | DT_VCENTER | DT_SINGLELINE, CRect (26, 17, 214, 87), CPoint (257, 17) ),
-		_BTN_DATA ( IDC_MAIN_CREDITS, 1052, 138, DT_CENTER | DT_VCENTER | DT_SINGLELINE, CRect (30, 16, 211, 82), CPoint (249, 15) ),
-		_BTN_DATA ( IDC_MAIN_CAMPAIGN, 100, 489, DT_LEFT | DT_WORDBREAK, CRect (57, 12, 181, 110), CPoint (287, 29) ),
-		_BTN_DATA ( IDC_MAIN_SINGLE, 293, 490, DT_LEFT | DT_WORDBREAK, CRect (37, 12, 170, 112), CPoint (260, 28) ),
-		_BTN_DATA ( IDC_MAIN_CREATE, 345, 632, DT_LEFT | DT_WORDBREAK, CRect (25, 11, 140, 65), CPoint (203, 19) ),
-		_BTN_DATA ( IDC_MAIN_JOIN, 326, 744, DT_LEFT | DT_WORDBREAK, CRect (26, 14, 149, 78), CPoint (213, 25) ),
-		_BTN_DATA ( IDC_MAIN_INTRO, 868, 407, DT_CENTER | DT_WORDBREAK, CRect (38, 38, 177, 93), CPoint (249, 47) ),
-		_BTN_DATA ( IDCANCEL, 1021, 604, DT_CENTER | DT_VCENTER | DT_SINGLELINE, CRect (41, 40, 186, 73), CPoint (284, 51) ),
-		_BTN_DATA ( IDC_MINIMIZE, 1035, 703, DT_CENTER | DT_VCENTER | DT_SINGLELINE, CRect (59, 11, 201, 46), CPoint (296, 21) )
+static _BTN_DATA _btnData[NUM_BTNS] = {
+    _BTN_DATA( IDC_MAIN_LOAD, 784, 25, DT_CENTER | DT_VCENTER | DT_SINGLELINE, CRect( 18, 10, 213, 84 ),
+               CPoint( 244, 12 ) ),
+    _BTN_DATA( IDC_MAIN_OPTIONS, 1060, 28, DT_CENTER | DT_VCENTER | DT_SINGLELINE, CRect( 34, 9, 214, 86 ),
+               CPoint( 243, 12 ) ),
+    _BTN_DATA( IDC_MAIN_LOAD_MUL, 776, 135, DT_CENTER | DT_VCENTER | DT_SINGLELINE, CRect( 26, 17, 214, 87 ),
+               CPoint( 257, 17 ) ),
+    _BTN_DATA( IDC_MAIN_CREDITS, 1052, 138, DT_CENTER | DT_VCENTER | DT_SINGLELINE, CRect( 30, 16, 211, 82 ),
+               CPoint( 249, 15 ) ),
+    _BTN_DATA( IDC_MAIN_CAMPAIGN, 100, 489, DT_LEFT | DT_WORDBREAK, CRect( 57, 12, 181, 110 ), CPoint( 287, 29 ) ),
+    _BTN_DATA( IDC_MAIN_SINGLE, 293, 490, DT_LEFT | DT_WORDBREAK, CRect( 37, 12, 170, 112 ), CPoint( 260, 28 ) ),
+    _BTN_DATA( IDC_MAIN_CREATE, 345, 632, DT_LEFT | DT_WORDBREAK, CRect( 25, 11, 140, 65 ), CPoint( 203, 19 ) ),
+    _BTN_DATA( IDC_MAIN_JOIN, 326, 744, DT_LEFT | DT_WORDBREAK, CRect( 26, 14, 149, 78 ), CPoint( 213, 25 ) ),
+    _BTN_DATA( IDC_MAIN_INTRO, 868, 407, DT_CENTER | DT_WORDBREAK, CRect( 38, 38, 177, 93 ), CPoint( 249, 47 ) ),
+    _BTN_DATA( IDCANCEL, 1021, 604, DT_CENTER | DT_VCENTER | DT_SINGLELINE, CRect( 41, 40, 186, 73 ),
+               CPoint( 284, 51 ) ),
+    _BTN_DATA( IDC_MINIMIZE, 1035, 703, DT_CENTER | DT_VCENTER | DT_SINGLELINE, CRect( 59, 11, 201, 46 ),
+               CPoint( 296, 21 ) )
 };
 
 /////////////////////////////////////////////////////////////////////////////
 // CDlgMain message handlers
 
-int CDlgMain::OnCreate(LPCREATESTRUCT lpCreateStruct) 
+// main GAME window? like not main menu, its created when we start a new game, and is
+// sized the entire window
+int CDlgMain::OnCreate( LPCREATESTRUCT lpCreateStruct )
 {
+#ifdef LOGGINGON
+    OutputDebugStringA( "CDlgMain::OnCreate\n" );
+#endif
 
-	if (CDialog::OnCreate(lpCreateStruct) == -1)
-		return -1;
-	
-	// get the art
-	CMmio *pMmio = theDataFile.OpenAsMMIO ("misc", "MISC");
+    if ( CDialog::OnCreate( lpCreateStruct ) == -1 )
+        return -1;
 
-	pMmio->DescendRiff ('M', 'I', 'S', 'C');
-	try
-		{
-		m_bTile = FALSE;
-		pMmio->DescendList ('M', 'N', theApp.m_szOtherBPS[0], theApp.m_szOtherBPS[1]);
-		pMmio->DescendChunk ('D', 'A', 'T', 'A');
-		}
-	catch (...)
-		{
-		m_bTile = TRUE;
-		delete pMmio;
-		CMmio *pMmio = theDataFile.OpenAsMMIO ("misc", "MISC");
-		pMmio->DescendRiff ('M', 'I', 'S', 'C');
-		pMmio->DescendList ('W', 'L',  theApp.m_szOtherBPS[0],  theApp.m_szOtherBPS[1]);
-		pMmio->DescendChunk ('D', 'A', 'T', 'A');
-		}
+    // get the art
+    CMmio* pMmio = theDataFile.OpenAsMMIO( "misc", "MISC" );
 
-	delete m_pcdibWall;
-	m_pcdibWall = new CDIB ( ptrthebltformat->GetColorFormat(), CBLTFormat::DIB_MEMORY,
-																	ptrthebltformat->GetMemDirection() );
-	m_pcdibWall->Load( *pMmio );
+    pMmio->DescendRiff( 'M', 'I', 'S', 'C' );
+    try
+    {
+        m_bTile = FALSE;
+        pMmio->DescendList( 'M', 'N', theApp.m_szOtherBPS[0], theApp.m_szOtherBPS[1] );
+        pMmio->DescendChunk( 'D', 'A', 'T', 'A' );
+    }
+    catch ( ... )
+    {
+        m_bTile = TRUE;
+        delete pMmio;
+        CMmio* pMmio = theDataFile.OpenAsMMIO( "misc", "MISC" );
+        pMmio->DescendRiff( 'M', 'I', 'S', 'C' );
+        pMmio->DescendList( 'W', 'L', theApp.m_szOtherBPS[0], theApp.m_szOtherBPS[1] );
+        pMmio->DescendChunk( 'D', 'A', 'T', 'A' );
+    }
 
-	// load buttons if we have the main screen
-	if ( ! m_bTile )
-		{
-		pMmio->AscendChunk ();
-		for (int iInd=0; iInd<NUM_BTNS; iInd++)
-			{
-			pMmio->DescendChunk ('D', 'A', 'T', 'A');
-			m_pcdibBtns [iInd] = new CDIB ( ptrthebltformat->GetColorFormat(), 
-										CBLTFormat::DIB_MEMORY, CBLTFormat::DIR_TOPDOWN );
-			m_pcdibBtns [iInd]->Load( *pMmio );
-			pMmio->AscendChunk ();
-			}
+    delete m_pcdibWall;
+    m_pcdibWall =
+        new CDIB( ptrthebltformat->GetColorFormat( ), CBLTFormat::DIB_MEMORY, ptrthebltformat->GetMemDirection( ) );
+    m_pcdibWall->Load( *pMmio );
 
-		CRect rect;
-		GetClientRect ( &rect );
-		m_pcdibTmp = new CDIB ( ptrthebltformat->GetColorFormat(), CBLTFormat::DIB_MEMORY,
-										ptrthebltformat->GetMemDirection(), rect.Width (), rect.Height () );
-		}
+    // load buttons if we have the main screen
+    if ( !m_bTile )
+    {
+        pMmio->AscendChunk( );
+        for ( int iInd = 0; iInd < NUM_BTNS; iInd++ )
+        {
+            pMmio->DescendChunk( 'D', 'A', 'T', 'A' );
+            m_pcdibBtns[iInd] =
+                new CDIB( ptrthebltformat->GetColorFormat( ), CBLTFormat::DIB_MEMORY, CBLTFormat::DIR_TOPDOWN );
+            m_pcdibBtns[iInd]->Load( *pMmio );
+            pMmio->AscendChunk( );
+        }
 
-	delete pMmio;
+        CRect rect;
+        GetClientRect( &rect );
+        m_pcdibTmp = new CDIB( ptrthebltformat->GetColorFormat( ), CBLTFormat::DIB_MEMORY,
+                               ptrthebltformat->GetMemDirection( ), rect.Width( ), rect.Height( ) );
+    }
 
-	return 0;
+    delete pMmio;
+
+    return 0;
 }
 
-BOOL CDlgMain::OnEraseBkgnd(CDC *) 
+BOOL CDlgMain::OnEraseBkgnd( CDC* )
 {
-	return TRUE;
+    return TRUE;
 }
 
-BOOL CDlgMain::OnInitDialog()
+BOOL CDlgMain::OnInitDialog( )
 {
+#ifdef LOGGINGON
+    OutputDebugStringA( "CDlgMain::OnInitDialog\n" );
+#endif
 
 #ifdef _DEBUG
-	dbgMemSetDefaultErrorOutput ( DBGMEM_OUTPUT_FILE, "malloc.log" );
-	dbgMemReportLeakage ( NULL, 1, 1 );
+    //dbgMemSetDefaultErrorOutput( DBGMEM_OUTPUT_FILE, "malloc.log" );
+    //dbgMemReportLeakage( NULL, 1, 1 );
 #endif
 
-	CDialog::OnInitDialog();
+    CDialog::OnInitDialog( );
 
-	// get the parent window and take up the same space.
-	CRect rect;
-	theApp.m_pMainWnd->GetWindowRect (&rect);
-	SetWindowPos (NULL, rect.left, rect.top, rect.Width (), rect.Height (), SWP_NOZORDER);
+    // get the parent window and take up the same space.
+    CRect rect;
+    theApp.m_pMainWnd->GetWindowRect( &rect );
+    SetWindowPos( NULL, rect.left, rect.top, rect.Width( ), rect.Height( ), SWP_NOZORDER );
 
-	// kill any dialogs that might be up
-	theApp.DestroyExceptMain ();
+    // kill any dialogs that might be up
+    theApp.DestroyExceptMain( );
 
-	SendMessage (WM_SETICON, (WPARAM)TRUE, (LPARAM) theApp.LoadIcon (MAKEINTRESOURCE (IDI_MAIN)));
-	CString sTitle;
-	sTitle.LoadString (IDS_MAIN_TITLE);
-	SetWindowText (sTitle);
+    SendMessage( WM_SETICON, (WPARAM)TRUE, (LPARAM)theApp.LoadIcon( MAKEINTRESOURCE( IDI_MAIN ) ) );
+    std::string sTitle = EnLoadStdString( IDS_MAIN_TITLE );
+    SetWindowText( sTitle.c_str() );
 
-	// if shareware no loading
-	if ( ( theApp.IsShareware () ) || ( theApp.IsSecondDisk () ) )
-		{
-		GetDlgItem (IDC_MAIN_LOAD)->EnableWindow (FALSE);
-		GetDlgItem (IDC_MAIN_LOAD_MUL)->EnableWindow (FALSE);
-		}
-	// second CD can JOIN game, not create it
-	if ( theApp.IsSecondDisk () )
-		GetDlgItem (IDC_MAIN_CREATE)->EnableWindow (FALSE);
+    // if shareware no loading
+    if ( ( theApp.IsShareware( ) ) || ( theApp.IsSecondDisk( ) ) )
+    {
+        GetDlgItem( IDC_MAIN_LOAD )->EnableWindow( FALSE );
+        GetDlgItem( IDC_MAIN_LOAD_MUL )->EnableWindow( FALSE );
+    }
+    // second CD can JOIN game, not create it
+    if ( theApp.IsSecondDisk( ) )
+        GetDlgItem( IDC_MAIN_CREATE )->EnableWindow( FALSE );
 
-	// if no movie - disable the button
-	if ( ! theApp.HaveIntro () )
-		GetDlgItem (IDC_MAIN_INTRO)->EnableWindow (FALSE);
+    // if no movie - disable the button
+    if ( !theApp.HaveIntro( ) )
+        GetDlgItem( IDC_MAIN_INTRO )->EnableWindow( FALSE );
 
-#ifdef	HACK_TEST_AI
-	GetDlgItem (IDC_MAIN_CREATE)->EnableWindow (FALSE);
-	GetDlgItem (IDC_MAIN_JOIN)->EnableWindow (FALSE);
-	GetDlgItem (IDC_MAIN_LOAD)->EnableWindow (FALSE);
-	GetDlgItem (IDC_MAIN_LOAD_MUL)->EnableWindow (FALSE);
+#ifdef HACK_TEST_AI
+    GetDlgItem( IDC_MAIN_CREATE )->EnableWindow( FALSE );
+    GetDlgItem( IDC_MAIN_JOIN )->EnableWindow( FALSE );
+    GetDlgItem( IDC_MAIN_LOAD )->EnableWindow( FALSE );
+    GetDlgItem( IDC_MAIN_LOAD_MUL )->EnableWindow( FALSE );
 #endif
 
-	// resize for screen
-	if ( m_bTile )
-		for (int iOn=0; iOn<NUM_BTNS; iOn++)
-			{
-			CWnd * pBtn = GetDlgItem (aiBtns[iOn]);
-			CRect rect;
-			pBtn->GetClientRect ( &rect );
-			pBtn->SetWindowPos (NULL, 0, 0, rect.Width () / 2 + 
-										( theApp.m_iScrnX * rect.Width () ) / 2560, 
-										rect.Height () / 2 +
-										( theApp.m_iScrnY * rect.Height () ) / 2048, 
-										SWP_NOMOVE | SWP_NOZORDER);
-			}
+    // resize for screen
+    if ( m_bTile )
+        for ( int iOn = 0; iOn < NUM_BTNS; iOn++ )
+        {
+            CWnd* pBtn = GetDlgItem( aiBtns[iOn] );
+            CRect rect;
+            pBtn->GetClientRect( &rect );
+            pBtn->SetWindowPos( NULL, 0, 0, rect.Width( ) / 2 + ( theApp.m_iScrnX * rect.Width( ) ) / 2560,
+                                rect.Height( ) / 2 + ( theApp.m_iScrnY * rect.Height( ) ) / 2048,
+                                SWP_NOMOVE | SWP_NOZORDER );
+        }
 
-	return TRUE;  // return TRUE  unless you set the focus to a control
+    return TRUE;  // return TRUE  unless you set the focus to a control
 }
 
-void CDlgMain::OnSize(UINT nType, int cx, int cy) 
+void CDlgMain::OnSize( UINT nType, int cx, int cy )
 {
+#ifdef LOGGINGON
+    // Print a message with the cx and cy values
+    char buf[128];
+    sprintf_s( buf, sizeof( buf ), "OnSize called: cx=%d, cy=%d\n", cx, cy );
+    OutputDebugStringA( buf );
+#endif
 
-	CDialog::OnSize(nType, cx, cy);
+    CDialog::OnSize( nType, cx, cy );
 
-	// not init'ed yet
-	CWnd * pMain = GetDlgItem (IDC_MAIN_CAMPAIGN);
-	if (pMain == NULL)
-		return;
+    // not init'ed yet
+    CWnd* pMain = GetDlgItem( IDC_MAIN_CAMPAIGN );
+    if ( pMain == NULL )
+    {
+        // probably not an issue!
+#ifdef LOGGINGON
+     //   OutputDebugStringA( "not init'ed yet\n" );
+#endif
+        return;
+    }
+    else 
+    {
+#ifdef LOGGINGON
+     //   OutputDebugStringA( "OnSize a go!\n" );
+#endif
+    }
 
-	// arrange buttons - if using art
-	if ( ! m_bTile )
-		{
-		CRect rect;
-		GetClientRect (&rect);
+    // arrange buttons - if using art
+    if ( !m_bTile )
+    {
+        CRect rect;
+        GetClientRect( &rect );
 
-		for (int iInd=0; iInd<NUM_BTNS; iInd++)
-			{
-			CWnd * pWnd = GetDlgItem ( _btnData [iInd].ID );
-			pWnd->SetWindowPos ( NULL, 
-											( _btnData[iInd].x * rect.Width () ) / m_pcdibWall->GetWidth (),
-											( _btnData[iInd].y *  rect.Height () ) / m_pcdibWall->GetHeight (),
-											( m_pcdibBtns[iInd]->GetWidth () * rect.Width () ) / (m_pcdibWall->GetWidth () * 3 ),
-											( m_pcdibBtns[iInd]->GetHeight () * rect.Height () ) / m_pcdibWall->GetHeight (),
-				 							SWP_NOZORDER );
-			}
-		m_pcdibTmp->Resize ( rect.Width (), rect.Height () );
-		return;
-		}
+        for ( int iInd = 0; iInd < NUM_BTNS; iInd++ )
+        {
+            CWnd* pWnd = GetDlgItem( _btnData[iInd].ID );
+            pWnd->SetWindowPos( NULL, ( _btnData[iInd].x * rect.Width( ) ) / m_pcdibWall->GetWidth( ),
+                                ( _btnData[iInd].y * rect.Height( ) ) / m_pcdibWall->GetHeight( ),
+                                ( m_pcdibBtns[iInd]->GetWidth( ) * rect.Width( ) ) / ( m_pcdibWall->GetWidth( ) * 3 ),
+                                ( m_pcdibBtns[iInd]->GetHeight( ) * rect.Height( ) ) / m_pcdibWall->GetHeight( ),
+                                SWP_NOZORDER );
+        }
+        m_pcdibTmp->Resize( rect.Width( ), rect.Height( ) );
+        return;
+    }
 
-	// no art - regular dialog
+    // no art - regular dialog
 
-	// arrange the button positions
-	CRect rect;
-	GetClientRect (&rect);
-	CRect rectBtn;	
-	pMain->GetClientRect (&rectBtn);
+    // arrange the button positions
+    CRect rect;
+    GetClientRect( &rect );
+    CRect rectBtn;
+    pMain->GetClientRect( &rectBtn );
 
-	// figure the Y button position
-	int iYadd = rectBtn.Height () + rectBtn.Height () / 2;
-	int iHt = rectBtn.Height () + iYadd * ((NUM_BTNS - 1) / 2 - 1);
-	int iY = (rect.Height () - iHt) / 2;
-	iY = __max (iY, 0);
-	if (iHt > rect.Height())
-		iYadd = rect.Height () / ((NUM_BTNS - 1) / 2);
+    // figure the Y button position
+    int iYadd = rectBtn.Height( ) + rectBtn.Height( ) / 2;
+    int iHt   = rectBtn.Height( ) + iYadd * ( ( NUM_BTNS - 1 ) / 2 - 1 );
+    int iY    = ( rect.Height( ) - iHt ) / 2;
+    iY        = __max( iY, 0 );
+    if ( iHt > rect.Height( ) )
+        iYadd = rect.Height( ) / ( ( NUM_BTNS - 1 ) / 2 );
 
-	// figure the X button position
-	int iXadd = rectBtn.Width () + rectBtn.Width () / 4;
-	int iX = (rect.Width () - iXadd - rectBtn.Width ()) / 2;
-	iX = __max (0, iX);
-	if (iXadd+rectBtn.Width() > rect.Width())
-		iXadd = rect.Width () / 2;
+    // figure the X button position
+    int iXadd = rectBtn.Width( ) + rectBtn.Width( ) / 4;
+    int iX    = ( rect.Width( ) - iXadd - rectBtn.Width( ) ) / 2;
+    iX        = __max( 0, iX );
+    if ( iXadd + rectBtn.Width( ) > rect.Width( ) )
+        iXadd = rect.Width( ) / 2;
 
-	// lets position them
-	int x = iX, y = iY;
-	for (int iOn=0; iOn<NUM_BTNS; iOn++)
-		{
-		GetDlgItem (aiBtns[iOn])->SetWindowPos (NULL, x, y, 0, 0, SWP_NOSIZE | SWP_NOZORDER);
-		if (iOn == NUM_BTNS/2-1)
-			{
-			x += iXadd;
-			y = iY;
-			}
-		else
-			if (iOn < NUM_BTNS-2)
-				y += iYadd;
-			else
-				{
-				CRect rReg, rMe;
-				GetDlgItem (aiBtns[0])->GetClientRect (&rReg);
-				GetDlgItem (aiBtns[iOn])->GetClientRect (&rMe);
-				x += rReg.Width () - rMe.Width ();
-				}
-		}
+    // lets position them
+    int x = iX, y = iY;
+    for ( int iOn = 0; iOn < NUM_BTNS; iOn++ )
+    {
+        GetDlgItem( aiBtns[iOn] )->SetWindowPos( NULL, x, y, 0, 0, SWP_NOSIZE | SWP_NOZORDER );
+        if ( iOn == NUM_BTNS / 2 - 1 )
+        {
+            x += iXadd;
+            y = iY;
+        }
+        else if ( iOn < NUM_BTNS - 2 )
+            y += iYadd;
+        else
+        {
+            CRect rReg, rMe;
+            GetDlgItem( aiBtns[0] )->GetClientRect( &rReg );
+            GetDlgItem( aiBtns[iOn] )->GetClientRect( &rMe );
+            x += rReg.Width( ) - rMe.Width( );
+        }
+    }
 }
 
-void CDlgMain::UpdateBlk ( )
+void CDlgMain::UpdateBlk( )
 {
 
-	// background
-	CRect rWall;
-	GetClientRect ( &rWall );
-	m_pcdibWall->StretchBlt (m_pcdibTmp, rWall, m_pcdibWall->GetRect () );
+    // background
+    CRect rWall;
+    GetClientRect( &rWall );
+    m_pcdibWall->StretchBlt( m_pcdibTmp, rWall, m_pcdibWall->GetRect( ) );
 
-	// walk the buttons
-	for (int iInd=0; iInd<NUM_BTNS; iInd++)
-		{
-		CButton * pWnd = (CButton *) GetDlgItem ( _btnData [iInd].ID );
-		if ( ! pWnd )
-			continue;
+    // walk the buttons
+    for ( int iInd = 0; iInd < NUM_BTNS; iInd++ )
+    {
+        CButton* pWnd = (CButton*)GetDlgItem( _btnData[iInd].ID );
+        if ( !pWnd )
+            continue;
 
-		// up/down/disabled
-		CRect rectSrc ( m_pcdibBtns[iInd]->GetRect () );
-		int iWid = rectSrc.Width () / 3;
-		rectSrc.right = rectSrc.left + iWid;
-		if ( ! pWnd->IsWindowEnabled () )
-			rectSrc.OffsetRect ( rectSrc.Width () * 2, 0);
-		else
-			if ( pWnd->GetState () & 0x04 )
-				rectSrc.OffsetRect ( rectSrc.Width (), 0);
+        // up/down/disabled
+        CRect rectSrc( m_pcdibBtns[iInd]->GetRect( ) );
+        int   iWid    = rectSrc.Width( ) / 3;
+        rectSrc.right = rectSrc.left + iWid;
+        if ( !pWnd->IsWindowEnabled( ) )
+            rectSrc.OffsetRect( rectSrc.Width( ) * 2, 0 );
+        else if ( pWnd->GetState( ) & 0x04 )
+            rectSrc.OffsetRect( rectSrc.Width( ), 0 );
 
-		// get where to put it
-		CRect rectDest;
-		pWnd->GetClientRect ( &rectDest );
-		pWnd->MapWindowPoints ( this, &rectDest );
-		m_pcdibBtns[iInd]->StretchTranBlt ( m_pcdibTmp, rectDest, rectSrc );
-		}
+        // get where to put it
+        CRect rectDest;
+        pWnd->GetClientRect( &rectDest );
+        pWnd->MapWindowPoints( this, &rectDest );
+        m_pcdibBtns[iInd]->StretchTranBlt( m_pcdibTmp, rectDest, rectSrc );
+    }
 }
 
-void CDlgMain::OnPaint() 
+void CDlgMain::OnPaint( )
 {
 
-	CPaintDC dc(this); // device context for painting
-	
-	thePal.Paint (dc.m_hDC);
+    CPaintDC dc( this );  // device context for painting
 
-	dc.SetBkMode (TRANSPARENT);
+    thePal.Paint( dc.m_hDC );
 
-	CRect rect;
-	GetClientRect (&rect);
+    dc.SetBkMode( TRANSPARENT );
 
-	if ( ! m_bTile )
-		{
-		UpdateBlk ();
-		m_pcdibTmp->StretchBlt (dc, rect, m_pcdibTmp->GetRect () );
-		}
-	else
-		m_pcdibWall->Tile ( dc, rect );
+    CRect rect;
+    GetClientRect( &rect );
 
-	UINT dtFmt;
-	int iWid = rect.Width ();
-	int iJmp;
-	if ( ! m_bTile )
-		{
-		rect.right = ( 5 * ( rect.left + rect.Width () ) ) / 8;
-		rect.left += rect.Width () / 8;
-		dtFmt = DT_LEFT | DT_TOP | DT_WORDBREAK;
-		iJmp = 2;
-		}
-	else
-		{
-		dtFmt = DT_CENTER | DT_SINGLELINE | DT_TOP;
-		iJmp = 4;
-		}
+    if ( !m_bTile )
+    {
+        UpdateBlk( );
+        m_pcdibTmp->StretchBlt( dc, rect, m_pcdibTmp->GetRect( ) );
+    }
+    else
+        m_pcdibWall->Tile( dc, rect );
 
-	// put up the title
-	CString sTitle;
-	sTitle.LoadString (IDS_MAIN_TITLE);
-	LOGFONT lf;
-	memset (&lf, 0, sizeof (lf));
-	lf.lfWidth = (3 * (iWid / sTitle.GetLength ())) / 4;
-	lf.lfHeight = lf.lfWidth * 2;
-	lf.lfWeight = 800;
-	strcpy (lf.lfFaceName, "Book Antiqua");
-	CFont fnt;
-	fnt.CreateFontIndirect (&lf);
-	CFont *pOld = dc.SelectObject (&fnt);
+    UINT dtFmt;
+    int  iWid = rect.Width( );
+    int  iJmp;
+    if ( !m_bTile )
+    {
+        rect.right = ( 5 * ( rect.left + rect.Width( ) ) ) / 8;
+        rect.left += rect.Width( ) / 8;
+        dtFmt = DT_LEFT | DT_TOP | DT_WORDBREAK;
+        iJmp  = 2;
+    }
+    else
+    {
+        dtFmt = DT_CENTER | DT_SINGLELINE | DT_TOP;
+        iJmp  = 4;
+    }
 
-	int iShift = lf.lfWidth / 30;
-	rect.top = lf.lfHeight / 2 + iShift;
-	rect.left += iShift * iJmp;
-	dc.SetTextColor (PALETTERGB (144, 127, 116));
-	while ( iShift -- )
-		{
-		dc.DrawText (sTitle, -1, &rect, dtFmt);
-		rect.top --;
-		rect.left -= iJmp;
-		}
+    // put up the title
+    std::string sTitle = EnLoadStdString( IDS_MAIN_TITLE );
+    LOGFONT lf;
+    memset( &lf, 0, sizeof( lf ) );
+    lf.lfWidth  = ( 3 * ( iWid / (int)sTitle.size( ) ) ) / 4;
+    lf.lfHeight = lf.lfWidth * 2;
+    lf.lfWeight = 800;
+    strcpy( lf.lfFaceName, "Book Antiqua" );
+    CFont fnt;
+    fnt.CreateFontIndirect( &lf );
+    CFont* pOld = dc.SelectObject( &fnt );
 
-	dc.SetTextColor (PALETTERGB (90, 74, 57));
-	dc.DrawText (sTitle, -1, &rect, dtFmt);
+    int iShift = lf.lfWidth / 30;
+    rect.top   = lf.lfHeight / 2 + iShift;
+    rect.left += iShift * iJmp;
+    dc.SetTextColor( PALETTERGB( 144, 127, 116 ) );
+    while ( iShift-- )
+    {
+        dc.DrawText( sTitle.c_str(), -1, &rect, dtFmt );
+        rect.top--;
+        rect.left -= iJmp;
+    }
 
-	rect.top = 0;
-	dc.SelectObject (pOld);
-	fnt.DeleteObject ();
-	dc.SetTextColor (PALETTERGB (255, 255, 255));
+    dc.SetTextColor( PALETTERGB( 90, 74, 57 ) );
+    dc.DrawText( sTitle.c_str(), -1, &rect, dtFmt );
+
+    rect.top = 0;
+    dc.SelectObject( pOld );
+    fnt.DeleteObject( );
+    dc.SetTextColor( PALETTERGB( 255, 255, 255 ) );
 
 #ifdef _CHEAT
-	CString sVer ("Version: " VER_STRING);
+    std::string sVer = "Version: " VER_STRING;
 #ifdef _DEBUG
-	sVer += " (debug, cheat)";
+    sVer += " (debug, cheat)";
 #else
-	sVer += " (cheat)";
+    sVer += " (cheat)";
 #endif
-	TEXTMETRIC tm;
-	dc.GetTextMetrics (&tm);
-	dc.TextOut (tm.tmAveCharWidth, theApp.m_iScrnY - tm.tmHeight, sVer);
+    TEXTMETRIC tm;
+    dc.GetTextMetrics( &tm );
+    dc.TextOut( tm.tmAveCharWidth, theApp.m_iScrnY - tm.tmHeight, sVer.c_str(), (int)sVer.size() );
 #endif
 
-	// put up copyright
-	CString sCopy;
-	sCopy.LoadString ( IDS_COPYRIGHT );
-	GetClientRect ( &rect );
-	dc.DrawText ( sCopy, -1, &rect, DT_CALCRECT | DT_CENTER | DT_SINGLELINE | DT_TOP);
-	int iHt = rect.Height ();
-	rect.top = theApp.m_iScrnY - iHt - iHt / 2;
-	rect.bottom = theApp.m_iScrnY;
-	rect.left = theApp.m_iScrnX - rect.Width () - iHt / 2;
-	rect.right = theApp.m_iScrnX;
-	dc.DrawText ( sCopy, -1, &rect, DT_CENTER | DT_SINGLELINE | DT_TOP);
-	
-	thePal.EndPaint (dc.m_hDC);
-	// Do not call CDialog::OnPaint() for painting messages
+    // put up copyright
+    std::string sCopy = EnLoadStdString( IDS_COPYRIGHT );
+    GetClientRect( &rect );
+    dc.DrawText( sCopy.c_str(), -1, &rect, DT_CALCRECT | DT_CENTER | DT_SINGLELINE | DT_TOP );
+    int iHt     = rect.Height( );
+    rect.top    = theApp.m_iScrnY - iHt - iHt / 2;
+    rect.bottom = theApp.m_iScrnY;
+    rect.left   = theApp.m_iScrnX - rect.Width( ) - iHt / 2;
+    rect.right  = theApp.m_iScrnX;
+    dc.DrawText( sCopy.c_str(), -1, &rect, DT_CENTER | DT_SINGLELINE | DT_TOP );
+
+    thePal.EndPaint( dc.m_hDC );
+    // Do not call CDialog::OnPaint() for painting messages
 }
 
-void CDlgMain::OnDrawItem (int, LPDRAWITEMSTRUCT lpDIS)
+void CDlgMain::OnDrawItem( int, LPDRAWITEMSTRUCT lpDIS )
 {
 
-	ASSERT_VALID (this);
+    ASSERT_VALID( this );
 
-	CDC *pDc = CDC::FromHandle (lpDIS->hDC);
-	if (pDc == NULL)
-		return;
-	CWnd * pWnd = CWnd::FromHandle (lpDIS->hwndItem);
-	if (pWnd == NULL)
-		return;
+    CDC* pDc = CDC::FromHandle( lpDIS->hDC );
+    if ( pDc == NULL )
+        return;
+    CWnd* pWnd = CWnd::FromHandle( lpDIS->hwndItem );
+    if ( pWnd == NULL )
+        return;
 
-	// set the palette
-	thePal.Paint (pDc->m_hDC);
+    // set the palette
+    thePal.Paint( pDc->m_hDC );
 
-	CRect rect (lpDIS->rcItem);
-	CString sText;
-	pWnd->GetWindowText (sText);
-	int iInd = 0;	// in case m_bTile
+    CRect rect( lpDIS->rcItem );
+    char  sText[256];
+    pWnd->GetWindowText( sText, (int)sizeof( sText ) );
+    int iInd = 0;  // in case m_bTile
 
-	CRect rPos;
-	pWnd->GetClientRect ( &rPos );
-	pWnd->MapWindowPoints ( this, &rPos );
+    CRect rPos;
+    pWnd->GetClientRect( &rPos );
+    pWnd->MapWindowPoints( this, &rPos );
 
-	if ( ! m_bTile )
-		{
-		UpdateBlk ();
+    if ( !m_bTile )
+    {
+        UpdateBlk( );
 
-		// find it
-		for (iInd=0; iInd<NUM_BTNS; iInd++)
-			if ( _btnData [iInd].ID == lpDIS->CtlID )
-				break;
-		if ( _btnData [iInd].ID != lpDIS->CtlID )
-			{
-			thePal.EndPaint (pDc->m_hDC);
-			return;
-			}
+        // find it
+        for ( iInd = 0; iInd < NUM_BTNS; iInd++ )
+            if ( _btnData[iInd].ID == lpDIS->CtlID )
+                break;
+        if ( _btnData[iInd].ID != lpDIS->CtlID )
+        {
+            thePal.EndPaint( pDc->m_hDC );
+            return;
+        }
 
-		rect = _btnData [iInd].rText;
+        rect = _btnData[iInd].rText;
 
-		CRect rWall;
-		GetClientRect ( &rWall );
-		int iWid = m_pcdibBtns[iInd]->GetRect ().Width () / 3;
+        CRect rWall;
+        GetClientRect( &rWall );
+        int iWid = m_pcdibBtns[iInd]->GetRect( ).Width( ) / 3;
 
-		// if down we need to shift
-		if (lpDIS->itemState & ODS_SELECTED)
-			rect.OffsetRect ( (rPos.Width () * ( (_btnData [iInd].ptDnOff.x - iWid) - _btnData [iInd].rText.left) ) / iWid,
-											(rPos.Height () * ( _btnData [iInd].ptDnOff.y - _btnData [iInd].rText.top ) ) / m_pcdibBtns[iInd]->GetRect ().Height () );
+        // if down we need to shift
+        if ( lpDIS->itemState & ODS_SELECTED )
+            rect.OffsetRect( ( rPos.Width( ) * ( ( _btnData[iInd].ptDnOff.x - iWid ) - _btnData[iInd].rText.left ) ) /
+                                 iWid,
+                             ( rPos.Height( ) * ( _btnData[iInd].ptDnOff.y - _btnData[iInd].rText.top ) ) /
+                                 m_pcdibBtns[iInd]->GetRect( ).Height( ) );
 
-		// adjust to this resolution
-		rect.left = ( rect.left * rWall.Width () ) / m_pcdibWall->GetWidth ();
-		rect.top = ( rect.top * rWall.Height () ) / m_pcdibWall->GetHeight ();
-		rect.right = ( rect.right * rWall.Width () ) / m_pcdibWall->GetWidth ();
-		rect.bottom = ( rect.bottom * rWall.Height () ) / m_pcdibWall->GetHeight ();
+        // adjust to this resolution
+        rect.left   = ( rect.left * rWall.Width( ) ) / m_pcdibWall->GetWidth( );
+        rect.top    = ( rect.top * rWall.Height( ) ) / m_pcdibWall->GetHeight( );
+        rect.right  = ( rect.right * rWall.Width( ) ) / m_pcdibWall->GetWidth( );
+        rect.bottom = ( rect.bottom * rWall.Height( ) ) / m_pcdibWall->GetHeight( );
 
-		// switch to our DC
-		thePal.EndPaint (pDc->m_hDC);
-		pDc = CDC::FromHandle ( m_pcdibTmp->GetDC () );
-		if ( pDc == NULL )
-			return;
-		thePal.Paint ( pDc->m_hDC );
-		}
+        // switch to our DC
+        thePal.EndPaint( pDc->m_hDC );
+        pDc = CDC::FromHandle( m_pcdibTmp->GetDC( ) );
+        if ( pDc == NULL )
+            return;
+        thePal.Paint( pDc->m_hDC );
+    }
 
-	// draw buttons
-	else
-		{
-		CBrush brFace, brTop, brBottom;
-		// grey if disabled
-		brBottom.CreateSolidBrush (PALETTERGB (38, 46, 49));
-		brFace.CreateSolidBrush (PALETTERGB (70, 86, 82));
-		brTop.CreateSolidBrush (PALETTERGB (103, 127, 121));
+    // draw buttons
+    else
+    {
+        CBrush brFace, brTop, brBottom;
+        // grey if disabled
+        brBottom.CreateSolidBrush( PALETTERGB( 38, 46, 49 ) );
+        brFace.CreateSolidBrush( PALETTERGB( 70, 86, 82 ) );
+        brTop.CreateSolidBrush( PALETTERGB( 103, 127, 121 ) );
 
-		if (lpDIS->itemState & ODS_SELECTED)
-			PaintBevel (*pDc, rect, 6, brBottom, brTop);
-		else
-			PaintBevel (*pDc, rect, 6, brTop, brBottom);
-		rect.InflateRect ( - 6, - 6 );
-		pDc->FillRect (&rect, &brFace);
-		rect.InflateRect ( - 6, - 4 );
-		}
+        if ( lpDIS->itemState & ODS_SELECTED )
+            PaintBevel( *pDc, rect, 6, brBottom, brTop );
+        else
+            PaintBevel( *pDc, rect, 6, brTop, brBottom );
+        rect.InflateRect( -6, -6 );
+        pDc->FillRect( &rect, &brFace );
+        rect.InflateRect( -6, -4 );
+    }
 
-	// text
-	pDc->SetBkMode (TRANSPARENT);
+    // text
+    pDc->SetBkMode( TRANSPARENT );
 
-	// get font
-	LOGFONT lf;
-	memset (&lf, 0, sizeof (lf));
-	lf.lfHeight = ( 5 * rect.Height () ) / 4;
-	lf.lfWeight = 400;
-	strcpy (lf.lfFaceName, "Book Antiqua");
-	CFont fnt;
-	fnt.CreateFontIndirect (&lf);
-	CFont *pOld = pDc->SelectObject (&fnt);
+    // get font
+    LOGFONT lf;
+    memset( &lf, 0, sizeof( lf ) );
+    lf.lfHeight = ( 5 * rect.Height( ) ) / 4;
+    lf.lfWeight = 400;
+    strcpy( lf.lfFaceName, "Book Antiqua" );
+    CFont fnt;
+    fnt.CreateFontIndirect( &lf );
+    CFont* pOld = pDc->SelectObject( &fnt );
 
-	// does it fit?
-	CRect rFit ( rect );
-	pDc->DrawText (sText, -1, &rFit, DT_CALCRECT | _btnData [iInd].fmt );
-	if ( (rFit.right > rect.right) || (rFit.bottom > rect.bottom) )
-		{
-		// make it smaller
-		int iHt = lf.lfHeight;
-		while ( iHt-- > 10 )
-			{
-			memset ( &lf, 0, sizeof (lf) );
-			lf.lfWeight = 400;
-			strcpy (lf.lfFaceName, "Book Antiqua");
-			lf.lfHeight = iHt;
-			pDc->SelectObject ( pOld );
-			fnt.DeleteObject ();
-			fnt.CreateFontIndirect (&lf);
+    // does it fit?
+    CRect rFit( rect );
+    pDc->DrawText( sText, -1, &rFit, DT_CALCRECT | _btnData[iInd].fmt );
+    if ( ( rFit.right > rect.right ) || ( rFit.bottom > rect.bottom ) )
+    {
+        // make it smaller
+        int iHt = lf.lfHeight;
+        while ( iHt-- > 10 )
+        {
+            memset( &lf, 0, sizeof( lf ) );
+            lf.lfWeight = 400;
+            strcpy( lf.lfFaceName, "Book Antiqua" );
+            lf.lfHeight = iHt;
+            pDc->SelectObject( pOld );
+            fnt.DeleteObject( );
+            fnt.CreateFontIndirect( &lf );
 
-			// see if this works
-			pDc->SelectObject ( &fnt );
-			rFit = rect;
-			pDc->DrawText (sText, -1, &rFit, DT_CALCRECT | _btnData [iInd].fmt );
-			if ( (rFit.right <= rect.right) && (rFit.bottom <= rect.bottom) )
-				break;
-			}
-		}
+            // see if this works
+            pDc->SelectObject( &fnt );
+            rFit = rect;
+            pDc->DrawText( sText, -1, &rFit, DT_CALCRECT | _btnData[iInd].fmt );
+            if ( ( rFit.right <= rect.right ) && ( rFit.bottom <= rect.bottom ) )
+                break;
+        }
+    }
 
-	rect.OffsetRect ( 1, (rect.Height () - rFit.Height ()) / 2 + 1 );
-	rect.bottom = rect.top + rFit.Height () + 1;
-	if ( ! m_bTile )
-		rect.OffsetRect ( rPos.left, rPos.top );
+    rect.OffsetRect( 1, ( rect.Height( ) - rFit.Height( ) ) / 2 + 1 );
+    rect.bottom = rect.top + rFit.Height( ) + 1;
+    if ( !m_bTile )
+        rect.OffsetRect( rPos.left, rPos.top );
 
-	rect.OffsetRect ( 0, 1 );
-	pDc->SetTextColor ( PALETTERGB ( 222, 202, 202 ) );
-	for (int x=0; x<2; x++)
-		{
-		for (int y=0; y<2; y++)
-			{
-			pDc->DrawText (sText, -1, &rect, _btnData [iInd].fmt );
-			rect.OffsetRect ( 1, 0 );
-			}
-		rect.OffsetRect ( - 2, 1 );
-		}
+    rect.OffsetRect( 0, 1 );
+    pDc->SetTextColor( PALETTERGB( 222, 202, 202 ) );
+    for ( int x = 0; x < 2; x++ )
+    {
+        for ( int y = 0; y < 2; y++ )
+        {
+            pDc->DrawText( sText, -1, &rect, _btnData[iInd].fmt );
+            rect.OffsetRect( 1, 0 );
+        }
+        rect.OffsetRect( -2, 1 );
+    }
 
-	rect.OffsetRect ( - 2, - 4 );
-	pDc->SetTextColor ( PALETTERGB ( 44, 53, 46 ) );
-	for (x=0; x<3; x++)
-		{
-		for (int y=0; y<3; y++)
-			{
-			pDc->DrawText (sText, -1, &rect, _btnData [iInd].fmt );
-			rect.OffsetRect ( 1, 0 );
-			}
-		rect.OffsetRect ( - 3, 1 );
-		}
+    rect.OffsetRect( -2, -4 );
+    pDc->SetTextColor( PALETTERGB( 44, 53, 46 ) );
+    for ( int x = 0; x < 3; x++ )
+    {
+        for ( int y = 0; y < 3; y++ )
+        {
+            pDc->DrawText( sText, -1, &rect, _btnData[iInd].fmt );
+            rect.OffsetRect( 1, 0 );
+        }
+        rect.OffsetRect( -3, 1 );
+    }
 
-	if ( ! (lpDIS->itemState & (ODS_GRAYED | ODS_DISABLED)) )
-		{
-		rect.OffsetRect ( 2, - 1 );
-		if ( lpDIS->itemState & ODS_FOCUS )
-			pDc->SetTextColor ( PALETTERGB ( 239, 201, 201 ) );
-		else
-			pDc->SetTextColor ( PALETTERGB ( 173, 156, 140 ) );
-		pDc->DrawText (sText, -1, &rect, _btnData [iInd].fmt );
-		}
+    if ( !( lpDIS->itemState & ( ODS_GRAYED | ODS_DISABLED ) ) )
+    {
+        rect.OffsetRect( 2, -1 );
+        if ( lpDIS->itemState & ODS_FOCUS )
+            pDc->SetTextColor( PALETTERGB( 239, 201, 201 ) );
+        else
+            pDc->SetTextColor( PALETTERGB( 173, 156, 140 ) );
+        pDc->DrawText( sText, -1, &rect, _btnData[iInd].fmt );
+    }
 
-	pDc->SelectObject (pOld);
+    pDc->SelectObject( pOld );
 
-	// BLT to the screen
-	if ( ! m_bTile )
-		{
-		CPoint pt ( rPos.left, rPos.top );
-		if ( m_pcdibTmp->GetDirection () == CBLTFormat::DIR_BOTTOMUP )
-			pt.y = m_pcdibTmp->GetHeight () - rPos.top - ( lpDIS->rcItem.bottom - lpDIS->rcItem.top );
-		m_pcdibTmp->BitBlt ( lpDIS->hDC, &(lpDIS->rcItem), pt );
-		if ( m_pcdibTmp->IsBitmapSelected() )
-			m_pcdibTmp->ReleaseDC ();
-		}
+    // BLT to the screen
+    if ( !m_bTile )
+    {
+        CPoint pt( rPos.left, rPos.top );
+        if ( m_pcdibTmp->GetDirection( ) == CBLTFormat::DIR_BOTTOMUP )
+            pt.y = m_pcdibTmp->GetHeight( ) - rPos.top - ( lpDIS->rcItem.bottom - lpDIS->rcItem.top );
+        m_pcdibTmp->BitBlt( lpDIS->hDC, &( lpDIS->rcItem ), pt );
+        if ( m_pcdibTmp->IsBitmapSelected( ) )
+            m_pcdibTmp->ReleaseDC( );
+    }
 
-	thePal.EndPaint (pDc->m_hDC);
+    thePal.EndPaint( pDc->m_hDC );
 }
 
-void CDlgMain::OnPaletteChanged(CWnd* pFocusWnd) 
+void CDlgMain::OnPaletteChanged( CWnd* pFocusWnd )
 {
-static BOOL bInFunc = FALSE;
+    static BOOL bInFunc = FALSE;
 
-	CDialog::OnPaletteChanged(pFocusWnd);
+    CDialog::OnPaletteChanged( pFocusWnd );
 
-	// Win32s locks up if we do the below code
-	if (iWinType == W32s)
-		return;
-		
-	// stop infinite recursion
-	if (bInFunc)
-		return;
-	bInFunc = TRUE;
+    // Win32s locks up if we do the below code
+    if ( iWinType == W32s )
+        return;
 
-	CClientDC dc (this);
-	int iRtn = thePal.PalMsg (dc.m_hDC, m_hWnd, WM_PALETTECHANGED, (WPARAM) pFocusWnd->m_hWnd, 0);
+    // stop infinite recursion
+    if ( bInFunc )
+        return;
+    bInFunc = TRUE;
 
-	// invalidate the window
-	if (iRtn)
-		InvalidateRect (NULL);
+    CClientDC dc( this );
+    int       iRtn = thePal.PalMsg( dc.m_hDC, m_hWnd, WM_PALETTECHANGED, (WPARAM)pFocusWnd->m_hWnd, 0 );
 
-	SendMessage( WM_NCPAINT, 0, 0 );
+    // invalidate the window
+    if ( iRtn )
+        InvalidateRect( NULL );
 
-	bInFunc = FALSE;
+    SendMessage( WM_NCPAINT, 0, 0 );
+
+    bInFunc = FALSE;
 }
 
-BOOL CDlgMain::OnQueryNewPalette() 
+BOOL CDlgMain::OnQueryNewPalette( )
 {
-	
-	if (iWinType == W32s)
-		return CDialog::OnQueryNewPalette();
 
-	CClientDC dc (this);
-	thePal.PalMsg (dc.m_hDC, m_hWnd, WM_QUERYNEWPALETTE, 0, 0);
+    if ( iWinType == W32s )
+        return CDialog::OnQueryNewPalette( );
 
-	SendMessage( WM_NCPAINT, 0, 0 );
-	return CDialog::OnQueryNewPalette();
+    CClientDC dc( this );
+    thePal.PalMsg( dc.m_hDC, m_hWnd, WM_QUERYNEWPALETTE, 0, 0 );
+
+    SendMessage( WM_NCPAINT, 0, 0 );
+    return CDialog::OnQueryNewPalette( );
 }
 
-void CDlgMain::OnDestroy() 
+void CDlgMain::OnDestroy( )
 {
 
-	theApp.m_pdlgMain = NULL;
+    theApp.m_pdlgMain = NULL;
 
-	delete m_pcdibWall;
-	m_pcdibWall = NULL;
+    delete m_pcdibWall;
+    m_pcdibWall = NULL;
 
-	for (int iInd=0; iInd<NUM_BTNS; iInd++)
-		{
-		delete m_pcdibBtns [iInd];
-		m_pcdibBtns [iInd] = NULL;
-		}
+    for ( int iInd = 0; iInd < NUM_BTNS; iInd++ )
+    {
+        delete m_pcdibBtns[iInd];
+        m_pcdibBtns[iInd] = NULL;
+    }
 
-	delete m_pcdibTmp;
-	m_pcdibTmp = NULL;
+    delete m_pcdibTmp;
+    m_pcdibTmp = NULL;
 
-	CDialog::OnDestroy();
+    CDialog::OnDestroy( );
 }
 
-void CDlgMain::OnMainExit ()
+void CDlgMain::OnMainExit( )
 {
 
-	theMusicPlayer.PlayForegroundSound (SOUNDS::GetID (SOUNDS::button), SFXPRIORITY::selected_pri );
-	theApp.DestroyMain ();
-	theApp.CloseApp ();
+    theMusicPlayer.PlayForegroundSound( SOUNDS::GetID( SOUNDS::button ), SFXPRIORITY::selected_pri );
+    theApp.DestroyMain( );
+    theApp.CloseApp( );
 }
 
-void CDlgMain::OnMainScenario ()
+void CDlgMain::OnMainScenario( )
 {
 
-	ASSERT (theApp.m_pCreateGame == NULL);
-	theMusicPlayer.PlayForegroundSound (SOUNDS::GetID (SOUNDS::button), SFXPRIORITY::selected_pri );
-	theApp.m_pCreateGame = new CCreateScenario ();
-	theApp.m_pCreateGame->Init ();
+    ASSERT( theApp.m_pCreateGame == NULL );
+    theMusicPlayer.PlayForegroundSound( SOUNDS::GetID( SOUNDS::button ), SFXPRIORITY::selected_pri );
+    theApp.m_pCreateGame = new CCreateScenario( );
+    theApp.m_pCreateGame->Init( );
 }
 
-void CDlgMain::OnMainSingle ()
+void CDlgMain::OnMainSingle( )
 {
 
-	ASSERT (theApp.m_pCreateGame == NULL);
-	theMusicPlayer.PlayForegroundSound (SOUNDS::GetID (SOUNDS::button), SFXPRIORITY::selected_pri );
-	theApp.m_pCreateGame = new CCreateSingle ();
-	theApp.m_pCreateGame->Init ();
+    ASSERT( theApp.m_pCreateGame == NULL );
+    theMusicPlayer.PlayForegroundSound( SOUNDS::GetID( SOUNDS::button ), SFXPRIORITY::selected_pri );
+    theApp.m_pCreateGame = new CCreateSingle( );
+    theApp.m_pCreateGame->Init( );
 }
 
 static int iNumTimesNet = 0;
-void CDlgMain::OnMainCreate ()
+void       CDlgMain::OnMainCreate( )
 {
 
-	theMusicPlayer.PlayForegroundSound (SOUNDS::GetID (SOUNDS::button), SFXPRIORITY::selected_pri );
-	if ( theApp.IsSecondDisk () )
-		return;
+    theMusicPlayer.PlayForegroundSound( SOUNDS::GetID( SOUNDS::button ), SFXPRIORITY::selected_pri );
+    if ( theApp.IsSecondDisk( ) )
+        return;
 
-	if ( ( iWinType == WNT ) && ( iNumTimesNet > 0 ) )
-		{
-		CDlgMsg dlg;
-		dlg.MsgBox (IDS_ERROR_NT_NET_BUG, MB_OK | MB_ICONSTOP | MB_TASKMODAL, "Warnings", "NTnetBug" );
-		UpdateWindow ();
-		}
-	iNumTimesNet ++;
+    if ( ( iWinType == WNT ) && ( iNumTimesNet > 0 ) )
+    {
+        EnMessageBoxOnce( IDS_ERROR_NT_NET_BUG, MB_OK | MB_ICONSTOP | MB_TASKMODAL, "Warnings", "NTnetBug" );
+        UpdateWindow( );
+    }
+    iNumTimesNet++;
 
-	ASSERT (theApp.m_pCreateGame == NULL);
-	theApp.m_pCreateGame = new CCreateMulti ();
-	theApp.m_pCreateGame->Init ();
+    ASSERT( theApp.m_pCreateGame == NULL );
+    theApp.m_pCreateGame = new CCreateMulti( );
+    theApp.m_pCreateGame->Init( );
 }
 
-void CDlgMain::OnMainJoin ()
+void CDlgMain::OnMainJoin( )
 {
 
-	if ( ( iWinType == WNT ) && ( iNumTimesNet > 0 ) )
-		{
-		CDlgMsg dlg;
-		dlg.MsgBox (IDS_ERROR_NT_NET_BUG, MB_OK | MB_ICONSTOP | MB_TASKMODAL, "Warnings", "NTnetBug" );
-		UpdateWindow ();
-		}
-	iNumTimesNet ++;
+    if ( ( iWinType == WNT ) && ( iNumTimesNet > 0 ) )
+    {
+        EnMessageBoxOnce( IDS_ERROR_NT_NET_BUG, MB_OK | MB_ICONSTOP | MB_TASKMODAL, "Warnings", "NTnetBug" );
+        UpdateWindow( );
+    }
+    iNumTimesNet++;
 
-	ASSERT (theApp.m_pCreateGame == NULL);
-	theMusicPlayer.PlayForegroundSound (SOUNDS::GetID (SOUNDS::button), SFXPRIORITY::selected_pri );
-	theApp.m_pCreateGame = new CJoinMulti ();
-	theApp.m_pCreateGame->Init ();
+    ASSERT( theApp.m_pCreateGame == NULL );
+    theMusicPlayer.PlayForegroundSound( SOUNDS::GetID( SOUNDS::button ), SFXPRIORITY::selected_pri );
+    theApp.m_pCreateGame = new CJoinMulti( );
+    theApp.m_pCreateGame->Init( );
 }
 
-void CDlgMain::OnMainLoad ()
+void CDlgMain::OnMainLoad( )
 {
 
-	theMusicPlayer.PlayForegroundSound (SOUNDS::GetID (SOUNDS::button), SFXPRIORITY::selected_pri );
-	if ( ( theApp.IsShareware () ) || ( theApp.IsSecondDisk () ) )
-		return;
+    theMusicPlayer.PlayForegroundSound( SOUNDS::GetID( SOUNDS::button ), SFXPRIORITY::selected_pri );
+    if ( ( theApp.IsShareware( ) ) || ( theApp.IsSecondDisk( ) ) )
+        return;
 
-	ASSERT (theApp.m_pCreateGame == NULL);
-	theApp.m_pCreateGame = new CCreateLoadSingle ();
-	theApp.m_pCreateGame->Init ();
+    ASSERT( theApp.m_pCreateGame == NULL );
+    theApp.m_pCreateGame = new CCreateLoadSingle( );
+    theApp.m_pCreateGame->Init( );
 }
 
-void CDlgMain::OnMinimize() 
+void CDlgMain::OnMinimize( )
 {
 
-	theMusicPlayer.PlayForegroundSound (SOUNDS::GetID (SOUNDS::button), SFXPRIORITY::selected_pri );
-	theApp.Minimize ();	
+    theMusicPlayer.PlayForegroundSound( SOUNDS::GetID( SOUNDS::button ), SFXPRIORITY::selected_pri );
+    theApp.Minimize( );
 }
 
-void CDlgMain::OnMainLoadMulti() 
+void CDlgMain::OnMainLoadMulti( )
 {
 
-	theMusicPlayer.PlayForegroundSound (SOUNDS::GetID (SOUNDS::button), SFXPRIORITY::selected_pri );
-	if ( ( theApp.IsShareware () ) || ( theApp.IsSecondDisk () ) )
-		return;
+    theMusicPlayer.PlayForegroundSound( SOUNDS::GetID( SOUNDS::button ), SFXPRIORITY::selected_pri );
+    if ( ( theApp.IsShareware( ) ) || ( theApp.IsSecondDisk( ) ) )
+        return;
 
-	if ( ( iWinType == WNT ) && ( iNumTimesNet > 0 ) )
-		{
-		CDlgMsg dlg;
-		dlg.MsgBox (IDS_ERROR_NT_NET_BUG, MB_OK | MB_ICONSTOP | MB_TASKMODAL, "Warnings", "NTnetBug" );
-		UpdateWindow ();
-		}
-	iNumTimesNet ++;
+    if ( ( iWinType == WNT ) && ( iNumTimesNet > 0 ) )
+    {
+        EnMessageBoxOnce( IDS_ERROR_NT_NET_BUG, MB_OK | MB_ICONSTOP | MB_TASKMODAL, "Warnings", "NTnetBug" );
+        UpdateWindow( );
+    }
+    iNumTimesNet++;
 
-	ASSERT (theApp.m_pCreateGame == NULL);
-	theApp.m_pCreateGame = new CCreateLoadMulti ();
-	theApp.m_pCreateGame->Init ();
+    ASSERT( theApp.m_pCreateGame == NULL );
+    theApp.m_pCreateGame = new CCreateLoadMulti( );
+    theApp.m_pCreateGame->Init( );
 }
 
-void CDlgMain::OnMainCredits() 
+void CDlgMain::OnMainCredits( )
 {
 
-#ifdef _CHEAT
-	if ( theApp.GetProfileInt ("Cheat", "TestAudio", 0) == 1)
-		{
-		CDlgTestSounds dlg;
-		dlg.DoModal ();
-		return;
-		}
-#endif
+    // Removed CHEAT-only CDlgTestSounds branch (TestAudio reg key) along
+    // with CDlgTestSounds itself.
 
-	theMusicPlayer.PlayForegroundSound (SOUNDS::GetID (SOUNDS::button), SFXPRIORITY::selected_pri );
-	theApp.m_wndCredits.Create ();
+    theMusicPlayer.PlayForegroundSound( SOUNDS::GetID( SOUNDS::button ), SFXPRIORITY::selected_pri );
+    theApp.m_wndCredits.Create( );
 }
 
-void CDlgMain::OnMainIntro() 
-{
-		
-	theMusicPlayer.PlayForegroundSound (SOUNDS::GetID (SOUNDS::button), SFXPRIORITY::selected_pri );
-	theApp.DestroyMain ();
-	theApp.m_wndMovie.AddMovie ("intro.avi");
-	theApp.m_wndMovie.Create ( TRUE );
-}
-
-void CDlgMain::OnMainOptions() 
+void CDlgMain::OnMainIntro( )
 {
 
-	theMusicPlayer.PlayForegroundSound (SOUNDS::GetID (SOUNDS::button), SFXPRIORITY::selected_pri );
-	CDlgOptions dlg (this);
-	dlg.DoModal ();
+    theMusicPlayer.PlayForegroundSound( SOUNDS::GetID( SOUNDS::button ), SFXPRIORITY::selected_pri );
+    theApp.DestroyMain( );
+    theApp.m_wndMovie.AddMovie( "intro.avi" );
+    theApp.m_wndMovie.Create( TRUE );
 }
+
+void CDlgMain::OnMainOptions( )
+{
+
+    theMusicPlayer.PlayForegroundSound( SOUNDS::GetID( SOUNDS::button ), SFXPRIORITY::selected_pri );
+    SDL2OptionsDialog dlg( theApp.m_gameWindow.get() );
+    dlg.DoModal();
+}
+
+#endif // MFC_LEGACY_MAIN_MENU
 
 /////////////////////////////////////////////////////////////////////////////
-// CDlgVer dialog
+// CDlgVer dialog removed; SDL2VersionDialog (SDL2Dialogs.cpp) replaces it.
 
-CDlgVer::CDlgVer(CWnd* pParent /*=NULL*/)
-	: CDialog(CDlgVer::IDD, pParent)
-{
-	//{{AFX_DATA_INIT(CDlgVer)
-	m_sVer = "Version: " VER_STRING;
-	m_sOs = _T("");
-	m_sNet = _T("");
-	m_sThunk = _T("");
-	m_sRif = _T("");
-	m_sVideo = _T("");
-	m_sSound = _T("");
-	m_sSoundVer = _T("");
-	m_sSpeed = _T("");
-	//}}AFX_DATA_INIT
-
-#ifdef _DEBUG
-	m_sVer += " (debug, cheat)";
-#else
-#ifdef _CHEAT
-	m_sVer += " (cheat)";
-#endif
-#endif
-	m_sVer += " - " __DATE__ "  " __TIME__;
-
-	switch (iWinType)
-	  {
-		case W32s :
-			m_sOs = "Win32s";
-			break;
-		case W95 :
-			m_sOs = "Windows95";
-			break;
-		case WNT :
-			m_sOs = "Win/NT";
-			break;
-		default:
-			m_sOs = "Unknown";
-			break;
-	  }
-
-	OSVERSIONINFO ovi;
-	memset (&ovi, 0, sizeof (ovi));
-	ovi.dwOSVersionInfoSize = sizeof (ovi);
-	if (GetVersionEx (&ovi))
-		m_sOs += " " + LongToCString (ovi.dwMajorVersion) + "." +
-											LongToCString (ovi.dwMinorVersion) + " (" +
-											LongToCString (ovi.dwBuildNumber) + ")";
-	if (iWinType == W32s)
-		{
-		WORD wVer = LOWORD (GetVersion ());
-		m_sOs += " [Windows " + IntToCString (LOBYTE (wVer)) + "." + IntToCString (HIBYTE (wVer)) + "]";
-		}
-
-	long lVer = CNetApi::GetVersion ();
-	m_sNet = "VDMPlay API " + IntToCString (HIBYTE (HIWORD (lVer))) + "." +
-												IntToCString (LOBYTE (HIWORD (lVer))) + "." +
-												IntToCString (LOWORD (lVer));
-
-	m_sRif = "Data Ver: " + IntToCString (theApp.GetRifVer ()) + "." + IntToCString (VER_RIFF);
-	if (theApp.IsShareware ())
-		m_sRif += " {Shareware}";
-	if (theApp.HaveWAV ())
-		m_sRif += ", WAV";
-	else
-		m_sRif += ", MIDI";
-	if (theApp.Have24Bit ())
-		m_sRif += ", 24-bit";
-	else
-		m_sRif += ", 8-bit";
-	if (theApp.GetFirstZoom ())
-		m_sRif += ", Zoom1";
-	else
-		m_sRif += ", Zoom0";
-
-	// video info
-	m_sVideo = "Video: ";
-	switch ( ptrthebltformat->GetType () )
-		{
-		case CBLTFormat::DIB_DIRECTDRAW :
-			m_sVideo += "DirectDraw";
-			break;
-		case CBLTFormat::DIB_WING :
-			m_sVideo += "WinG";
-			break;
-		case CBLTFormat::DIB_DIBSECTION :
-			m_sVideo += "CreateDIBSection";
-			break;
-		case CBLTFormat::DIB_MEMORY :
-			m_sVideo += "StretchDIBits";
-			break;
-		}
-	m_sVideo += " (";
-
-	switch ( ptrthebltformat->GetDirection () )
-		{
-		case CBLTFormat::DIR_TOPDOWN :
-			m_sVideo += "top-down";
-			break;
-		case CBLTFormat::DIR_BOTTOMUP :
-			m_sVideo += "bottom-up";
-			break;
-		}
-	m_sVideo += "), " + IntToCString (ptrthebltformat->GetBitsPerPixel ()) + "-bit (" +
-					IntToCString ( GetSystemMetrics (SM_CXSCREEN) ) + "x" +
-					IntToCString ( GetSystemMetrics (SM_CYSCREEN) ) + "x";
-	HDC hdc = ::GetDC (NULL);
-	int iBitDepth = GetDeviceCaps (hdc, BITSPIXEL) * GetDeviceCaps (hdc, PLANES);
-	::ReleaseDC (NULL, hdc);
-	m_sVideo += IntToCString ( iBitDepth ) + ")";
-
-	// sound info
-	m_sSound = "Sound: ";
-	switch ( theMusicPlayer.GetMode () )
-	  {
-		case CMusicPlayer::midi_only :
-			m_sSound += "MIDI Music";
-			break;
-		case CMusicPlayer::mixed :
-			m_sSound += "MIDI && Digital Music";
-			break;
-		case CMusicPlayer::wav_only :
-			m_sSound += "Digital Music";
-			break;
-	  }
-	if (theMusicPlayer.UseDirectSound ())
-		m_sSound += " (DirectSound)";
-	else
-		m_sSound += " (MME)";
-
-	if ( ( ! theMusicPlayer.MidiOk () ) && ( ! theMusicPlayer.WavOk () ) )
-		m_sSound += " {MIDI and WAV drivers failed}";
-	else
-		if ( ! theMusicPlayer.MidiOk () )
-			m_sSound += " {MIDI driver failed}";
-		else
-			if ( ! theMusicPlayer.WavOk () )
-				m_sSound += " {WAV driver failed}";
-			else
-				if ( ! theMusicPlayer.IsRunning () )
-					m_sSound += " {turned off}";
-
-	if ( theMusicPlayer._GetHDig () == 0 )
-		m_sSoundVer = "MSS: " + CString ( theMusicPlayer.GetVersion () ) + " {off}";
-	else
-		{
-		char sBuf [130], *psFmt;
-		long iRate, iFmt;
-		sBuf[0] = 0;
-		AIL_digital_configuration ( theMusicPlayer._GetHDig (), &iRate, &iFmt, sBuf );
-		switch ( iFmt )
-	  	{
-			case DIG_F_MONO_8 :
-				psFmt = "K/8-bit/Mono, ";
-				break;
-			case DIG_F_MONO_16 :
-				psFmt = "K/16-bit/Mono, ";
-				break;
-			case DIG_F_STEREO_8 :
-				psFmt = "K/8-bit/Stereo, ";
-				break;
-			case DIG_F_STEREO_16 :
-				psFmt = "K/16-bit/Stereo, ";
-				break;
-		  }
-		m_sSoundVer = "MSS: " + CString ( theMusicPlayer.GetVersion () ) + " " +
-																IntToCString ( iRate ) + CString (psFmt) + sBuf;
-		}
-
-	m_sSpeed = "CPU Speed: ~" + IntToCString (theApp.GetCpuSpeed ()) + "  CD-ROM Speed: ~" + IntToCString (theApp.GetCdSpeed ()) + "X";
-
-	MEMORYSTATUS	ms;
-	ms.dwLength = sizeof (ms);
-	GlobalMemoryStatus( &ms );
-	const ONE_MEG = 1024 * 1024;
-	m_sMemory = "Memory (avail/total) Physical: " + IntToCString (ms.dwAvailPhys/ONE_MEG) + "M/" +
-																IntToCString (ms.dwTotalPhys/ONE_MEG) + "M Virtual: " + 
-																IntToCString (ms.dwAvailPageFile/ONE_MEG) + "M/" +
-																IntToCString (ms.dwTotalPageFile/ONE_MEG) + "M";
-
-	if (iWinType == W32s)
-		{
-		WORD wVer = myGetThrdUtlsVersion();
-		m_sThunk = "Threads DLL " + IntToCString (HIBYTE (wVer)) + "." + IntToCString (LOBYTE (wVer));
-		}
-}
-
-void CDlgVer::DoDataExchange(CDataExchange* pDX)
-{
-	CDialog::DoDataExchange(pDX);
-	//{{AFX_DATA_MAP(CDlgVer)
-	DDX_Text(pDX, IDC_VER_TEXT, m_sVer);
-	DDX_Text(pDX, IDC_VER_TEXT_OS, m_sOs);
-	DDX_Text(pDX, IDC_VER_NET, m_sNet);
-	DDX_Text(pDX, IDC_VER_THUNK, m_sThunk);
-	DDX_Text(pDX, IDC_VER_RIF, m_sRif);
-	DDX_Text(pDX, IDC_VER_VIDEO, m_sVideo);
-	DDX_Text(pDX, IDC_VER_SOUND, m_sSound);
-	DDX_Text(pDX, IDC_VER_SOUND2, m_sSoundVer);
-	DDX_Text(pDX, IDC_VER_SPEED, m_sSpeed);
-	DDX_Text(pDX, IDC_VER_MEMORY, m_sMemory);
-	//}}AFX_DATA_MAP
-}
-
-BEGIN_MESSAGE_MAP(CDlgVer, CDialog)
-	//{{AFX_MSG_MAP(CDlgVer)
-	ON_BN_CLICKED(IDC_LICENSE, OnLicense)
-	//}}AFX_MSG_MAP
-END_MESSAGE_MAP()
-
-
-/////////////////////////////////////////////////////////////////////////////
-// CDlgVer message handlers
-
-BOOL CDlgVer::OnInitDialog()
-{
-	CDialog::OnInitDialog();
-
-	CenterWindow (theApp.m_pMainWnd);
-
-	return TRUE;  // return TRUE  unless you set the focus to a control
-}
-
-void CDlgVer::OnLicense() 
-{
-	// TODO: Add your control notification handler code here
-	CDlgLicense dlgLic ( theApp.IsShareware () ? 2 : 3, TRUE );
-	dlgLic.DoModal ();
-}
-/////////////////////////////////////////////////////////////////////////////
-// CDlgStackDump dialog
-
-
-CDlgStackDump::CDlgStackDump(CWnd* pParent /*=NULL*/)
-	: CDialog(CDlgStackDump::IDD, pParent)
-{
-	//{{AFX_DATA_INIT(CDlgStackDump)
-	m_sText = _T("");
-	//}}AFX_DATA_INIT
-}
-
-
-void CDlgStackDump::DoDataExchange(CDataExchange* pDX)
-{
-	CDialog::DoDataExchange(pDX);
-	//{{AFX_DATA_MAP(CDlgStackDump)
-	DDX_Text(pDX, IDC_STACK_DUMP, m_sText);
-	//}}AFX_DATA_MAP
-}
-
-
-BEGIN_MESSAGE_MAP(CDlgStackDump, CDialog)
-	//{{AFX_MSG_MAP(CDlgStackDump)
-	ON_BN_CLICKED(IDC_COPY_STACK, OnCopyStack)
-	//}}AFX_MSG_MAP
-END_MESSAGE_MAP()
-
-/////////////////////////////////////////////////////////////////////////////
-// CDlgStackDump message handlers
-
-void CDlgStackDump::OnCopyStack() 
-{
-	
-	// open the clipboard
-	if ( ! OpenClipboard () )
-		{
-		MessageBeep (MB_ICONEXCLAMATION);
-		return;
-		}
-	if ( ! EmptyClipboard () )
-		{
-		CloseClipboard ();
-		MessageBeep (MB_ICONEXCLAMATION);
-		return;
-		}
-
-	MEMORYSTATUS	ms;
-	ms.dwLength = sizeof (ms);
-	GlobalMemoryStatus( &ms );
-	const ONE_MEG = 1024 * 1024;
-
-	char sNum1 [20], sNum2[20];
-	itoa (m_pe->m_uEc, sNum1, 16);
-	itoa ((int) m_pe->m_pExCode, sNum2, 16);
-	CString sMsg;
-	if ( ms.dwAvailPageFile/ONE_MEG < 8 )
-		{
-		sMsg.LoadString ( IDS_OUT_OF_MEMORY );
-		sMsg += "\r\n";
-		}
-	sMsg += "Sorry, an unknown error occured.\r\nVersion: " + CString (VER_STRING) + "\r\n" +
-					"Type: " + CString (sNum1) + ", Address: 0x" + CString (sNum2) + "\r\n";
-	for (int iOn=0; iOn<NUM_EXCEP; iOn++)
-		{
-		itoa (m_pe->m_stack[iOn], sNum1, 16);
-		sMsg += "     0x" + CString (sNum1) + "\r\n";
-		}
-
-	time_t t;
-	time ( &t );
-	struct tm * _now = localtime ( &t );
-	sMsg += CString (asctime ( _now ));
-	sMsg += theApp.m_sOs + "\r\n";
-	sMsg += theApp.m_sNet + "\r\n";
-
-	sMsg += "Memory (avail/total) Physical: " + IntToCString (ms.dwAvailPhys/ONE_MEG) + "M/" +
-																IntToCString (ms.dwTotalPhys/ONE_MEG) + "M Virtual: " + 
-																IntToCString (ms.dwAvailPageFile/ONE_MEG) + "M/" +
-																IntToCString (ms.dwTotalPageFile/ONE_MEG) + "M\r\n";
-	sMsg += theApp.m_sRif + "\r\n";
-	sMsg += theApp.m_sVideo + "\r\n";
-	sMsg += theApp.m_sSound + "\r\n";
-	sMsg += theApp.m_sSoundVer + "\r\n";
-	sMsg += theApp.m_sSpeed + "\r\n";
-
-	// set the data
-	int iLen = sMsg.GetLength () + 1;
-	HGLOBAL hMem = GlobalAlloc ( GMEM_MOVEABLE | GMEM_DDESHARE, iLen + 1 );
-	if ( hMem != NULL )
-		{
-		void * pData = GlobalLock ( hMem );
-		if ( pData != NULL )
-			{
-			memcpy ( pData, (char const * ) sMsg, iLen );
-			GlobalUnlock ( hMem );
-			SetClipboardData ( CF_TEXT, hMem );
-			}
-		}
-
-	CloseClipboard ();
-}
+// CDlgStackDump removed: declared but never instantiated outside this file
+// (the exception-stack copy-to-clipboard dialog had no live UI).

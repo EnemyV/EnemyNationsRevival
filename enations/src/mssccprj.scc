@@ -1,0 +1,7 @@
+SCC = This is a Source Code Control file
+
+[enations.mak]
+SCC_Project_Name = "$/lastplnt/src", KOAAAAAA
+
+[lastplnt.mak]
+SCC_Project_Name = "$/lastplnt/src", PJAAAAAA

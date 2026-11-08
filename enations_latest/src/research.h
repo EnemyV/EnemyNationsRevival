@@ -16,7 +16,7 @@
 #include "icons.h"
 
 
-class CDlgDiscover;
+// CDlgDiscover removed (replaced by SDL2DiscoverDialog)
 
 
 void ResearchDiscovered (int iRsrch);
@@ -33,7 +33,17 @@ public:
 		virtual void	Serialize (CArchive & ar);
 
 	BYTE			m_bDiscovered;					// TRUE if has been discovered
-	LONG			m_iPtsDiscovered;				// points researched so far
+	// 64-bit (save release 9). LONG is int32_t on EVERY platform here (win32_compat.h pins it,
+	// "NOT long (LP64!)"), so this used to cap research progress at ~2^31 no matter how dear the
+	// topic -- and the in-code tier ladders now price their top tiers in the hundreds of
+	// millions, where the guaranteed-completion test (m_iPtsDiscovered > m_iPtsRequired * 2)
+	// needs headroom above 2^31 to ever fire. Declared LONGLONG rather than `long long` on
+	// purpose: CArchive's operators are generated for LONGLONG, which is `long` on LP64, and a
+	// `long long&` will not bind to that `operator>>( LONGLONG& )`.
+	// SERIALIZED and ON THE WIRE -- see CRsrchStatus::Serialize (version-gated read) and
+	// CNetSaveInfo. Do not change this width again without bumping VER_RELEASE.
+	LONGLONG		m_iPtsDiscovered;				// points researched so far
+
 };
 
 
@@ -46,22 +56,37 @@ public:
 		CRsrchItem ();
 		virtual ~CRsrchItem ();
 
-	int				m_iPtsRequired;					// points required to discover
+	// 64-bit: the in-code tier ladders multiply up fast, and CPlayer::Research evaluates
+	// m_iPtsRequired * 2, so a 32-bit field overflowed that product to NEGATIVE and completed
+	// the topic on its first tick. NOT serialized (rebuilt from the DAT + the in-code setup on
+	// every load), so widening it is save- and wire-safe. The PRACTICAL ceiling is still ~2^31
+	// though: m_iPtsDiscovered, the accumulator that has to climb to this, is a 32-bit LONG and
+	// is both serialized and on the wire. See RSRCH_PTS_CEILING in research.cpp.
+	long long		m_iPtsRequired;					// points required to discover
 	int *			m_piRsrchRequired;			// other items that must be researched first
 	int				m_iNumRsrchRequired;
 	int *			m_piBldgsRequired;			// buildings that must be built first
 	int				m_iNumBldgsRequired;
 	int				m_iScenarioReq;					// cannot be discovered till this scenario
 
-	CString		m_sName;								// name of item
-	CString		m_sDesc;								// description in choose dialog
-	CString		m_sResult;							// description in discovered dialog
+	std::string	m_sName;							// name of item
+	std::string	m_sDesc;							// description in choose dialog
+	std::string	m_sResult;						// description in discovered dialog
 
 #ifdef _DEBUG
 public:
 	virtual void AssertValid() const;
 #endif
 };
+
+// Research Speed level 1 is gated on research EXPERIENCE rather than on a precursor
+// topic: the colony must have completed this many PAID topics before it can start
+// making research itself faster. Free topics (m_iPtsRequired <= 0) are the "killed"
+// DAT entries -- the disabled aircraft line -- which load pre-discovered, so they are
+// NOT counted; counting them would hand out 5 for free and gut the gate. The prereq
+// array is AND-only and cannot express "any N of them", so the check lives in
+// CPlayer::CanRsrch beside the Pontoon Bridges one-of gate.
+const int RSRCH_SPEED_MIN_TOPICS = 10;
 
 class CRsrchArray : public CArray <CRsrchItem, CRsrchItem *>
 {
@@ -119,6 +144,302 @@ public:
 					acc_1,
 					acc_2,
 					acc_3,
+					// In-code topics (not in the DAT file) — appended by CRsrchArray::Open
+					// after the RSRH load. Each bridge tier doubles the points cost of the
+					// previous and extends the max bridge span by +25% of the base span
+					// (see CPlayer::GetMaxSpan). MUST stay last: CAIGoalMgr serializes its
+					// RDPath blob at the legacy pre-tier count (see RDPATH_SAVE_COUNT).
+					bridge_2,
+					bridge_3,
+					bridge_4,
+					bridge_5,
+					// Cargo Handling line 2-4 (in-code, mirroring the bridge tiers): each
+					// doubles the previous tier's cost and adds +10% truck cargo capacity over
+					// the base cargo_handling research (see CPlayer::GetCargoPct). Named
+					// Servo-Loaders / Modular Cargo Pods / Grav-Assisted Hauling in research.cpp.
+					// Appended AFTER the bridge tiers so bridge_2 keeps its index
+					// (RDPATH_SAVE_COUNT==53).
+					cargo_handling_2,
+					cargo_handling_3,
+					cargo_handling_4,
+					// Fuel Efficiency 1-10 (in-code, unlocked after gas_turbine): the first ten
+					// levels of a 23-level line; cost doubles per level up to 32*B at level 6 then
+					// goes flat +16*B per level (L7=48B..L23=304B, B=gas_turbine cost), while
+					// cutting gas consumption on a diminishing curve to a 30% total saving at
+					// level 10 (increments 5/4/4/3/3/3/2/2/2/2), then +1% per level to 38% at 18,
+					// then +2% per level to 48% at 23. Levels 11-12, 13-16, 17-18 and 19-23 are all
+					// appended at the END of the enum for save parity. Named in research.cpp.
+					// Appended last so all the earlier indices (incl. bridge_2 /
+					// RDPATH_SAVE_COUNT==53) stay put.
+					fuel_efficiency_1,
+					fuel_efficiency_2,
+					fuel_efficiency_3,
+					fuel_efficiency_4,
+					fuel_efficiency_5,
+					fuel_efficiency_6,
+					fuel_efficiency_7,
+					fuel_efficiency_8,
+					fuel_efficiency_9,
+					fuel_efficiency_10,
+					// Pontoon Bridges (in-code): an EARLY, cheap bridge tech that unlocks
+					// bridge building at HALF the span of the full Bridges tech. Kept
+					// INDEPENDENT of (not a prereq of) the base bridge tech, so the AI's
+					// frozen research path can still reach full Bridges. See
+					// CPlayer::CanBridge / GetMaxSpan. Appended last to keep earlier
+					// indices (incl. bridge_2 / RDPATH_SAVE_COUNT==53) put.
+					bridge_short,
+					// Vehicle Speed 1-10 (in-code): a 10-level line that boosts vehicle
+					// movement +2% per level (see CPlayer::GetSpeedPct). Gated off the Fuel
+					// Efficiency line: level 1 needs the first two fuel-efficiency techs, and
+					// each later level needs the previous speed level plus the next fuel
+					// level. Appended last to keep earlier indices put.
+					vehicle_speed_1,
+					vehicle_speed_2,
+					vehicle_speed_3,
+					vehicle_speed_4,
+					vehicle_speed_5,
+					vehicle_speed_6,
+					vehicle_speed_7,
+					vehicle_speed_8,
+					vehicle_speed_9,
+					vehicle_speed_10,
+					// Radar/Spotting tiers 4-5 (in-code) — extend the DAT spot_1..3 line with two
+					// diminishing-return levels; each 2x the previous tier's research cost. Appended
+					// LAST so all earlier indices (incl. bridge_2 / RDPATH_SAVE_COUNT==53) stay put.
+					// Per-level sight bonus is applied in CUnit::AssignData (spot_4 ~+62.5%, spot_5 ~+68.75%).
+					spot_4,
+					spot_5,
+					// Landing Craft capacity tiers 2-3 (in-code) — each adds +1 to the landing
+					// craft's unit hold over the base 2 (so 2 -> 3 -> 4). Fairly expensive;
+					// chain off the base landing_craft tech (lc_2<-landing_craft, lc_3<-lc_2).
+					// Bonus applied in CVehicle::GetEffPeopleCarry via CPlayer::GetLandingCraftBonus.
+					// Appended LAST so all earlier indices (incl. bridge_2 / RDPATH_SAVE_COUNT==53) stay put.
+					landing_craft_2,
+					landing_craft_3,
+					// Fracking (#23, in-code) — 5 tiers. EXHAUSTED oil wells trickle oil when
+					// fracking is toggled ON (at +50% well energy +1 flat). Flat oil/min by tier
+					// (5/7/9/11/13) via CPlayer::GetFrackOilPerMin. T1<-gas_turbine, T2-5 chain
+					// the prev tier + a Fuel-Efficiency level. Appended LAST so earlier indices
+					// (incl. bridge_2 / RDPATH_SAVE_COUNT==53) stay put; old saves load via the
+					// count-prefixed research-status read (player.cpp ~910) + auto-resize.
+					fracking_1,
+					fracking_2,
+					fracking_3,
+					fracking_4,
+					fracking_5,
+					// BioFuel (#33, in-code) — 6 tiers. Farms also produce oil (the existing
+					// `oil` resource; "Bio Oil" label in farm UI only) when toggled ON, as a % of
+					// food output (10/12/14/16/18/20%) via CPlayer::GetBioOilPct. T1 gated on
+					// farming + gas_turbine + some Fuel-Efficiency + Vehicle-Speed; T2-6 chain the
+					// prev tier. Appended LAST (same save-parity reason as above).
+					biofuel_1,
+					biofuel_2,
+					biofuel_3,
+					biofuel_4,
+					biofuel_5,
+					biofuel_6,
+					// Coal Liquefaction (in-code) -- 1 tier. An OIL POWER PLANT, when its
+					// alt-output toggle is ON, STOPS generating power and cracks DELIVERED coal
+					// into oil at 3:1 (the AltOutput system, eRatioConsume + eTimeDriven; the
+					// per-tier ratio is CPlayer::GetCoalLiqRatio). Gated on this single tech;
+					// cost ~ a few x the gas_turbine tech, chained off manf_3. Appended LAST so
+					// all earlier indices (incl. bridge_2 / RDPATH_SAVE_COUNT==53) stay put.
+					coal_liquefaction,
+					// Charcoal (in-code) -- 4 tiers here + charcoal_5 at the enum end. A COAL
+					// POWER PLANT, once charcoal_1 is researched and its alt-output toggle is ON,
+					// STOPS generating power and runs as a KILN: DELIVERED lumber is charred into
+					// coal (AltOutput eRatioConsume + eTimeDriven). The tier ladder scales the
+					// RECIPE, not throughput -- CPlayer::GetCharcoalRatio, 4/3/3/2/2 lumber per
+					// coal (only T2 and T4 actually move it). Draws +2 workers. T1 chained off
+					// gas_turbine; T2-4 chain the prior tier. Appended LAST so all earlier
+					// indices (incl. bridge_2 / RDPATH_SAVE_COUNT==53) stay put.
+					charcoal_1,
+					charcoal_2,
+					charcoal_3,
+					charcoal_4,
+					// Fuel Efficiency 11-12 (in-code) — the two TOP levels of the fuel line
+					// (levels 1-10 live above at fuel_efficiency_1..10). Split out here and
+					// appended LAST so adding them does NOT shift any earlier enum index (old
+					// saves store discovered-flags positionally; see player.cpp Serialize).
+					// They continue the x2 cost chain (11<-fe_10, 12<-fe_11) and each add only
+					// +1% gas saving (30% at level 10 -> 31% -> 32%), see CPlayer::GetFuelPct.
+					fuel_efficiency_11,
+					fuel_efficiency_12,
+					// Vehicle Speed 11-12 (in-code) — two MORE speed levels beyond the base
+					// vehicle_speed_1..10 line above. Each adds only +1% move speed (vs +2% for
+					// levels 1-10; see CPlayer::GetSpeedPct) and chains off the previous speed
+					// tier (11<-10, 12<-11). The WHOLE 12-tier speed line is a PREMIUM pure-
+					// doubling cost curve (B * 2^(tier-1), NO flat cap; B = gas_turbine cost) —
+					// unlike Fuel Efficiency, which caps at 32*B then goes flat. So speed keeps
+					// escalating (tier 10=512*B, 11=1024*B, 12=2048*B), pricing the late tiers
+					// for how deep they unlock. Appended LAST so no earlier enum index shifts —
+					// old saves store the discovered-flags positionally.
+					vehicle_speed_11,
+					vehicle_speed_12,
+					// Radar/Spotting tiers 6-7 (in-code) — two MORE diminishing-return sight
+					// levels beyond spot_4/5 above; each 2x the previous tier's research cost and
+					// chains off it (spot_6<-spot_5, spot_7<-spot_6). Sight bonus in
+					// CUnit::AssignData (spot_6 ~+71.9%, spot_7 ~+73.4%); level lookup in
+					// CPlayer::SetRsrch. Appended LAST so no earlier enum index shifts (old saves
+					// store discovered-flags positionally; see player.cpp Serialize).
+					spot_6,
+					spot_7,
+					// Fuel Efficiency 13-16 (in-code): 4 more +1% tiers appended for save parity.
+					// Cost continues the flat +16*B ramp; counted in CPlayer::GetFuelPct.
+					fuel_efficiency_13,
+					fuel_efficiency_14,
+					fuel_efficiency_15,
+					fuel_efficiency_16,
+					// Fuel Efficiency 17-18 (in-code): two more +1% tiers (37% / 38% total gas
+					// saving; see CPlayer::GetFuelPct). Cost continues the flat +16*B ramp.
+					// Appended LAST so no earlier enum index shifts (old saves store
+					// discovered-flags positionally; RDPATH_SAVE_COUNT==53 stays put).
+					fuel_efficiency_17,
+					fuel_efficiency_18,
+					// Fracking tier 6 (in-code): one more oil-trickle level for exhausted wells
+					// (15 oil/min; CPlayer::GetFrackOilPerMin). Chains off fracking_5 + a Fuel
+					// Efficiency level. Appended LAST (save-parity, as above).
+					fracking_6,
+					// Coal Liquefaction tier 2 (in-code): improves the OIL power plant's
+					// coal->oil conversion from 3:1 to 2:1 (CPlayer::GetCoalLiqRatio, wired into
+					// AltOutput via the def's m_pfnRatioIn). Chains off coal_liquefaction.
+					// Appended LAST (save-parity, as above).
+					coal_liquefaction_2,
+					// Charcoal tier 5 (in-code): the last rung of the coal-plant kiln ladder.
+					// It does NOT improve the recipe -- CPlayer::GetCharcoalRatio holds at 2
+					// lumber per coal from tier 4. Chains off charcoal_4. Appended LAST (save-parity).
+					charcoal_5,
+					// Slash and Burn (in-code) -- 1 tier. A lumber MILL, once this is researched
+					// and its alt-output toggle is ON, harvests at 250% (AltOutput::SLASH_BURN_MULT,
+					// applied in CFarmBuilding::BuildFarm) -- and permanently destroys the forest
+					// around it as it cuts. eModifier: the def produces no secondary material, it
+					// only carries the per-building toggle. Chained off farm_1 but a DEDICATED
+					// topic: gating on farm_1 itself would make every old save with a stale
+					// alt_oil bit on a mill start clear-cutting the moment it loads. Appended LAST
+					// (save-parity: bridge_2 / RDPATH_SAVE_COUNT==53 stays put).
+					slash_and_burn,
+					// Fuel Efficiency 19-23 (in-code): five more tiers, each +2% gas saving (vs the
+					// +1% of levels 11-18), taking the line from 38% to 48% total (see
+					// CPlayer::GetFuelPct). Cost continues the flat +16*B ramp (L19=240B .. L23=304B).
+					// Appended LAST so no earlier enum index shifts (old saves store discovered-flags
+					// positionally; RDPATH_SAVE_COUNT==53 stays put).
+					fuel_efficiency_19,
+					fuel_efficiency_20,
+					fuel_efficiency_21,
+					fuel_efficiency_22,
+					fuel_efficiency_23,
+					// Research Speed 1-5 (in-code): each level makes RESEARCH ITSELF 10% faster
+					// (100% -> 150% of base points per tick; see CPlayer::GetRsrchSpeedPct, applied
+					// in CPlayer::Research). Costs are absolute, not multiples of a DAT topic:
+					// 100k / 200k / 400k / 800k / 1.6M. T1 unlocks on RSRCH_SPEED_MIN_TOPICS paid
+					// topics completed (see CPlayer::CanRsrch); T2-5 chain off the previous tier.
+					// Appended LAST so no earlier enum index shifts (old saves store discovered-flags
+					// positionally; RDPATH_SAVE_COUNT==53 stays put).
+					rsrch_speed_1,
+					rsrch_speed_2,
+					rsrch_speed_3,
+					rsrch_speed_4,
+					rsrch_speed_5,
+					// Fracking tier 7 (in-code): one more oil-trickle level for exhausted wells
+					// (17 oil/min; CPlayer::GetFrackOilPerMin). Continues the doubling cost ladder
+					// (2x fracking_6) and chains off fracking_6 + a Fuel Efficiency level. Appended
+					// LAST (save-parity, as above).
+					fracking_7,
+					// Moho Mining upgrade line (in-code), the IRON twin of Fracking. The BASE
+					// capability (10 iron/min from an exhausted iron mine) is still granted free by
+					// the DAT mine_2 topic -- that is conceptually "tier 1" and is NOT repriced here,
+					// so nobody loses a capability they already paid for. moho_2..moho_6 are the paid
+					// upgrades: +1 iron/min each to 15 at the top, cost doubling from mine_2 as the
+					// basis (296k .. 4.736M). See CPlayer::GetMohoIronPerMin. Appended LAST and kept
+					// CONTIGUOUS so the tier arithmetic in that getter stays a simple subtraction.
+					moho_2,
+					moho_3,
+					moho_4,
+					moho_5,
+					moho_6,
+					// Late-game combat/structure tier (in-code), one topic each, all priced at 8x
+					// their 248,000-point DAT parent (1,984,000) and gated behind top-of-line DAT
+					// techs -- these are end-game purchases, not part of the normal ladder:
+					//   range_4     <- range_3 + acc_3               (Base-Bleed Shells)
+					//   atk_4       <- atk_3 + manf_3 + nuclear      (Tandem Warheads)
+					//   bldg_armor  <- fortification + const_3 + advanced_facilities (Blast Shielding)
+					// range_4/atk_4 extend the DAT range_1..3 / atk_1..3 lines, so they raise
+					// CPlayer::m_bRange / m_bAttack to 4 (CPlayer::SetRsrch). The bonus formula in
+					// CUnit::AssignData is `base >> (4 - level)`, which at level 4 would shift by 0
+					// (a doubling) and at level 5+ is UB, so AssignData branches to a diminishing
+					// step (+62.5% vs +50% at tier 3) exactly as the spot_4..7 tiers already do.
+					// bldg_armor has NO m_b* level: it is read straight off the research flag by
+					// CPlayer::GetBldgArmorMult and applied at damage time in CUnit::DecDamagePoints,
+					// so unlike the unit techs (which bake into a unit at AssignData time) it also
+					// protects buildings that already exist.
+					// Appended LAST so no earlier enum index shifts (old saves store discovered-flags
+					// positionally; RDPATH_SAVE_COUNT==53 stays put).
+					range_4,
+					atk_4,
+					bldg_armor,
+					// Nuclear Uprate 1-5 (in-code): each level adds 10 percent to the output of this
+					// player's NUCLEAR power plants (CStructureData::power_3) -- 100 percent at none to
+					// 150 at level 5, see CPlayer::GetNukePowerPct, consumed in CPowerBuilding::BuildPower.
+					// Coal plants, oil plants and the rocket are untouched. Cost starts at 2x the DAT
+					// nuclear topic (296,000) and DOUBLES per level to 4,736,000. T1 chains nuclear;
+					// T2-5 chain the previous tier, each with one cross-line manufacturing/construction
+					// gate. Kept CONTIGUOUS so the level count in that getter stays a simple loop.
+					nuke_power_1,
+					nuke_power_2,
+					nuke_power_3,
+					nuke_power_4,
+					nuke_power_5,
+					// Attack tiers 5-8 (in-code) � four MORE levels beyond atk_4, deliberately LATE:
+					// each carries three prerequisites reaching across the accuracy, range, defense,
+					// construction, spotting and Nuclear Uprate lines, so the whole tree has to be well
+					// along before any of them opens. Each tier adds a FLAT +2 percentage points of base:
+					// the ladder runs +62.5 / 64.5 / 66.5 / 68.5 / 70.5 percent at levels 4-8, so the four
+					// new tiers together are worth about +5 percent more damage. These are TOTALS, not
+					// additions -- the level is one lookup and a higher tier replaces the lower one. The
+					// STOCK levels 1-3 (+12.5 / 25 / 50) are NOT repriced or rescaled. Table in
+					// CUnit::AssignData; level lookup in CPlayer::SetRsrch. Cost stops doubling and goes
+					// FLAT (+8x the 248,000 atk_3 basis per tier, 3.968M .. 9.92M) because the benefit is
+					// shrinking -- the same shape the Fuel Efficiency line uses past its cap.
+					atk_5,
+					atk_6,
+					atk_7,
+					atk_8,
+					// Building Armor tiers 2-3 (in-code) � two more Blast Shielding levels. Damage taken
+					// by our buildings goes 80 -> 78 -> 76 percent of base (a 20 / 22 / 24 percent
+					// reduction, or 1.25x / 1.28x / 1.32x effective hit points -- tiers 2-3 add a flat 2
+					// points each, matching the attack line's floor). Same late gating
+					// idea as the attack tiers and the same FLAT cost ramp. See CPlayer::GetBldgArmorMult.
+					bldg_armor_2,
+					bldg_armor_3,
+					// Drive-Core Resonance (in-code) -- ONE topic, no tiers, and the only research
+					// whose entire payload is an EDICT. It unlocks Resonance Sweep at the Command
+					// Center (EDICT_RESONANCE_SWEEP): while that edict is on, the colony pings for
+					// enemy ROCKETS and resolves a random one each recharge -- revealing it,
+					// refreshing what we know of it, or clearing it if it has since been destroyed
+					// (CPlayer::ResonanceSweep). The recharge is RESONANCE_SWEEP_RELOAD_SECS at full
+					// power and stretches when the grid is short. Costs 6x the 248,000-point
+					// spot_3 topic (1,488,000: dearer than every DAT topic, well under the deep
+					// combat tiers) and is gated on spot_3 + nuclear + advanced_facilities -- the
+					// sensor line to hear the return, the reactor physics to know what a drive core
+					// sounds like, and the plant to drive the emitter. Appended LAST so no earlier
+					// enum index shifts (old saves store discovered-flags positionally;
+					// RDPATH_SAVE_COUNT==53 stays put).
+					drive_core_resonance,
+					// Drive-Core Resonance 2-6 (in-code). Each tier widens the Resonance Sweep's
+					// ping from a bare contact into REAL VISION: tier 2 lights a 1-hex ring of
+					// ground around the rocket it finds, up to a 5-hex ring at tier 6
+					// (CPlayer::GetSweepRings), for RESONANCE_SWEEP_LIT_SECS before it goes dark
+					// again. Each tier also costs 3x the previous in points and adds
+					// RESONANCE_SWEEP_POWER_TIER to the edict's flat power draw. Kept CONTIGUOUS
+					// with tier 1 above so the tier arithmetic stays a subtraction, and appended
+					// LAST so no earlier enum index shifts (RDPATH_SAVE_COUNT==53 stays put).
+					// NOTE the multiplier is capped by what an int can hold -- see RSRCH_PTS_CEILING
+					// in research.cpp before raising it.
+					drive_core_resonance_2,
+					drive_core_resonance_3,
+					drive_core_resonance_4,
+					drive_core_resonance_5,
+					drive_core_resonance_6,
 					num_types	};
 
 	CRsrchArray () {}
@@ -127,71 +448,13 @@ public:
 	void			Close ();
 };
 
-
-/////////////////////////////////////////////////////////////////////////////
-// CDlgResearch dialog
-
-class CDlgResearch : public CDialog
-{
-// Construction
-public:
-	CDlgResearch(CWnd* pParent = NULL);   // standard constructor
-
-	void		UpdateChoices (BOOL bCheck);
-	void		ItemDiscovered (int iItem);
-	void		UpdateProgress ();
-
-	// Dialog Data
-	//{{AFX_DATA(CDlgResearch)
-	enum { IDD = IDD_RESEARCH };
-	CWndOD< CButton >	m_btnDiscovery;
-	CListBox	m_lstRsrch;
-	//}}AFX_DATA
-
-
-// Overrides
-	// ClassWizard generated virtual function overrides
-	//{{AFX_VIRTUAL(CDlgResearch)
-	public:
-	protected:
-	virtual void DoDataExchange(CDataExchange* pDX);    // DDX/DDV support
-	virtual void PostNcDestroy() { delete this; }
-	//}}AFX_VIRTUAL
-
-// Implementation
-protected:
-
-	CDlgDiscover *	m_pDlgDiscvr;
-	int							m_iRsrchNum;
-	int							m_iPerDone;
-	CString					m_strDesc;
-	CDIB *					m_pDib;
-	CDIB *					m_pDibBtn;
-	CStatInst				m_statInst;				// data to draw the icons
-	CFont						m_fntList;
-	BOOL						m_bShareLimit;
-
-	// Generated message map functions
-	//{{AFX_MSG(CDlgResearch)
-	virtual void OnOK();
-	virtual void OnCancel();
-	virtual BOOL OnInitDialog();
-	afx_msg void OnDblclkRsrchList();
-	afx_msg void OnSelchangeRsrchList();
-	afx_msg void OnDestroy();
-	afx_msg BOOL OnEraseBkgnd(CDC* pDC);
-	afx_msg void OnPaint();
-	afx_msg void OnRsrchFound();
-	afx_msg void OnDrawItem(int nIDCtl, LPDRAWITEMSTRUCT lpDrawItemStruct);
-	afx_msg void OnMeasureItem(int nIDCtl, LPMEASUREITEMSTRUCT lpMeasureItemStruct);
-	afx_msg void OnPaletteChanged(CWnd* pFocusWnd);
-	afx_msg BOOL OnQueryNewPalette();
-	//}}AFX_MSG
-	DECLARE_MESSAGE_MAP()
-};
+// CDlgResearch + CResearchListBox removed (Phase 2d) — replaced by
+// SDL2ResearchDialog. The CRsrchArray / CRsrchItem / CRsrchStatus state classes
+// below remain (used by AI research progression and serialization).
 
 extern void ConstructElements (CRsrchStatus * pNewElem, int iCount);
 extern void DestructElements (CRsrchStatus * pNewElem, int iCount);
+extern void SerializeElements( CArchive& ar, CRsrchStatus* pNewElem, int iCount );
 extern void ConstructElements (CRsrchItem * pNewElem, int iCount);
 extern void DestructElements (CRsrchItem * pNewElem, int iCount);
 
@@ -199,43 +462,6 @@ extern void DestructElements (CRsrchItem * pNewElem, int iCount);
 extern CRsrchArray theRsrch;
 
 
-/////////////////////////////////////////////////////////////////////////////
-// CDlgDiscover dialog
-
-class CDlgDiscover : public CDialog
-{
-// Construction
-public:
-	CDlgDiscover(CWnd* pParent = NULL);   // standard constructor
-
-	void		ItemDiscovered (int iItem);
-
-// Dialog Data
-	//{{AFX_DATA(CDlgDiscover)
-	enum { IDD = IDD_RSRCH_FOUND };
-	CString	m_strText;
-	//}}AFX_DATA
-
-
-// Overrides
-	// ClassWizard generated virtual function overrides
-	//{{AFX_VIRTUAL(CDlgDiscover)
-	protected:
-	virtual void DoDataExchange(CDataExchange* pDX);    // DDX/DDV support
-	virtual void PostNcDestroy() { delete this; }
-	//}}AFX_VIRTUAL
-
-// Implementation
-protected:
-	void		NewItem ();
-
-	int			m_iRsrchNum;
-
-	// Generated message map functions
-	//{{AFX_MSG(CDlgDiscover)
-	virtual BOOL OnInitDialog();
-	//}}AFX_MSG
-	DECLARE_MESSAGE_MAP()
-};
+// CDlgDiscover removed (replaced by SDL2DiscoverDialog)
 
 #endif

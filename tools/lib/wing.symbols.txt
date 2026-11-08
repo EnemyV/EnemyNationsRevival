@@ -1,0 +1,9 @@
+Microsoft (R) COFF/PE Dumper Version 14.29.30140.0
+Copyright (C) Microsoft Corporation.  All rights reserved.
+
+
+Dump of file wing.lib
+wing.lib : warning LNK4048: Invalid format file; ignored
+
+  Summary
+

@@ -23,12 +23,19 @@ const int AREA_TEXT_HT = 28;						// height of text backdrop
 const int AREA_BTN_X_SKIP = 4;					// x skip between buttons
 const int AREA_BTN_Y_START = 4;					// where buttons start on the background
 
+// #38 DRAG-PLACE: the most build sites one Shift+drag may lay down. A cap, not a budget
+// the player should feel - 64 footprints is a line a third of the way across the map for
+// a 2x2 - but a wild drag must not be able to queue hundreds of orders on one crane or
+// make the preview pass walk an unbounded list, and a fixed array costs the drag nothing.
+const int MAX_DRAG_PLACE = 64;
+
 
 class CWndInfo;
 class CWndOrders;
 class CWndListUnits;
 class CWndWorld;
 class CAreaList;
+class SDL2UnitInfoPanel;
 
 
 
@@ -37,7 +44,7 @@ class CAreaList;
 
 class CWndUnitStat : public CWndStatBar
 {
-friend CUnit;
+friend class CUnit;
 // Construction
 public:
 						CWndUnitStat ();
@@ -64,7 +71,7 @@ protected:
 
 class CWndAreaStatic : public CWndBase
 {
-friend CWndArea;
+friend class CWndArea;
 public:
 			CWndAreaStatic ();
 			~CWndAreaStatic ();
@@ -90,15 +97,20 @@ protected:
 	//}}AFX_MSG
 	DECLARE_MESSAGE_MAP()
 
-			int						m_iXmin;
-			int						m_iYmin;
-			int						m_iStatusStrt;
-			int						m_iStatusCraneStrt;
-			int						m_iStatusNoCraneStrt;
-			int						m_iNumStatusText;
+			int						m_iXmin = 0;
+			int						m_iYmin = 36;   // bar height fallback; PreCreate overwrites
+			int						m_iStatusStrt = 0;
+			int						m_iStatusCraneStrt = 0;
+			int						m_iStatusNoCraneStrt = 0;
+			int						m_iNumStatusText = 0;
 
 			CBmButton			m_Btns [NUM_AREA_BUTTONS];
 			CWndUnitStat	m_wndStat;								// unit status
+
+			// SDL2 panel for composited rendering
+			class SDL2Panel* m_sdlPanel = nullptr;
+			class SDL2AreaBar* m_sdl2Bar = nullptr;  // Native SDL2 renderer
+			void CaptureToPanel();  // Legacy capture (unused when m_sdl2Bar set)
 };
 
 
@@ -119,10 +131,11 @@ public:
 
 class CWndArea : public CWndAnim
 {
-friend CWndAreaStatic;
-friend CWndListUnits;
-friend CWndWorld;
-friend CAreaList;
+friend class CWndAreaStatic;
+friend class CWndListUnits;
+friend class CWndWorld;
+friend class CAreaList;
+friend class SDL2AreaBar;
 // Construction
 public:
 	// for m_iMode
@@ -148,7 +161,7 @@ public:
 
 	void		GiveUnits ( CPlayer * pPlyr );
 
-	CWnd *	_GetStatBar () { return &(m_WndStatic.m_wndStat); }
+	CWndStub *	_GetStatBar () { return &(m_WndStatic.m_wndStat); }
 
 	void		GetPanAndVol (CUnit const * pUnit, int & iPan, int & iVol);
 	void		SetDestAndSfx ( CVehicle * pVeh, CHexCoord const & hex );
@@ -163,9 +176,24 @@ public:
 	int			GetMode () const { return (m_iMode); }
 
 	void		Create (CMapLoc const & ml, CUnit * pUnit, BOOL bFirst);
+	// The tactical map needs smooth scrolling — keep it at the full frame rate
+	// rather than the reduced rate used for the other game windows.
+	bool		RendersEveryFrame () const override { return true; }
 	void		ReRender ();
 	void		DrawSelectionRect();
+	void		DrawSelectionRectGpu();   // GPU split path: draws into m_dibSprite, no save/restore
 	void		RestoreSelectionRect();
+	void		DrawLineMove();           // preview of the drawn line + per-unit target dots
+	void		DrawRouteWaypoints();     // subtle dotted lines through selected vehicles' queued route (Shift held)
+	void		DoLineMove( CPoint ptEnd ); // distribute selected vehicles along the line
+
+	// Weapon-range overlay: when set (by the building-info window's "Show Range"
+	// toggle), the area map draws a red circle around that building each frame.
+	static DWORD	s_dwShowRangeID;
+	static void		SetShowRange( DWORD dwID ) { s_dwShowRangeID = dwID; }
+	static DWORD	GetShowRange() { return s_dwShowRangeID; }
+	void		DrawRangeCircle();        // red range circle for s_dwShowRangeID
+
 	void		Draw();
 	void		UnitDying (CUnit * pUnit);
 	void		MaterialChange (CUnit const * pUnit);
@@ -190,6 +218,8 @@ public:
 	void		Center (CUnit *pUnit);
 	CAnimAtr &	GetAA () { return (m_aa); }
 
+	void		PanByPixels (int dxPix, int dyPix);   // free-form scroll by a pixel delta (macOS trackpad two-finger pan)
+
 	void		ReCenter ();
 	void		InvalidateStatus ();
 	CWnd *	GetExpand ();
@@ -199,12 +229,20 @@ public:
 	CHexCoord	ToBuildUL (CHexCoord & hexCur);
 	int		GetBuildDir () const { return ((m_aa.m_iDir + m_iBuildDir) & 3); }
 
-	static	CString		sWndCls;
+	// #38 DRAG-PLACE live preview, read by the SDL2 terrain overlay pass (through the
+	// g_enDragPlace* free functions in area.cpp, so that TU does not have to include this
+	// header). The state is the window's: one drag belongs to one area map.
+	int			GetDragPlaceCount () const { return ((m_iMode == build_loc) && m_bBuildDrag ? m_nDragSites : 0); }
+	CHexCoord	GetDragPlaceSite (int iOn) const { return (m_ahexDrag[iOn]); }	// footprint UL anchor
+	BOOL		GetDragPlaceOk (int iOn) const { return (m_abDragOk[iOn] != 0); }	// passed BuildSiteVerdict
+	void		GetDragPlaceSize (int & cx, int & cy) const { cx = m_iDragCx; cy = m_iDragCy; }
+
+	static	std::string	sWndCls;
 
 protected:
 	CUnit * GetUnitOn (CSubHex & hex);
-	void		CaptureMouse () { if (! m_bCapMouse) { SetCapture (); m_bCapMouse = TRUE; } }
-	void		ReleaseMouse () { if (m_bCapMouse) { ReleaseCapture (); m_bCapMouse = FALSE; } }
+	void		CaptureMouse () { if (! m_bCapMouse) { if (!m_aa.m_sdlPanel) SetCapture (); m_bCapMouse = TRUE; } }
+	void		ReleaseMouse () { if (m_bCapMouse) { if (!m_aa.m_sdlPanel) ReleaseCapture (); m_bCapMouse = FALSE; } }
 	void		LoadStaticResources ();
 	void		UnloadStaticResources ();
 	void		ClrRoadIcons ();
@@ -222,12 +260,17 @@ protected:
 	afx_msg void OnVScroll(UINT nSBCode, UINT nPos, CScrollBar* pScrollBar);
 	afx_msg int OnCreate(LPCREATESTRUCT lpCreateStruct);
 	afx_msg void OnSize(UINT nType, int cx, int cy);
+	afx_msg void OnMove(int x, int y);
 	afx_msg void OnDestroy();
 	afx_msg void LastCombat ();
 	afx_msg void ZoomIn ();
 	afx_msg void ZoomOut ();
 	afx_msg void TurnClock ();
 	afx_msg void TurnCounter ();
+	// Rotate the building/rocket footprint being planned by iStep (+1 = CW, -1 = CCW)
+	// and refresh the placement preview. No-op outside build_ready/rocket_ready.
+	// Backs the [ / ] hotkeys; Ctrl+RMB (OnRButtonDown) still rotates too.
+	void RotateBuildDir ( int iStep );
 	afx_msg void ResClicked ();
 	afx_msg void StopUnit ();
 	afx_msg void ResumeUnit ();
@@ -239,6 +282,7 @@ protected:
 	afx_msg void CurRight ();
 	afx_msg void CurDown ();
 	afx_msg void RoadUnit ();
+	void         RoadOrRoute ();   // 'R' hotkey: crane -> build road, else -> set route
 	afx_msg void CancelRoadUnit ();
 	afx_msg void BuildUnit ();
 	afx_msg void CancelBuildUnit ();
@@ -252,12 +296,33 @@ protected:
 	afx_msg void OnRButtonDown(UINT nFlags, CPoint point);
 	afx_msg void OnRButtonUp(UINT nFlags, CPoint point);
 	afx_msg void OnRButtonDblClk(UINT nFlags, CPoint point);
+	// Modern bindings (2026): MMB held = pan (drag + edge scroll). RMB = command.
+	void OnMButtonDown(UINT nFlags, CPoint point);
+	void OnMButtonUp(UINT nFlags, CPoint point);
+public:
+	// Dismiss the Shift+RMB unit-info tooltip (called from the global event pump so ANY
+	// click, in any window, closes it; the open gesture re-shows it).
+	void HideUnitInfo();
+protected:
+	// Issue the context command (move/attack/load/unload/repair) for the current
+	// selection at `point` — the action half of the original OnLButtonUp, now
+	// driven by the right button. Dispatches on m_uMouseMode (kept current by
+	// SetMouseState on every mouse-move).
+	void DoCommandAt(UINT nFlags, CPoint point);
+	void ShiftQueueMove(CVehicle* pVeh, CSubHex const& sub);   // F2: Shift = append a one-shot route waypoint
+	// #38 DRAG-PLACE. UpdateBuildDrag re-lays the candidate line for the cursor at `point`
+	// (every mouse-move of the drag, and once more from the release so what is queued is
+	// exactly what was previewed); EndBuildDrag drops the gesture and its preview.
+	void		UpdateBuildDrag(CPoint point);
+	void		EndBuildDrag();
+	void StopRoute(CVehicle* pVeh);                          // manual move (normal/line) stops/overrides ANY route incl. loop/haul (BUGS.md #6)
 	afx_msg void OnActivate(UINT nState, CWnd* pWndOther, BOOL bMinimized);
 	afx_msg void OnLButtonDblClk(UINT nFlags, CPoint point);
 	afx_msg void OnLButtonUp(UINT nFlags, CPoint point);
 	afx_msg BOOL OnSetCursor(CWnd* pWnd, UINT nHitTest, UINT message);
+    afx_msg BOOL OnMouseWheel( UINT nFlags, short zDelta, CPoint pt );
 	afx_msg void OnKeyUp(UINT nChar, UINT nRepCnt, UINT nFlags);
-	afx_msg void OnKeyDown(UINT nChar, UINT nRepCnt, UINT nFlags);
+	afx_msg void OnKeyDown(UINT nChar, UINT nRepCnt, UINT nFlags);	
 	afx_msg void OnCloseWin ();
 	afx_msg void OnDeselect();
 	afx_msg BOOL OnEraseBkgnd(CDC* pDC);
@@ -281,13 +346,19 @@ protected:
 						destroying = 0x010000, can_stop = 0x020000, boat = 0x040000, lc_carryable = 0x080000 };
 
 	unsigned			m_uMouseMode;	// what a LMB will do
-							enum { lmb_normal, lmb_nothing, lmb_attack, lmb_goto, lmb_select, 
-										lmb_repair_bldg, lmb_repair_self, lmb_load, lmb_unload };
+							enum { lmb_normal, lmb_nothing, lmb_attack, lmb_goto, lmb_select,
+										lmb_repair_bldg, lmb_repair_self, lmb_load, lmb_unload, lmb_line };
 
 	CRect					m_selRect;
 	CPoint				m_selOrig;
+
+	// Line movement (drawn formations): RMB-drag with 2+ units selected
+	// distributes them along the drawn line. See OnMouseMove / OnRButtonUp.
+	BOOL					m_bLineMove;			// current RMB drag is a line-move (not a click command)
+	CPoint				m_lineEnd;				// live end of the line during the drag (client px)
 	BOOL					m_bCapMouse;	// have we captured the mouse?
-	CWndInfo *		m_pWndInfo;		// tooltip window
+	CWndInfo *		m_pWndInfo;		// tooltip window (MFC, legacy)
+	SDL2UnitInfoPanel* m_pSdlInfo;	// SDL2 tooltip replacement
 
 	CListUnits		m_lstUnits;
 	BYTE *				m_pSelUnder;	// pixels under the selection box
@@ -310,16 +381,40 @@ protected:
 	BOOL					m_bUpdateAll;
 	BOOL					m_bNewSound;
 
-	BOOL					m_bRBtnDown;	// TRUE if RMB down
+	BOOL					m_bPanBtnDown;	// TRUE while the pan button (MMB) is held
+	BOOL					m_bPanEdgeMode;	// pan mode LOCKED at MMB-press: TRUE = edge-band scroll (pressed in the outer 1/8 band), FALSE = drag-pan ("grab"). One or the other for the whole hold, never both (operator: a drag started center then moved to the edge fired both at once)
+	BOOL					m_bRmbCmdDown;	// TRUE while the RMB is held arming a command/line-move
+	BOOL					m_bRmbShift;	// Shift state captured at RMB-PRESS (queue vs replace; survives a Shift release before button-up) — lets Shift+drag be a QUEUED line-move
 	BOOL					m_bNewPos;
-	CPoint				m_ptRMDN;			// point RMB was pressed at
-	CPoint				m_ptRMB;			// point moved from with RMB
+	CPoint				m_ptRMDN;			// point RMB was pressed at (command/line-move origin)
+	CPoint				m_ptRMB;			// last pan point (MMB drag-pan delta basis)
 	CPoint				m_ptLMB;			// point moved from with LMB
 	int						m_iMoveCur;		// which move cur
 
 	BOOL					m_bShowRes;		// show the resource tiles
 
 	CHexCoord			m_hexRoadStart;//where the road starts
+
+	// #38 DRAG-PLACE (Shift+LMB-drag in build_loc lays a line of the armed building).
+	// m_hexDragDn is the CURSOR hex the press landed on, stored raw (not as an anchor) so
+	// every update re-derives the anchors from the facing and footprint then current, and
+	// so the line does not move when the view pans or zooms under it. The sites ARE those
+	// anchors, m_abDragOk their BuildSiteVerdict verdicts, and m_iDragCx/Cy the footprint
+	// size (dir-swapped, as the cursor is) that both the spacing and the preview use.
+	// Fixed arrays: the preview pass must not allocate, and the line is re-laid on every
+	// mouse-move of the drag.
+	//
+	// NOTE: rotating the footprint ([ / ]) mid-drag CANCELS the gesture rather than
+	// re-laying it - RotateBuildDir refreshes the preview through OnMouseMove(0, pt), and
+	// a synthetic move with no button or Shift in its flags is exactly what EndBuildDrag
+	// keys off. Nothing is queued, and the next press starts a fresh line.
+	BOOL					m_bBuildDrag;
+	CHexCoord			m_hexDragDn;
+	CHexCoord			m_ahexDrag[MAX_DRAG_PLACE];
+	BYTE					m_abDragOk[MAX_DRAG_PLACE];
+	int						m_nDragSites;
+	int						m_iDragCx;
+	int						m_iDragCy;
 	CColorBuffer		m_colorbuffer;
 
 	CScrollBar			m_scrollbarH;
@@ -333,17 +428,17 @@ protected:
 
 	static	HHOOK					m_hhk;
 
-	static	CString				m_sHelp;			// help in normal mode
-	static	CString				m_sHelpBuild;	// what to build
-	static	CString				m_sHelpRoad;	// help when building a road
-	static	CString				m_sHelpCantBuild[9];
-	static	CString				m_sHelpRMB;		// help when the RMB button is down
-	static	CString				m_sHelpOkFarm;
-	static	CString				m_sHelpBadFarm;
-	static	CString				m_sHelpNoFarm;
-	static	CString				m_sHelpOkMine;
-	static	CString				m_sHelpBadMine;
-	static	CString				m_sHelpNoMine;
+	static	std::string			m_sHelp;			// help in normal mode
+	static	std::string			m_sHelpBuild;	// what to build
+	static	std::string			m_sHelpRoad;	// help when building a road
+	static	std::string			m_sHelpCantBuild[9];
+	static	std::string			m_sHelpRMB;		// help when the RMB button is down
+	static	std::string			m_sHelpOkFarm;
+	static	std::string			m_sHelpBadFarm;
+	static	std::string			m_sHelpNoFarm;
+	static	std::string			m_sHelpOkMine;
+	static	std::string			m_sHelpBadMine;
+	static	std::string			m_sHelpNoMine;
 
 	static	HCURSOR				m_hCurReg;		// standard cursor
 	static	HCURSOR				m_hCurGoto[4];// cursor to send vehicle
@@ -380,7 +475,9 @@ public:
 	int						GetNumWindows ();
 	CWndArea *		BringToTop ();
 	CWndArea *		GetTop ();
+	void					SetTopArea (CWndArea * p) { m_pTopArea = p; }	// SDL2: track focused area window
 	void					MoveSizeToNew ( int xOld, int yOld );
+	void					ClampToRow3 ();	// keep maps above the toolbar (m_iRow3)
 
 	void					UnitDying (CUnit * pUnit);
 	void					MaterialChange (CUnit const * pUnit) const;
@@ -394,6 +491,7 @@ public:
 protected:
 	CHexCoord			m_hexLastCombat;
 	BOOL					m_bLcSet;
+	CWndArea *		m_pTopArea = nullptr;	// SDL2: last-focused area window (GetTop)
 };
 
 

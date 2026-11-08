@@ -1,0 +1,1319 @@
+Microsoft (R) COFF/PE Dumper Version 14.29.30140.0
+Copyright (C) Microsoft Corporation.  All rights reserved.
+
+
+Dump of file shdw32m.lib
+
+File Type: LIBRARY
+
+COFF SYMBOL TABLE
+000 00000000 SECT1  notype       Static       | .text
+    Section length    6, #relocs    1, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+002 00000000 SECT2  notype       Static       | .idata$5
+    Section length    4, #relocs    1, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+004 00000000 SECT3  notype       Static       | .idata$4
+    Section length    4, #relocs    1, #linenums    0, checksum        0, selection    5 (pick associative Section 0x11E80002)
+006 00000000 SECT1  notype       External     | _shi_set_new_handler
+007 00000000 SECT4  notype       Static       | .idata$6
+    Section length   16, #relocs    0, #linenums    0, checksum        0, selection    5 (pick associative Section 0x11E80002)
+009 00000000 UNDEF  notype       External     | SH32W32_IMPORT_DESCRIPTOR
+00A 00000000 SECT2  notype       External     | __imp__shi_set_new_handler
+
+String Table Size = 0x4E bytes
+
+COFF SYMBOL TABLE
+000 00000000 SECT1  notype       Static       | .text
+    Section length    6, #relocs    1, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+002 00000000 SECT2  notype       Static       | .idata$5
+    Section length    4, #relocs    1, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+004 00000000 SECT3  notype       Static       | .idata$4
+    Section length    4, #relocs    1, #linenums    0, checksum        0, selection    5 (pick associative Section 0x11E80002)
+006 00000000 SECT1  notype       External     | _shi_realloc
+007 00000000 SECT4  notype       Static       | .idata$6
+    Section length    E, #relocs    0, #linenums    0, checksum        0, selection    5 (pick associative Section 0x11E80002)
+009 00000000 UNDEF  notype       External     | SH32W32_IMPORT_DESCRIPTOR
+00A 00000000 SECT2  notype       External     | __imp__shi_realloc
+
+String Table Size = 0x3E bytes
+
+COFF SYMBOL TABLE
+000 00000000 SECT1  notype       Static       | .text
+    Section length    6, #relocs    1, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+002 00000000 SECT2  notype       Static       | .idata$5
+    Section length    4, #relocs    1, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+004 00000000 SECT3  notype       Static       | .idata$4
+    Section length    4, #relocs    1, #linenums    0, checksum        0, selection    5 (pick associative Section 0x11E80002)
+006 00000000 SECT1  notype       External     | _shi_newStdcall@4
+007 00000000 SECT4  notype       Static       | .idata$6
+    Section length   14, #relocs    0, #linenums    0, checksum        0, selection    5 (pick associative Section 0x11E80002)
+009 00000000 UNDEF  notype       External     | SH32W32_IMPORT_DESCRIPTOR
+00A 00000000 SECT2  notype       External     | __imp__shi_newStdcall@4
+
+String Table Size = 0x48 bytes
+
+COFF SYMBOL TABLE
+000 00000000 SECT1  notype       Static       | .text
+    Section length    6, #relocs    1, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+002 00000000 SECT2  notype       Static       | .idata$5
+    Section length    4, #relocs    1, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+004 00000000 SECT3  notype       Static       | .idata$4
+    Section length    4, #relocs    1, #linenums    0, checksum        0, selection    5 (pick associative Section 0x11E80002)
+006 00000000 SECT1  notype       External     | _shi_new
+007 00000000 SECT4  notype       Static       | .idata$6
+    Section length    A, #relocs    0, #linenums    0, checksum        0, selection    5 (pick associative Section 0x11E80002)
+009 00000000 UNDEF  notype       External     | SH32W32_IMPORT_DESCRIPTOR
+00A 00000000 SECT2  notype       External     | __imp__shi_new
+
+String Table Size = 0x2D bytes
+
+COFF SYMBOL TABLE
+000 00000000 SECT1  notype       Static       | .text
+    Section length    6, #relocs    1, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+002 00000000 SECT2  notype       Static       | .idata$5
+    Section length    4, #relocs    1, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+004 00000000 SECT3  notype       Static       | .idata$4
+    Section length    4, #relocs    1, #linenums    0, checksum        0, selection    5 (pick associative Section 0x11E80002)
+006 00000000 SECT1  notype       External     | _shi_msize
+007 00000000 SECT4  notype       Static       | .idata$6
+    Section length    C, #relocs    0, #linenums    0, checksum        0, selection    5 (pick associative Section 0x11E80002)
+009 00000000 UNDEF  notype       External     | SH32W32_IMPORT_DESCRIPTOR
+00A 00000000 SECT2  notype       External     | __imp__shi_msize
+
+String Table Size = 0x3A bytes
+
+COFF SYMBOL TABLE
+000 00000000 SECT1  notype       Static       | .text
+    Section length    6, #relocs    1, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+002 00000000 SECT2  notype       Static       | .idata$5
+    Section length    4, #relocs    1, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+004 00000000 SECT3  notype       Static       | .idata$4
+    Section length    4, #relocs    1, #linenums    0, checksum        0, selection    5 (pick associative Section 0x11E80002)
+006 00000000 SECT1  notype       External     | _shi_malloc
+007 00000000 SECT4  notype       Static       | .idata$6
+    Section length    E, #relocs    0, #linenums    0, checksum        0, selection    5 (pick associative Section 0x11E80002)
+009 00000000 UNDEF  notype       External     | SH32W32_IMPORT_DESCRIPTOR
+00A 00000000 SECT2  notype       External     | __imp__shi_malloc
+
+String Table Size = 0x3C bytes
+
+COFF SYMBOL TABLE
+000 00000000 SECT1  notype       Static       | .text
+    Section length    6, #relocs    1, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+002 00000000 SECT2  notype       Static       | .idata$5
+    Section length    4, #relocs    1, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+004 00000000 SECT3  notype       Static       | .idata$4
+    Section length    4, #relocs    1, #linenums    0, checksum        0, selection    5 (pick associative Section 0x11E80002)
+006 00000000 SECT1  notype       External     | _shi_heapwalk
+007 00000000 SECT4  notype       Static       | .idata$6
+    Section length   10, #relocs    0, #linenums    0, checksum        0, selection    5 (pick associative Section 0x11E80002)
+009 00000000 UNDEF  notype       External     | SH32W32_IMPORT_DESCRIPTOR
+00A 00000000 SECT2  notype       External     | __imp__shi_heapwalk
+
+String Table Size = 0x40 bytes
+
+COFF SYMBOL TABLE
+000 00000000 SECT1  notype       Static       | .text
+    Section length    6, #relocs    1, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+002 00000000 SECT2  notype       Static       | .idata$5
+    Section length    4, #relocs    1, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+004 00000000 SECT3  notype       Static       | .idata$4
+    Section length    4, #relocs    1, #linenums    0, checksum        0, selection    5 (pick associative Section 0x11E80002)
+006 00000000 SECT1  notype       External     | _shi_heapused
+007 00000000 SECT4  notype       Static       | .idata$6
+    Section length   10, #relocs    0, #linenums    0, checksum        0, selection    5 (pick associative Section 0x11E80002)
+009 00000000 UNDEF  notype       External     | SH32W32_IMPORT_DESCRIPTOR
+00A 00000000 SECT2  notype       External     | __imp__shi_heapused
+
+String Table Size = 0x40 bytes
+
+COFF SYMBOL TABLE
+000 00000000 SECT1  notype       Static       | .text
+    Section length    6, #relocs    1, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+002 00000000 SECT2  notype       Static       | .idata$5
+    Section length    4, #relocs    1, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+004 00000000 SECT3  notype       Static       | .idata$4
+    Section length    4, #relocs    1, #linenums    0, checksum        0, selection    5 (pick associative Section 0x11E80002)
+006 00000000 SECT1  notype       External     | _shi_heapset
+007 00000000 SECT4  notype       Static       | .idata$6
+    Section length    E, #relocs    0, #linenums    0, checksum        0, selection    5 (pick associative Section 0x11E80002)
+009 00000000 UNDEF  notype       External     | SH32W32_IMPORT_DESCRIPTOR
+00A 00000000 SECT2  notype       External     | __imp__shi_heapset
+
+String Table Size = 0x3E bytes
+
+COFF SYMBOL TABLE
+000 00000000 SECT1  notype       Static       | .text
+    Section length    6, #relocs    1, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+002 00000000 SECT2  notype       Static       | .idata$5
+    Section length    4, #relocs    1, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+004 00000000 SECT3  notype       Static       | .idata$4
+    Section length    4, #relocs    1, #linenums    0, checksum        0, selection    5 (pick associative Section 0x11E80002)
+006 00000000 SECT1  notype       External     | _shi_heapmin
+007 00000000 SECT4  notype       Static       | .idata$6
+    Section length    E, #relocs    0, #linenums    0, checksum        0, selection    5 (pick associative Section 0x11E80002)
+009 00000000 UNDEF  notype       External     | SH32W32_IMPORT_DESCRIPTOR
+00A 00000000 SECT2  notype       External     | __imp__shi_heapmin
+
+String Table Size = 0x3E bytes
+
+COFF SYMBOL TABLE
+000 00000000 SECT1  notype       Static       | .text
+    Section length    6, #relocs    1, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+002 00000000 SECT2  notype       Static       | .idata$5
+    Section length    4, #relocs    1, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+004 00000000 SECT3  notype       Static       | .idata$4
+    Section length    4, #relocs    1, #linenums    0, checksum        0, selection    5 (pick associative Section 0x11E80002)
+006 00000000 SECT1  notype       External     | _shi_heapchk
+007 00000000 SECT4  notype       Static       | .idata$6
+    Section length    E, #relocs    0, #linenums    0, checksum        0, selection    5 (pick associative Section 0x11E80002)
+009 00000000 UNDEF  notype       External     | SH32W32_IMPORT_DESCRIPTOR
+00A 00000000 SECT2  notype       External     | __imp__shi_heapchk
+
+String Table Size = 0x3E bytes
+
+COFF SYMBOL TABLE
+000 00000000 SECT1  notype       Static       | .text
+    Section length    6, #relocs    1, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+002 00000000 SECT2  notype       Static       | .idata$5
+    Section length    4, #relocs    1, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+004 00000000 SECT3  notype       Static       | .idata$4
+    Section length    4, #relocs    1, #linenums    0, checksum        0, selection    5 (pick associative Section 0x11E80002)
+006 00000000 SECT1  notype       External     | _shi_heapadd
+007 00000000 SECT4  notype       Static       | .idata$6
+    Section length    E, #relocs    0, #linenums    0, checksum        0, selection    5 (pick associative Section 0x11E80002)
+009 00000000 UNDEF  notype       External     | SH32W32_IMPORT_DESCRIPTOR
+00A 00000000 SECT2  notype       External     | __imp__shi_heapadd
+
+String Table Size = 0x3E bytes
+
+COFF SYMBOL TABLE
+000 00000000 SECT1  notype       Static       | .text
+    Section length    6, #relocs    1, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+002 00000000 SECT2  notype       Static       | .idata$5
+    Section length    4, #relocs    1, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+004 00000000 SECT3  notype       Static       | .idata$4
+    Section length    4, #relocs    1, #linenums    0, checksum        0, selection    5 (pick associative Section 0x11E80002)
+006 00000000 SECT1  notype       External     | _shi_free
+007 00000000 SECT4  notype       Static       | .idata$6
+    Section length    C, #relocs    0, #linenums    0, checksum        0, selection    5 (pick associative Section 0x11E80002)
+009 00000000 UNDEF  notype       External     | SH32W32_IMPORT_DESCRIPTOR
+00A 00000000 SECT2  notype       External     | __imp__shi_free
+
+String Table Size = 0x38 bytes
+
+COFF SYMBOL TABLE
+000 00000000 SECT1  notype       Static       | .text
+    Section length    6, #relocs    1, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+002 00000000 SECT2  notype       Static       | .idata$5
+    Section length    4, #relocs    1, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+004 00000000 SECT3  notype       Static       | .idata$4
+    Section length    4, #relocs    1, #linenums    0, checksum        0, selection    5 (pick associative Section 0x11E80002)
+006 00000000 SECT1  notype       External     | _shi_expand
+007 00000000 SECT4  notype       Static       | .idata$6
+    Section length    E, #relocs    0, #linenums    0, checksum        0, selection    5 (pick associative Section 0x11E80002)
+009 00000000 UNDEF  notype       External     | SH32W32_IMPORT_DESCRIPTOR
+00A 00000000 SECT2  notype       External     | __imp__shi_expand
+
+String Table Size = 0x3C bytes
+
+COFF SYMBOL TABLE
+000 00000000 SECT1  notype       Static       | .text
+    Section length    6, #relocs    1, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+002 00000000 SECT2  notype       Static       | .idata$5
+    Section length    4, #relocs    1, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+004 00000000 SECT3  notype       Static       | .idata$4
+    Section length    4, #relocs    1, #linenums    0, checksum        0, selection    5 (pick associative Section 0x11E80002)
+006 00000000 SECT1  notype       External     | _shi_deleteStdcall@4
+007 00000000 SECT4  notype       Static       | .idata$6
+    Section length   18, #relocs    0, #linenums    0, checksum        0, selection    5 (pick associative Section 0x11E80002)
+009 00000000 UNDEF  notype       External     | SH32W32_IMPORT_DESCRIPTOR
+00A 00000000 SECT2  notype       External     | __imp__shi_deleteStdcall@4
+
+String Table Size = 0x4E bytes
+
+COFF SYMBOL TABLE
+000 00000000 SECT1  notype       Static       | .text
+    Section length    6, #relocs    1, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+002 00000000 SECT2  notype       Static       | .idata$5
+    Section length    4, #relocs    1, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+004 00000000 SECT3  notype       Static       | .idata$4
+    Section length    4, #relocs    1, #linenums    0, checksum        0, selection    5 (pick associative Section 0x11E80002)
+006 00000000 SECT1  notype       External     | _shi_delete
+007 00000000 SECT4  notype       Static       | .idata$6
+    Section length    E, #relocs    0, #linenums    0, checksum        0, selection    5 (pick associative Section 0x11E80002)
+009 00000000 UNDEF  notype       External     | SH32W32_IMPORT_DESCRIPTOR
+00A 00000000 SECT2  notype       External     | __imp__shi_delete
+
+String Table Size = 0x3C bytes
+
+COFF SYMBOL TABLE
+000 00000000 SECT1  notype       Static       | .text
+    Section length    6, #relocs    1, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+002 00000000 SECT2  notype       Static       | .idata$5
+    Section length    4, #relocs    1, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+004 00000000 SECT3  notype       Static       | .idata$4
+    Section length    4, #relocs    1, #linenums    0, checksum        0, selection    5 (pick associative Section 0x11E80002)
+006 00000000 SECT1  notype       External     | _shi_calloc
+007 00000000 SECT4  notype       Static       | .idata$6
+    Section length    E, #relocs    0, #linenums    0, checksum        0, selection    5 (pick associative Section 0x11E80002)
+009 00000000 UNDEF  notype       External     | SH32W32_IMPORT_DESCRIPTOR
+00A 00000000 SECT2  notype       External     | __imp__shi_calloc
+
+String Table Size = 0x3C bytes
+
+COFF SYMBOL TABLE
+000 00000000 SECT1  notype       Static       | .text
+    Section length    6, #relocs    1, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+002 00000000 SECT2  notype       Static       | .idata$5
+    Section length    4, #relocs    1, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+004 00000000 SECT3  notype       Static       | .idata$4
+    Section length    4, #relocs    1, #linenums    0, checksum        0, selection    5 (pick associative Section 0x11E80002)
+006 00000000 SECT1  notype       External     | _shi_MemInitDefaultPool@0
+007 00000000 SECT4  notype       Static       | .idata$6
+    Section length   1C, #relocs    0, #linenums    0, checksum        0, selection    5 (pick associative Section 0x11E80002)
+009 00000000 UNDEF  notype       External     | SH32W32_IMPORT_DESCRIPTOR
+00A 00000000 SECT2  notype       External     | __imp__shi_MemInitDefaultPool@0
+
+String Table Size = 0x58 bytes
+
+COFF SYMBOL TABLE
+000 00000000 SECT1  notype       Static       | .text
+    Section length    6, #relocs    1, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+002 00000000 SECT2  notype       Static       | .idata$5
+    Section length    4, #relocs    1, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+004 00000000 SECT3  notype       Static       | .idata$4
+    Section length    4, #relocs    1, #linenums    0, checksum        0, selection    5 (pick associative Section 0x11E80002)
+006 00000000 SECT1  notype       External     | _shi_MemFreeDefaultPool@0
+007 00000000 SECT4  notype       Static       | .idata$6
+    Section length   1C, #relocs    0, #linenums    0, checksum        0, selection    5 (pick associative Section 0x11E80002)
+009 00000000 UNDEF  notype       External     | SH32W32_IMPORT_DESCRIPTOR
+00A 00000000 SECT2  notype       External     | __imp__shi_MemFreeDefaultPool@0
+
+String Table Size = 0x58 bytes
+
+COFF SYMBOL TABLE
+000 00000000 SECT1  notype       Static       | .idata$5
+    Section length    4, #relocs    1, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+002 00000000 SECT2  notype       Static       | .idata$4
+    Section length    4, #relocs    1, #linenums    0, checksum        0, selection    5 (pick associative Section 0x11E80001)
+004 00000000 SECT3  notype       Static       | .idata$6
+    Section length   16, #relocs    0, #linenums    0, checksum        0, selection    5 (pick associative Section 0x11E80001)
+006 00000000 UNDEF  notype       External     | SH32W32_IMPORT_DESCRIPTOR
+007 00000000 SECT1  notype       External     | __imp__shi_MemDefaultPool
+
+String Table Size = 0x4C bytes
+
+COFF SYMBOL TABLE
+000 00000000 SECT1  notype       Static       | .text
+    Section length    6, #relocs    1, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+002 00000000 SECT2  notype       Static       | .idata$5
+    Section length    4, #relocs    0, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+004 00000000 SECT3  notype       Static       | .idata$4
+    Section length    4, #relocs    0, #linenums    0, checksum        0, selection    5 (pick associative Section 0x11E80002)
+006 00000000 SECT1  notype       External     | __shi_leaveCriticalSection@0
+007 00000000 UNDEF  notype       External     | SH32W32_IMPORT_DESCRIPTOR
+008 00000000 SECT2  notype       External     | __imp___shi_leaveCriticalSection@0
+
+String Table Size = 0x5E bytes
+
+COFF SYMBOL TABLE
+000 00000000 SECT1  notype       Static       | .text
+    Section length    6, #relocs    1, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+002 00000000 SECT2  notype       Static       | .idata$5
+    Section length    4, #relocs    0, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+004 00000000 SECT3  notype       Static       | .idata$4
+    Section length    4, #relocs    0, #linenums    0, checksum        0, selection    5 (pick associative Section 0x11E80002)
+006 00000000 SECT1  notype       External     | __shi_enterCriticalSection@0
+007 00000000 UNDEF  notype       External     | SH32W32_IMPORT_DESCRIPTOR
+008 00000000 SECT2  notype       External     | __imp___shi_enterCriticalSection@0
+
+String Table Size = 0x5E bytes
+
+COFF SYMBOL TABLE
+000 00000000 SECT1  notype       Static       | .text
+    Section length    6, #relocs    1, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+002 00000000 SECT2  notype       Static       | .idata$5
+    Section length    4, #relocs    0, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+004 00000000 SECT3  notype       Static       | .idata$4
+    Section length    4, #relocs    0, #linenums    0, checksum        0, selection    5 (pick associative Section 0x11E80002)
+006 00000000 SECT1  notype       External     | _MemVersion@0
+007 00000000 UNDEF  notype       External     | SH32W32_IMPORT_DESCRIPTOR
+008 00000000 SECT2  notype       External     | __imp__MemVersion@0
+
+String Table Size = 0x40 bytes
+
+COFF SYMBOL TABLE
+000 00000000 SECT1  notype       Static       | .text
+    Section length    6, #relocs    1, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+002 00000000 SECT2  notype       Static       | .idata$5
+    Section length    4, #relocs    0, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+004 00000000 SECT3  notype       Static       | .idata$4
+    Section length    4, #relocs    0, #linenums    0, checksum        0, selection    5 (pick associative Section 0x11E80002)
+006 00000000 SECT1  notype       External     | _MemUnregisterTask@0
+007 00000000 UNDEF  notype       External     | SH32W32_IMPORT_DESCRIPTOR
+008 00000000 SECT2  notype       External     | __imp__MemUnregisterTask@0
+
+String Table Size = 0x4E bytes
+
+COFF SYMBOL TABLE
+000 00000000 SECT1  notype       Static       | .text
+    Section length    6, #relocs    1, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+002 00000000 SECT2  notype       Static       | .idata$5
+    Section length    4, #relocs    0, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+004 00000000 SECT3  notype       Static       | .idata$4
+    Section length    4, #relocs    0, #linenums    0, checksum        0, selection    5 (pick associative Section 0x11E80002)
+006 00000000 SECT1  notype       External     | _MemUnlock@4
+007 00000000 UNDEF  notype       External     | SH32W32_IMPORT_DESCRIPTOR
+008 00000000 SECT2  notype       External     | __imp__MemUnlock@4
+
+String Table Size = 0x3E bytes
+
+COFF SYMBOL TABLE
+000 00000000 SECT1  notype       Static       | .text
+    Section length    6, #relocs    1, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+002 00000000 SECT2  notype       Static       | .idata$5
+    Section length    4, #relocs    0, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+004 00000000 SECT3  notype       Static       | .idata$4
+    Section length    4, #relocs    0, #linenums    0, checksum        0, selection    5 (pick associative Section 0x11E80002)
+006 00000000 SECT1  notype       External     | _MemUnfix@4
+007 00000000 UNDEF  notype       External     | SH32W32_IMPORT_DESCRIPTOR
+008 00000000 SECT2  notype       External     | __imp__MemUnfix@4
+
+String Table Size = 0x3C bytes
+
+COFF SYMBOL TABLE
+000 00000000 SECT1  notype       Static       | .text
+    Section length    6, #relocs    1, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+002 00000000 SECT2  notype       Static       | .idata$5
+    Section length    4, #relocs    0, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+004 00000000 SECT3  notype       Static       | .idata$4
+    Section length    4, #relocs    0, #linenums    0, checksum        0, selection    5 (pick associative Section 0x11E80002)
+006 00000000 SECT1  notype       External     | _MemSizeRequested@4
+007 00000000 UNDEF  notype       External     | SH32W32_IMPORT_DESCRIPTOR
+008 00000000 SECT2  notype       External     | __imp__MemSizeRequested@4
+
+String Table Size = 0x4C bytes
+
+COFF SYMBOL TABLE
+000 00000000 SECT1  notype       Static       | .text
+    Section length    6, #relocs    1, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+002 00000000 SECT2  notype       Static       | .idata$5
+    Section length    4, #relocs    0, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+004 00000000 SECT3  notype       Static       | .idata$4
+    Section length    4, #relocs    0, #linenums    0, checksum        0, selection    5 (pick associative Section 0x11E80002)
+006 00000000 SECT1  notype       External     | _MemSizePtr@4
+007 00000000 UNDEF  notype       External     | SH32W32_IMPORT_DESCRIPTOR
+008 00000000 SECT2  notype       External     | __imp__MemSizePtr@4
+
+String Table Size = 0x40 bytes
+
+COFF SYMBOL TABLE
+000 00000000 SECT1  notype       Static       | .text
+    Section length    6, #relocs    1, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+002 00000000 SECT2  notype       Static       | .idata$5
+    Section length    4, #relocs    0, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+004 00000000 SECT3  notype       Static       | .idata$4
+    Section length    4, #relocs    0, #linenums    0, checksum        0, selection    5 (pick associative Section 0x11E80002)
+006 00000000 SECT1  notype       External     | _MemSize@4
+007 00000000 UNDEF  notype       External     | SH32W32_IMPORT_DESCRIPTOR
+008 00000000 SECT2  notype       External     | __imp__MemSize@4
+
+String Table Size = 0x3A bytes
+
+COFF SYMBOL TABLE
+000 00000000 SECT1  notype       Static       | .text
+    Section length    6, #relocs    1, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+002 00000000 SECT2  notype       Static       | .idata$5
+    Section length    4, #relocs    0, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+004 00000000 SECT3  notype       Static       | .idata$4
+    Section length    4, #relocs    0, #linenums    0, checksum        0, selection    5 (pick associative Section 0x11E80002)
+006 00000000 SECT1  notype       External     | _MemSetErrorHandler@4
+007 00000000 UNDEF  notype       External     | SH32W32_IMPORT_DESCRIPTOR
+008 00000000 SECT2  notype       External     | __imp__MemSetErrorHandler@4
+
+String Table Size = 0x50 bytes
+
+COFF SYMBOL TABLE
+000 00000000 SECT1  notype       Static       | .text
+    Section length    6, #relocs    1, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+002 00000000 SECT2  notype       Static       | .idata$5
+    Section length    4, #relocs    0, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+004 00000000 SECT3  notype       Static       | .idata$4
+    Section length    4, #relocs    0, #linenums    0, checksum        0, selection    5 (pick associative Section 0x11E80002)
+006 00000000 SECT1  notype       External     | _MemRegisterTask@0
+007 00000000 UNDEF  notype       External     | SH32W32_IMPORT_DESCRIPTOR
+008 00000000 SECT2  notype       External     | __imp__MemRegisterTask@0
+
+String Table Size = 0x4A bytes
+
+COFF SYMBOL TABLE
+000 00000000 SECT1  notype       Static       | .text
+    Section length    6, #relocs    1, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+002 00000000 SECT2  notype       Static       | .idata$5
+    Section length    4, #relocs    0, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+004 00000000 SECT3  notype       Static       | .idata$4
+    Section length    4, #relocs    0, #linenums    0, checksum        0, selection    5 (pick associative Section 0x11E80002)
+006 00000000 SECT1  notype       External     | _MemReAllocPtr@12
+007 00000000 UNDEF  notype       External     | SH32W32_IMPORT_DESCRIPTOR
+008 00000000 SECT2  notype       External     | __imp__MemReAllocPtr@12
+
+String Table Size = 0x48 bytes
+
+COFF SYMBOL TABLE
+000 00000000 SECT1  notype       Static       | .text
+    Section length    6, #relocs    1, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+002 00000000 SECT2  notype       Static       | .idata$5
+    Section length    4, #relocs    0, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+004 00000000 SECT3  notype       Static       | .idata$4
+    Section length    4, #relocs    0, #linenums    0, checksum        0, selection    5 (pick associative Section 0x11E80002)
+006 00000000 SECT1  notype       External     | _MemReAlloc@12
+007 00000000 UNDEF  notype       External     | SH32W32_IMPORT_DESCRIPTOR
+008 00000000 SECT2  notype       External     | __imp__MemReAlloc@12
+
+String Table Size = 0x42 bytes
+
+COFF SYMBOL TABLE
+000 00000000 SECT1  notype       Static       | .text
+    Section length    6, #relocs    1, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+002 00000000 SECT2  notype       Static       | .idata$5
+    Section length    4, #relocs    0, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+004 00000000 SECT3  notype       Static       | .idata$4
+    Section length    4, #relocs    0, #linenums    0, checksum        0, selection    5 (pick associative Section 0x11E80002)
+006 00000000 SECT1  notype       External     | _MemPoolWalk@8
+007 00000000 UNDEF  notype       External     | SH32W32_IMPORT_DESCRIPTOR
+008 00000000 SECT2  notype       External     | __imp__MemPoolWalk@8
+
+String Table Size = 0x42 bytes
+
+COFF SYMBOL TABLE
+000 00000000 SECT1  notype       Static       | .text
+    Section length    6, #relocs    1, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+002 00000000 SECT2  notype       Static       | .idata$5
+    Section length    4, #relocs    0, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+004 00000000 SECT3  notype       Static       | .idata$4
+    Section length    4, #relocs    0, #linenums    0, checksum        0, selection    5 (pick associative Section 0x11E80002)
+006 00000000 SECT1  notype       External     | _MemPoolUnlock@4
+007 00000000 UNDEF  notype       External     | SH32W32_IMPORT_DESCRIPTOR
+008 00000000 SECT2  notype       External     | __imp__MemPoolUnlock@4
+
+String Table Size = 0x46 bytes
+
+COFF SYMBOL TABLE
+000 00000000 SECT1  notype       Static       | .text
+    Section length    6, #relocs    1, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+002 00000000 SECT2  notype       Static       | .idata$5
+    Section length    4, #relocs    0, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+004 00000000 SECT3  notype       Static       | .idata$4
+    Section length    4, #relocs    0, #linenums    0, checksum        0, selection    5 (pick associative Section 0x11E80002)
+006 00000000 SECT1  notype       External     | _MemPoolSize@4
+007 00000000 UNDEF  notype       External     | SH32W32_IMPORT_DESCRIPTOR
+008 00000000 SECT2  notype       External     | __imp__MemPoolSize@4
+
+String Table Size = 0x42 bytes
+
+COFF SYMBOL TABLE
+000 00000000 SECT1  notype       Static       | .text
+    Section length    6, #relocs    1, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+002 00000000 SECT2  notype       Static       | .idata$5
+    Section length    4, #relocs    0, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+004 00000000 SECT3  notype       Static       | .idata$4
+    Section length    4, #relocs    0, #linenums    0, checksum        0, selection    5 (pick associative Section 0x11E80002)
+006 00000000 SECT1  notype       External     | _MemPoolShrink@4
+007 00000000 UNDEF  notype       External     | SH32W32_IMPORT_DESCRIPTOR
+008 00000000 SECT2  notype       External     | __imp__MemPoolShrink@4
+
+String Table Size = 0x46 bytes
+
+COFF SYMBOL TABLE
+000 00000000 SECT1  notype       Static       | .text
+    Section length    6, #relocs    1, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+002 00000000 SECT2  notype       Static       | .idata$5
+    Section length    4, #relocs    0, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+004 00000000 SECT3  notype       Static       | .idata$4
+    Section length    4, #relocs    0, #linenums    0, checksum        0, selection    5 (pick associative Section 0x11E80002)
+006 00000000 SECT1  notype       External     | _MemPoolSetSmallBlockSize@8
+007 00000000 UNDEF  notype       External     | SH32W32_IMPORT_DESCRIPTOR
+008 00000000 SECT2  notype       External     | __imp__MemPoolSetSmallBlockSize@8
+
+String Table Size = 0x5C bytes
+
+COFF SYMBOL TABLE
+000 00000000 SECT1  notype       Static       | .text
+    Section length    6, #relocs    1, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+002 00000000 SECT2  notype       Static       | .idata$5
+    Section length    4, #relocs    0, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+004 00000000 SECT3  notype       Static       | .idata$4
+    Section length    4, #relocs    0, #linenums    0, checksum        0, selection    5 (pick associative Section 0x11E80002)
+006 00000000 SECT1  notype       External     | _MemPoolSetPageSize@8
+007 00000000 UNDEF  notype       External     | SH32W32_IMPORT_DESCRIPTOR
+008 00000000 SECT2  notype       External     | __imp__MemPoolSetPageSize@8
+
+String Table Size = 0x50 bytes
+
+COFF SYMBOL TABLE
+000 00000000 SECT1  notype       Static       | .text
+    Section length    6, #relocs    1, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+002 00000000 SECT2  notype       Static       | .idata$5
+    Section length    4, #relocs    0, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+004 00000000 SECT3  notype       Static       | .idata$4
+    Section length    4, #relocs    0, #linenums    0, checksum        0, selection    5 (pick associative Section 0x11E80002)
+006 00000000 SECT1  notype       External     | _MemPoolSetFloor@8
+007 00000000 UNDEF  notype       External     | SH32W32_IMPORT_DESCRIPTOR
+008 00000000 SECT2  notype       External     | __imp__MemPoolSetFloor@8
+
+String Table Size = 0x4A bytes
+
+COFF SYMBOL TABLE
+000 00000000 SECT1  notype       Static       | .text
+    Section length    6, #relocs    1, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+002 00000000 SECT2  notype       Static       | .idata$5
+    Section length    4, #relocs    0, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+004 00000000 SECT3  notype       Static       | .idata$4
+    Section length    4, #relocs    0, #linenums    0, checksum        0, selection    5 (pick associative Section 0x11E80002)
+006 00000000 SECT1  notype       External     | _MemPoolSetCeiling@8
+007 00000000 UNDEF  notype       External     | SH32W32_IMPORT_DESCRIPTOR
+008 00000000 SECT2  notype       External     | __imp__MemPoolSetCeiling@8
+
+String Table Size = 0x4E bytes
+
+COFF SYMBOL TABLE
+000 00000000 SECT1  notype       Static       | .text
+    Section length    6, #relocs    1, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+002 00000000 SECT2  notype       Static       | .idata$5
+    Section length    4, #relocs    0, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+004 00000000 SECT3  notype       Static       | .idata$4
+    Section length    4, #relocs    0, #linenums    0, checksum        0, selection    5 (pick associative Section 0x11E80002)
+006 00000000 SECT1  notype       External     | _MemPoolSetBlockSizeFS@8
+007 00000000 UNDEF  notype       External     | SH32W32_IMPORT_DESCRIPTOR
+008 00000000 SECT2  notype       External     | __imp__MemPoolSetBlockSizeFS@8
+
+String Table Size = 0x56 bytes
+
+COFF SYMBOL TABLE
+000 00000000 SECT1  notype       Static       | .text
+    Section length    6, #relocs    1, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+002 00000000 SECT2  notype       Static       | .idata$5
+    Section length    4, #relocs    0, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+004 00000000 SECT3  notype       Static       | .idata$4
+    Section length    4, #relocs    0, #linenums    0, checksum        0, selection    5 (pick associative Section 0x11E80002)
+006 00000000 SECT1  notype       External     | _MemPoolPreAllocateHandles@8
+007 00000000 UNDEF  notype       External     | SH32W32_IMPORT_DESCRIPTOR
+008 00000000 SECT2  notype       External     | __imp__MemPoolPreAllocateHandles@8
+
+String Table Size = 0x5E bytes
+
+COFF SYMBOL TABLE
+000 00000000 SECT1  notype       Static       | .text
+    Section length    6, #relocs    1, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+002 00000000 SECT2  notype       Static       | .idata$5
+    Section length    4, #relocs    0, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+004 00000000 SECT3  notype       Static       | .idata$4
+    Section length    4, #relocs    0, #linenums    0, checksum        0, selection    5 (pick associative Section 0x11E80002)
+006 00000000 SECT1  notype       External     | _MemPoolPreAllocate@12
+007 00000000 UNDEF  notype       External     | SH32W32_IMPORT_DESCRIPTOR
+008 00000000 SECT2  notype       External     | __imp__MemPoolPreAllocate@12
+
+String Table Size = 0x52 bytes
+
+COFF SYMBOL TABLE
+000 00000000 SECT1  notype       Static       | .text
+    Section length    6, #relocs    1, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+002 00000000 SECT2  notype       Static       | .idata$5
+    Section length    4, #relocs    0, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+004 00000000 SECT3  notype       Static       | .idata$4
+    Section length    4, #relocs    0, #linenums    0, checksum        0, selection    5 (pick associative Section 0x11E80002)
+006 00000000 SECT1  notype       External     | _MemPoolNext@8
+007 00000000 UNDEF  notype       External     | SH32W32_IMPORT_DESCRIPTOR
+008 00000000 SECT2  notype       External     | __imp__MemPoolNext@8
+
+String Table Size = 0x42 bytes
+
+COFF SYMBOL TABLE
+000 00000000 SECT1  notype       Static       | .text
+    Section length    6, #relocs    1, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+002 00000000 SECT2  notype       Static       | .idata$5
+    Section length    4, #relocs    0, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+004 00000000 SECT3  notype       Static       | .idata$4
+    Section length    4, #relocs    0, #linenums    0, checksum        0, selection    5 (pick associative Section 0x11E80002)
+006 00000000 SECT1  notype       External     | _MemPoolLock@4
+007 00000000 UNDEF  notype       External     | SH32W32_IMPORT_DESCRIPTOR
+008 00000000 SECT2  notype       External     | __imp__MemPoolLock@4
+
+String Table Size = 0x42 bytes
+
+COFF SYMBOL TABLE
+000 00000000 SECT1  notype       Static       | .text
+    Section length    6, #relocs    1, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+002 00000000 SECT2  notype       Static       | .idata$5
+    Section length    4, #relocs    0, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+004 00000000 SECT3  notype       Static       | .idata$4
+    Section length    4, #relocs    0, #linenums    0, checksum        0, selection    5 (pick associative Section 0x11E80002)
+006 00000000 SECT1  notype       External     | _MemPoolInitNamedSharedEx@28
+007 00000000 UNDEF  notype       External     | SH32W32_IMPORT_DESCRIPTOR
+008 00000000 SECT2  notype       External     | __imp__MemPoolInitNamedSharedEx@28
+
+String Table Size = 0x5E bytes
+
+COFF SYMBOL TABLE
+000 00000000 SECT1  notype       Static       | .text
+    Section length    6, #relocs    1, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+002 00000000 SECT2  notype       Static       | .idata$5
+    Section length    4, #relocs    0, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+004 00000000 SECT3  notype       Static       | .idata$4
+    Section length    4, #relocs    0, #linenums    0, checksum        0, selection    5 (pick associative Section 0x11E80002)
+006 00000000 SECT1  notype       External     | _MemPoolInitNamedShared@12
+007 00000000 UNDEF  notype       External     | SH32W32_IMPORT_DESCRIPTOR
+008 00000000 SECT2  notype       External     | __imp__MemPoolInitNamedShared@12
+
+String Table Size = 0x5A bytes
+
+COFF SYMBOL TABLE
+000 00000000 SECT1  notype       Static       | .text
+    Section length    6, #relocs    1, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+002 00000000 SECT2  notype       Static       | .idata$5
+    Section length    4, #relocs    0, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+004 00000000 SECT3  notype       Static       | .idata$4
+    Section length    4, #relocs    0, #linenums    0, checksum        0, selection    5 (pick associative Section 0x11E80002)
+006 00000000 SECT1  notype       External     | _MemPoolInitFS@12
+007 00000000 UNDEF  notype       External     | SH32W32_IMPORT_DESCRIPTOR
+008 00000000 SECT2  notype       External     | __imp__MemPoolInitFS@12
+
+String Table Size = 0x48 bytes
+
+COFF SYMBOL TABLE
+000 00000000 SECT1  notype       Static       | .text
+    Section length    6, #relocs    1, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+002 00000000 SECT2  notype       Static       | .idata$5
+    Section length    4, #relocs    0, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+004 00000000 SECT3  notype       Static       | .idata$4
+    Section length    4, #relocs    0, #linenums    0, checksum        0, selection    5 (pick associative Section 0x11E80002)
+006 00000000 SECT1  notype       External     | _MemPoolInit@4
+007 00000000 UNDEF  notype       External     | SH32W32_IMPORT_DESCRIPTOR
+008 00000000 SECT2  notype       External     | __imp__MemPoolInit@4
+
+String Table Size = 0x42 bytes
+
+COFF SYMBOL TABLE
+000 00000000 SECT1  notype       Static       | .text
+    Section length    6, #relocs    1, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+002 00000000 SECT2  notype       Static       | .idata$5
+    Section length    4, #relocs    0, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+004 00000000 SECT3  notype       Static       | .idata$4
+    Section length    4, #relocs    0, #linenums    0, checksum        0, selection    5 (pick associative Section 0x11E80002)
+006 00000000 SECT1  notype       External     | _MemPoolInfo@12
+007 00000000 UNDEF  notype       External     | SH32W32_IMPORT_DESCRIPTOR
+008 00000000 SECT2  notype       External     | __imp__MemPoolInfo@12
+
+String Table Size = 0x44 bytes
+
+COFF SYMBOL TABLE
+000 00000000 SECT1  notype       Static       | .text
+    Section length    6, #relocs    1, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+002 00000000 SECT2  notype       Static       | .idata$5
+    Section length    4, #relocs    0, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+004 00000000 SECT3  notype       Static       | .idata$4
+    Section length    4, #relocs    0, #linenums    0, checksum        0, selection    5 (pick associative Section 0x11E80002)
+006 00000000 SECT1  notype       External     | _MemPoolFree@4
+007 00000000 UNDEF  notype       External     | SH32W32_IMPORT_DESCRIPTOR
+008 00000000 SECT2  notype       External     | __imp__MemPoolFree@4
+
+String Table Size = 0x42 bytes
+
+COFF SYMBOL TABLE
+000 00000000 SECT1  notype       Static       | .text
+    Section length    6, #relocs    1, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+002 00000000 SECT2  notype       Static       | .idata$5
+    Section length    4, #relocs    0, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+004 00000000 SECT3  notype       Static       | .idata$4
+    Section length    4, #relocs    0, #linenums    0, checksum        0, selection    5 (pick associative Section 0x11E80002)
+006 00000000 SECT1  notype       External     | _MemPoolFirst@8
+007 00000000 UNDEF  notype       External     | SH32W32_IMPORT_DESCRIPTOR
+008 00000000 SECT2  notype       External     | __imp__MemPoolFirst@8
+
+String Table Size = 0x44 bytes
+
+COFF SYMBOL TABLE
+000 00000000 SECT1  notype       Static       | .text
+    Section length    6, #relocs    1, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+002 00000000 SECT2  notype       Static       | .idata$5
+    Section length    4, #relocs    0, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+004 00000000 SECT3  notype       Static       | .idata$4
+    Section length    4, #relocs    0, #linenums    0, checksum        0, selection    5 (pick associative Section 0x11E80002)
+006 00000000 SECT1  notype       External     | _MemPoolCount@4
+007 00000000 UNDEF  notype       External     | SH32W32_IMPORT_DESCRIPTOR
+008 00000000 SECT2  notype       External     | __imp__MemPoolCount@4
+
+String Table Size = 0x44 bytes
+
+COFF SYMBOL TABLE
+000 00000000 SECT1  notype       Static       | .text
+    Section length    6, #relocs    1, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+002 00000000 SECT2  notype       Static       | .idata$5
+    Section length    4, #relocs    0, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+004 00000000 SECT3  notype       Static       | .idata$4
+    Section length    4, #relocs    0, #linenums    0, checksum        0, selection    5 (pick associative Section 0x11E80002)
+006 00000000 SECT1  notype       External     | _MemPoolCheck@4
+007 00000000 UNDEF  notype       External     | SH32W32_IMPORT_DESCRIPTOR
+008 00000000 SECT2  notype       External     | __imp__MemPoolCheck@4
+
+String Table Size = 0x44 bytes
+
+COFF SYMBOL TABLE
+000 00000000 SECT1  notype       Static       | .text
+    Section length    6, #relocs    1, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+002 00000000 SECT2  notype       Static       | .idata$5
+    Section length    4, #relocs    0, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+004 00000000 SECT3  notype       Static       | .idata$4
+    Section length    4, #relocs    0, #linenums    0, checksum        0, selection    5 (pick associative Section 0x11E80002)
+006 00000000 SECT1  notype       External     | _MemPoolAttachShared@8
+007 00000000 UNDEF  notype       External     | SH32W32_IMPORT_DESCRIPTOR
+008 00000000 SECT2  notype       External     | __imp__MemPoolAttachShared@8
+
+String Table Size = 0x52 bytes
+
+COFF SYMBOL TABLE
+000 00000000 SECT1  notype       Static       | .text
+    Section length    6, #relocs    1, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+002 00000000 SECT2  notype       Static       | .idata$5
+    Section length    4, #relocs    0, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+004 00000000 SECT3  notype       Static       | .idata$4
+    Section length    4, #relocs    0, #linenums    0, checksum        0, selection    5 (pick associative Section 0x11E80002)
+006 00000000 SECT1  notype       External     | _MemLockCount@4
+007 00000000 UNDEF  notype       External     | SH32W32_IMPORT_DESCRIPTOR
+008 00000000 SECT2  notype       External     | __imp__MemLockCount@4
+
+String Table Size = 0x44 bytes
+
+COFF SYMBOL TABLE
+000 00000000 SECT1  notype       Static       | .text
+    Section length    6, #relocs    1, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+002 00000000 SECT2  notype       Static       | .idata$5
+    Section length    4, #relocs    0, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+004 00000000 SECT3  notype       Static       | .idata$4
+    Section length    4, #relocs    0, #linenums    0, checksum        0, selection    5 (pick associative Section 0x11E80002)
+006 00000000 SECT1  notype       External     | _MemLock@4
+007 00000000 UNDEF  notype       External     | SH32W32_IMPORT_DESCRIPTOR
+008 00000000 SECT2  notype       External     | __imp__MemLock@4
+
+String Table Size = 0x3A bytes
+
+COFF SYMBOL TABLE
+000 00000000 SECT1  notype       Static       | .text
+    Section length    6, #relocs    1, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+002 00000000 SECT2  notype       Static       | .idata$5
+    Section length    4, #relocs    0, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+004 00000000 SECT3  notype       Static       | .idata$4
+    Section length    4, #relocs    0, #linenums    0, checksum        0, selection    5 (pick associative Section 0x11E80002)
+006 00000000 SECT1  notype       External     | _MemIsMoveable@4
+007 00000000 UNDEF  notype       External     | SH32W32_IMPORT_DESCRIPTOR
+008 00000000 SECT2  notype       External     | __imp__MemIsMoveable@4
+
+String Table Size = 0x46 bytes
+
+COFF SYMBOL TABLE
+000 00000000 SECT1  notype       Static       | .text
+    Section length    6, #relocs    1, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+002 00000000 SECT2  notype       Static       | .idata$5
+    Section length    4, #relocs    0, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+004 00000000 SECT3  notype       Static       | .idata$4
+    Section length    4, #relocs    0, #linenums    0, checksum        0, selection    5 (pick associative Section 0x11E80002)
+006 00000000 SECT1  notype       External     | _MemHandle@4
+007 00000000 UNDEF  notype       External     | SH32W32_IMPORT_DESCRIPTOR
+008 00000000 SECT2  notype       External     | __imp__MemHandle@4
+
+String Table Size = 0x3E bytes
+
+COFF SYMBOL TABLE
+000 00000000 SECT1  notype       Static       | .text
+    Section length    6, #relocs    1, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+002 00000000 SECT2  notype       Static       | .idata$5
+    Section length    4, #relocs    0, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+004 00000000 SECT3  notype       Static       | .idata$4
+    Section length    4, #relocs    0, #linenums    0, checksum        0, selection    5 (pick associative Section 0x11E80002)
+006 00000000 SECT1  notype       External     | _MemFreePtr@4
+007 00000000 UNDEF  notype       External     | SH32W32_IMPORT_DESCRIPTOR
+008 00000000 SECT2  notype       External     | __imp__MemFreePtr@4
+
+String Table Size = 0x40 bytes
+
+COFF SYMBOL TABLE
+000 00000000 SECT1  notype       Static       | .text
+    Section length    6, #relocs    1, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+002 00000000 SECT2  notype       Static       | .idata$5
+    Section length    4, #relocs    0, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+004 00000000 SECT3  notype       Static       | .idata$4
+    Section length    4, #relocs    0, #linenums    0, checksum        0, selection    5 (pick associative Section 0x11E80002)
+006 00000000 SECT1  notype       External     | _MemFreeFS@4
+007 00000000 UNDEF  notype       External     | SH32W32_IMPORT_DESCRIPTOR
+008 00000000 SECT2  notype       External     | __imp__MemFreeFS@4
+
+String Table Size = 0x3E bytes
+
+COFF SYMBOL TABLE
+000 00000000 SECT1  notype       Static       | .text
+    Section length    6, #relocs    1, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+002 00000000 SECT2  notype       Static       | .idata$5
+    Section length    4, #relocs    0, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+004 00000000 SECT3  notype       Static       | .idata$4
+    Section length    4, #relocs    0, #linenums    0, checksum        0, selection    5 (pick associative Section 0x11E80002)
+006 00000000 SECT1  notype       External     | _MemFree@4
+007 00000000 UNDEF  notype       External     | SH32W32_IMPORT_DESCRIPTOR
+008 00000000 SECT2  notype       External     | __imp__MemFree@4
+
+String Table Size = 0x3A bytes
+
+COFF SYMBOL TABLE
+000 00000000 SECT1  notype       Static       | .text
+    Section length    6, #relocs    1, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+002 00000000 SECT2  notype       Static       | .idata$5
+    Section length    4, #relocs    0, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+004 00000000 SECT3  notype       Static       | .idata$4
+    Section length    4, #relocs    0, #linenums    0, checksum        0, selection    5 (pick associative Section 0x11E80002)
+006 00000000 SECT1  notype       External     | _MemFix@4
+007 00000000 UNDEF  notype       External     | SH32W32_IMPORT_DESCRIPTOR
+008 00000000 SECT2  notype       External     | __imp__MemFix@4
+
+String Table Size = 0x38 bytes
+
+COFF SYMBOL TABLE
+000 00000000 SECT1  notype       Static       | .text
+    Section length    6, #relocs    1, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+002 00000000 SECT2  notype       Static       | .idata$5
+    Section length    4, #relocs    0, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+004 00000000 SECT3  notype       Static       | .idata$4
+    Section length    4, #relocs    0, #linenums    0, checksum        0, selection    5 (pick associative Section 0x11E80002)
+006 00000000 SECT1  notype       External     | _MemErrorUnwind@0
+007 00000000 UNDEF  notype       External     | SH32W32_IMPORT_DESCRIPTOR
+008 00000000 SECT2  notype       External     | __imp__MemErrorUnwind@0
+
+String Table Size = 0x48 bytes
+
+COFF SYMBOL TABLE
+000 00000000 SECT1  notype       Static       | .text
+    Section length    6, #relocs    1, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+002 00000000 SECT2  notype       Static       | .idata$5
+    Section length    4, #relocs    0, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+004 00000000 SECT3  notype       Static       | .idata$4
+    Section length    4, #relocs    0, #linenums    0, checksum        0, selection    5 (pick associative Section 0x11E80002)
+006 00000000 SECT1  notype       External     | _MemDefaultErrorHandler@4
+007 00000000 UNDEF  notype       External     | SH32W32_IMPORT_DESCRIPTOR
+008 00000000 SECT2  notype       External     | __imp__MemDefaultErrorHandler@4
+
+String Table Size = 0x58 bytes
+
+COFF SYMBOL TABLE
+000 00000000 SECT1  notype       Static       | .text
+    Section length    6, #relocs    1, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+002 00000000 SECT2  notype       Static       | .idata$5
+    Section length    4, #relocs    0, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+004 00000000 SECT3  notype       Static       | .idata$4
+    Section length    4, #relocs    0, #linenums    0, checksum        0, selection    5 (pick associative Section 0x11E80002)
+006 00000000 SECT1  notype       External     | _MemCheckPtr@8
+007 00000000 UNDEF  notype       External     | SH32W32_IMPORT_DESCRIPTOR
+008 00000000 SECT2  notype       External     | __imp__MemCheckPtr@8
+
+String Table Size = 0x42 bytes
+
+COFF SYMBOL TABLE
+000 00000000 SECT1  notype       Static       | .text
+    Section length    6, #relocs    1, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+002 00000000 SECT2  notype       Static       | .idata$5
+    Section length    4, #relocs    0, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+004 00000000 SECT3  notype       Static       | .idata$4
+    Section length    4, #relocs    0, #linenums    0, checksum        0, selection    5 (pick associative Section 0x11E80002)
+006 00000000 SECT1  notype       External     | _MemAllocPtr@12
+007 00000000 UNDEF  notype       External     | SH32W32_IMPORT_DESCRIPTOR
+008 00000000 SECT2  notype       External     | __imp__MemAllocPtr@12
+
+String Table Size = 0x44 bytes
+
+COFF SYMBOL TABLE
+000 00000000 SECT1  notype       Static       | .text
+    Section length    6, #relocs    1, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+002 00000000 SECT2  notype       Static       | .idata$5
+    Section length    4, #relocs    0, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+004 00000000 SECT3  notype       Static       | .idata$4
+    Section length    4, #relocs    0, #linenums    0, checksum        0, selection    5 (pick associative Section 0x11E80002)
+006 00000000 SECT1  notype       External     | _MemAllocFS@4
+007 00000000 UNDEF  notype       External     | SH32W32_IMPORT_DESCRIPTOR
+008 00000000 SECT2  notype       External     | __imp__MemAllocFS@4
+
+String Table Size = 0x40 bytes
+
+COFF SYMBOL TABLE
+000 00000000 SECT1  notype       Static       | .text
+    Section length    6, #relocs    1, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+002 00000000 SECT2  notype       Static       | .idata$5
+    Section length    4, #relocs    0, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+004 00000000 SECT3  notype       Static       | .idata$4
+    Section length    4, #relocs    0, #linenums    0, checksum        0, selection    5 (pick associative Section 0x11E80002)
+006 00000000 SECT1  notype       External     | _MemAlloc@12
+007 00000000 UNDEF  notype       External     | SH32W32_IMPORT_DESCRIPTOR
+008 00000000 SECT2  notype       External     | __imp__MemAlloc@12
+
+String Table Size = 0x3E bytes
+
+COFF SYMBOL TABLE
+000 00000000 SECT1  notype       Static       | .text
+    Section length    6, #relocs    1, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+002 00000000 SECT2  notype       Static       | .idata$5
+    Section length    4, #relocs    1, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+004 00000000 SECT3  notype       Static       | .idata$4
+    Section length    4, #relocs    1, #linenums    0, checksum        0, selection    5 (pick associative Section 0x11E80002)
+006 00000000 SECT1  notype       External     | @_shi_sysSize@4
+007 00000000 SECT4  notype       Static       | .idata$6
+    Section length   12, #relocs    0, #linenums    0, checksum        0, selection    5 (pick associative Section 0x11E80002)
+009 00000000 UNDEF  notype       External     | SH32W32_IMPORT_DESCRIPTOR
+00A 00000000 SECT2  notype       External     | __imp_@_shi_sysSize@4
+
+String Table Size = 0x44 bytes
+
+COFF SYMBOL TABLE
+000 00000000 SECT1  notype       Static       | .text
+    Section length    6, #relocs    1, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+002 00000000 SECT2  notype       Static       | .idata$5
+    Section length    4, #relocs    1, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+004 00000000 SECT3  notype       Static       | .idata$4
+    Section length    4, #relocs    1, #linenums    0, checksum        0, selection    5 (pick associative Section 0x11E80002)
+006 00000000 SECT1  notype       External     | @_shi_sysFree@4
+007 00000000 SECT4  notype       Static       | .idata$6
+    Section length   12, #relocs    0, #linenums    0, checksum        0, selection    5 (pick associative Section 0x11E80002)
+009 00000000 UNDEF  notype       External     | SH32W32_IMPORT_DESCRIPTOR
+00A 00000000 SECT2  notype       External     | __imp_@_shi_sysFree@4
+
+String Table Size = 0x44 bytes
+
+COFF SYMBOL TABLE
+000 00000000 SECT1  notype       Static       | .text
+    Section length    6, #relocs    1, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+002 00000000 SECT2  notype       Static       | .idata$5
+    Section length    4, #relocs    1, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+004 00000000 SECT3  notype       Static       | .idata$4
+    Section length    4, #relocs    1, #linenums    0, checksum        0, selection    5 (pick associative Section 0x11E80002)
+006 00000000 SECT1  notype       External     | @_shi_sysAlloc@8
+007 00000000 SECT4  notype       Static       | .idata$6
+    Section length   14, #relocs    0, #linenums    0, checksum        0, selection    5 (pick associative Section 0x11E80002)
+009 00000000 UNDEF  notype       External     | SH32W32_IMPORT_DESCRIPTOR
+00A 00000000 SECT2  notype       External     | __imp_@_shi_sysAlloc@8
+
+String Table Size = 0x46 bytes
+
+COFF SYMBOL TABLE
+000 00000000 SECT1  notype       Static       | .text
+    Section length    6, #relocs    1, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+002 00000000 SECT2  notype       Static       | .idata$5
+    Section length    4, #relocs    1, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+004 00000000 SECT3  notype       Static       | .idata$4
+    Section length    4, #relocs    1, #linenums    0, checksum        0, selection    5 (pick associative Section 0x11E80002)
+006 00000000 SECT1  notype       External     | @_shi_initPageVariable@8
+007 00000000 SECT4  notype       Static       | .idata$6
+    Section length   1C, #relocs    0, #linenums    0, checksum        0, selection    5 (pick associative Section 0x11E80002)
+009 00000000 UNDEF  notype       External     | SH32W32_IMPORT_DESCRIPTOR
+00A 00000000 SECT2  notype       External     | __imp_@_shi_initPageVariable@8
+
+String Table Size = 0x56 bytes
+
+COFF SYMBOL TABLE
+000 00000000 SECT1  notype       Static       | .text
+    Section length    6, #relocs    1, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+002 00000000 SECT2  notype       Static       | .idata$5
+    Section length    4, #relocs    1, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+004 00000000 SECT3  notype       Static       | .idata$4
+    Section length    4, #relocs    1, #linenums    0, checksum        0, selection    5 (pick associative Section 0x11E80002)
+006 00000000 SECT1  notype       External     | @_shi_deletePage@8
+007 00000000 SECT4  notype       Static       | .idata$6
+    Section length   16, #relocs    0, #linenums    0, checksum        0, selection    5 (pick associative Section 0x11E80002)
+009 00000000 UNDEF  notype       External     | SH32W32_IMPORT_DESCRIPTOR
+00A 00000000 SECT2  notype       External     | __imp_@_shi_deletePage@8
+
+String Table Size = 0x4A bytes
+
+COFF SYMBOL TABLE
+000 00000000 SECT1  notype       External     | SH32W32_NULL_THUNK_DATA
+
+String Table Size = 0x1D bytes
+
+COFF SYMBOL TABLE
+000 00000000 SECT1  notype       External     | NULL_IMPORT_DESCRIPTOR
+
+String Table Size = 0x1B bytes
+
+COFF SYMBOL TABLE
+000 00000000 SECT1  notype       External     | SH32W32_IMPORT_DESCRIPTOR
+001 C0000040 SECT1  notype       Section      | .idata$2
+002 00000000 SECT2  notype       Static       | .idata$6
+003 C0000040 UNDEF  notype       Section      | .idata$4
+004 C0000040 UNDEF  notype       Section      | .idata$5
+005 00000000 UNDEF  notype       External     | NULL_IMPORT_DESCRIPTOR
+006 00000000 UNDEF  notype       External     | SH32W32_NULL_THUNK_DATA
+
+String Table Size = 0x4E bytes
+
+COFF SYMBOL TABLE
+000 00000000 DEBUG  notype       Filename     | .file
+    shmaljmp.asm
+002 00000000 SECT1  notype       Static       | .data
+    Section length   3C, #relocs    E, #linenums    0, checksum        0
+004 00000000 SECT1  notype       Static       | DGROUP
+005 00000000 UNDEF  notype       External     | __heapwalk
+006 00000024 SECT1  notype       External     | __imp___heapset
+007 00000000 UNDEF  notype       External     | ??3@YAXPAX@Z (void __cdecl operator delete(void *))
+008 00000000 UNDEF  notype       External     | __heapchk
+009 00000000 UNDEF  notype       External     | ??2@YAPAXI@Z (void * __cdecl operator new(unsigned int))
+00A 0000001C SECT1  notype       External     | __imp___heapadd
+00B 00000018 SECT1  notype       External     | __imp___msize
+00C 0000002C SECT1  notype       External     | __imp___heapused
+00D 00000000 UNDEF  notype       External     | _free
+00E 00000008 SECT1  notype       External     | __imp__calloc
+00F 00000020 SECT1  notype       External     | __imp___heapchk
+010 00000000 UNDEF  notype       External     | __heapused
+011 00000010 SECT1  notype       External     | __imp__free
+012 00000000 UNDEF  notype       External     | _malloc
+013 00000000 SECT1  notype       External     | _SmartHeap_malloc
+014 00000000 UNDEF  notype       External     | __heapmin
+015 00000000 UNDEF  notype       External     | _realloc
+016 0000000C SECT1  notype       External     | __imp__realloc
+017 00000000 UNDEF  notype       External     | __heapset
+018 00000038 SECT1  notype       External     | __imp_??3@YAXPAX@Z (__declspec(dllimport) void __cdecl operator delete(void *))
+019 00000000 UNDEF  notype       External     | __expand
+01A 00000034 SECT1  notype       External     | __imp_??2@YAPAXI@Z (__declspec(dllimport) void * __cdecl operator new(unsigned int))
+01B 00000030 SECT1  notype       External     | __imp___heapmin
+01C 00000004 SECT1  notype       External     | __imp__malloc
+01D 00000014 SECT1  notype       External     | __imp___expand
+01E 00000000 UNDEF  notype       External     | __msize
+01F 00000028 SECT1  notype       External     | __imp___heapwalk
+020 00000000 UNDEF  notype       External     | __heapadd
+021 00000000 UNDEF  notype       External     | _calloc
+
+String Table Size = 0x14A bytes
+
+COFF SYMBOL TABLE
+000 00000000 DEBUG  notype       Filename     | .file
+    shnewhnd.cpp
+002 00000000 SECT1  notype       Static       | .data
+    Section length    4, #relocs    0, #linenums    0, checksum        0
+004 00000000 SECT1  notype       External     | __pnhHeap
+005 00000000 SECT2  notype       Static       | .text
+    Section length   30, #relocs    2, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+007 00000000 SECT2  notype ()    External     | _shi_call_new_handler_msc
+008 00000000 UNDEF  notype ()    External     | ?_query_new_handler@@YAP6AHI@ZXZ (int (__cdecl*__cdecl _query_new_handler(void))(unsigned int))
+009 00000000 UNDEF  notype ()    External     | ?_query_new_mode@@YAHXZ (int __cdecl _query_new_mode(void))
+00A 00000000 SECT3  notype       Static       | .debug$F
+    Section length   10, #relocs    1, #linenums    0, checksum        0, selection    5 (pick associative Section 0x2)
+
+String Table Size = 0x61 bytes
+
+COFF SYMBOL TABLE
+000 00000000 DEBUG  notype       Filename     | .file
+    defflags.c
+002 00000000 SECT1  notype       Static       | .data
+    Section length    4, #relocs    0, #linenums    0, checksum        0
+004 00000000 SECT1  notype       External     | _MemDefaultPoolFlags
+
+String Table Size = 0x19 bytes
+
+COFF SYMBOL TABLE
+000 00000000 DEBUG  notype       Filename     | .file
+    defsizfs.c
+002 00000000 SECT1  notype       Static       | .data
+    Section length    2, #relocs    0, #linenums    0, checksum        0
+004 00000000 SECT1  notype       External     | _MemDefaultPoolBlockSizeFS
+
+String Table Size = 0x1F bytes
+
+COFF SYMBOL TABLE
+000 00000000 DEBUG  notype       Filename     | .file
+    defpagsz.c
+002 00000000 SECT1  notype       Static       | .data
+    Section length    4, #relocs    0, #linenums    0, checksum        0
+004 00000000 SECT1  notype       External     | _MemDefaultPoolPageSize
+
+String Table Size = 0x1C bytes
+
+COFF SYMBOL TABLE
+000 00000000 DEBUG  notype       Filename     | .file
+    shmalmac.c
+002 00000000 SECT1  notype       Static       | .text
+    Section length   6D, #relocs    7, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+004 00000000 SECT1  notype ()    External     | _MEM_malloc
+005 00000000 UNDEF  notype       External     | _MemDefaultPool
+006 00000000 UNDEF  notype ()    External     | _shi_call_new_handler_msc
+007 00000000 UNDEF  notype ()    External     | _MemAllocPtr@12
+008 00000000 UNDEF  notype       External     | _MemDefaultPoolFlags
+009 00000000 UNDEF  notype ()    External     | _MemInitDefaultPool@0
+00A 00000000 SECT2  notype       Static       | .debug$F
+    Section length   10, #relocs    1, #linenums    0, checksum        0, selection    5 (pick associative Section 0x1)
+00C 00000000 SECT3  notype       Static       | .text
+    Section length   60, #relocs    6, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+00E 00000000 SECT3  notype ()    External     | _MEM_calloc
+00F 00000000 SECT4  notype       Static       | .debug$F
+    Section length   10, #relocs    1, #linenums    0, checksum        0, selection    5 (pick associative Section 0x3)
+011 00000000 SECT5  notype       Static       | .text
+    Section length   5C, #relocs    5, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+013 00000000 SECT5  notype ()    External     | _MEM_realloc
+014 00000000 UNDEF  notype ()    External     | _MemReAllocPtr@12
+015 00000000 SECT6  notype       Static       | .debug$F
+    Section length   10, #relocs    1, #linenums    0, checksum        0, selection    5 (pick associative Section 0x5)
+017 00000000 SECT7  notype       Static       | .text
+    Section length    F, #relocs    1, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+019 00000000 SECT7  notype ()    External     | _MEM_free
+01A 00000000 UNDEF  notype ()    External     | _MemFreePtr@4
+01B 00000000 SECT8  notype       Static       | .debug$F
+    Section length   10, #relocs    1, #linenums    0, checksum        0, selection    5 (pick associative Section 0x7)
+
+String Table Size = 0xB8 bytes
+
+COFF SYMBOL TABLE
+000 00000000 DEBUG  notype       Filename     | .file
+    shnew.cpp
+002 00000000 SECT1  notype       Static       | .data
+    Section length    8, #relocs    0, #linenums    0, checksum        0
+004 00000004 SECT1  notype       External     | _SmartHeap_new
+005 00000000 SECT1  notype       External     | ?_new_handler@@3P6AXXZA (void (__cdecl* _new_handler)(void))
+006 00000000 SECT2  notype       Static       | .text
+    Section length   73, #relocs    8, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+008 00000000 SECT2  notype ()    External     | ?shi_New@@YAPAXKIPAU_SHI_Pool@@@Z (void * __cdecl shi_New(unsigned long,unsigned int,struct _SHI_Pool *))
+009 00000000 UNDEF  notype       External     | _MemDefaultPool
+00A 00000000 UNDEF  notype ()    External     | _shi_call_new_handler_msc
+00B 00000000 UNDEF  notype ()    External     | _MemAllocPtr@12
+00C 00000000 UNDEF  notype ()    External     | _MemInitDefaultPool@0
+00D 00000000 UNDEF  notype       External     | _MemDefaultPoolFlags
+00E 00000000 SECT3  notype       Static       | .debug$F
+    Section length   10, #relocs    1, #linenums    0, checksum        0, selection    5 (pick associative Section 0x2)
+010 00000000 SECT4  notype       Static       | .text
+    Section length   12, #relocs    1, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+012 00000000 SECT4  notype ()    External     | ??2@YAPAXI@Z (void * __cdecl operator new(unsigned int))
+013 00000000 SECT5  notype       Static       | .debug$F
+    Section length   10, #relocs    1, #linenums    0, checksum        0, selection    5 (pick associative Section 0x4)
+015 00000000 SECT6  notype       Static       | .text
+    Section length    F, #relocs    1, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+017 00000000 SECT6  notype ()    External     | ??3@YAXPAX@Z (void __cdecl operator delete(void *))
+018 00000000 UNDEF  notype ()    External     | _MemFreePtr@4
+019 00000000 SECT7  notype       Static       | .debug$F
+    Section length   10, #relocs    1, #linenums    0, checksum        0, selection    5 (pick associative Section 0x6)
+
+String Table Size = 0xDA bytes
+
+COFF SYMBOL TABLE
+000 00000000 DEBUG  notype       Filename     | .file
+    shmalloc.c
+002 00000000 SECT1  notype       Static       | .text
+    Section length   6D, #relocs    7, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+004 00000000 SECT1  notype ()    External     | _malloc
+005 00000000 UNDEF  notype       External     | _MemDefaultPool
+006 00000000 UNDEF  notype ()    External     | _shi_call_new_handler_msc
+007 00000000 UNDEF  notype ()    External     | _MemAllocPtr@12
+008 00000000 UNDEF  notype       External     | _MemDefaultPoolFlags
+009 00000000 UNDEF  notype ()    External     | _MemInitDefaultPool@0
+00A 00000000 SECT2  notype       Static       | .debug$F
+    Section length   10, #relocs    1, #linenums    0, checksum        0, selection    5 (pick associative Section 0x1)
+00C 00000000 SECT3  notype       Static       | .text
+    Section length   60, #relocs    6, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+00E 00000000 SECT3  notype ()    External     | _calloc
+00F 00000000 SECT4  notype       Static       | .debug$F
+    Section length   10, #relocs    1, #linenums    0, checksum        0, selection    5 (pick associative Section 0x3)
+011 00000000 SECT5  notype       Static       | .text
+    Section length   5C, #relocs    5, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+013 00000000 SECT5  notype ()    External     | _realloc
+014 00000000 UNDEF  notype ()    External     | _MemReAllocPtr@12
+015 00000000 SECT6  notype       Static       | .debug$F
+    Section length   10, #relocs    1, #linenums    0, checksum        0, selection    5 (pick associative Section 0x5)
+017 00000000 SECT7  notype       Static       | .text
+    Section length    F, #relocs    1, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+019 00000000 SECT7  notype ()    External     | _free
+01A 00000000 UNDEF  notype ()    External     | _MemFreePtr@4
+01B 00000000 SECT8  notype       Static       | .debug$F
+    Section length   10, #relocs    1, #linenums    0, checksum        0, selection    5 (pick associative Section 0x7)
+01D 00000000 SECT9  notype       Static       | .text
+    Section length   32, #relocs    1, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+01F 00000000 SECT9  notype ()    External     | __expand
+020 00000000 SECTA  notype       Static       | .debug$F
+    Section length   10, #relocs    1, #linenums    0, checksum        0, selection    5 (pick associative Section 0x9)
+022 00000000 SECTB  notype       Static       | .text
+    Section length    6, #relocs    0, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+024 00000000 SECTB  notype ()    External     | __heapadd
+025 00000000 SECTC  notype       Static       | .debug$F
+    Section length   10, #relocs    1, #linenums    0, checksum        0, selection    5 (pick associative Section 0xB)
+027 00000000 SECTD  notype       Static       | .text
+    Section length   90, #relocs    A, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+029 00000000 SECTD  notype ()    External     | __heapwalk
+02A 00000000 SECTE  notype       Static       | .bss
+    Section length   20, #relocs    0, #linenums    0, checksum        0
+02C 00000000 SECTE  notype       Static       | _?entry@?1??_heapwalk@@9@9$S434
+02D 00000000 UNDEF  notype ()    External     | _MemPoolWalk@8
+02E 00000000 UNDEF  notype ()    External     | _MemCheckPtr@8
+02F 00000000 SECTF  notype       Static       | .debug$F
+    Section length   10, #relocs    1, #linenums    0, checksum        0, selection    5 (pick associative Section 0xD)
+031 00000000 SECT10 notype       Static       | .text
+    Section length   2C, #relocs    3, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+033 00000000 SECT10 notype ()    External     | __heapused
+034 00000000 UNDEF  notype ()    External     | _MemPoolSize@4
+035 00000000 SECT11 notype       Static       | .debug$F
+    Section length   10, #relocs    1, #linenums    0, checksum        0, selection    5 (pick associative Section 0x10)
+037 00000000 SECT12 notype       Static       | .text
+    Section length   12, #relocs    2, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+039 00000000 SECT12 notype ()    External     | __heapmin
+03A 00000000 UNDEF  notype ()    External     | _MemPoolShrink@4
+03B 00000000 SECT13 notype       Static       | .debug$F
+    Section length   10, #relocs    1, #linenums    0, checksum        0, selection    5 (pick associative Section 0x12)
+03D 00000000 SECT14 notype       Static       | .text
+    Section length    E, #relocs    1, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+03F 00000000 SECT14 notype ()    External     | __msize
+040 00000000 UNDEF  notype ()    External     | _MemSizePtr@4
+041 00000000 SECT15 notype       Static       | .debug$F
+    Section length   10, #relocs    1, #linenums    0, checksum        0, selection    5 (pick associative Section 0x14)
+043 00000000 SECT16 notype       Static       | .text
+    Section length   21, #relocs    2, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+045 00000000 SECT16 notype ()    External     | __heapchk
+046 00000000 UNDEF  notype ()    External     | _MemPoolCheck@4
+047 00000000 SECT17 notype       Static       | .debug$F
+    Section length   10, #relocs    1, #linenums    0, checksum        0, selection    5 (pick associative Section 0x16)
+049 00000000 SECT18 notype       Static       | .text
+    Section length    5, #relocs    1, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+04B 00000000 SECT18 notype ()    External     | __heapset
+04C 00000000 SECT19 notype       Static       | .debug$F
+    Section length   10, #relocs    1, #linenums    0, checksum        0, selection    5 (pick associative Section 0x18)
+
+String Table Size = 0x143 bytes
+
+COFF SYMBOL TABLE
+000 00000000 DEBUG  notype       Filename     | .file
+    defpool.c
+002 00000000 SECT1  notype       Static       | .data
+    Section length    4, #relocs    0, #linenums    0, checksum        0
+004 00000000 SECT1  notype       External     | _MemDefaultPool
+005 00000000 SECT2  notype       Static       | .text
+    Section length   6E, #relocs    E, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+007 00000000 SECT2  notype ()    External     | _MemInitDefaultPool@0
+008 00000000 UNDEF  notype ()    External     | __shi_leaveCriticalSection@0
+009 00000000 UNDEF  notype ()    External     | _MemPoolSetBlockSizeFS@8
+00A 00000000 UNDEF  notype       External     | _MemDefaultPoolBlockSizeFS
+00B 00000000 UNDEF  notype ()    External     | _MemPoolSetPageSize@8
+00C 00000000 UNDEF  notype       External     | _MemDefaultPoolPageSize
+00D 00000000 UNDEF  notype ()    External     | _MemPoolInit@4
+00E 00000000 UNDEF  notype       External     | _MemDefaultPoolFlags
+00F 00000000 UNDEF  notype       External     | _SmartHeap_malloc
+010 00000000 UNDEF  notype ()    External     | __shi_enterCriticalSection@0
+011 00000000 SECT3  notype       Static       | .debug$F
+    Section length   10, #relocs    1, #linenums    0, checksum        0, selection    5 (pick associative Section 0x2)
+013 00000000 SECT4  notype       Static       | .text
+    Section length   37, #relocs    5, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+015 00000000 SECT4  notype ()    External     | _MemFreeDefaultPool@0
+016 00000000 UNDEF  notype ()    External     | _MemPoolFree@4
+017 00000000 SECT5  notype       Static       | .debug$F
+    Section length   10, #relocs    1, #linenums    0, checksum        0, selection    5 (pick associative Section 0x4)
+
+String Table Size = 0x121 bytes
+
+  Summary
+
+          20 .bss
+          56 .data
+         160 .debug$F
+         DB9 .debug$S
+          14 .idata$2
+          14 .idata$3
+         130 .idata$4
+         130 .idata$5
+         1C6 .idata$6
+         6CF .text

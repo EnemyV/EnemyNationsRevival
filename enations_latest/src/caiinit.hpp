@@ -9,8 +9,8 @@
 //
 ////////////////////////////////////////////////////////////////////////////
 
-#include "CAIMap.hpp"
-#include "CAIUnit.hpp"
+#include "caimap.hpp"
+#include "caiunit.hpp"
 
 #ifndef __CAIINIT_HPP__
 #define __CAIINIT_HPP__

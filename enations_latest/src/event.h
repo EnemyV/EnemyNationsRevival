@@ -83,7 +83,11 @@ enum
 		EVENT_CANT_BRIDGE,			// can't build bridges yet
 		EVENT_HAVE_RADAR,				// now have radar
 
-		EVENT_ROCKET_CANT,			// can't land rocket here
+		EVENT_ROCKET_CANT,			// can't land rocket here,
+		EVENT_BRIDGE_HALTED,		// bridge refused: approach ground can't be regraded
+									// (was EVENT_EMPT1 - one of the 1996 spare slots)
+		EVENT_EMPT2,
+		EVENT_EMPT3, // "in case i didn't add enough"
 		NUM_EVENTS
 };
 

@@ -1,7 +1,7 @@
 //---------------------------------------------------------------------------
 //
-//	Copyright (c) 1995, 1996. Windward Studios, Inc.
-//	All Rights Reserved.
+// Copyright (c) 1995, 1996. Windward Studios, Inc.
+// All Rights Reserved.
 //
 //---------------------------------------------------------------------------
 
@@ -35,16 +35,16 @@ extern CPlyrMsgStatusDlg *pPlayerDlg;
 //CIPCPlayer::CIPCPlayer( WORD wID )
 CIPCPlayer::CIPCPlayer( const char *pszName, WORD wID )
 {
-	m_wID = wID;
-	m_sName = pszName;
-	m_wStatus = 0;
-	m_pPlyr = NULL;
-	m_pwndChat = NULL;
+ m_wID = wID;
+ m_sName = pszName;
+ m_wStatus = 0;
+ m_pPlyr = NULL;
+ m_pwndChat = NULL;
 
-	// now set default status
-	m_wStatus |= IPC_ACCEPT_EMAIL;
-	m_wStatus |= IPC_ACCEPT_CHAT;
-	m_wStatus |= IPC_ACCEPT_VOICE;
+ // now set default status
+ m_wStatus |= IPC_ACCEPT_EMAIL;
+ m_wStatus |= IPC_ACCEPT_CHAT;
+ m_wStatus |= IPC_ACCEPT_VOICE;
 }
 
 CIPCPlayer::~CIPCPlayer()
@@ -59,22 +59,22 @@ void CIPCPlayer::Serialize( CArchive& archive )
 
     if( archive.IsStoring() )
     {
-		archive << m_wID;
-		archive << m_sName;
-		archive << m_wStatus;
-		archive << (LONG) m_pPlyr->GetPlyrNum ();
-	}
-	else
-	{
-		archive >> m_wID;
-		archive >> m_sName;
-		archive >> m_wStatus;
+  archive << m_wID;
+  archive << m_sName;
+  archive << m_wStatus;
+  archive << (LONG) m_pPlyr->GetPlyrNum ();
+ }
+ else
+ {
+  archive >> m_wID;
+  archive >> m_sName;
+  archive >> m_wStatus;
 
-		LONG l;
-		TRAP ();
-		archive >> l;
-		m_pPlyr = theGame.GetPlayerByPlyr (l);
-	}
+  LONG l;
+  TRAP ();
+  archive >> l;
+  m_pPlyr = theGame.GetPlayerByPlyr (l);
+ }
 }
 
 ///////////////////////////////////////////////////////////////////////////
@@ -82,33 +82,33 @@ void CIPCPlayer::Serialize( CArchive& archive )
 void CIPCPlayerList::InitPlayers( void )
 {
 
-	if (GetCount () > 0)
-		{
-		ASSERT (FALSE);
-		DeleteList ();
-		}
+ if (GetCount () > 0)
+  {
+  ASSERT (FALSE);
+  DeleteList ();
+  }
 
-	CIPCPlayer *pPlayer;
-	POSITION pos;
-	for (pos = theGame.GetAll().GetHeadPosition(); pos != NULL; )
-	{
-		CPlayer *pPlr = theGame.GetAll().GetNext (pos);
-		ASSERT_VALID (pPlr);
-		
-		if ((! pPlr->IsAI ()) && (! pPlr->IsLocal ()))
-			{
-			pPlayer = new CIPCPlayer( pPlr->GetName(), (WORD)pPlr->GetPlyrNum() );
-			pPlayer->m_pPlyr = pPlr;
+ CIPCPlayer *pPlayer;
+ POSITION pos;
+ for (pos = theGame.GetAll().GetHeadPosition(); pos != NULL; )
+ {
+  CPlayer *pPlr = theGame.GetAll().GetNext (pos);
+  ASSERT_VALID (pPlr);
+  
+  if ((! pPlr->IsAI ()) && (! pPlr->IsLocal ()))
+   {
+   pPlayer = new CIPCPlayer( pPlr->GetName(), (WORD)pPlr->GetPlyrNum() );
+   pPlayer->m_pPlyr = pPlr;
 
-			AddTail( (CObject *)pPlayer );
-			}
-	}
+   AddTail( (CObject *)pPlayer );
+   }
+ }
 }
 
 
 CIPCPlayer *CIPCPlayerList::GetPlayer( CString& sName )
 {
-	ASSERT_VALID( this );
+ ASSERT_VALID( this );
 
     POSITION pos = GetHeadPosition();
     while( pos != NULL )
@@ -116,9 +116,9 @@ CIPCPlayer *CIPCPlayerList::GetPlayer( CString& sName )
         CIPCPlayer *pPlayer = (CIPCPlayer *)GetNext( pos );
         if( pPlayer != NULL )
         {
-        	ASSERT_VALID( pPlayer );
+         ASSERT_VALID( pPlayer );
 
-			if( pPlayer->m_sName == sName )
+   if( pPlayer->m_sName == sName )
                 return( pPlayer );
         }
     }
@@ -127,7 +127,7 @@ CIPCPlayer *CIPCPlayerList::GetPlayer( CString& sName )
 
 CIPCPlayer *CIPCPlayerList::GetPlayer( WORD wID )
 {
-	ASSERT_VALID( this );
+ ASSERT_VALID( this );
 
     POSITION pos = GetHeadPosition();
     while( pos != NULL )
@@ -135,7 +135,7 @@ CIPCPlayer *CIPCPlayerList::GetPlayer( WORD wID )
         CIPCPlayer *pPlayer = (CIPCPlayer *)GetNext( pos );
         if( pPlayer != NULL )
         {
-        	ASSERT_VALID( pPlayer );
+         ASSERT_VALID( pPlayer );
 
             if( pPlayer->m_wID == wID )
                 return( pPlayer );
@@ -147,7 +147,7 @@ CIPCPlayer *CIPCPlayerList::GetPlayer( WORD wID )
 
 void CIPCPlayerList::RemovePlayer( CString& sName )
 {
-	ASSERT_VALID( this );
+ ASSERT_VALID( this );
 
     POSITION pos1, pos2;
     for( pos1 = GetHeadPosition(); 
@@ -159,24 +159,24 @@ void CIPCPlayerList::RemovePlayer( CString& sName )
             
         ASSERT_VALID( pPlayer );
 
-		if( pPlayer->m_sName != sName )
+  if( pPlayer->m_sName != sName )
             continue;
             
         pPlayer = (CIPCPlayer *)GetAt( pos2 );
         if( pPlayer != NULL )
         {
-        	ASSERT_VALID( pPlayer );
+         ASSERT_VALID( pPlayer );
 
-        	RemoveAt( pos2 );
-        	delete pPlayer;
-        	break;
+         RemoveAt( pos2 );
+         delete pPlayer;
+         break;
         }
     }
 }
 
 void CIPCPlayerList::RemovePlayer( WORD wID )
 {
-	ASSERT_VALID( this );
+ ASSERT_VALID( this );
 
     POSITION pos1, pos2;
     for( pos1 = GetHeadPosition(); 
@@ -194,18 +194,18 @@ void CIPCPlayerList::RemovePlayer( WORD wID )
         pPlayer = (CIPCPlayer *)GetAt( pos2 );
         if( pPlayer != NULL )
         {
-        	ASSERT_VALID( pPlayer );
+         ASSERT_VALID( pPlayer );
 
-        	RemoveAt( pos2 );
-        	delete pPlayer;
-        	break;
+         RemoveAt( pos2 );
+         delete pPlayer;
+         break;
         }
     }
 }
 
 void CIPCPlayerList::DeleteList( void )
 {
-	ASSERT_VALID( this );
+ ASSERT_VALID( this );
 
     if( GetCount() )
     {
@@ -215,7 +215,7 @@ void CIPCPlayerList::DeleteList( void )
             CIPCPlayer *pPlayer = (CIPCPlayer *)GetNext( pos );
             if( pPlayer != NULL )
             {
-        		ASSERT_VALID( pPlayer );
+          ASSERT_VALID( pPlayer );
 
                 delete pPlayer;
             }
@@ -226,7 +226,7 @@ void CIPCPlayerList::DeleteList( void )
 
 CIPCPlayerList::~CIPCPlayerList()
 {
-	ASSERT_VALID( this );
+ ASSERT_VALID( this );
     DeleteList();
 }
 
@@ -236,31 +236,31 @@ CIPCPlayerList::~CIPCPlayerList()
 
 
 CPlyrMsgStatusDlg::CPlyrMsgStatusDlg(CWnd* pParent /*=NULL*/)
-	: CDialog(CPlyrMsgStatusDlg::IDD, pParent)
+ : CDialog(CPlyrMsgStatusDlg::IDD, pParent)
 {
-	//{{AFX_DATA_INIT(CPlyrMsgStatusDlg)
-		// NOTE: the ClassWizard will add member initialization here
-	//}}AFX_DATA_INIT
+ //{{AFX_DATA_INIT(CPlyrMsgStatusDlg)
+  // NOTE: the ClassWizard will add member initialization here
+ //}}AFX_DATA_INIT
 }
 
 
 void CPlyrMsgStatusDlg::DoDataExchange(CDataExchange* pDX)
 {
-	CDialog::DoDataExchange(pDX);
-	//{{AFX_DATA_MAP(CPlyrMsgStatusDlg)
-		// NOTE: the ClassWizard will add DDX and DDV calls here
-	//}}AFX_DATA_MAP
+ CDialog::DoDataExchange(pDX);
+ //{{AFX_DATA_MAP(CPlyrMsgStatusDlg)
+  // NOTE: the ClassWizard will add DDX and DDV calls here
+ //}}AFX_DATA_MAP
 }
 
 
 BEGIN_MESSAGE_MAP(CPlyrMsgStatusDlg, CDialog)
-	//{{AFX_MSG_MAP(CPlyrMsgStatusDlg)
-	ON_LBN_SELCHANGE(IDC_PLAYER_LIST, OnSelchangePlayerList)
-	ON_WM_DESTROY()
-	ON_WM_DRAWITEM()
-	ON_WM_MEASUREITEM()
-	ON_WM_SYSCOMMAND()
-	//}}AFX_MSG_MAP
+ //{{AFX_MSG_MAP(CPlyrMsgStatusDlg)
+ ON_LBN_SELCHANGE(IDC_PLAYER_LIST, OnSelchangePlayerList)
+ ON_WM_DESTROY()
+ ON_WM_DRAWITEM()
+ ON_WM_MEASUREITEM()
+ ON_WM_SYSCOMMAND()
+ //}}AFX_MSG_MAP
 END_MESSAGE_MAP()
 
 
@@ -269,203 +269,203 @@ END_MESSAGE_MAP()
 
 BOOL CPlyrMsgStatusDlg::OnInitDialog() 
 {
-	CDialog::OnInitDialog();
-	
-	ASSERT (plIPCPlayers != NULL);
+ CDialog::OnInitDialog();
+ 
+ ASSERT (plIPCPlayers != NULL);
 
-	CListBox *pcbPlayers = (CListBox *)GetDlgItem( IDC_PLAYER_LIST );
-	if( pcbPlayers == NULL )
-		return FALSE;
+ CListBox *pcbPlayers = (CListBox *)GetDlgItem( IDC_PLAYER_LIST );
+ if( pcbPlayers == NULL )
+  return FALSE;
 
-	int iNumPlyr = 0;
+ int iNumPlyr = 0;
     POSITION pos = plIPCPlayers->GetHeadPosition();
     while( pos != NULL )
     {   
         CIPCPlayer *pPlayer = 
-        	(CIPCPlayer *)plIPCPlayers->GetNext( pos );
+         (CIPCPlayer *)plIPCPlayers->GetNext( pos );
         if( pPlayer != NULL )
         {
-        	ASSERT_VALID( pPlayer );
-			CPlayer *pPlyr = pPlayer->m_pPlyr;
+         ASSERT_VALID( pPlayer );
+   CPlayer *pPlyr = pPlayer->m_pPlyr;
 
-			pcbPlayers->AddString( pPlyr->GetName() );
-			//int iID = pPlyr->GetPlyrNum();
-			//pcbPlayers->SetItemData( iNumPlyr++, (DWORD)iID );
-			pcbPlayers->SetItemDataPtr( iNumPlyr++, (void*)pPlyr );
+   pcbPlayers->AddString( pPlyr->GetName() );
+   //int iID = pPlyr->GetPlyrNum();
+   //pcbPlayers->SetItemData( iNumPlyr++, (DWORD)iID );
+   pcbPlayers->SetItemDataPtr( iNumPlyr++, (void*)pPlyr );
         }
     }
 
-	return TRUE;  // return TRUE unless you set the focus to a control
-	              // EXCEPTION: OCX Property Pages should return FALSE
+ return TRUE;  // return TRUE unless you set the focus to a control
+               // EXCEPTION: OCX Property Pages should return FALSE
 }
 
 void CPlyrMsgStatusDlg::OnMeasureItem (int, LPMEASUREITEMSTRUCT lpMIS)
 {
 
-	ASSERT_VALID (this);
+ ASSERT_VALID (this);
 
-	lpMIS->itemHeight = theApp.TextHt ();
+ lpMIS->itemHeight = theApp.TextHt ();
 }
 
 void CPlyrMsgStatusDlg::OnDrawItem (int, LPDRAWITEMSTRUCT lpDIS)
 {
-	if ( ODT_BUTTON == lpDIS->CtlType ) // GG
-	{
-		Default();
-		return;
-	}
+ if ( ODT_BUTTON == lpDIS->CtlType ) // GG
+ {
+  Default();
+  return;
+ }
 
-	CPlayer * pPlr = (CPlayer *) lpDIS->itemData;
-	if (pPlr == NULL)
-		return;
+ CPlayer * pPlr = (CPlayer *) lpDIS->itemData;
+ if (pPlr == NULL)
+  return;
 
-	CDC *pDc = CDC::FromHandle (lpDIS->hDC);
-	if (pDc == NULL)
-		return;
+ CDC *pDc = CDC::FromHandle (lpDIS->hDC);
+ if (pDc == NULL)
+  return;
 
-	thePal.Paint (pDc->m_hDC);
-	CFont *pOldFont = pDc->SelectObject( &theApp.TextFont() );
-	if( pOldFont == NULL )
-		return;
+ thePal.Paint (pDc->m_hDC);
+ CFont *pOldFont = pDc->SelectObject( &theApp.TextFont() );
+ if( pOldFont == NULL )
+  return;
 
-	if (lpDIS->itemState & ODS_SELECTED)
-		{
-		pDc->SetBkColor (pPlr->GetRGBColor ());
-		pDc->SetTextColor (RGB (0, 0, 0));
-		}
-	else
-	  {
-		pDc->SetBkColor (RGB (255, 255, 255));
-		pDc->SetTextColor (pPlr->GetRGBColor ());
-	  }
+ if (lpDIS->itemState & ODS_SELECTED)
+  {
+  pDc->SetBkColor (pPlr->GetRGBColor ());
+  pDc->SetTextColor (RGB (0, 0, 0));
+  }
+ else
+   {
+  pDc->SetBkColor (RGB (255, 255, 255));
+  pDc->SetTextColor (pPlr->GetRGBColor ());
+   }
 
-	pDc->ExtTextOut (lpDIS->rcItem.left, lpDIS->rcItem.top, ETO_CLIPPED | ETO_OPAQUE,
-			&(lpDIS->rcItem), pPlr->GetName (), strlen (pPlr->GetName ()), NULL);
+ pDc->ExtTextOut (lpDIS->rcItem.left, lpDIS->rcItem.top, ETO_CLIPPED | ETO_OPAQUE,
+   &(lpDIS->rcItem), pPlr->GetName (), strlen (pPlr->GetName ()), NULL);
 
-	pDc->SelectObject( pOldFont );
+ pDc->SelectObject( pOldFont );
 }
 
 
 void CPlyrMsgStatusDlg::OnOK() 
 {
-	CListBox *pcbPlayers = (CListBox *)GetDlgItem( IDC_PLAYER_LIST );
-	if( pcbPlayers == NULL )
-		return;
+ CListBox *pcbPlayers = (CListBox *)GetDlgItem( IDC_PLAYER_LIST );
+ if( pcbPlayers == NULL )
+  return;
 
-	int iRet = pcbPlayers->GetCurSel();
-	if( iRet == CB_ERR )
-		return;
+ int iRet = pcbPlayers->GetCurSel();
+ if( iRet == CB_ERR )
+  return;
 
-	// get IPC player
-	CString sItem;
-	pcbPlayers->GetText( iRet, sItem );
+ // get IPC player
+ CString sItem;
+ pcbPlayers->GetText( iRet, sItem );
 
-	//CPlayer *pPlyr = (CPlayer *)pcbPlayers->GetItemDataPtr(iRet);
-	//if( pPlyr == NULL )
-	//	return;
-	CIPCPlayer *pPlayer = 
-		plIPCPlayers->GetPlayer( sItem );
-	if( pPlayer == NULL )
-		return;
+ //CPlayer *pPlyr = (CPlayer *)pcbPlayers->GetItemDataPtr(iRet);
+ //if( pPlyr == NULL )
+ // return;
+ CIPCPlayer *pPlayer = 
+  plIPCPlayers->GetPlayer( sItem );
+ if( pPlayer == NULL )
+  return;
 
-	WORD wStatus = 0;
-	CButton *pRB = NULL;
-	pRB = (CButton *)GetDlgItem(IDC_ACCEPT_EMAIL);
-	if( pRB != NULL )
-	{
-		if( pRB->GetCheck() )
-		{
-			//pPlayer->m_wStatus |= IPC_ACCEPT_EMAIL;
-			//pPlayer->m_wStatus ^= IPC_IGNORE_EMAIL;
-			wStatus |= IPC_ACCEPT_EMAIL;
-		}
-		else
-		{
-			//pPlayer->m_wStatus ^= IPC_ACCEPT_EMAIL;
-			//pPlayer->m_wStatus |= IPC_IGNORE_EMAIL;
-			wStatus |= IPC_IGNORE_EMAIL;
-		}
-	}
+ WORD wStatus = 0;
+ CButton *pRB = NULL;
+ pRB = (CButton *)GetDlgItem(IDC_ACCEPT_EMAIL);
+ if( pRB != NULL )
+ {
+  if( pRB->GetCheck() )
+  {
+   //pPlayer->m_wStatus |= IPC_ACCEPT_EMAIL;
+   //pPlayer->m_wStatus ^= IPC_IGNORE_EMAIL;
+   wStatus |= IPC_ACCEPT_EMAIL;
+  }
+  else
+  {
+   //pPlayer->m_wStatus ^= IPC_ACCEPT_EMAIL;
+   //pPlayer->m_wStatus |= IPC_IGNORE_EMAIL;
+   wStatus |= IPC_IGNORE_EMAIL;
+  }
+ }
 
-	pRB = (CButton *)GetDlgItem(IDC_ACCEPT_CHAT);
-	if( pRB != NULL )
-	{
-		if( pRB->GetCheck() )
-		{
-			//pPlayer->m_wStatus |= IPC_ACCEPT_CHAT;
-			//pPlayer->m_wStatus ^= IPC_IGNORE_CHAT;
-			wStatus |= IPC_ACCEPT_CHAT;
-		}
-		else
-		{
-			//pPlayer->m_wStatus ^= IPC_ACCEPT_CHAT;
-			//pPlayer->m_wStatus |= IPC_IGNORE_CHAT;
-			wStatus |= IPC_IGNORE_CHAT;
-		}
-	}
+ pRB = (CButton *)GetDlgItem(IDC_ACCEPT_CHAT);
+ if( pRB != NULL )
+ {
+  if( pRB->GetCheck() )
+  {
+   //pPlayer->m_wStatus |= IPC_ACCEPT_CHAT;
+   //pPlayer->m_wStatus ^= IPC_IGNORE_CHAT;
+   wStatus |= IPC_ACCEPT_CHAT;
+  }
+  else
+  {
+   //pPlayer->m_wStatus ^= IPC_ACCEPT_CHAT;
+   //pPlayer->m_wStatus |= IPC_IGNORE_CHAT;
+   wStatus |= IPC_IGNORE_CHAT;
+  }
+ }
 
-	// turn off voice
+ // turn off voice
 #if 0
-	pRB = (CButton *)GetDlgItem(IDC_ACCEPT_VOICE);
-	if( pRB != NULL )
-	{
-		if( pRB->GetCheck() )
-		{
-			//pPlayer->m_wStatus |= IPC_ACCEPT_VOICE;
-			//pPlayer->m_wStatus ^= IPC_IGNORE_VOICE;
-			wStatus |= IPC_ACCEPT_VOICE;
-		}
-		else
-		{
-			//pPlayer->m_wStatus ^= IPC_ACCEPT_VOICE;
-			//pPlayer->m_wStatus |= IPC_IGNORE_VOICE;
-			wStatus |= IPC_IGNORE_VOICE;
-		}
-	}
+ pRB = (CButton *)GetDlgItem(IDC_ACCEPT_VOICE);
+ if( pRB != NULL )
+ {
+  if( pRB->GetCheck() )
+  {
+   //pPlayer->m_wStatus |= IPC_ACCEPT_VOICE;
+   //pPlayer->m_wStatus ^= IPC_IGNORE_VOICE;
+   wStatus |= IPC_ACCEPT_VOICE;
+  }
+  else
+  {
+   //pPlayer->m_wStatus ^= IPC_ACCEPT_VOICE;
+   //pPlayer->m_wStatus |= IPC_IGNORE_VOICE;
+   wStatus |= IPC_IGNORE_VOICE;
+  }
+ }
 #endif
 
-	// update player
-	pPlayer->m_wStatus = wStatus;
-	
-	CDialog::OnOK();
+ // update player
+ pPlayer->m_wStatus = wStatus;
+ 
+ CDialog::OnOK();
 }
 
 void CPlyrMsgStatusDlg::OnCancel() 
 {
-	// TODO: Add extra cleanup here
-	
-	CDialog::OnCancel();
+ // TODO: Add extra cleanup here
+ 
+ CDialog::OnCancel();
 }
 
 void CPlyrMsgStatusDlg::PostNcDestroy() 
 {
-	CDialog::PostNcDestroy();
+ CDialog::PostNcDestroy();
 
-	delete this;
+ delete this;
 }
 
 void CPlyrMsgStatusDlg::OnSysCommand(UINT nID, LPARAM lParam)
 {
 
-	ASSERT_VALID (this);
+ ASSERT_VALID (this);
 
-	// for minimize hide it
-	if ((nID == SC_MINIMIZE) || (nID == SC_CLOSE))
-		{
-		ShowWindow (SW_HIDE);
-		return;
-		}
+ // for minimize hide it
+ if ((nID == SC_MINIMIZE) || (nID == SC_CLOSE))
+  {
+  ShowWindow (SW_HIDE);
+  return;
+  }
 
-	CDialog::OnSysCommand(nID, lParam);
+ CDialog::OnSysCommand(nID, lParam);
 }
 
 
 void CPlyrMsgStatusDlg::OnDestroy() 
 {
-	if( pPlayerDlg != NULL )
-		pPlayerDlg = NULL;
+ if( pPlayerDlg != NULL )
+  pPlayerDlg = NULL;
 
-	CDialog::OnDestroy();
+ CDialog::OnDestroy();
 }
 
 //
@@ -473,111 +473,111 @@ void CPlyrMsgStatusDlg::OnDestroy()
 //
 void CPlyrMsgStatusDlg::OnSelchangePlayerList() 
 {
-	ASSERT (plIPCPlayers != NULL);
+ ASSERT (plIPCPlayers != NULL);
 
-	CListBox *pcbPlayers = (CListBox *)GetDlgItem( IDC_PLAYER_LIST );
-	if( pcbPlayers == NULL )
-		return;
+ CListBox *pcbPlayers = (CListBox *)GetDlgItem( IDC_PLAYER_LIST );
+ if( pcbPlayers == NULL )
+  return;
 
-	int iRet = pcbPlayers->GetCurSel();
-	if( iRet == CB_ERR )
-		return;
+ int iRet = pcbPlayers->GetCurSel();
+ if( iRet == CB_ERR )
+  return;
 
-	// get IPC player
-	CString sItem;
-	pcbPlayers->GetText( iRet, sItem );
+ // get IPC player
+ CString sItem;
+ pcbPlayers->GetText( iRet, sItem );
 
-	//CPlayer *pPlyr = (CPlayer *)pcbPlayers->GetItemDataPtr(iRet);
-	//if( pPlyr == NULL )
-	//	return;
-	CIPCPlayer *pPlayer = 
-		plIPCPlayers->GetPlayer( sItem );
-	if( pPlayer == NULL )
-		return;
+ //CPlayer *pPlyr = (CPlayer *)pcbPlayers->GetItemDataPtr(iRet);
+ //if( pPlyr == NULL )
+ // return;
+ CIPCPlayer *pPlayer = 
+  plIPCPlayers->GetPlayer( sItem );
+ if( pPlayer == NULL )
+  return;
 
-	CButton *pRB = NULL;
+ CButton *pRB = NULL;
 
-	// consider email status, this player
-	// and set radio buttons
-	if( (pPlayer->m_wStatus & IPC_ACCEPT_EMAIL) &&
-		!(pPlayer->m_wStatus & IPC_IGNORE_EMAIL) )
-	{
-		//IDC_ACCEPT_EMAIL
-		pRB = (CButton *)GetDlgItem(IDC_ACCEPT_EMAIL);
-		if( pRB != NULL )
-			pRB->SetCheck(TRUE);
-		//IDC_IGNORE_EMAIL
-		pRB = (CButton *)GetDlgItem(IDC_IGNORE_EMAIL);
-		if( pRB != NULL )
-			pRB->SetCheck(FALSE);
-	}
-	else if( !(pPlayer->m_wStatus & IPC_ACCEPT_EMAIL) &&
-		(pPlayer->m_wStatus & IPC_IGNORE_EMAIL) )
-	{
-		//IDC_ACCEPT_EMAIL
-		pRB = (CButton *)GetDlgItem(IDC_ACCEPT_EMAIL);
-		if( pRB != NULL )
-			pRB->SetCheck(FALSE);
-		//IDC_IGNORE_EMAIL
-		pRB = (CButton *)GetDlgItem(IDC_IGNORE_EMAIL);
-		if( pRB != NULL )
-			pRB->SetCheck(TRUE);
-	}
+ // consider email status, this player
+ // and set radio buttons
+ if( (pPlayer->m_wStatus & IPC_ACCEPT_EMAIL) &&
+  !(pPlayer->m_wStatus & IPC_IGNORE_EMAIL) )
+ {
+  //IDC_ACCEPT_EMAIL
+  pRB = (CButton *)GetDlgItem(IDC_ACCEPT_EMAIL);
+  if( pRB != NULL )
+   pRB->SetCheck(TRUE);
+  //IDC_IGNORE_EMAIL
+  pRB = (CButton *)GetDlgItem(IDC_IGNORE_EMAIL);
+  if( pRB != NULL )
+   pRB->SetCheck(FALSE);
+ }
+ else if( !(pPlayer->m_wStatus & IPC_ACCEPT_EMAIL) &&
+  (pPlayer->m_wStatus & IPC_IGNORE_EMAIL) )
+ {
+  //IDC_ACCEPT_EMAIL
+  pRB = (CButton *)GetDlgItem(IDC_ACCEPT_EMAIL);
+  if( pRB != NULL )
+   pRB->SetCheck(FALSE);
+  //IDC_IGNORE_EMAIL
+  pRB = (CButton *)GetDlgItem(IDC_IGNORE_EMAIL);
+  if( pRB != NULL )
+   pRB->SetCheck(TRUE);
+ }
 
-	// consider chat status, this player
-	// and set radio buttons
-	if( (pPlayer->m_wStatus & IPC_ACCEPT_CHAT) &&
-		!(pPlayer->m_wStatus & IPC_IGNORE_CHAT) )
-	{
-		//IDC_ACCEPT_CHAT
-		pRB = (CButton *)GetDlgItem(IDC_ACCEPT_CHAT);
-		if( pRB != NULL )
-			pRB->SetCheck(TRUE);
-		//IDC_IGNORE_CHAT
-		pRB = (CButton *)GetDlgItem(IDC_IGNORE_CHAT);
-		if( pRB != NULL )
-			pRB->SetCheck(FALSE);
-	}
-	else if( !(pPlayer->m_wStatus & IPC_ACCEPT_CHAT) &&
-		(pPlayer->m_wStatus & IPC_IGNORE_CHAT) )
-	{
-		//IDC_ACCEPT_CHAT
-		pRB = (CButton *)GetDlgItem(IDC_ACCEPT_CHAT);
-		if( pRB != NULL )
-			pRB->SetCheck(FALSE);
-		//IDC_IGNORE_CHAT
-		pRB = (CButton *)GetDlgItem(IDC_IGNORE_CHAT);
-		if( pRB != NULL )
-			pRB->SetCheck(TRUE);
-	}
+ // consider chat status, this player
+ // and set radio buttons
+ if( (pPlayer->m_wStatus & IPC_ACCEPT_CHAT) &&
+  !(pPlayer->m_wStatus & IPC_IGNORE_CHAT) )
+ {
+  //IDC_ACCEPT_CHAT
+  pRB = (CButton *)GetDlgItem(IDC_ACCEPT_CHAT);
+  if( pRB != NULL )
+   pRB->SetCheck(TRUE);
+  //IDC_IGNORE_CHAT
+  pRB = (CButton *)GetDlgItem(IDC_IGNORE_CHAT);
+  if( pRB != NULL )
+   pRB->SetCheck(FALSE);
+ }
+ else if( !(pPlayer->m_wStatus & IPC_ACCEPT_CHAT) &&
+  (pPlayer->m_wStatus & IPC_IGNORE_CHAT) )
+ {
+  //IDC_ACCEPT_CHAT
+  pRB = (CButton *)GetDlgItem(IDC_ACCEPT_CHAT);
+  if( pRB != NULL )
+   pRB->SetCheck(FALSE);
+  //IDC_IGNORE_CHAT
+  pRB = (CButton *)GetDlgItem(IDC_IGNORE_CHAT);
+  if( pRB != NULL )
+   pRB->SetCheck(TRUE);
+ }
 
-	// turn off voice support
+ // turn off voice support
 #if 0
-	// consider VOICE status, this player
-	// and set radio buttons
-	if( (pPlayer->m_wStatus & IPC_ACCEPT_VOICE) &&
-		!(pPlayer->m_wStatus & IPC_IGNORE_VOICE) )
-	{
-		//IDC_ACCEPT_VOICE
-		pRB = (CButton *)GetDlgItem(IDC_ACCEPT_VOICE);
-		if( pRB != NULL )
-			pRB->SetCheck(TRUE);
-		//IDC_IGNORE_VOICE
-		pRB = (CButton *)GetDlgItem(IDC_IGNORE_VOICE);
-		if( pRB != NULL )
-			pRB->SetCheck(FALSE);
-	}
-	else if( !(pPlayer->m_wStatus & IPC_ACCEPT_VOICE) &&
-		(pPlayer->m_wStatus & IPC_IGNORE_VOICE) )
-	{
-		//IDC_ACCEPT_VOICE
-		pRB = (CButton *)GetDlgItem(IDC_ACCEPT_VOICE);
-		if( pRB != NULL )
-			pRB->SetCheck(FALSE);
-		//IDC_IGNORE_VOICE
-		pRB = (CButton *)GetDlgItem(IDC_IGNORE_VOICE);
-		if( pRB != NULL )
-			pRB->SetCheck(TRUE);
-	}
+ // consider VOICE status, this player
+ // and set radio buttons
+ if( (pPlayer->m_wStatus & IPC_ACCEPT_VOICE) &&
+  !(pPlayer->m_wStatus & IPC_IGNORE_VOICE) )
+ {
+  //IDC_ACCEPT_VOICE
+  pRB = (CButton *)GetDlgItem(IDC_ACCEPT_VOICE);
+  if( pRB != NULL )
+   pRB->SetCheck(TRUE);
+  //IDC_IGNORE_VOICE
+  pRB = (CButton *)GetDlgItem(IDC_IGNORE_VOICE);
+  if( pRB != NULL )
+   pRB->SetCheck(FALSE);
+ }
+ else if( !(pPlayer->m_wStatus & IPC_ACCEPT_VOICE) &&
+  (pPlayer->m_wStatus & IPC_IGNORE_VOICE) )
+ {
+  //IDC_ACCEPT_VOICE
+  pRB = (CButton *)GetDlgItem(IDC_ACCEPT_VOICE);
+  if( pRB != NULL )
+   pRB->SetCheck(FALSE);
+  //IDC_IGNORE_VOICE
+  pRB = (CButton *)GetDlgItem(IDC_IGNORE_VOICE);
+  if( pRB != NULL )
+   pRB->SetCheck(TRUE);
+ }
 #endif
 }

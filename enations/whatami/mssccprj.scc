@@ -1,0 +1,10 @@
+SCC = This is a Source Code Control file
+
+[WHATAMI.MAK]
+SCC_Project_Name = "$/lastplnt/whatami", NVAAAAAA
+
+[WHATAM16.MAK]
+SCC_Project_Name = "$/lastplnt/whatami", KECAAAAA
+
+[whatam32.mak]
+SCC_Project_Name = "$/lastplnt/whatami", LECAAAAA

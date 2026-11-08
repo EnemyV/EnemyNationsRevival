@@ -1,0 +1,5 @@
+SCC = This is a Source Code Control file
+
+[autorun.mak]
+SCC_Aux_Path = "\\jasmine\vss\tools"
+SCC_Project_Name = "$/lastplnt/autorun", HAAAAAAA

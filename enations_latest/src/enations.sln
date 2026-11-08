@@ -1,0 +1,34 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 16
+VisualStudioVersion = 16.0.29102.190
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "enations", "enations.vcxproj", "{B08CA403-9DCF-4D96-987D-16E06908A7DE}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|x86 = Debug|x86
+		LOGOUT  TRAP|x86 = LOGOUT  TRAP|x86
+		Profile|x86 = Profile|x86
+		Release|x86 = Release|x86
+		TRAPs|x86 = TRAPs|x86
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{B08CA403-9DCF-4D96-987D-16E06908A7DE}.Debug|x86.ActiveCfg = Debug|Win32
+		{B08CA403-9DCF-4D96-987D-16E06908A7DE}.Debug|x86.Build.0 = Debug|Win32
+		{B08CA403-9DCF-4D96-987D-16E06908A7DE}.LOGOUT  TRAP|x86.ActiveCfg = LOGOUT  TRAP|Win32
+		{B08CA403-9DCF-4D96-987D-16E06908A7DE}.LOGOUT  TRAP|x86.Build.0 = LOGOUT  TRAP|Win32
+		{B08CA403-9DCF-4D96-987D-16E06908A7DE}.Profile|x86.ActiveCfg = Profile|Win32
+		{B08CA403-9DCF-4D96-987D-16E06908A7DE}.Profile|x86.Build.0 = Profile|Win32
+		{B08CA403-9DCF-4D96-987D-16E06908A7DE}.Release|x86.ActiveCfg = Release|Win32
+		{B08CA403-9DCF-4D96-987D-16E06908A7DE}.Release|x86.Build.0 = Release|Win32
+		{B08CA403-9DCF-4D96-987D-16E06908A7DE}.TRAPs|x86.ActiveCfg = TRAPs|Win32
+		{B08CA403-9DCF-4D96-987D-16E06908A7DE}.TRAPs|x86.Build.0 = TRAPs|Win32
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(ExtensibilityGlobals) = postSolution
+		SolutionGuid = {56C2C3C1-765F-4C00-B2FF-3BE1755B16B0}
+	EndGlobalSection
+EndGlobal

@@ -26,36 +26,36 @@
     <SccProjectName />
     <SccLocalPath />
     <Keyword>MFCProj</Keyword>
-    <ProjectGuid>{7DF340DF-E773-4B92-8649-D4A133B0CC3E}</ProjectGuid>
+    <ProjectGuid>{B08CA403-9DCF-4D96-987D-16E06908A7DE}</ProjectGuid>
   </PropertyGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Profile|Win32'" Label="Configuration">
     <ConfigurationType>Application</ConfigurationType>
-    <PlatformToolset>v141</PlatformToolset>
+    <PlatformToolset>v142</PlatformToolset>
     <UseOfMfc>Static</UseOfMfc>
     <CharacterSet>MultiByte</CharacterSet>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'" Label="Configuration">
     <ConfigurationType>Application</ConfigurationType>
-    <PlatformToolset>v141</PlatformToolset>
+    <PlatformToolset>v142</PlatformToolset>
     <UseOfMfc>Static</UseOfMfc>
     <CharacterSet>MultiByte</CharacterSet>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'" Label="Configuration">
     <ConfigurationType>Application</ConfigurationType>
-    <PlatformToolset>v141</PlatformToolset>
+    <PlatformToolset>v142</PlatformToolset>
     <UseOfMfc>Static</UseOfMfc>
     <CharacterSet>MultiByte</CharacterSet>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='LOGOUT  TRAP|Win32'" Label="Configuration">
     <ConfigurationType>Application</ConfigurationType>
-    <PlatformToolset>v141</PlatformToolset>
+    <PlatformToolset>v142</PlatformToolset>
     <UseOfMfc>Static</UseOfMfc>
     <CharacterSet>MultiByte</CharacterSet>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='TRAPs|Win32'" Label="Configuration">
     <ConfigurationType>Application</ConfigurationType>
-    <PlatformToolset>v141</PlatformToolset>
+    <PlatformToolset>v142</PlatformToolset>
     <UseOfMfc>Static</UseOfMfc>
     <CharacterSet>MultiByte</CharacterSet>
   </PropertyGroup>
@@ -97,7 +97,6 @@
     <OutDir>.\WinDebug\</OutDir>
     <IntDir>.\WinDebug\</IntDir>
     <LinkIncremental>true</LinkIncremental>
-    <LibraryPath>C:\Games\Enemy Nations\EnemyNationsSource\enations\setup\dlls\Win32\winnt;C:\Games\Enemy Nations\EnemyNationsSource\enations_latest\019\DLLs\WIN32S;C:\Games\Enemy Nations\EnemyNationsSource\enations\disk\DLLs\Win32s;C:\Games\Enemy Nations\EnemyNationsSource\tools\lib;$(LibraryPath)</LibraryPath>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">
     <OutDir>.\WinRel\</OutDir>
@@ -197,7 +196,7 @@
     <ClCompile>
       <RuntimeLibrary>MultiThreadedDebug</RuntimeLibrary>
       <InlineFunctionExpansion>Default</InlineFunctionExpansion>
-      <FunctionLevelLinking>true</FunctionLevelLinking>
+      <FunctionLevelLinking>false</FunctionLevelLinking>
       <Optimization>Disabled</Optimization>
       <SuppressStartupBanner>true</SuppressStartupBanner>
       <WarningLevel>Level3</WarningLevel>
@@ -210,8 +209,6 @@
       <PrecompiledHeaderFile>stdafx.h</PrecompiledHeaderFile>
       <ObjectFileName>.\WinDebug\</ObjectFileName>
       <ProgramDataBaseFileName>.\WinDebug\</ProgramDataBaseFileName>
-      <AdditionalUsingDirectories>C:\Games\Enemy Nations\EnemyNationsSource\windward;C:\Games\Enemy Nations\EnemyNationsSource\windward\include;C:\Games\Enemy Nations\EnemyNationsSource\tools\lib;%(AdditionalUsingDirectories)</AdditionalUsingDirectories>
-      <AdditionalIncludeDirectories>C:\Games\Enemy Nations\EnemyNationsSource\windward;C:\Games\Enemy Nations\EnemyNationsSource\tools\lib;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
     </ClCompile>
     <Midl>
       <SuppressStartupBanner>true</SuppressStartupBanner>
@@ -235,7 +232,7 @@
       <SubSystem>Windows</SubSystem>
       <IgnoreAllDefaultLibraries>false</IgnoreAllDefaultLibraries>
       <OutputFile>.\WinDebug\enations.exe</OutputFile>
-      <AdditionalDependencies>hamfc4m.lib;haw32m.lib;wind40d.lib;mss32.lib;vdmplay.lib;vfw32.lib;winmm.lib;version.lib;CTL3DV2.LIB;d3drm.lib;WING32.LIB;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>hamfc4m.lib;haw32m.lib;wind40d.lib;mss32.lib;vdmplay.lib;vfw32.lib;winmm.lib;version.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">

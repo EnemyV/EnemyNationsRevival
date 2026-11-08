@@ -9,10 +9,10 @@
 //
 ////////////////////////////////////////////////////////////////////////////
 
-#include "CAIGoal.hpp"
-#include "CAIMap.hpp"
-#include "CAIUnit.hpp"
-#include "CAIOpFor.hpp"
+#include "caigoal.hpp"
+#include "caimap.hpp"
+#include "caiunit.hpp"
+#include "caiopfor.hpp"
 
 
 #ifndef __CAIGOALMGR_HPP__

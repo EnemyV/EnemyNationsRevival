@@ -1,7 +1,7 @@
 //---------------------------------------------------------------------------
 //
-//	Copyright (c) 1995, 1996. Windward Studios, Inc.
-//	All Rights Reserved.
+// Copyright (c) 1995, 1996. Windward Studios, Inc.
+// All Rights Reserved.
 //
 //---------------------------------------------------------------------------
 
@@ -23,7 +23,7 @@ const int HLP_ADV_OPTIONS = 10;
 
 // this is for the start-up percentage
 const int PER_START = 0;
-const int PER_TERRAIN_INIT = 1;		// these 3 use up to +4
+const int PER_TERRAIN_INIT = 1;  // these 3 use up to +4
 const int PER_NUM_TERRAIN_INIT = 12;
 const int PER_STRUCTURE_INIT = 13;
 const int PER_NUM_STRUCTURE_INIT = 45;

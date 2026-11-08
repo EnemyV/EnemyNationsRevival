@@ -552,6 +552,9 @@
 #define IDS_GIVE_UNITS                  455
 #define IDS_NEW_SERVER                  456
 #define IDS_EVENT_HPR_NOACCESS          456
+#define IDS_EVENT_BRIDGE_HALTED         512
+#define IDS_DATA_MISMATCH               513
+#define IDS_BUILD_MISMATCH              514
 #define IDS_LOAD_SFX                    457
 #define IDH_AREA_COMBAT                 458
 #define IDS_UNKNOWN                     459
@@ -606,6 +609,7 @@
 #define IDS_GOOD_REG                    508
 #define IDS_EN_LOGGING                  509
 #define IDS_VP_LOGGING                  510
+#define IDS_PLAYER_WON                  511
 #define IDC_MAIN_CREATE                 1000
 #define IDC_MAIN_JOIN                   1001
 #define IDC_MAIN_LOAD                   1002

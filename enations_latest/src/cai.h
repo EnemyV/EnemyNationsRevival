@@ -191,11 +191,15 @@
 #define CAI_COAL	8
 #define CAI_IRON	9
 
+// TEMP AI diagnostics: emit OutputDebugString probes (slow when a debugger/DBWIN
+// listener is attached). Switches live in enprobes.h (shared with game-side probes).
+#include "enprobes.h"
+
 #define CAI_ROUTE_X	12
 #define CAI_ROUTE_Y	13
 
 #define CAI_UNASSIGNED	10
-#define CAI_SIZE		16	// many values depend on this being 16
+#define CAI_SIZE		16	// many values depend on this being 16 (size of.. cai data?)
 
 // also used in CAIUnit::m_pwaParams slots for transporting materials
 //#define FROM_MATERIAL_ID	1	// material transported
@@ -205,6 +209,7 @@
 #define FROM_ID_HI			5
 
 // BUGBUG this needs to be unique among player numbers
+// I BELIEVE this is how the AI targets the human player
 #define CAI_OPFOR_UNIT	0xFFFF
 
 // CAIUnit and CAICopy object data identifiers
@@ -283,6 +288,8 @@
 #define CAI_TASKSWITCH			0x0004	// this unit's task was switched 
 										// old task saved in CAI_UNASSIGNED
 #define CAI_IS_CARGO			0x0008  // this vehicle is on a cargo ship
+#define CAI_LANDING				0x0010  // landing craft sent to a landing hex to unload;
+										// unload on arrival (CAIMgr::DestinationResponse)
 
 /////////////////////////////////////////////////////////////////////////////
 

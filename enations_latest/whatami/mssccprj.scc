@@ -1,0 +1,13 @@
+SCC = This is a Source Code Control file
+
+[WHATAM16.MAK]
+SCC_Aux_Path = "\\jasmine\vss\tools"
+SCC_Project_Name = "$/lastplnt/whatami", JAAAAAAA
+
+[whatam32.mak]
+SCC_Aux_Path = "\\jasmine\vss\tools"
+SCC_Project_Name = "$/lastplnt/whatami", JAAAAAAA
+
+[WHATAMI.MAK]
+SCC_Aux_Path = "\\jasmine\vss\tools"
+SCC_Project_Name = "$/lastplnt/whatami", JAAAAAAA
