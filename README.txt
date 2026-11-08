@@ -1,6 +1,6 @@
 Enemy Nations (Windward Studios, 1996), ported to SDL2 for Windows, Linux and macOS.
 
-Build (add -DEN_LOOSE_DATA_DIR=<dir containing data/manifest.txt> to stage game data):
+Build (Windows stages ../ENATIONS.DAT automatically; add -DEN_LOOSE_DATA_DIR=<dir containing data/manifest.txt> to stage loose game data instead):
 
   Windows (VS 2022):  cmake -S . -B cmakeBuild-x64 -A x64
                       cmake --build cmakeBuild-x64 --config Release --target enations

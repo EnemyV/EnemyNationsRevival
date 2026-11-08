@@ -614,6 +614,24 @@ if (EN_LOOSE_DATA_DIR)
     )
 endif ()
 
+# Windows developer/test runs resolve ENATIONS.DAT beside the executable, not
+# relative to the launch directory. Stage the original container automatically
+# unless this build deliberately uses a complete loose data set instead.
+set(EN_GAME_DATA_FILE "${CMAKE_SOURCE_DIR}/../ENATIONS.DAT" CACHE FILEPATH
+    "Original ENATIONS.DAT to stage beside enations when loose data is not used")
+if (WIN32 AND NOT EN_LOOSE_DATA_DIR)
+    if (EXISTS "${EN_GAME_DATA_FILE}")
+        add_custom_command(TARGET enations POST_BUILD
+            COMMAND ${CMAKE_COMMAND} -E copy_if_newer
+                "${EN_GAME_DATA_FILE}"
+                "$<TARGET_FILE_DIR:enations>/ENATIONS.DAT"
+            COMMENT "Staging ENATIONS.DAT next to the binary (only if newer)"
+        )
+    else ()
+        message(WARNING "EN_GAME_DATA_FILE does not exist: ${EN_GAME_DATA_FILE}")
+    endif ()
+endif ()
+
 # Stage the original .CUR cursor art next to the binary. On POSIX the Win32 GDI
 # cursor pipeline (GetIconInfo/GetDIBits) is stubbed, so CWndArea loads the .cur
 # files directly from a res/ dir found relative to the binary (area.cpp
