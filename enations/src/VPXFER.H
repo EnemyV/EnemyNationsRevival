@@ -31,84 +31,84 @@ const int MSG_FILE_XFER = 1283;
 class CVPTransfer: protected CDataTransfer
 {
 public:
-	CDataTransfer::Done;
-	CDataTransfer::GetError;
-	CDataTransfer::SetError;
-	CDataTransfer::SendMore;
-	CDataTransfer::Sending;	   
-	CDataTransfer::TransferredDataAmount;
+ CDataTransfer::Done;
+ CDataTransfer::GetError;
+ CDataTransfer::SetError;
+ CDataTransfer::SendMore;
+ CDataTransfer::Sending;    
+ CDataTransfer::TransferredDataAmount;
 
-	enum { PACKETS_IN_WINDOW = 6 };
-	enum { DEFAULT_TIMEOUT = 5000 };
-	
-	enum { 
-		ERR_TIMEOUT=1, 		 // timeout witing data from the peer
-		ERR_SESSIONLOST, 	 // connection to server is lost
-		ERR_PEERDEAD, 		 // Peer played dead deleted 
-		ERR_PLAYERDEAD,		 // local player removed
-		ERR_NOMEMORY,
-		ERR_SENDINGDATA		 // Error while sending data
-	};
+ enum { PACKETS_IN_WINDOW = 6 };
+ enum { DEFAULT_TIMEOUT = 5000 };
+ 
+ enum { 
+  ERR_TIMEOUT=1,    // timeout witing data from the peer
+  ERR_SESSIONLOST,   // connection to server is lost
+  ERR_PEERDEAD,    // Peer played dead deleted 
+  ERR_PLAYERDEAD,   // local player removed
+  ERR_NOMEMORY,
+  ERR_SENDINGDATA   // Error while sending data
+ };
 
-	CVPTransfer(VPSESSIONHANDLE h);
-	~CVPTransfer();
+ CVPTransfer(VPSESSIONHANDLE h);
+ ~CVPTransfer();
 
-	BOOL SendDataTo(VPPLAYERID to, VPPLAYERID from, LPVOID data, DWORD dataSize);
-	BOOL ReceiveDataFrom(VPPLAYERID from, VPPLAYERID to, LPVOID buf, DWORD bufSize);
+ BOOL SendDataTo(VPPLAYERID to, VPPLAYERID from, LPVOID data, DWORD dataSize);
+ BOOL ReceiveDataFrom(VPPLAYERID from, VPPLAYERID to, LPVOID buf, DWORD bufSize);
 
 
 
- 	// Should be called periodically (the timer resolution 1000 mSec is OK)
-	virtual void OnTimer();
+  // Should be called periodically (the timer resolution 1000 mSec is OK)
+ virtual void OnTimer();
 
-	// return TRUE if we handled this notification message 
-	virtual BOOL ProcessNotification(UINT nCode, LPVPMESSAGE msg);
+ // return TRUE if we handled this notification message 
+ virtual BOOL ProcessNotification(UINT nCode, LPVPMESSAGE msg);
 
 
 protected:
 
-	virtual void SendAck(DWORD amount)
-	{
-		SendPacket((LPCSTR) &amount, sizeof(amount));
-	}
+ virtual void SendAck(DWORD amount)
+ {
+  SendPacket((LPCSTR) &amount, sizeof(amount));
+ }
 
-	virtual BOOL SendChunk(LPSTR chunk, DWORD chunkSize)
-	{
-		return SendPacket(chunk, chunkSize);
-	}
-
-
-	virtual BOOL SendPacket(LPCSTR packet, DWORD packetSize);
+ virtual BOOL SendChunk(LPSTR chunk, DWORD chunkSize)
+ {
+  return SendPacket(chunk, chunkSize);
+ }
 
 
-	virtual  BOOL WaitForSpace(DWORD neededSpace = 1)
-	{
-		return FALSE;
-	}
+ virtual BOOL SendPacket(LPCSTR packet, DWORD packetSize);
 
 
-	virtual  BOOL WaitForIncomingData()
-	{
-		return FALSE;
-	}
+ virtual  BOOL WaitForSpace(DWORD neededSpace = 1)
+ {
+  return FALSE;
+ }
 
 
-	void RecordPacketTime()
-	{
-		m_lastPacketTime = GetCurrentTime();
-		if (m_acked == m_totalSize)
-			m_endTime = m_lastPacketTime;
-	}
+ virtual  BOOL WaitForIncomingData()
+ {
+  return FALSE;
+ }
+
+
+ void RecordPacketTime()
+ {
+  m_lastPacketTime = GetCurrentTime();
+  if (m_acked == m_totalSize)
+   m_endTime = m_lastPacketTime;
+ }
 
 protected:
-	VPPLAYERID m_peerPlayer;
-	VPPLAYERID m_localPlayer;
-	DWORD	   m_lastPacketTime;
-	DWORD	   m_startTime;
-	DWORD	   m_endTime;
-	LPSTR	   m_buffer;
-	VPSESSIONHANDLE m_session;
-	DWORD	   m_timeout;
+ VPPLAYERID m_peerPlayer;
+ VPPLAYERID m_localPlayer;
+ DWORD    m_lastPacketTime;
+ DWORD    m_startTime;
+ DWORD    m_endTime;
+ LPSTR    m_buffer;
+ VPSESSIONHANDLE m_session;
+ DWORD    m_timeout;
 
 };
 

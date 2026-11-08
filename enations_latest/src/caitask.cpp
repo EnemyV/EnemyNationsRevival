@@ -9,10 +9,10 @@
 //
 ////////////////////////////////////////////////////////////////////////////
 
-#include "STDAFX.H"
-#include "CAI.h"
-#include "CAITask.hpp"
-#include "CAIData.hpp"
+#include "stdafx.h"
+#include "cai.h"
+#include "caitask.hpp"
+#include "caidata.hpp"
 
 #define new DEBUG_NEW
 
@@ -44,7 +44,7 @@ CAITask::CAITask( WORD wID, BYTE cType, BYTE cPriority,
 			for( int i=0; i<MAX_TASKPARAMS; ++i )
 				m_pwaParams[i] = pwaParams->GetAt(i);
 		}
-		catch( CException e )
+		catch( CException* e )
 		{
 			if( m_pwaParams != NULL )
 			{
@@ -169,7 +169,7 @@ CAITask *CAITask::CopyTask( void )
 			for( int i=0; i<pwaParams->GetSize(); ++i )
 				pwaParams->SetAt( i, m_pwaParams[i] );
 		}
-		catch( CException e )
+		catch( CException* e )
 		{
 			if( pwaParams != NULL )
 			{
@@ -187,7 +187,7 @@ CAITask *CAITask::CopyTask( void )
 		pTask = new CAITask( m_wID, m_cType, m_cPriority, 
 			m_wOrderID, pwaParams );
 	}
-	catch( CException e )
+	catch( CException* e )
 	{
 		if( pwaParams != NULL )
 		{
@@ -226,8 +226,9 @@ CAITask *CAITaskList::GetTask( WORD wId, WORD wGoal )
     POSITION pos = GetHeadPosition();
     while( pos != NULL )
     {   
-#if 0 //THREADS_ENABLED
+#if AI_THREADS_ENABLED
 		// this function is not yielding
+		// VTier - added a sleep into the Yield, which is good enough
 		myYieldThread();
 		//if( myYieldThread() == TM_QUIT )
 		//	throw(ERR_CAI_TM_QUIT); // THROW( pException );
@@ -254,7 +255,7 @@ CAITask *CAITaskList::FindTask( WORD wId )
     POSITION pos = GetHeadPosition();
     while( pos != NULL )
     {   
-#if 0 //THREADS_ENABLED
+#if AI_THREADS_ENABLED
 		// this function is not yielding
 		myYieldThread();
 		//if( myYieldThread() == TM_QUIT )
@@ -341,7 +342,7 @@ CAITask *CAITaskList::GetUnassignedTask( int iTask )
     POSITION pos = GetHeadPosition();
     while( pos != NULL )
     {   
-#if 0 //THREADS_ENABLED
+#if AI_THREADS_ENABLED
 		// this function is not yielding
 		myYieldThread();
 		//if( myYieldThread() == TM_QUIT )
@@ -369,7 +370,7 @@ CAITask *CAITaskList::GetPatrolTask( int iType )
     POSITION pos = GetHeadPosition();
     while( pos != NULL )
     {   
-#if 0 //THREADS_ENABLED
+#if AI_THREADS_ENABLED
 		// this function is not yielding
 		myYieldThread();
 		//if( myYieldThread() == TM_QUIT )
@@ -394,7 +395,6 @@ CAITask *CAITaskList::GetPatrolTask( int iType )
 					pPickedTask = pTask;
 					iPriority = (int)pTask->GetPriority();
 				}
-				break;
 			}
 		}
 	}
@@ -417,7 +417,7 @@ CAITask *CAITaskList::GetScoutTask( void )
     POSITION pos = GetHeadPosition();
     while( pos != NULL )
     {   
-#if 0 //THREADS_ENABLED
+#if AI_THREADS_ENABLED
 		// this function is not yielding
 		myYieldThread();
 		//if( myYieldThread() == TM_QUIT )
@@ -522,7 +522,7 @@ CAITask *CAITaskList::GetProductionTask( int iFactoryType )
     POSITION pos = GetHeadPosition();
     while( pos != NULL )
     {   
-#if 0 //THREADS_ENABLED
+#if AI_THREADS_ENABLED
 		// this function is not yielding
 		myYieldThread();
 		//if( myYieldThread() == TM_QUIT )
@@ -589,7 +589,7 @@ CAITask *CAITaskList::GetCombatTask( int iUnitType, CAITask *pSkipTask /*= NULL*
     POSITION pos = GetHeadPosition();
     while( pos != NULL )
     {   
-#if 0 //THREADS_ENABLED
+#if AI_THREADS_ENABLED
 		// this function is not yielding
 		myYieldThread();
 		//if( myYieldThread() == TM_QUIT )
@@ -652,15 +652,14 @@ CAITask *CAITaskList::GetNavyTask( int iUnitType )
 	//if( pVehData->GetTargetType() != CUnitData::naval )
 	//	return( NULL );
 
-	// some vehicles come into this, which are not naval vehicles
-	// and still need a navy task cause its an amphibious assault
+	// med_tank + rangers board a landing craft, which carries them; all three
+	// belong only to the staged amphibious assault (IDG_SEAINVADE), never a solo raid.
 	BOOL bAmphib = FALSE;
 	switch( iUnitType )
 	{
 		case CTransportData::rangers:
-		case CTransportData::light_tank:
 		case CTransportData::med_tank:
-		case CTransportData::light_art:
+		case CTransportData::landing_craft:
 			bAmphib = TRUE;
 		default:
 			break;
@@ -673,7 +672,7 @@ CAITask *CAITaskList::GetNavyTask( int iUnitType )
     POSITION pos = GetHeadPosition();
     while( pos != NULL )
     {   
-#if 0 //THREADS_ENABLED
+#if AI_THREADS_ENABLED
 		// this function is not yielding
 		myYieldThread();
 		//if( myYieldThread() == TM_QUIT )
@@ -684,7 +683,15 @@ CAITask *CAITaskList::GetNavyTask( int iUnitType )
         {
         	ASSERT_VALID( pTask );
 
-			if( pTask->GetStatus() != UNASSIGNED_TASK )
+			// A landing craft may also join an IN-PROGRESS sea-invasion staging
+			// task: troops waiting to embark keep it INPROCESS, so otherwise troops
+			// and craft wait on each other forever.
+			BOOL bAmphibStaging = ( bAmphib && pTask->GetType() == COMBAT_TASK &&
+									pTask->GetGoalID() == IDG_SEAINVADE &&
+									pTask->GetID() == IDT_PREPAREWAR );
+
+			if( pTask->GetStatus() != UNASSIGNED_TASK &&
+				!( bAmphibStaging && pTask->GetStatus() == INPROCESS_TASK ) )
 				continue;
 			if( pTask->GetType() != COMBAT_TASK )
 				continue;
@@ -712,10 +719,16 @@ CAITask *CAITaskList::GetNavyTask( int iUnitType )
 			//	wGoal == IDG_REPELL) )
 			//	continue;
 
-			if( (int)pTask->GetPriority() > iPriority )
+			// UpdateTaskPriorities zeroes a non-UNASSIGNED staging task and the
+			// test below is strictly > 0: floor it so the admission above works
+			int iTaskPri = (int)pTask->GetPriority();
+			if( bAmphibStaging && iTaskPri <= 0 )
+				iTaskPri = 1;
+
+			if( iTaskPri > iPriority )
 			{
 				pPickedTask = pTask;
-				iPriority = (int)pTask->GetPriority();
+				iPriority = iTaskPri;
 			}
 		}
 	}

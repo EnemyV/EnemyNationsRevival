@@ -1,0 +1,25 @@
+SCC = This is a Source Code Control file
+
+[COMMTST.MAK]
+SCC_Project_Name = "$/vdmplay/src/vptest", RECAAAAA
+
+[TIPX16.MAK]
+SCC_Project_Name = "$/vdmplay/src/vptest", KFCAAAAA
+
+[TNBNET.MAK]
+SCC_Project_Name = "$/vdmplay/src/vptest", MFCAAAAA
+
+[TUDP.MAK]
+SCC_Project_Name = "$/vdmplay/src/vptest", OFCAAAAA
+
+[TWSIPX.MAK]
+SCC_Project_Name = "$/vdmplay/src/vptest", SFCAAAAA
+
+[TWSKNET.MAK]
+SCC_Project_Name = "$/vdmplay/src/vptest", VFCAAAAA
+
+[VPTEST.MAK]
+SCC_Project_Name = "$/vdmplay/src/vptest", AGCAAAAA
+
+[VPTST.MAK]
+SCC_Project_Name = "$/vdmplay/src/vptest", IGCAAAAA

@@ -1,187 +1,189 @@
-#include "stdafx.h"
-#include "event.h"
-#include "lastplnt.h"
-#include "area.h"
-#include "player.h"
-#include "sprite.h"
 #include "bridge.h"
 
+#include "area.h"
+#include "building.inl"
+#include "event.h"
+#include "lastplnt.h"
+#include "logging.h"
+#include "player.h"
+#include "sprite.h"
+#include "stdafx.h"
 #include "terrain.inl"
 #include "unit.inl"
-#include "building.inl"
 #include "vehicle.inl"
 
 CBridgeMap theBridgeMap;
 CBridgeHex theBridgeHex;
 
 
-
 /////////////////////////////////////////////////////////////////////////////
 // CBridge - a complete bridge (end to end)
 
-CBridge::CBridge (CHexCoord const & hexStart, CHexCoord const & hexEnd, DWORD dwID, int iAlt)
+CBridge::CBridge( CHexCoord const& hexStart, CHexCoord const& hexEnd, DWORD dwID, int iAlt )
 {
 
 
-	m_hexStart = hexStart;
-	m_hexEnd = hexEnd;
-	m_dwID = dwID;
-	m_iAlt = iAlt;
-	m_iConstTotal = CTerrainData::GetBuildRoadTime () * 40 * 4;
-	m_iPerBuilt = 0;
+    m_hexStart    = hexStart;
+    m_hexEnd      = hexEnd;
+    m_dwID        = dwID;
+    m_iAlt        = iAlt;
+    m_iConstTotal = CTerrainData::GetBuildRoadTime( ) * 40 * 4;
+    m_iPerBuilt   = 0;
 
-	// direction of bridge
-	m_iDir = (hexStart.X () != hexEnd.X ()) ? 1 : 0;
+    // direction of bridge
+    m_iDir = ( hexStart.X( ) != hexEnd.X( ) ) ? 1 : 0;
 
-	// middle of bridge
-	m_mlMiddle.x = hexStart.X () * MAX_HEX_HT + 
-										( CHexCoord::Diff (hexEnd.X () - hexStart.X ()) * MAX_HEX_HT ) / 2;
-	m_mlMiddle.y = hexStart.Y () * MAX_HEX_HT + 
-										( CHexCoord::Diff (hexEnd.Y () - hexStart.Y ()) * MAX_HEX_HT ) / 2;
-	m_mlMiddle.Wrap ();
+    // middle of bridge
+    m_mlMiddle.x = hexStart.X( ) * MAX_HEX_HT + ( CHexCoord::Diff( hexEnd.X( ) - hexStart.X( ) ) * MAX_HEX_HT ) / 2;
+    m_mlMiddle.y = hexStart.Y( ) * MAX_HEX_HT + ( CHexCoord::Diff( hexEnd.Y( ) - hexStart.Y( ) ) * MAX_HEX_HT ) / 2;
+    m_mlMiddle.Wrap( );
 }
 
-CBridge * CBridge::Create (CHexCoord const & hexStart, CHexCoord const & hexEnd, DWORD dwID, int iAlt)
+CBridge* CBridge::Create( CHexCoord const& hexStart, CHexCoord const& hexEnd, DWORD dwID, int iAlt )
 {
 #ifdef _LOGOUT
-	logPrintf (LOG_PRI_CRITICAL, LOG_VEH_MOVE, 
-		"Vehicle %ld bridge building from %d,%d to %d,%d ", 
-			dwID, hexStart.X(), hexStart.Y(), hexEnd.X(), hexEnd.Y() );
+    logPrintf( LOG_PRI_CRITICAL, LOG_VEH_MOVE, "Vehicle %ld bridge building from %d,%d to %d,%d ", dwID, hexStart.X( ),
+               hexStart.Y( ), hexEnd.X( ), hexEnd.Y( ) );
 #endif
 
-	// make an instance of a building
-	CBridge * pBrdg = new CBridge (hexStart, hexEnd, dwID, iAlt);
+    // make an instance of a building
+    CBridge* pBrdg = new CBridge( hexStart, hexEnd, dwID, iAlt );
 
-	// put up the pieces
-	CHexCoord _hexOn (hexStart);
-	int xAdd = CHexCoord::Diff (hexEnd.X () - _hexOn.X ());
-	int yAdd = CHexCoord::Diff (hexEnd.Y () - _hexOn.Y ());
+    // put up the pieces
+    CHexCoord _hexOn( hexStart );
+    int       xAdd = CHexCoord::Diff( hexEnd.X( ) - _hexOn.X( ) );
+    int       yAdd = CHexCoord::Diff( hexEnd.Y( ) - _hexOn.Y( ) );
 
-	int iSpan = abs (xAdd) + abs (yAdd) + 1;
-	pBrdg->m_iConstTotal = CTerrainData::GetBuildRoadTime () * 40 * iSpan;
+    int iSpan            = abs( xAdd ) + abs( yAdd ) + 1;
+    pBrdg->m_iConstTotal = CTerrainData::GetBuildRoadTime( ) * 40 * iSpan;
 
-	xAdd = __minmax (-1, 1, xAdd);
-	yAdd = __minmax (-1, 1, yAdd);
+    xAdd = __minmax( -1, 1, xAdd );
+    yAdd = __minmax( -1, 1, yAdd );
 
-	hexStart.Flatten( iAlt );
-	hexEnd  .Flatten( iAlt );
+    hexStart.Flatten( iAlt );
+    hexEnd.Flatten( iAlt );
 
-	int iLen = 0;
-	while (iLen <= MAX_SPAN+1)
-		{
-		CBridgeUnit * pBu = new CBridgeUnit (_hexOn, pBrdg);
-		pBu->m_hex.SetInvalidated ();
-		pBrdg->m_lstUnits.AddTail (pBu);
+    int iLen = 0;
+    while ( iLen <= MAX_SPAN_ULT + 1 )  // bound must fit the longest researched span
+    {
+        CBridgeUnit* pBu = new CBridgeUnit( _hexOn, pBrdg );
+        pBu->m_hex.SetInvalidated( );
+        pBrdg->m_lstUnits.AddTail( pBu );
 
-		// handle start
-		if (_hexOn == hexStart)
-			{
-			pBu->m_iExit = (xAdd != 0) ? (xAdd + 2) : ((yAdd + 3) & 0x03);
+        // handle start
+        if ( _hexOn == hexStart )
+        {
+            pBu->m_iExit = ( xAdd != 0 ) ? ( xAdd + 2 ) : ( ( yAdd + 3 ) & 0x03 );
 
-			/* GG
-			theMap.GetHex (hexStart.X () + (xAdd == -1 ? 1 : 0),
-																hexStart.Y () + (yAdd == 1 ? -1 : 0))->SetAlt (iAlt);
-			theMap.GetHex (hexStart.X () + (xAdd == 1 ? 0 : 1),
-																hexStart.Y () + (yAdd == -1 ? 0 : -1))->SetAlt (iAlt);
-			*/
-			}
-		else
-			// end
-			if (_hexOn == hexEnd)
-				{
-				pBu->m_iExit = (xAdd != 0) ? (xAdd & 0x03) : yAdd + 1;
+            /* GG
+            theMap.GetHex (hexStart.X () + (xAdd == -1 ? 1 : 0),
+                                                                hexStart.Y () + (yAdd == 1 ? -1 : 0))->SetAlt (iAlt);
+            theMap.GetHex (hexStart.X () + (xAdd == 1 ? 0 : 1),
+                                                                hexStart.Y () + (yAdd == -1 ? 0 : -1))->SetAlt (iAlt);
+            */
+        }
+        else
+            // end
+            if ( _hexOn == hexEnd )
+        {
+            pBu->m_iExit = ( xAdd != 0 ) ? ( xAdd & 0x03 ) : yAdd + 1;
 
-				/* GG
-				theMap.GetHex (hexEnd.X () + (xAdd == 1 ? 1 : 0),
-																hexEnd.Y () + (yAdd == -1 ? -1 : 0))->SetAlt (iAlt);
-				theMap.GetHex (hexEnd.X () + (xAdd == -1 ? 0 : 1),
-																hexEnd.Y () + (yAdd == 1 ? 0 : -1))->SetAlt (iAlt);
-				*/
-		      pBu->AssignSprite();
-				break;
-				}
+            /* GG
+            theMap.GetHex (hexEnd.X () + (xAdd == 1 ? 1 : 0),
+                                                            hexEnd.Y () + (yAdd == -1 ? -1 : 0))->SetAlt (iAlt);
+            theMap.GetHex (hexEnd.X () + (xAdd == -1 ? 0 : 1),
+                                                            hexEnd.Y () + (yAdd == 1 ? 0 : -1))->SetAlt (iAlt);
+            */
+            pBu->AssignSprite( );
+            break;
+        }
 
 #ifdef _LOGOUT
-		logPrintf (LOG_PRI_CRITICAL, LOG_VEH_MOVE, 
-			"bridge built at %d,%d ", _hexOn.X(), _hexOn.Y() );
+        logPrintf( LOG_PRI_CRITICAL, LOG_VEH_MOVE, "bridge built at %d,%d ", _hexOn.X( ), _hexOn.Y( ) );
 #endif
 
-		_hexOn.X () += xAdd;
-		_hexOn.Y () += yAdd;
-		_hexOn.Wrap ();
+        _hexOn.X( ) += xAdd;
+        _hexOn.Y( ) += yAdd;
+        _hexOn.Wrap( );
 
-      pBu->AssignSprite();
-		}
+        pBu->AssignSprite( );
+    }
 
-	theBridgeMap.Add (pBrdg);
+    theBridgeMap.Add( pBrdg );
 
-	// invalidate ALL windows
-	// GG: Shouldn't need this now: CWndAnim::InvalidateAllWindows ();
+    // The per-unit m_iExit writes above are direct member stores, after the hexes
+    // were already grabbed (terrain.h g_enNavEpoch). The hexes themselves were
+    // recorded by GrabHex's OrUnits; what moved here is the per-unit exit fact.
+    EnNavTouchTables( );
 
-	// if visible start the sound
-	CWndArea * pAreaWnd = theAreaList.GetTop ();
-	if (pAreaWnd != NULL)
-		{
-		CRect rect;
-		pAreaWnd->GetClientRect (&rect);
-		CPoint ptBldg = pAreaWnd->GetAA().WrapWorldToWindow ( CMapLoc3D ( pBrdg->m_mlMiddle ));
-		if (rect.PtInRect (ptBldg))
-			pAreaWnd->InvalidateSound ();
-		}
+    // invalidate ALL windows
+    // GG: Shouldn't need this now: CWndAnim::InvalidateAllWindows ();
 
-	ASSERT_VALID (pBrdg);
+    // if visible start the sound
+    CWndArea* pAreaWnd = theAreaList.GetTop( );
+    if ( pAreaWnd != NULL )
+    {
+        CRect rect;
+        pAreaWnd->GetClientRect( &rect );
+        CPoint ptBldg = pAreaWnd->GetAA( ).WrapWorldToWindow( CMapLoc3D( pBrdg->m_mlMiddle ) );
+        if ( rect.PtInRect( ptBldg ) )
+            pAreaWnd->InvalidateSound( );
+    }
 
-	return (pBrdg);
+    ASSERT_VALID( pBrdg );
+
+    return ( pBrdg );
 }
 
-CBridge::~CBridge ()
+CBridge::~CBridge( )
 {
 
-	while (m_lstUnits.GetCount () > 0)
-		{
-		CBridgeUnit * pBu = m_lstUnits.RemoveHead ();
-		delete pBu;
-		}
+    while ( m_lstUnits.GetCount( ) > 0 )
+    {
+        CBridgeUnit* pBu = m_lstUnits.RemoveHead( );
+        delete pBu;
+    }
 }
 
-void CBridge::__SetPer (int iPer)
+void CBridge::__SetPer( int iPer )
 {
 
-	m_iPerBuilt = iPer;
+    // IsBuilt() flips here, and the A* reads it for the deck (terrain.h g_enNavEpoch).
+    // It is a bridge FACT, not a hex byte, so only the fact tables are rebuilt.
+    EnNavTouchTables( );
+    m_iPerBuilt = iPer;
 
-	POSITION pos = m_lstUnits.GetHeadPosition ();
-	while (pos != NULL)
-		{
-		CBridgeUnit * pBu = m_lstUnits.GetNext (pos);
-		pBu->m_iPerBuilt = iPer;
-		pBu->m_hex.SetInvalidated ();
-		}
+    POSITION pos = m_lstUnits.GetHeadPosition( );
+    while ( pos != NULL )
+    {
+        CBridgeUnit* pBu = m_lstUnits.GetNext( pos );
+        pBu->m_iPerBuilt = iPer;
+        pBu->m_hex.SetInvalidated( );
+    }
 }
 
 //---------------------------------------------------------------------------
 // CBridge::GetSurfaceAlt
 //---------------------------------------------------------------------------
-Fixed
-CBridgeUnit::GetSurfaceAlt(
-	CMapLoc const & maploc ) const
+Fixed CBridgeUnit::GetSurfaceAlt( CMapLoc const& maploc ) const
 {
-	Fixed	fix;
+    Fixed fix;
 
-	fix.Value(( GetAlt() << 16 ) + 0x00060000 );	// GGTODO: Figure out height on sloped endpoints
+    fix.Value( ( GetAlt( ) << 16 ) + 0x00060000 );  // GGTODO: Figure out height on sloped endpoints
 
-	return fix;
+    return fix;
 }
 
 #ifdef _DEBUG
 
-void CBridge::AssertValid () const
+void CBridge::AssertValid( ) const
 {
-	// assert base object
-	CObject::AssertValid();
+    // assert base object
+    CObject::AssertValid( );
 
-	ASSERT ((m_iDir == 0) || (m_iDir == 1));
-	ASSERT ((0 <= m_iAlt) && (m_iAlt <= 127));
-	ASSERT ((0 <= m_iPerBuilt) && (m_iPerBuilt <= 100));
+    ASSERT( ( m_iDir == 0 ) || ( m_iDir == 1 ) );
+    ASSERT( ( 0 <= m_iAlt ) && ( m_iAlt <= 127 ) );
+    ASSERT( ( 0 <= m_iPerBuilt ) && ( m_iPerBuilt <= 100 ) );
 }
 
 #endif
@@ -190,279 +192,275 @@ void CBridge::AssertValid () const
 /////////////////////////////////////////////////////////////////////////////
 // CBridgeUnit - one hex of a bridge
 
-CBridgeUnit::CBridgeUnit (CHexCoord const & hex, CBridge * pPar)
+CBridgeUnit::CBridgeUnit( CHexCoord const& hex, CBridge* pPar )
 {
 
-	m_hex = hex;
-	m_iDir = pPar->GetDir ();
-	m_iExit = -1;					// set to middle
-	m_pParBridge = pPar;
-	m_iAlt = pPar->GetAlt ();
-	m_iPerBuilt = 0;
+    m_hex        = hex;
+    m_iDir       = pPar->GetDir( );
+    m_iExit      = -1;  // set to middle
+    m_pParBridge = pPar;
+    m_iAlt       = pPar->GetAlt( );
+    m_iPerBuilt  = 0;
 
-	theBridgeHex.GrabHex (this);
+    theBridgeHex.GrabHex( this );
 }
 
 //---------------------------------------------------------------------------
 // CBridgeUnit::AssignSprite
 //---------------------------------------------------------------------------
-void
-CBridgeUnit::AssignSprite()
+void CBridgeUnit::AssignSprite( )
 {
-   int   iID = -1;
+    int iID = -1;
 
-   switch ( m_iExit )
-   {
-      case -1: switch ( m_iDir )
-               {
-						case 0:  iID = CStructureData::bridge_0; break;
-                  case 1:  iID = CStructureData::bridge_1; break;
-               }
+    switch ( m_iExit )
+    {
+    case -1:
+        switch ( m_iDir )
+        {
+        case 0:
+            iID = CStructureData::bridge_0;
+            break;
+        case 1:
+            iID = CStructureData::bridge_1;
+            break;
+        }
 
-               break;
+        break;
 
-      case 0:  iID = CStructureData::bridge_end_2; break;
-      case 1:  iID = CStructureData::bridge_end_3; break;
-      case 2:  iID = CStructureData::bridge_end_0; break;
-      case 3:  iID = CStructureData::bridge_end_1; break;
-   }
+    case 0:
+        iID = CStructureData::bridge_end_2;
+        break;
+    case 1:
+        iID = CStructureData::bridge_end_3;
+        break;
+    case 2:
+        iID = CStructureData::bridge_end_0;
+        break;
+    case 3:
+        iID = CStructureData::bridge_end_1;
+        break;
+    }
 
-  	m_psprite = theStructures.GetSprite( iID, 0 );
+    m_psprite = theStructures.GetSprite( iID, 0 );
 }
 
 //---------------------------------------------------------------------------
 // CBridgeUnit::IsTwoPiece
 //---------------------------------------------------------------------------
-BOOL
-CBridgeUnit::IsTwoPiece() const
+BOOL CBridgeUnit::IsTwoPiece( ) const
 {
-	CStructureSprite::STAGE_TYPE	eStage;
+    CStructureSprite::STAGE_TYPE eStage;
 
-	if ( IsBuilt() )
-		eStage = CStructureSprite::COMPLETED_STAGE;
-	else 
-		eStage = CStructureSprite::CONSTRUCTION_STAGE;
+    if ( IsBuilt( ) )
+        eStage = CStructureSprite::COMPLETED_STAGE;
+    else
+        eStage = CStructureSprite::CONSTRUCTION_STAGE;
 
-	int	iDamage = 0;
+    int iDamage = 0;
 
-	return GetSprite()->IsTwoPiece( GetDir(), eStage, iDamage );
+    return GetSprite( )->IsTwoPiece( GetDir( ), eStage, iDamage );
 }
 
 //---------------------------------------------------------------------------
 // CBridgeUnit::GetDrawCorner - Return window client coords of LL corner of sprite
 //---------------------------------------------------------------------------
-CPoint
-CBridgeUnit::GetDrawCorner(
-	CHexCoord const & hexcoord ) const
+CPoint CBridgeUnit::GetDrawCorner( CHexCoord const& hexcoord ) const
 {
-	int			iX;
-	int			iY;
+    int iX;
+    int iY;
 
-	switch ( xiDir )
-	{
-		case 0:	iX = hexcoord.X();
-					iY = hexcoord.Y();
-					break;
+    switch ( xiDir )
+    {
+    case 0:
+        iX = hexcoord.X( );
+        iY = hexcoord.Y( );
+        break;
 
-		case 1:	iX = hexcoord.X() + 1;
-					iY = hexcoord.Y();
-					break;
+    case 1:
+        iX = hexcoord.X( ) + 1;
+        iY = hexcoord.Y( );
+        break;
 
-		case 2:	iX = hexcoord.X() + 1;
-					iY = hexcoord.Y() + 1;
-					break;
+    case 2:
+        iX = hexcoord.X( ) + 1;
+        iY = hexcoord.Y( ) + 1;
+        break;
 
-		case 3:	iX = hexcoord.X();
-					iY = hexcoord.Y() + 1;
-					break;
-	}
+    case 3:
+        iX = hexcoord.X( );
+        iY = hexcoord.Y( ) + 1;
+        break;
+    }
 
-	CHexCoord	hexcoordCorner = CHexCoord( iX, iY );
-	CMapLoc		maploc  ( hexcoordCorner );
-	CMapLoc3D	maploc3d( maploc, GetAlt() );
+    CHexCoord hexcoordCorner = CHexCoord( iX, iY );
+    CMapLoc   maploc( hexcoordCorner );
+    CMapLoc3D maploc3d( maploc, GetAlt( ) );
 
-	CPoint	pt = xpanimatr->WorldToWindow( maploc3d );
+    CPoint pt = xpanimatr->WorldToWindow( maploc3d );
 
-	pt.y += MAX_HEX_HT >> xiZoom + 1;
+    pt.y += MAX_HEX_HT >> xiZoom + 1;
 
-	const int BRIDGE_Y_CENTER_FUDGE  = 21;
-	const int BRIDGE_Y_TOP_END_FUDGE = -4;
+    const int BRIDGE_Y_CENTER_FUDGE  = 21;
+    const int BRIDGE_Y_TOP_END_FUDGE = -4;
 
-	if ( -1 == m_iExit )
-		pt.y += BRIDGE_Y_CENTER_FUDGE  >> xiZoom;	// artwork misaligned
-	else if ( m_iExit == xiDir || m_iExit == (( xiDir + 1 ) & 0x03 ))
-		pt.y += BRIDGE_Y_TOP_END_FUDGE >> xiZoom;	// artwork misaligned
+    if ( -1 == m_iExit )
+        pt.y += BRIDGE_Y_CENTER_FUDGE >> xiZoom;  // artwork misaligned
+    else if ( m_iExit == xiDir || m_iExit == ( ( xiDir + 1 ) & 0x03 ) )
+        pt.y += BRIDGE_Y_TOP_END_FUDGE >> xiZoom;  // artwork misaligned
 
-	return pt;
+    return pt;
 }
 
 //---------------------------------------------------------------------------
 // CBridgeUnit::Draw
 //---------------------------------------------------------------------------
-CRect
-CBridgeUnit::Draw(
-	const CHexCoord & hexcoord )
+CRect CBridgeUnit::Draw( const CHexCoord& hexcoord )
 {
-	ASSERT_STRICT_VALID (this);
+    ASSERT_STRICT_VALID( this );
 
-	CDrawParms		drawparms( *this, CPoint( 0, 0 ));
-	CPoint			ptCorner = GetDrawCorner( hexcoord );
-	CPoint		 	ptOffset = ptCorner;
-	int			 	iDir 		= xiDir;
-	int				iDamage  = 0;
-	CMapLoc		 	maploc( hexcoord );
-	CSpriteView	 * pspriteviewBridge;
-	CRect			 	rect;
+    CDrawParms   drawparms( *this, CPoint( 0, 0 ) );
+    CPoint       ptCorner = GetDrawCorner( hexcoord );
+    CPoint       ptOffset = ptCorner;
+    int          iDir     = xiDir;
+    int          iDamage  = 0;
+    CMapLoc      maploc( hexcoord );
+    CSpriteView* pspriteviewBridge;
+    CRect        rect;
 
-	// if built then its a normal draw
+    // if built then its a normal draw
 
-	if ( IsBuilt() )
-	{
-		pspriteviewBridge =
-			GetSprite()->
-				GetView(	iDir,
-							GetLayer(),
-						  	CStructureSprite::COMPLETED_STAGE,
-						  	iDamage );
+    if ( IsBuilt( ) )
+    {
+        pspriteviewBridge = GetSprite( )->GetView( iDir, GetLayer( ), CStructureSprite::COMPLETED_STAGE, iDamage );
 
-		ptOffset.y = ptCorner.y - pspriteviewBridge->Height();
+        ptOffset.y = ptCorner.y - pspriteviewBridge->Height( );
 
-		drawparms.m_ptOffset = ptOffset;
+        drawparms.m_ptOffset = ptOffset;
 
-		rect = pspriteviewBridge->Draw( drawparms );
+        rect = pspriteviewBridge->Draw( drawparms );
 
-		return rect;
-	}
+        // GPU sprite path: a COMPLETED bridge is captured into the dynamic set every
+        // frame (terrain.cpp), but dynamic sprites only repaint where a dirty rect
+        // overlaps. The construction path below self-registers its build-band rect, but
+        // the BUILT path historically did not — so the finished bridge's first frame had
+        // no dirty rect and the deck didn't replace the construction sprite until a zoom
+        // forced a full capture (user-reported flicker). Register the bridge's rect in
+        // invalidate mode (same pattern as vehicles/projectiles) so the incremental emit
+        // repaints it. LIST_PAINT_BOTH carries one frame for the vacate-on-teardown case.
+        if ( CDrawParms::IsInvalidateMode( ) )
+            xpanimatr->GetDirtyRects( )->AddRect( &rect, CDirtyRects::RECT_LIST::LIST_PAINT_BOTH );
 
-	// Draw partial construction
+        return rect;
+    }
 
-	pspriteviewBridge =
-		GetSprite()->GetView( iDir,
-									 GetLayer(),
- 					  			    CStructureSprite::CONSTRUCTION_STAGE,
-									 iDamage );
+    // Draw partial construction
 
-	ptOffset.y = ptCorner.y - pspriteviewBridge->Height();
-	rect 		  = pspriteviewBridge->Rect() - pspriteviewBridge->Rect().TopLeft() + ptOffset;
-	rect.top  += (( 100 - GetPer() ) * rect.Height() ) / 100;
+    pspriteviewBridge = GetSprite( )->GetView( iDir, GetLayer( ), CStructureSprite::CONSTRUCTION_STAGE, iDamage );
 
-	drawparms.m_ptOffset = ptOffset;
+    ptOffset.y = ptCorner.y - pspriteviewBridge->Height( );
+    rect       = pspriteviewBridge->Rect( ) - pspriteviewBridge->Rect( ).TopLeft( ) + ptOffset;
+    rect.top += ( ( 100 - GetPer( ) ) * rect.Height( ) ) / 100;
 
-	rect = pspriteviewBridge->DrawClip( drawparms, &rect );
+    drawparms.m_ptOffset = ptOffset;
 
-	xpanimatr->GetDirtyRects()->AddRect( &rect );
+    rect = pspriteviewBridge->DrawClip( drawparms, &rect );
 
-	return rect;
+    xpanimatr->GetDirtyRects( )->AddRect( &rect );
+
+    return rect;
 }
 
 //---------------------------------------------------------------------------
 // CBridgeUnit::IsHit
 //---------------------------------------------------------------------------
-BOOL
-CBridgeUnit::IsHit(
-	CHexCoord hexcoord,
-	CPoint	 ptCursor ) const
+BOOL CBridgeUnit::IsHit( CHexCoord hexcoord, CPoint ptCursor ) const
 {
-	ASSERT_STRICT_VALID (this);
+    ASSERT_STRICT_VALID( this );
 
-	CDrawParms		drawparms( *( CBridgeUnit * )this, CPoint( 0, 0 ));
-	CPoint			ptCorner = GetDrawCorner( hexcoord );
-	CPoint		 	ptOffset = ptCorner;
-	int			 	iDir 		= xiDir;
-	int				iDamage  = 0;
-	CMapLoc		 	maploc( hexcoord );
-	CSpriteView	 * pspriteviewBridge;
-	CRect			 	rect;
+    CDrawParms   drawparms( *(CBridgeUnit*)this, CPoint( 0, 0 ) );
+    CPoint       ptCorner = GetDrawCorner( hexcoord );
+    CPoint       ptOffset = ptCorner;
+    int          iDir     = xiDir;
+    int          iDamage  = 0;
+    CMapLoc      maploc( hexcoord );
+    CSpriteView* pspriteviewBridge;
+    CRect        rect;
 
-	// if built then its a normal draw
+    // if built then its a normal draw
 
-	if ( IsBuilt() )
-	{
-		pspriteviewBridge =
-			GetSprite()->
-				GetView(	iDir,
-							CStructureSprite::FOREGROUND_LAYER,
-						  	CStructureSprite::COMPLETED_STAGE,
-						  	iDamage );
+    if ( IsBuilt( ) )
+    {
+        pspriteviewBridge = GetSprite( )->GetView( iDir, CStructureSprite::FOREGROUND_LAYER,
+                                                   CStructureSprite::COMPLETED_STAGE, iDamage );
 
-		ptOffset.y = ptCorner.y - pspriteviewBridge->Height();
+        ptOffset.y = ptCorner.y - pspriteviewBridge->Height( );
 
-		drawparms.m_ptOffset = ptOffset;
+        drawparms.m_ptOffset = ptOffset;
 
-		if ( pspriteviewBridge->IsHit( drawparms, ptCursor ))
-			return TRUE;
+        if ( pspriteviewBridge->IsHit( drawparms, ptCursor ) )
+            return TRUE;
 
-		if ( GetSprite()->IsTwoPiece( iDir, CStructureSprite::COMPLETED_STAGE, iDamage ))
-		{
-			pspriteviewBridge =
-				GetSprite()->
-					GetView(	iDir,
-								CStructureSprite::BACKGROUND_LAYER,
-							  	CStructureSprite::COMPLETED_STAGE,
-							  	iDamage );
+        if ( GetSprite( )->IsTwoPiece( iDir, CStructureSprite::COMPLETED_STAGE, iDamage ) )
+        {
+            pspriteviewBridge = GetSprite( )->GetView( iDir, CStructureSprite::BACKGROUND_LAYER,
+                                                       CStructureSprite::COMPLETED_STAGE, iDamage );
 
-			ptOffset.y = ptCorner.y - pspriteviewBridge->Height();
+            ptOffset.y = ptCorner.y - pspriteviewBridge->Height( );
 
-			drawparms.m_ptOffset = ptOffset;
+            drawparms.m_ptOffset = ptOffset;
 
-			if ( pspriteviewBridge->IsHit( drawparms, ptCursor ))
-				return TRUE;
-		}
+            if ( pspriteviewBridge->IsHit( drawparms, ptCursor ) )
+                return TRUE;
+        }
 
-		return FALSE;
-	}
+        return FALSE;
+    }
 
-	// Draw partial construction
+    // Draw partial construction
 
-	pspriteviewBridge =
-		GetSprite()->GetView( iDir,
-									 CStructureSprite::FOREGROUND_LAYER,
- 					  			    CStructureSprite::CONSTRUCTION_STAGE,
-									 iDamage );
+    pspriteviewBridge = GetSprite( )->GetView( iDir, CStructureSprite::FOREGROUND_LAYER,
+                                               CStructureSprite::CONSTRUCTION_STAGE, iDamage );
 
-	ptOffset.y = ptCorner.y - pspriteviewBridge->Height();
-	rect 		  = pspriteviewBridge->Rect() - pspriteviewBridge->Rect().TopLeft() + ptOffset;
-	rect.top  += (( 100 - GetPer() ) * rect.Height() ) / 100;
+    ptOffset.y = ptCorner.y - pspriteviewBridge->Height( );
+    rect       = pspriteviewBridge->Rect( ) - pspriteviewBridge->Rect( ).TopLeft( ) + ptOffset;
+    rect.top += ( ( 100 - GetPer( ) ) * rect.Height( ) ) / 100;
 
-	drawparms.m_ptOffset = ptOffset;
+    drawparms.m_ptOffset = ptOffset;
 
-	if ( pspriteviewBridge->IsHitClip( drawparms, ptCursor, &rect ))
-		return TRUE;
+    if ( pspriteviewBridge->IsHitClip( drawparms, ptCursor, &rect ) )
+        return TRUE;
 
-	if ( IsTwoPiece() )
-	{
-		pspriteviewBridge =
-			GetSprite()->GetView( iDir,
-										 CStructureSprite::BACKGROUND_LAYER,
- 						  			    CStructureSprite::CONSTRUCTION_STAGE,
-										 iDamage );
+    if ( IsTwoPiece( ) )
+    {
+        pspriteviewBridge = GetSprite( )->GetView( iDir, CStructureSprite::BACKGROUND_LAYER,
+                                                   CStructureSprite::CONSTRUCTION_STAGE, iDamage );
 
-		ptOffset.y = ptCorner.y - pspriteviewBridge->Height();
-		rect 		  = pspriteviewBridge->Rect() - pspriteviewBridge->Rect().TopLeft() + ptOffset;
-		rect.top  += (( 100 - GetPer() ) * rect.Height() ) / 100;
+        ptOffset.y = ptCorner.y - pspriteviewBridge->Height( );
+        rect       = pspriteviewBridge->Rect( ) - pspriteviewBridge->Rect( ).TopLeft( ) + ptOffset;
+        rect.top += ( ( 100 - GetPer( ) ) * rect.Height( ) ) / 100;
 
-		drawparms.m_ptOffset = ptOffset;
+        drawparms.m_ptOffset = ptOffset;
 
-		if ( pspriteviewBridge->IsHitClip( drawparms, ptCursor, &rect ))
-			return TRUE;
-	}
+        if ( pspriteviewBridge->IsHitClip( drawparms, ptCursor, &rect ) )
+            return TRUE;
+    }
 
-	return FALSE;
+    return FALSE;
 }
 
 #ifdef _DEBUG
 
-void CBridgeUnit::AssertValid () const
+void CBridgeUnit::AssertValid( ) const
 {
-	// assert base object
-	CUnitTile::AssertValid();
+    // assert base object
+    CUnitTile::AssertValid( );
 
-	ASSERT ((m_iDir == 0) || (m_iDir == 1));
-	#ifndef _GG
-	ASSERT ((0 <= m_iExit) && (m_iExit <= 3));
-	#endif
-	ASSERT ((0 <= m_iAlt) && (m_iAlt <= 127));
-	ASSERT ((0 <= m_iPerBuilt) && (m_iPerBuilt <= 100));
+    ASSERT( ( m_iDir == 0 ) || ( m_iDir == 1 ) );
+#ifndef _GG
+    ASSERT( ( 0 <= m_iExit ) && ( m_iExit <= 3 ) );
+#endif
+    ASSERT( ( 0 <= m_iAlt ) && ( m_iAlt <= 127 ) );
+    ASSERT( ( 0 <= m_iPerBuilt ) && ( m_iPerBuilt <= 100 ) );
 }
 
 #endif
@@ -470,71 +468,78 @@ void CBridgeUnit::AssertValid () const
 /////////////////////////////////////////////////////////////////////////////
 // CBridgeMap - a map of all the bridges
 
-void CBridgeMap::DeleteAll ()
+void CBridgeMap::DeleteAll( )
 {
 
-	POSITION pos = GetStartPosition ();
-	while (pos != NULL)
-		{
-		DWORD dwID;
-		CBridge * pBrdg;
-		GetNextAssoc (pos, dwID, pBrdg);
-		ASSERT_STRICT_VALID (pBrdg);
-		delete pBrdg;
-		}
+    POSITION pos = GetStartPosition( );
+    while ( pos != NULL )
+    {
+        DWORD    dwID;
+        CBridge* pBrdg;
+        GetNextAssoc( pos, dwID, pBrdg );
+        ASSERT_STRICT_VALID( pBrdg );
+        delete pBrdg;
+    }
 
-	RemoveAll ();
+    RemoveAll( );
 }
 
 
-void CBridgeMap::Serialize( CArchive & ar )
+void CBridgeMap::Serialize( CArchive& ar )
 {
 
-	if (ar.IsStoring ())
-		{
-		ASSERT_VALID (this);
+    if ( ar.IsStoring( ) )
+    {
+        ASSERT_VALID( this );
 
-		ar << (WORD) GetCount ();
-		POSITION pos = GetStartPosition ();
-		while (pos != NULL)
-			{
-			DWORD dwID;
-			CBridge * pBrdg;
-			GetNextAssoc (pos, dwID, pBrdg);
-			ASSERT_VALID (pBrdg);
-			ar << pBrdg->m_dwID << pBrdg->m_hexStart << pBrdg->m_hexEnd << pBrdg->m_iAlt;
-			}
-		}
-	else
-	  {
-		WORD wCount;
-		ar >> wCount;
-		while (wCount--)
-			{
-			DWORD dwID; CHexCoord hexStart, hexEnd; int iAlt;
-			ar >> dwID >> hexStart >> hexEnd >> iAlt;
-			CBridge * pBrdg = CBridge::Create (hexStart, hexEnd, dwID, iAlt);
-			pBrdg->BridgeBuilt ();
-			}
-		}
+        ar << (WORD)GetCount( );
+        POSITION pos = GetStartPosition( );
+        while ( pos != NULL )
+        {
+            DWORD    dwID;
+            CBridge* pBrdg;
+            GetNextAssoc( pos, dwID, pBrdg );
+            ASSERT_VALID( pBrdg );
+            ar << pBrdg->m_dwID << pBrdg->m_hexStart << pBrdg->m_hexEnd << pBrdg->m_iAlt;
+        }
+    }
+    else
+    {
+        WORD wCount;
+        ar >> wCount;
+        while ( wCount-- )
+        {
+            DWORD     dwID;
+            CHexCoord hexStart, hexEnd;
+            int       iAlt;
+            ar >> dwID >> hexStart >> hexEnd >> iAlt;
+            CBridge* pBrdg = CBridge::Create( hexStart, hexEnd, dwID, iAlt );
+            pBrdg->BridgeBuilt( );
+        }
+    }
 }
 
 
 /////////////////////////////////////////////////////////////////////////////
 // CBridgeHex - hexes the bridges are on
 
-void CBridgeHex::GrabHex (CBridgeUnit * pBrdg)
+void CBridgeHex::GrabHex( CBridgeUnit* pBrdg )
 {
 
-	SetAt (ToArg (pBrdg->GetHex().X(), pBrdg->GetHex().Y()), pBrdg);
-	CHex * pHex = theMap._GetHex ( pBrdg->GetHex () );
-	pHex->OrUnits ( CHex::bridge );
+    SetAt( ToArg( pBrdg->GetHex( ).X( ), pBrdg->GetHex( ).Y( ) ), pBrdg );
+    CHex* pHex = theMap._GetHex( pBrdg->GetHex( ) );
+    pHex->OrUnits( CHex::bridge );
 
-	// no forest under
-	if ( pHex->GetType () == CHex::forest )
-		{
-		pHex->SetType ( CHex::plain );
-		pHex->SetVisibleType ( CHex::plain );
-		}
+    // no forest under
+    if ( pHex->GetType( ) == CHex::forest )
+    {
+        pHex->SetType( CHex::plain );
+        // Display half only when the hex is currently lit — otherwise the
+        // flattened forest leaks through unexplored fog on the area map AND
+        // the minimap (BUGS #30); the spotting code reveals it (alongside the
+        // bridge itself) when the hex is first seen. Same rule ChangeToRoad
+        // uses for roads built under fog.
+        if ( pHex->GetVisibility( ) )
+            pHex->SetVisibleType( CHex::plain );
+    }
 }
-

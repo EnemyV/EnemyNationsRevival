@@ -1,7 +1,7 @@
 //---------------------------------------------------------------------------
 //
-//	Copyright (c) 1995, 1996. Windward Studios, Inc.
-//	All Rights Reserved.
+// Copyright (c) 1995, 1996. Windward Studios, Inc.
+// All Rights Reserved.
 //
 //---------------------------------------------------------------------------
 
@@ -26,20 +26,20 @@
 
 class CChatBar : public CDialogBar
 {
-	CWnd *m_pParent;	// parent window
+ CWnd *m_pParent; // parent window
 
 // Construction
 public:
-	CChatBar(CWnd* pParent = NULL);   // standard constructor
+ CChatBar(CWnd* pParent = NULL);   // standard constructor
 
-	void InitBar();
+ void InitBar();
 
 // Implementation
 protected:
-	afx_msg void OnSize( UINT nType, int cx, int cy );
-	virtual void PostNcDestroy();
+ afx_msg void OnSize( UINT nType, int cx, int cy );
+ virtual void PostNcDestroy();
 
-	DECLARE_MESSAGE_MAP()
+ DECLARE_MESSAGE_MAP()
 };
 
 #endif // __CCHATBAR_HPP__

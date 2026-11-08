@@ -1,0 +1,1958 @@
+20: 6:15: 810 - CTcpNet::CTcpNet Entry
+20: 6:15: 810 - CTcpNet::CTcpNet Before TranslateStringAddress
+20: 6:17: 790 - CTcpNet::CTcpNet After TranslateStringAddress
+20: 6:17: 790 - CTcpNet::CTcpNet After gethostbyname
+20: 6:17: 900 - CTCPNet	 NULL reg addr
+20: 6:18: 670 - WM_WINSOCK FD_WRITE on socket 14 link=00742300
+20: 6:18: 670 - CTcpLink::SendWaitingData(14) 0 packets pending
+20: 6:18: 670 - WM_WINSOCK FD_READ on socket 14 link=00742300
+20: 6:38: 830 - WM_WINSOCK FD_READ on socket 14 link=00742300
+20: 6:38: 830 - WM_WINSOCK FD_READ on socket 14 link=00742300
+20: 6:45: 860 - WM_WINSOCK FD_ACCEPT on socket 15 link=0074237c
+20: 6:45: 860 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 6:45: 860 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 6:45: 860 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 6:45: 860 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 6:45: 860 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 6:45: 970 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 6:45: 970 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 6:46:  20 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 6:46: 190 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 6:46: 190 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 6:47: 120 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 6:47: 120 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 6:48: 110 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 6:48: 110 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 6:49: 210 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 6:49: 210 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 6:50: 360 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 6:50: 360 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 6:51: 400 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 6:51: 400 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 6:52: 450 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 6:52: 560 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 6:52: 560 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 6:52: 560 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 6:52: 560 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 6:52: 560 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 6:52: 720 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 6:52: 780 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 6:52: 780 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 6:52: 940 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 6:53:   0 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 6:53:   0 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 6:53: 160 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 6:53: 220 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 6:53: 220 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 6:53: 380 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 6:53: 380 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 6:53: 380 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 6:53: 660 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 6:53: 660 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 6:53: 660 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 6:53: 820 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 6:53: 880 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 6:53: 880 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 6:54:  90 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 6:54:  90 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 6:54:  90 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 6:54: 260 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 6:54: 260 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 6:54: 260 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 6:54: 420 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 6:54: 420 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 6:54: 420 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 6:54: 700 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 6:54: 860 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 6:54: 860 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 6:54: 920 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 6:54: 970 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 6:54: 970 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 6:55: 140 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 6:55: 250 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 6:55: 250 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 6:55: 250 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 6:55: 250 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 6:55: 250 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 6:55: 470 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 6:55: 470 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 6:55: 470 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 6:55: 580 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 6:55: 580 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 6:55: 580 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 6:55: 800 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 6:55: 800 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 6:55: 800 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 6:56:  20 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 6:56:  20 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 6:56:  20 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 6:56: 290 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 6:56: 350 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 6:56: 350 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 6:56: 460 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 6:56: 460 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 6:56: 460 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 6:56: 680 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 6:56: 680 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 6:56: 680 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 6:56: 900 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 6:57:  10 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 6:57:  10 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 6:57: 170 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 6:57: 230 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 6:57: 230 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 6:57: 340 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 6:57: 340 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 6:57: 340 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 6:57: 560 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 6:57: 610 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 6:57: 610 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 6:57: 770 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 6:57: 880 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 6:57: 880 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 6:57: 990 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 6:58:  50 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 6:58:  50 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 6:58: 100 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 6:58: 100 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 6:58: 100 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 6:58: 270 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 6:58: 270 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 6:58: 270 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 6:58: 430 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 6:58: 430 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 6:58: 430 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 6:58: 600 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 6:58: 600 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 6:58: 600 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 6:58: 820 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 6:58: 870 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 6:58: 870 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 6:59:  40 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 6:59: 200 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 6:59: 200 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 6:59: 200 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 6:59: 200 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 6:59: 200 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 6:59: 370 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 6:59: 370 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 6:59: 370 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 6:59: 590 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 6:59: 640 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 6:59: 640 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 6:59: 860 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 6:59: 860 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 6:59: 860 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 7: 0:  30 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 7: 0:  30 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 7: 0:  30 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 7: 0: 250 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 7: 0: 250 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 7: 0: 250 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 7: 0: 520 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 7: 0: 630 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 7: 0: 630 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 7: 0: 690 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 7: 0: 690 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 7: 0: 690 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 7: 0: 960 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 7: 1:  20 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 7: 1:  20 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 7: 1: 180 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 7: 1: 180 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 7: 1: 180 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 7: 1: 340 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 7: 1: 340 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 7: 1: 340 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 7: 1: 620 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 7: 1: 780 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 7: 1: 780 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 7: 1: 890 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 7: 1: 890 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 7: 1: 890 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 7: 2:   0 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 7: 2:   0 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 7: 2:   0 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 7: 2: 220 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 7: 2: 220 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 7: 2: 220 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 7: 2: 440 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 7: 2: 440 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 7: 2: 440 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 7: 2: 610 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 7: 2: 660 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 7: 2: 660 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 7: 3:  50 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 7: 3: 100 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 7: 3: 100 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 7: 3: 210 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 7: 3: 210 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 7: 3: 210 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 7: 3: 380 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 7: 3: 430 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 7: 3: 430 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 7: 3: 430 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 7: 3: 490 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 7: 3: 490 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 7: 3: 650 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 7: 3: 650 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 7: 3: 650 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 7: 3: 820 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 7: 3: 820 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 7: 3: 820 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 7: 4:  90 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 7: 4: 200 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 7: 4: 200 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 7: 4: 310 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 7: 4: 370 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 7: 4: 370 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 7: 4: 530 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 7: 4: 530 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 7: 4: 530 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 7: 4: 750 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 7: 4: 810 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 7: 4: 810 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 7: 4: 920 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 7: 5:  20 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 7: 5:  20 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 7: 5: 130 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 7: 5: 130 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 7: 5: 130 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 7: 5: 410 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 7: 5: 410 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 7: 5: 410 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 7: 5: 570 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 7: 5: 570 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 7: 5: 570 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 7: 6: 230 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 7: 6: 340 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 7: 6: 340 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 7: 6: 340 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 7: 6: 340 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 7: 6: 340 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 7: 6: 560 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 7: 6: 560 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 7: 6: 560 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 7: 6: 780 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 7: 6: 840 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 7: 6: 840 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 7: 6: 950 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 7: 6: 950 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 7: 6: 950 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 7: 7: 170 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 7: 7: 170 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 7: 7: 170 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 7: 7: 390 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 7: 7: 390 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 7: 7: 390 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 7: 7: 660 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 7: 7: 660 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 7: 7: 660 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 7: 7: 830 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 7: 7: 830 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 7: 7: 830 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 7: 8: 100 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 7: 8: 100 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 7: 8: 100 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 7: 8: 210 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 7: 8: 210 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 7: 8: 210 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 7: 8: 320 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 7: 8: 380 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 7: 8: 380 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 7: 8: 490 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 7: 8: 490 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 7: 8: 490 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 7: 8: 700 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 7: 8: 700 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 7: 8: 700 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 7: 8: 920 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 7: 8: 920 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 7: 8: 920 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 7: 9: 200 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 7: 9: 360 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 7: 9: 360 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 7: 9: 420 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 7: 9: 420 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 7: 9: 420 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 7: 9: 580 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 7: 9: 580 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 7: 9: 580 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 7: 9: 800 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 7: 9: 800 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 7: 9: 800 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 7: 9: 970 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 7: 9: 970 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 7: 9: 970 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 7:10: 190 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 7:10: 300 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 7:10: 300 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 7:10: 410 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 7:10: 460 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 7:10: 460 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 7:10: 570 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 7:10: 570 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 7:10: 570 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 7:10: 790 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 7:10: 790 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 7:10: 790 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 7:11:  70 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 7:11:  70 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 7:11:  70 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 7:11: 180 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 7:11: 180 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 7:11: 180 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 7:11: 340 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 7:11: 340 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 7:11: 340 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 7:11: 620 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 7:11: 620 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 7:11: 620 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 7:11: 780 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 7:11: 780 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 7:11: 780 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 7:11: 890 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 7:11: 890 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 7:11: 890 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 7:12:  60 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 7:12:  60 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 7:12:  60 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 7:12: 330 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 7:12: 330 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 7:12: 330 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 7:12: 440 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 7:12: 440 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 7:12: 440 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 7:12: 600 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 7:12: 600 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 7:12: 600 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 7:12: 820 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 7:12: 880 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 7:12: 880 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 7:12: 990 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 7:12: 990 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 7:12: 990 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 7:13: 260 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 7:13: 260 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 7:13: 260 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 7:13: 430 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 7:13: 430 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 7:13: 430 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 7:13: 650 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 7:13: 650 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 7:13: 650 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 7:13: 920 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 7:13: 980 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 7:13: 980 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 7:14: 140 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 7:14: 140 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 7:14: 140 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 7:14: 310 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 7:14: 310 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 7:14: 310 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 7:14: 580 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 7:14: 690 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 7:14: 690 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 7:14: 800 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 7:14: 800 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 7:14: 800 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 7:14: 970 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 7:14: 970 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 7:14: 970 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 7:15: 300 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 7:15: 350 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 7:15: 350 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 7:15: 460 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 7:15: 570 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 7:15: 570 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 7:15: 630 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 7:15: 630 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 7:15: 630 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 7:15: 850 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 7:15: 850 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 7:15: 850 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 7:16:  70 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 7:16:  70 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 7:16:  70 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 7:16: 280 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 7:16: 280 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 7:16: 280 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 7:16: 500 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 7:16: 500 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 7:16: 500 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 7:16: 780 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 7:16: 780 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 7:16: 780 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 7:17:   0 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 7:17:   0 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 7:17:   0 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 7:17: 160 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 7:17: 160 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 7:17: 160 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 7:17: 380 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 7:17: 380 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 7:17: 380 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 7:17: 600 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 7:17: 600 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 7:17: 600 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 7:17: 880 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 7:17: 880 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 7:17: 880 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 7:18: 100 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 7:18: 210 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 7:18: 210 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 7:18: 320 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 7:18: 370 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 7:18: 370 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 7:18: 540 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 7:18: 540 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 7:18: 540 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 7:18: 700 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 7:18: 700 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 7:18: 700 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 7:18: 980 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 7:19:  30 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 7:19:  30 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 7:19: 140 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 7:19: 140 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 7:19: 140 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 7:19: 360 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 7:19: 360 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 7:19: 360 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 7:19: 580 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 7:19: 580 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 7:19: 580 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 7:19: 850 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 7:19: 850 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 7:19: 850 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 7:20:  70 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 7:20: 180 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 7:20: 180 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 7:20: 290 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 7:20: 290 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 7:20: 290 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 7:20: 460 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 7:20: 460 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 7:20: 460 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 7:20: 460 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 7:20: 510 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 7:20: 510 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 7:20: 620 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 7:20: 620 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 7:20: 620 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 7:20: 790 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 7:20: 790 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 7:20: 790 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 7:21:  60 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 7:21: 120 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 7:21: 120 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 7:21: 280 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 7:21: 280 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 7:21: 280 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 7:21: 500 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 7:21: 560 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 7:21: 560 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 7:21: 780 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 7:21: 780 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 7:21: 780 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 7:21: 890 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 7:21: 890 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 7:21: 890 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 7:22: 160 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 7:22: 160 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 7:22: 160 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 7:22: 330 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 7:22: 330 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 7:22: 330 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 7:22: 600 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 7:22: 600 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 7:22: 600 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 7:22: 820 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 7:22: 880 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 7:22: 880 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 7:22: 990 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 7:22: 990 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 7:22: 990 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 7:23: 260 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 7:23: 260 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 7:23: 260 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 7:23: 480 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 7:23: 530 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 7:23: 530 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 7:23: 750 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 7:23: 750 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 7:23: 750 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 7:23: 920 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 7:23: 920 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 7:23: 920 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 7:24: 140 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 7:24: 140 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 7:24: 140 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 7:24: 360 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 7:24: 360 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 7:24: 360 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 7:24: 520 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 7:24: 520 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 7:24: 520 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 7:24: 740 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 7:24: 850 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 7:24: 850 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 7:25:  20 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 7:25:  20 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 7:25:  20 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 7:25: 240 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 7:25: 290 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 7:25: 290 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 7:25: 460 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 7:25: 510 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 7:25: 510 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 7:25: 680 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 7:25: 730 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 7:25: 730 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 7:25: 900 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 7:25: 900 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 7:25: 900 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 7:26: 120 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 7:26: 120 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 7:26: 120 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 7:26: 340 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 7:26: 390 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 7:26: 390 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 7:26: 500 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 7:26: 500 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 7:26: 500 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 7:26: 720 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 7:26: 720 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 7:26: 720 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 7:26: 940 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 7:26: 940 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 7:26: 940 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 7:27: 160 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 7:27: 160 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 7:27: 160 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 7:27: 380 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 7:27: 380 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 7:27: 380 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 7:27: 600 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 7:27: 710 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 7:27: 710 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 7:27: 870 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 7:27: 930 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 7:27: 930 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 7:28:  40 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 7:28:  40 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 7:28:  40 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 7:28: 310 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 7:28: 310 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 7:28: 310 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 7:28: 310 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 7:28: 310 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 7:28: 310 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 7:28: 640 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 7:28: 640 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 7:28: 640 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 7:28: 860 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 7:28: 860 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 7:28: 860 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 7:29:  30 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 7:29:  30 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 7:29:  30 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 7:29: 300 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 7:29: 470 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 7:29: 470 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 7:29: 580 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 7:29: 580 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 7:29: 580 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 7:29: 850 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 7:29: 910 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 7:29: 910 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 7:29: 960 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 7:29: 960 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 7:29: 960 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 7:30: 130 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 7:30: 130 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 7:30: 130 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 7:30: 400 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 7:30: 400 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 7:30: 400 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 7:30: 620 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 7:30: 620 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 7:30: 620 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 7:30: 730 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 7:30: 730 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 7:30: 730 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 7:31:  60 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 7:31:  60 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 7:31:  60 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 7:31: 280 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 7:31: 280 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 7:31: 280 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 7:31: 390 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 7:31: 390 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 7:31: 390 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 7:31: 610 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 7:31: 610 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 7:31: 610 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 7:31: 830 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 7:31: 830 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 7:31: 830 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 7:32: 100 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 7:32: 100 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 7:32: 100 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 7:32: 320 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 7:32: 380 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 7:32: 380 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 7:32: 490 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 7:32: 540 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 7:32: 540 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 7:32: 710 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 7:32: 710 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 7:32: 710 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 7:32: 930 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 7:32: 930 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 7:32: 930 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 7:33: 200 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 7:33: 200 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 7:33: 200 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 7:33: 420 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 7:33: 420 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 7:33: 420 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 7:33: 700 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 7:33: 700 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 7:33: 700 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 7:33: 810 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 7:33: 810 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 7:33: 810 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 7:34:  30 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 7:34:  30 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 7:34:  30 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 7:34: 360 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 7:34: 360 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 7:34: 360 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 7:34: 470 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 7:34: 470 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 7:34: 470 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 7:34: 680 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 7:34: 680 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 7:34: 680 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 7:35:  10 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 7:35:  70 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 7:35:  70 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 7:35: 120 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 7:35: 120 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 7:35: 120 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 7:35: 340 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 7:35: 340 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 7:35: 340 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 7:35: 560 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 7:35: 560 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 7:35: 560 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 7:35: 840 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 7:35: 950 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 7:35: 950 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 7:36:  60 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 7:36: 170 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 7:36: 170 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 7:36: 330 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 7:36: 330 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 7:36: 330 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 7:36: 550 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 7:36: 550 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 7:36: 550 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 7:36: 720 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 7:36: 720 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 7:36: 720 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 7:36: 990 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 7:36: 990 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 7:36: 990 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 7:37: 160 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 7:37: 160 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 7:37: 160 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 7:37: 380 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 7:37: 380 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 7:37: 380 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 7:37: 600 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 7:37: 600 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 7:37: 600 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 7:37: 760 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 7:37: 760 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 7:37: 760 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 7:37: 980 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 7:37: 980 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 7:37: 980 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 7:38: 200 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 7:38: 250 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 7:38: 250 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 7:38: 310 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 7:38: 420 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 7:38: 420 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 7:38: 580 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 7:38: 580 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 7:38: 580 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 7:38: 800 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 7:38: 800 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 7:38: 800 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 7:39:  20 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 7:39:  80 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 7:39:  80 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 7:39: 190 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 7:39: 240 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 7:39: 240 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 7:39: 410 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 7:39: 410 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 7:39: 410 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 7:39: 680 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 7:39: 680 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 7:39: 680 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 7:39: 960 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 7:40: 180 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 7:40: 180 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 7:40: 230 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 7:40: 290 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 7:40: 290 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 7:40: 400 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 7:40: 450 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 7:40: 450 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 7:40: 620 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 7:40: 670 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 7:40: 670 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 7:40: 840 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 7:40: 890 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 7:40: 890 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 7:41:  60 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 7:41:  60 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 7:41:  60 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 7:41: 280 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 7:41: 280 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 7:41: 280 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 7:41: 500 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 7:41: 500 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 7:41: 500 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 7:41: 770 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 7:41: 830 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 7:41: 830 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 7:41: 930 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 7:41: 930 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 7:41: 930 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 7:42: 150 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 7:42: 210 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 7:42: 210 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 7:42: 370 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 7:42: 430 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 7:42: 430 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 7:42: 650 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 7:42: 650 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 7:42: 650 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 7:42: 810 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 7:42: 810 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 7:42: 810 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 7:43:  90 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 7:43: 140 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 7:43: 140 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 7:43: 200 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 7:43: 200 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 7:43: 200 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 7:43: 470 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 7:43: 530 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 7:43: 530 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 7:43: 530 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 7:43: 530 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 7:43: 530 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 7:43: 800 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 7:43: 800 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 7:43: 800 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 7:44:  20 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 7:44:  80 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 7:44:  80 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 7:44: 190 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 7:44: 190 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 7:44: 190 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 7:44: 410 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 7:44: 410 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 7:44: 410 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 7:44: 740 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 7:44: 740 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 7:44: 740 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 7:44: 900 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 7:44: 900 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 7:44: 900 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 7:45: 120 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 7:45: 180 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 7:45: 180 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 7:45: 290 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 7:45: 290 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 7:45: 290 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 7:45: 610 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 7:45: 720 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 7:45: 720 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 7:45: 780 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 7:45: 830 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 7:45: 830 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 7:46:   0 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 7:46:  50 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 7:46:  50 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 7:46: 160 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 7:46: 160 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 7:46: 160 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 7:46: 490 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 7:46: 550 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 7:46: 550 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 7:46: 660 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 7:46: 660 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 7:46: 660 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 7:46: 880 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 7:46: 880 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 7:46: 880 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 7:47: 150 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 7:47: 150 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 7:47: 150 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 7:47: 370 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 7:47: 430 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 7:47: 430 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 7:47: 540 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 7:47: 540 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 7:47: 540 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 7:47: 810 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 7:47: 810 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 7:47: 810 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 7:47: 980 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 7:48:  30 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 7:48:  30 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 7:48: 200 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 7:48: 200 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 7:48: 200 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 7:48: 470 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 7:48: 470 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 7:48: 470 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 7:48: 690 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 7:48: 690 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 7:48: 690 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 7:48: 800 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 7:48: 800 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 7:48: 800 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 7:49:  20 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 7:49:  80 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 7:49:  80 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 7:49: 400 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 7:49: 460 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 7:49: 460 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 7:49: 460 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 7:49: 510 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 7:49: 510 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 7:49: 730 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 7:49: 790 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 7:49: 790 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 7:49: 950 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 7:49: 950 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 7:49: 950 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 7:50: 170 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 7:50: 170 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 7:50: 170 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 7:50: 280 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 7:50: 280 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 7:50: 280 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 7:50: 500 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 7:50: 560 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 7:50: 560 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 7:50: 560 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 7:50: 610 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 7:50: 610 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 7:50: 830 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 7:50: 830 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 7:50: 830 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 7:51:  50 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 7:51:  50 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 7:51:  50 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 7:51: 270 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 7:51: 270 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 7:51: 270 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 7:51: 380 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 7:51: 380 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 7:51: 380 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 7:51: 550 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 7:51: 550 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 7:51: 550 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 7:51: 820 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 7:51: 820 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 7:51: 820 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 7:51: 990 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 7:52:  40 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 7:52:  40 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 7:52: 210 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 7:52: 210 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 7:52: 210 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 7:52: 480 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 7:52: 540 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 7:52: 540 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 7:52: 700 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 7:52: 700 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 7:52: 700 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 7:52: 810 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 7:52: 810 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 7:52: 810 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 7:52: 970 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 7:52: 970 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 7:52: 970 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 7:53: 250 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 7:53: 250 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 7:53: 250 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 7:53: 470 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 7:53: 470 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 7:53: 470 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 7:53: 580 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 7:53: 580 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 7:53: 580 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 7:53: 800 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 7:53: 850 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 7:53: 850 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 7:53: 850 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 7:53: 850 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 7:53: 850 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 7:54:  70 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 7:54: 130 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 7:54: 130 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 7:54: 350 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 7:54: 350 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 7:54: 350 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 7:54: 460 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 7:54: 510 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 7:54: 510 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 7:54: 620 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 7:54: 620 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 7:54: 620 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 7:55:  10 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 7:55:  10 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 7:55:  10 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 7:55: 170 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 7:55: 170 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 7:55: 170 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 7:55: 390 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 7:55: 390 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 7:55: 390 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 7:55: 610 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 7:55: 610 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 7:55: 610 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 7:55: 830 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 7:55: 830 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 7:55: 830 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 7:56: 110 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 7:56: 110 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 7:56: 110 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 7:56: 270 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 7:56: 330 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 7:56: 330 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 7:56: 490 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 7:56: 490 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 7:56: 490 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 7:56: 760 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 7:56: 760 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 7:56: 760 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 7:56: 870 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 7:56: 930 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 7:56: 930 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 7:57: 150 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 7:57: 150 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 7:57: 150 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 7:57: 260 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 7:57: 260 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 7:57: 260 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 7:57: 480 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 7:57: 480 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 7:57: 480 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 7:57: 700 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 7:57: 750 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 7:57: 750 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 7:57: 920 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 7:57: 970 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 7:57: 970 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 7:58: 140 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 7:58: 190 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 7:58: 190 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 7:58: 190 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 7:58: 190 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 7:58: 190 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 7:58: 410 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 7:58: 410 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 7:58: 410 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 7:58: 630 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 7:58: 630 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 7:58: 630 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 7:58: 910 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 7:58: 910 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 7:58: 910 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 7:59:  70 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 7:59: 130 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 7:59: 130 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 7:59: 350 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 7:59: 400 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 7:59: 400 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 7:59: 510 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 7:59: 510 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 7:59: 510 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 7:59: 790 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 7:59: 790 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 7:59: 790 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 8: 0:  10 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 8: 0:  10 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 8: 0:  10 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 8: 0: 230 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 8: 0: 230 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 8: 0: 230 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 8: 0: 390 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 8: 0: 390 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 8: 0: 390 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 8: 0: 610 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 8: 0: 660 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 8: 0: 660 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 8: 0: 880 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 8: 0: 880 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 8: 0: 880 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 8: 1:  50 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 8: 1:  50 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 8: 1:  50 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 8: 1: 270 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 8: 1: 270 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 8: 1: 270 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 8: 1: 490 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 8: 1: 490 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 8: 1: 490 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 8: 1: 760 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 8: 1: 820 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 8: 1: 820 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 8: 1: 930 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 8: 1: 930 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 8: 1: 930 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 8: 2: 150 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 8: 2: 150 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 8: 2: 150 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 8: 2: 420 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 8: 2: 420 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 8: 2: 420 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 8: 2: 590 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 8: 2: 640 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 8: 2: 640 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 8: 2: 810 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 8: 2: 810 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 8: 2: 810 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 8: 3:  30 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 8: 3: 140 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 8: 3: 140 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 8: 3: 250 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 8: 3: 250 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 8: 3: 250 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 8: 3: 470 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 8: 3: 470 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 8: 3: 470 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 8: 3: 690 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 8: 3: 690 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 8: 3: 690 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 8: 3: 850 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 8: 3: 850 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 8: 3: 850 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 8: 4:  70 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 8: 4:  70 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 8: 4:  70 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 8: 4: 230 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 8: 4: 290 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 8: 4: 290 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 8: 4: 450 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 8: 4: 450 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 8: 4: 450 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 8: 4: 670 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 8: 4: 730 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 8: 4: 730 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 8: 4: 890 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 8: 4: 950 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 8: 4: 950 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 8: 5: 110 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 8: 5: 220 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 8: 5: 220 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 8: 5: 280 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 8: 5: 280 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 8: 5: 280 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 8: 5: 500 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 8: 5: 500 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 8: 5: 500 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 8: 5: 660 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 8: 5: 660 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 8: 5: 660 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 8: 5: 880 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 8: 5: 880 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 8: 5: 880 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 8: 6:  50 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 8: 6:  50 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 8: 6:  50 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 8: 6: 160 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 8: 6: 160 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 8: 6: 160 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 8: 6: 320 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 8: 6: 380 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 8: 6: 380 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 8: 6: 540 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 8: 6: 600 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 8: 6: 600 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 8: 6: 710 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 8: 6: 710 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 8: 6: 710 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 8: 6: 930 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 8: 6: 930 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 8: 6: 930 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 8: 7: 200 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 8: 7: 200 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 8: 7: 200 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 8: 7: 370 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 8: 7: 370 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 8: 7: 370 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 8: 7: 640 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 8: 7: 640 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 8: 7: 640 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 8: 7: 800 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 8: 7: 800 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 8: 7: 800 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 8: 8:  20 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 8: 8:  20 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 8: 8:  20 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 8: 8: 300 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 8: 8: 300 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 8: 8: 300 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 8: 8: 520 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 8: 8: 570 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 8: 8: 570 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 8: 8: 740 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 8: 8: 740 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 8: 8: 740 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 8: 8: 900 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 8: 8: 900 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 8: 8: 900 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 8: 9: 120 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 8: 9: 230 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 8: 9: 230 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 8: 9: 400 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 8: 9: 510 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 8: 9: 510 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 8: 9: 560 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 8: 9: 560 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 8: 9: 560 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 8: 9: 840 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 8: 9: 840 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 8: 9: 840 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 8:10:   0 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 8:10:   0 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 8:10:   0 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 8:10: 280 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 8:10: 330 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 8:10: 330 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 8:10: 500 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 8:10: 500 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 8:10: 500 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 8:10: 720 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 8:10: 720 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 8:10: 720 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 8:10: 830 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 8:10: 830 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 8:10: 830 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 8:11:  50 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 8:11: 100 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 8:11: 100 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 8:11: 100 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 8:11: 160 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 8:11: 160 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 8:11: 320 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 8:11: 480 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 8:11: 480 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 8:11: 590 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 8:11: 590 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 8:11: 590 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 8:11: 760 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 8:11: 760 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 8:11: 760 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 8:12:  30 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 8:12:  30 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 8:12:  30 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 8:12: 200 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 8:12: 200 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 8:12: 200 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 8:12: 420 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 8:12: 420 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 8:12: 420 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 8:12: 690 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 8:12: 800 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 8:12: 800 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 8:12: 860 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 8:12: 860 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 8:12: 860 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 8:13: 130 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 8:13: 190 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 8:13: 190 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 8:13: 300 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 8:13: 410 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 8:13: 410 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 8:13: 570 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 8:13: 630 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 8:13: 630 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 8:13: 790 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 8:13: 790 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 8:13: 790 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 8:13: 960 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 8:13: 960 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 8:13: 960 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 8:14: 180 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 8:14: 180 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 8:14: 180 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 8:14: 340 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 8:14: 340 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 8:14: 340 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 8:14: 560 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 8:14: 560 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 8:14: 560 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 8:14: 670 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 8:14: 670 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 8:14: 670 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 8:14: 950 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 8:14: 950 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 8:14: 950 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 8:15: 110 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 8:15: 110 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 8:15: 110 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 8:15: 270 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 8:15: 270 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 8:15: 270 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 8:15: 440 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 8:15: 490 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 8:15: 490 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 8:15: 600 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 8:15: 600 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 8:15: 600 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 8:15: 820 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 8:15: 930 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 8:15: 930 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 8:16: 100 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 8:16: 150 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 8:16: 150 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 8:16: 320 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 8:16: 370 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 8:16: 370 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 8:16: 540 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 8:16: 590 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 8:16: 590 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 8:16: 650 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 8:16: 650 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 8:16: 650 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 8:16: 810 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 8:16: 810 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 8:16: 810 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 8:17:  90 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 8:17: 140 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 8:17: 140 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 8:17: 310 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 8:17: 310 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 8:17: 310 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 8:17: 420 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 8:17: 420 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 8:17: 420 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 8:17: 580 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 8:17: 580 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 8:17: 580 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 8:17: 860 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 8:17: 860 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 8:17: 860 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 8:18:  20 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 8:18:  20 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 8:18:  20 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 8:18: 240 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 8:18: 240 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 8:18: 240 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 8:18: 520 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 8:18: 570 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 8:18: 570 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 8:18: 630 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 8:18: 630 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 8:18: 630 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 8:18: 790 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 8:18: 790 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 8:18: 790 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 8:19:  60 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 8:19: 120 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 8:19: 120 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 8:19: 280 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 8:19: 340 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 8:19: 340 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 8:19: 450 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 8:19: 500 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 8:19: 500 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 8:19: 670 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 8:19: 720 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 8:19: 720 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 8:19: 890 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 8:19: 940 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 8:19: 940 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 8:20: 110 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 8:20: 220 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 8:20: 220 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 8:20: 380 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 8:20: 380 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 8:20: 380 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 8:20: 550 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 8:20: 550 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 8:20: 550 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 8:20: 770 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 8:20: 770 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 8:20: 770 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 8:21:  40 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 8:21:  40 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 8:21:  40 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 8:21: 260 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 8:21: 260 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 8:21: 260 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 8:21: 430 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 8:21: 430 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 8:21: 430 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 8:21: 650 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 8:21: 650 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 8:21: 650 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 8:21: 870 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 8:21: 870 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 8:21: 870 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 8:21: 980 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 8:22:  30 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 8:22:  30 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 8:22:  90 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 8:22:  90 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 8:22:  90 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 8:22: 310 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 8:22: 360 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 8:22: 360 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 8:22: 580 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 8:22: 630 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 8:22: 630 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 8:22: 740 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 8:22: 740 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 8:22: 740 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 8:23:  20 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 8:23:  70 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 8:23:  70 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 8:23: 240 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 8:23: 240 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 8:23: 240 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 8:23: 460 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 8:23: 460 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 8:23: 460 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 8:23: 680 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 8:23: 680 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 8:23: 680 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 8:23: 790 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 8:23: 900 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 8:23: 900 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 8:24:  60 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 8:24: 170 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 8:24: 170 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 8:24: 280 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 8:24: 340 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 8:24: 340 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 8:24: 500 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 8:24: 500 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 8:24: 500 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 8:24: 670 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 8:24: 720 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 8:24: 720 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 8:24: 890 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 8:24: 890 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 8:24: 890 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 8:25: 160 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 8:25: 160 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 8:25: 160 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 8:25: 380 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 8:25: 380 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 8:25: 380 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 8:25: 600 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 8:25: 600 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 8:25: 600 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 8:25: 770 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 8:25: 770 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 8:25: 770 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 8:25: 770 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 8:25: 770 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 8:25: 770 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 8:25: 990 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 8:26:  40 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 8:26:  40 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 8:26: 150 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 8:26: 200 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 8:26: 200 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 8:26: 370 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 8:26: 370 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 8:26: 370 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 8:26: 530 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 8:26: 530 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 8:26: 530 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 8:26: 750 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 8:26: 750 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 8:26: 750 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 8:26: 970 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 8:27:  30 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 8:27:  30 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 8:27: 250 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 8:27: 250 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 8:27: 250 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 8:27: 410 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 8:27: 410 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 8:27: 410 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 8:27: 690 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 8:27: 690 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 8:27: 690 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 8:27: 960 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 8:27: 960 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 8:27: 960 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 8:28: 180 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 8:28: 240 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 8:28: 240 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 8:28: 290 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 8:28: 290 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 8:28: 290 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 8:28: 570 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 8:28: 570 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 8:28: 570 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 8:28: 790 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 8:28: 840 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 8:28: 840 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 8:29:  10 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 8:29:  60 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 8:29:  60 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 8:29: 170 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 8:29: 170 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 8:29: 170 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 8:29: 390 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 8:29: 390 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 8:29: 390 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 8:29: 670 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 8:29: 720 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 8:29: 720 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 8:29: 830 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 8:29: 830 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 8:29: 830 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 8:30: 100 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 8:30: 100 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 8:30: 100 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 8:30: 320 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 8:30: 320 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 8:30: 320 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 8:30: 540 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 8:30: 540 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 8:30: 540 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 8:30: 710 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 8:30: 710 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 8:30: 710 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 8:30: 930 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 8:30: 930 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 8:30: 930 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 8:31: 150 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 8:31: 150 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 8:31: 150 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 8:31: 480 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 8:31: 480 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 8:31: 480 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 8:31: 640 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 8:31: 700 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 8:31: 700 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 8:31: 860 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 8:31: 920 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 8:31: 920 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 8:32:  80 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 8:32: 190 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 8:32: 190 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 8:32: 250 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 8:32: 250 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 8:32: 250 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 8:32: 520 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 8:32: 580 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 8:32: 580 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 8:32: 740 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 8:32: 740 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 8:32: 740 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 8:32: 910 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 8:33:  20 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 8:33:  20 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 8:33: 130 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 8:33: 130 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 8:33: 130 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 8:33: 350 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 8:33: 350 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 8:33: 350 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 8:33: 560 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 8:33: 620 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 8:33: 620 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 8:33: 840 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 8:33: 890 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 8:33: 890 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 8:34:   0 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 8:34:   0 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 8:34:   0 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 8:34: 220 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 8:34: 220 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 8:34: 220 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 8:34: 500 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 8:34: 550 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 8:34: 550 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 8:34: 660 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 8:34: 770 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 8:34: 770 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 8:34: 940 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 8:34: 990 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 8:34: 990 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 8:35: 100 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 8:35: 100 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 8:35: 100 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 8:35: 380 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 8:35: 490 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 8:35: 490 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 8:35: 600 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 8:35: 710 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 8:35: 710 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 8:35: 820 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 8:35: 870 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 8:35: 870 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 8:36:  40 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 8:36:  40 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 8:36:  40 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 8:36: 200 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 8:36: 200 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 8:36: 200 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 8:36: 370 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 8:36: 370 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 8:36: 370 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 8:36: 480 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 8:36: 480 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 8:36: 480 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 8:36: 640 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 8:36: 750 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 8:36: 750 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 8:36: 860 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 8:36: 920 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 8:36: 920 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 8:36: 970 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 8:36: 970 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 8:36: 970 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 8:37:  80 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 8:37:  80 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 8:37:  80 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 8:37: 350 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 8:37: 460 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 8:37: 460 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 8:37: 630 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 8:37: 630 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 8:37: 630 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 8:37: 740 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 8:37: 900 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 8:37: 900 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 8:37: 960 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 8:37: 960 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 8:37: 960 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 8:38: 180 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 8:38: 180 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 8:38: 180 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 8:38: 510 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 8:38: 620 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 8:38: 620 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 8:38: 620 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 8:38: 620 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 8:38: 620 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 8:38: 840 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 8:38: 840 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 8:38: 840 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 8:39:   0 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 8:39:   0 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 8:39:   0 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 8:39: 280 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 8:39: 280 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 8:39: 280 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 8:39: 440 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 8:39: 500 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 8:39: 500 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 8:39: 720 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 8:39: 720 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 8:39: 720 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 8:39: 940 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 8:39: 940 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 8:39: 940 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 8:40:  50 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 8:40:  50 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 8:40:  50 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 8:40: 270 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 8:40: 270 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 8:40: 270 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 8:40: 490 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 8:40: 600 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 8:40: 600 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 8:40: 710 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 8:40: 760 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 8:40: 760 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 8:40: 920 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 8:40: 920 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 8:40: 920 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 8:41:  30 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 8:41:  30 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 8:41:  30 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 8:41: 200 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 8:41: 200 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 8:41: 200 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 8:41: 360 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 8:41: 420 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 8:41: 420 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 8:41: 640 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 8:41: 690 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 8:41: 690 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 8:41: 860 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 8:41: 860 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 8:41: 860 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 8:42:  20 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 8:42:  80 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 8:42:  80 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 8:42: 240 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 8:42: 300 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 8:42: 300 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 8:42: 460 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 8:42: 460 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 8:42: 460 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 8:42: 740 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 8:42: 740 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 8:42: 740 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 8:42: 900 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 8:42: 960 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 8:42: 960 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 8:43: 180 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 8:43: 180 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 8:43: 180 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 8:43: 340 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 8:43: 340 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 8:43: 340 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 8:43: 560 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 8:43: 560 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 8:43: 560 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 8:43: 780 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 8:43: 890 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 8:43: 890 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 8:44:   0 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 8:44:   0 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 8:44:   0 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 8:44: 220 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 8:44: 220 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 8:44: 220 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 8:44: 440 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 8:44: 440 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 8:44: 440 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 8:44: 660 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 8:44: 770 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 8:44: 770 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 8:44: 880 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 8:44: 930 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 8:44: 930 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 8:45: 100 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 8:45: 100 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 8:45: 100 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 8:45: 320 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 8:45: 430 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 8:45: 430 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 8:45: 480 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 8:45: 480 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 8:45: 480 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 8:45: 810 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 8:45: 870 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 8:45: 870 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 8:45: 980 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 8:46:  30 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 8:46:  30 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 8:46:  30 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 8:46:  30 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 8:46:  30 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 8:46: 200 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 8:46: 200 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 8:46: 200 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 8:46: 360 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 8:46: 360 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 8:46: 360 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 8:46: 580 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 8:46: 580 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 8:46: 580 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 8:46: 800 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 8:46: 800 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 8:46: 800 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 8:47:  20 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 8:47:  80 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 8:47:  80 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 8:47: 300 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 8:47: 300 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 8:47: 300 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 8:47: 460 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 8:47: 460 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 8:47: 460 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 8:47: 680 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 8:47: 790 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 8:47: 790 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 8:47: 850 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 8:47: 900 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 8:47: 900 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 8:48: 120 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 8:48: 120 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 8:48: 120 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 8:48: 280 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 8:48: 280 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 8:48: 280 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 8:48: 500 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 8:48: 500 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 8:48: 500 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 8:48: 610 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 8:48: 830 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 8:48: 830 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 8:48: 940 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 8:49:   0 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 8:49:   0 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 8:49: 220 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 8:49: 220 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 8:49: 220 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 8:49: 380 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 8:49: 380 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 8:49: 380 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 8:49: 600 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 8:49: 600 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 8:49: 600 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 8:49: 770 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 8:49: 880 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 8:49: 880 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 8:49: 990 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 8:50:  40 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 8:50:  40 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 8:50: 260 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 8:50: 260 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 8:50: 260 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 8:50: 370 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 8:50: 430 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 8:50: 430 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 8:50: 540 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 8:50: 540 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 8:50: 540 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 8:50: 810 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 8:50: 810 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 8:50: 810 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 8:51:  30 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 8:51:  30 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 8:51:  30 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 8:51: 250 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 8:51: 310 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 8:51: 310 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 8:51: 310 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 8:51: 310 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 8:51: 310 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 8:51: 530 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 8:51: 530 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 8:51: 530 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 8:51: 800 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 8:51: 860 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 8:51: 860 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 8:51: 960 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 8:51: 960 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 8:51: 960 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 8:52: 240 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 8:52: 240 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 8:52: 240 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 8:52: 400 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 8:52: 400 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 8:52: 400 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 8:52: 620 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 8:52: 620 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 8:52: 620 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 8:52: 900 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 8:53:  60 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 8:53:  60 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 8:53:  60 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 8:53: 120 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 8:53: 120 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 8:53: 280 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 8:53: 280 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 8:53: 280 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 8:53: 500 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 8:53: 500 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 8:53: 500 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 8:53: 720 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 8:53: 720 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 8:53: 720 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 8:53: 940 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 8:54:  50 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 8:54:  50 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 8:54: 160 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 8:54: 160 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 8:54: 160 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 8:54: 330 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 8:54: 440 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 8:54: 440 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 8:54: 550 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 8:54: 600 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 8:54: 600 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 8:54: 770 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 8:54: 820 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 8:54: 820 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 8:55:  40 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 8:55: 150 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 8:55: 150 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 8:55: 210 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 8:55: 210 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 8:55: 210 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 8:55: 370 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 8:55: 370 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 8:55: 370 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 8:55: 640 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 8:55: 810 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 8:55: 810 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 8:55: 810 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 8:55: 810 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 8:55: 810 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 8:55: 970 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 8:55: 970 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 8:55: 970 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 8:56: 250 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 8:56: 300 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 8:56: 300 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 8:56: 470 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 8:56: 470 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 8:56: 470 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 8:56: 630 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 8:56: 630 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 8:56: 630 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 8:56: 910 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 8:57:  70 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 8:57:  70 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 8:57:  70 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 8:57:  70 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 8:57:  70 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 8:57: 290 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 8:57: 290 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 8:57: 290 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 8:57: 510 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 8:57: 510 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 8:57: 510 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 8:57: 790 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 8:57: 790 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 8:57: 790 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 8:58:  10 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 8:58:  10 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 8:58:  10 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 8:58: 230 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 8:58: 230 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 8:58: 230 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 8:58: 450 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 8:58: 450 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 8:58: 450 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 8:58: 610 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 8:58: 610 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 8:58: 610 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 8:58: 830 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 8:58: 830 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 8:58: 830 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 8:59:  50 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 8:59:  50 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 8:59:  50 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 8:59: 220 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 8:59: 220 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 8:59: 220 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 8:59: 380 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 8:59: 380 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 8:59: 380 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 8:59: 600 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 8:59: 600 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 8:59: 600 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 8:59: 760 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 8:59: 760 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 8:59: 760 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 8:59: 980 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 9: 0:  90 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 9: 0:  90 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 9: 0:  90 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 9: 0:  90 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 9: 0:  90 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 9: 0: 310 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 9: 0: 310 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 9: 0: 310 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 9: 0: 530 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 9: 0: 590 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 9: 0: 590 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 9: 0: 700 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 9: 0: 810 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 9: 0: 810 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 9: 0: 920 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 9: 0: 920 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 9: 0: 920 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 9: 1: 140 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 9: 1: 140 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 9: 1: 140 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 9: 1: 360 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 9: 1: 360 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 9: 1: 360 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 9: 1: 630 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 9: 1: 630 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 9: 1: 630 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 9: 1: 800 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 9: 1: 910 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 9: 1: 910 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 9: 2:  20 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 9: 2:  20 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 9: 2:  20 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 9: 2: 240 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 9: 2: 240 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 9: 2: 240 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 9: 2: 460 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 9: 2: 510 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 9: 2: 510 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 9: 2: 680 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 9: 2: 790 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 9: 2: 790 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 9: 2: 900 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 9: 3:   0 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 9: 3:   0 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 9: 3: 170 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 9: 3: 170 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 9: 3: 170 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 9: 3: 330 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 9: 3: 390 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 9: 3: 390 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 9: 3: 550 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 9: 3: 610 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 9: 3: 610 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 9: 3: 770 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 9: 3: 830 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 9: 3: 830 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 9: 3: 990 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 9: 4:  50 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 9: 4:  50 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 9: 4: 160 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 9: 4: 160 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 9: 4: 160 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 9: 4: 320 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 9: 4: 380 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 9: 4: 380 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 9: 4: 380 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 9: 4: 490 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 9: 4: 490 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 9: 4: 650 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 9: 4: 650 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 9: 4: 650 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 9: 4: 820 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 9: 4: 870 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 9: 4: 870 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 9: 4: 870 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 9: 4: 870 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 9: 4: 870 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 9: 5:  90 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 9: 5:  90 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 9: 5:  90 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 9: 5: 260 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 9: 5: 260 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 9: 5: 260 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 9: 5: 530 - WM_WINSOCK FD_READ on socket 16 link=00742d18
+20: 9: 5: 590 - WM_WINSOCK FD_WRITE on socket 16 link=00742d18
+20: 9: 5: 590 - CTcpLink::SendWaitingData(16) 0 packets pending
+20: 9: 5: 700 - WM_WINSOCK FD_CLOSE on socket 16 link=00742d18
+20: 9: 5: 700 - ClocalSession::OnDisconnect for link 00742d18
+
+20: 9: 5: 700 - CTcpLink::Closing link 00742d18 socket 16
+20: 9: 5: 700 - CLocalSession:: OnLeaveREQ Player 3
+20: 9: 8: 220 - CTcpLink::Closing link 0074237c socket 15
+20: 9: 8: 220 - CTcpLink::Closing link 00742300 socket 14

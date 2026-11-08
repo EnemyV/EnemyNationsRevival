@@ -1,42 +1,99 @@
+// Microsoft Visual C++ generated resource script.
+//
+#include "resource.h"
 /////////////////////////////////////////////////////////////////////////////
-// Version stamp for this .EXE
+// English (United States) resources
 
-#include "version.h"
-#include <ver.h>
+#if !defined(AFX_RESOURCE_DLL) || defined(AFX_TARG_ENU)
+LANGUAGE LANG_ENGLISH, SUBLANG_ENGLISH_US
+#pragma code_page(1252)
 
-VS_VERSION_INFO     VERSIONINFO
-  FILEVERSION       VER_MAJOR, VER_MINOR, VER_RELEASE, 0
-  PRODUCTVERSION    VER_MAJOR, VER_MINOR, VER_RELEASE, 0
-  FILEFLAGSMASK     VS_FFI_FILEFLAGSMASK
-  FILEFLAGS         VER_FLAGS
-  FILEOS            VOS_DOS_WINDOWS32
-  FILETYPE          VFT_APP
-  FILESUBTYPE       0   // not used
+#ifdef APSTUDIO_INVOKED
+/////////////////////////////////////////////////////////////////////////////
+//
+// TEXTINCLUDE
+//
+
+1 TEXTINCLUDE 
 BEGIN
-	BLOCK "StringFileInfo"
-	BEGIN
-		BLOCK "040904E4" // Lang=US English, CharSet=Windows Multilingual
-		BEGIN
-			VALUE "CompanyName",     "Windward Studios\0"
-			VALUE "FileDescription", "Second Chance Program\0"
-			VALUE "FileVersion",     RES_VER_STRING
-			VALUE "InternalName",    "SChance\0"
-			VALUE "LegalCopyright",  "Copyright \251 1995 - 1997 - by Windward Studios\0"
-			VALUE "LegalTrademarks", " \0"
-			VALUE "OriginalFilename","SChance.exe\0"
-			VALUE "ProductName",     "Second Chance\0"
-			VALUE "ProductVersion",  "3.1.0.0"
-		END
-	END
-	BLOCK "VarFileInfo"
-	BEGIN
-		VALUE "Translation", RES_LANG, RES_CODEPAGE
-//		VALUE "Translation", 0x409, 1252
-			// English language (0x409) and the Windows ANSI codepage (1252)
-	END
+    "resource.h\0"
 END
 
+2 TEXTINCLUDE 
+BEGIN
+    "\0"
+END
+
+3 TEXTINCLUDE 
+BEGIN
+    "\r\n"
+    "\0"
+END
+
+#endif    // APSTUDIO_INVOKED
+
+#endif    // English (United States) resources
 /////////////////////////////////////////////////////////////////////////////
-// Add additional manually edited resources here...
+
 
 /////////////////////////////////////////////////////////////////////////////
+// English (Canada) resources
+
+#if !defined(AFX_RESOURCE_DLL) || defined(AFX_TARG_ENC)
+LANGUAGE LANG_ENGLISH, SUBLANG_ENGLISH_CAN
+#pragma code_page(1252)
+
+/////////////////////////////////////////////////////////////////////////////
+//
+// Version
+//
+
+VS_VERSION_INFO VERSIONINFO
+ FILEVERSION 1,0,124,0
+ PRODUCTVERSION 1,0,124,0
+ FILEFLAGSMASK 0x3fL
+#ifdef _DEBUG
+ FILEFLAGS 0x1L
+#else
+ FILEFLAGS 0x0L
+#endif
+ FILEOS 0x10004L
+ FILETYPE 0x1L
+ FILESUBTYPE 0x0L
+BEGIN
+    BLOCK "StringFileInfo"
+    BEGIN
+        BLOCK "040904e4"
+        BEGIN
+            VALUE "CompanyName", "Windward Studios"
+            VALUE "FileDescription", "Second Chance Program"
+            VALUE "FileVersion", "1.0.124.0"
+            VALUE "InternalName", "SChance"
+            VALUE "LegalCopyright", "Copyright © 1995 - 1997 - by Windward Studios"
+            VALUE "LegalTrademarks", " "
+            VALUE "OriginalFilename", "SChance.exe"
+            VALUE "ProductName", "Second Chance"
+            VALUE "ProductVersion", "1.0.124.0"
+        END
+    END
+    BLOCK "VarFileInfo"
+    BEGIN
+        VALUE "Translation", 0x409, 1252
+    END
+END
+
+#endif    // English (Canada) resources
+/////////////////////////////////////////////////////////////////////////////
+
+
+
+#ifndef APSTUDIO_INVOKED
+/////////////////////////////////////////////////////////////////////////////
+//
+// Generated from the TEXTINCLUDE 3 resource.
+//
+
+
+/////////////////////////////////////////////////////////////////////////////
+#endif    // not APSTUDIO_INVOKED
+

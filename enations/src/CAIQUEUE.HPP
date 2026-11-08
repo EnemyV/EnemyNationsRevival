@@ -16,19 +16,19 @@
 
 class CAIQueue : public CObList
 {
-	DECLARE_SERIAL( CAIQueue );
+ DECLARE_SERIAL( CAIQueue );
 
-	int m_iPlayer;	// this player
-	POSITION m_Pos;
+ int m_iPlayer; // this player
+ POSITION m_Pos;
 
 public:
-	CAIQueue() {};
-	CAIQueue( int iPlayer );
-	~CAIQueue();
+ CAIQueue() {};
+ CAIQueue( int iPlayer );
+ ~CAIQueue();
 
-	void DeleteList( void );
+ void DeleteList( void );
 
-	virtual void Serialize( CArchive& archive );
+ virtual void Serialize( CArchive& archive );
 };
 
 #endif // __CAIQUEUE_HPP__

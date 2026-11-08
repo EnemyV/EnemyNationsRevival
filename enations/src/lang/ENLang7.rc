@@ -1384,7 +1384,7 @@ END
 //
 #include "..\res\version.rc"  // non-App Studio edited resources
 
-#include "afxres.rc"  	// Standard components
+#include "afxres.rc"   // Standard components
 #include "wind7.rc"
 /////////////////////////////////////////////////////////////////////////////
 #endif    // not APSTUDIO_INVOKED

@@ -5,89 +5,209 @@
 #include "player.h"
 
 // player.h
-inline void CGame::FreeQueueElem ( CNetCmd * pCmd )
-													{ if ( pCmd->m_bMemPool ) MemFreeFS ( pCmd );
-														  else MemFreeFS ( pCmd ); }
+inline void CGame::FreeQueueElement(CNetCmd *pCmd) {
+    if (pCmd->m_bMemPool) m_memPoolSmall.free(pCmd);
+    else m_memPoolLarge.free(pCmd);
+}
 
 // unit.h
 //   CUnitData
-inline int CUnitData::GetRsrchReq (int iInd) const { ASSERT ((0 <= iInd) && (iInd < 4)); return (m_iRsrchReq[iInd]); }
-inline int CUnitData::GetPeople () const { ASSERT_STRICT_VALID (this); return (m_iPeople); }
-inline int CUnitData::GetDamagePoints () const { ASSERT_STRICT_VALID (this); return (m_iDamagePoints); }
-inline int CUnitData::GetTargetType () const { ASSERT_STRICT_VALID (this); return (m_iTargetType); }
-inline int CUnitData::_GetFireRate () const { ASSERT_STRICT_VALID (this); return (m_iFireRate); }
-inline CString const & CUnitData::GetDesc () const { ASSERT_STRICT_VALID (this); return (m_sDesc); }
-inline CString const & CUnitData::GetText () const { ASSERT_STRICT_VALID (this); return (m_sText); }
-inline int CUnitData::GetCX () const { ASSERT_STRICT_VALID (this); return (m_cx); }
-inline int CUnitData::GetCY () const { ASSERT_STRICT_VALID (this); return (m_cy); }
+inline int CUnitData::GetRsrchReq(int iInd) const {
+    ASSERT ((0 <= iInd) && (iInd < 4));
+    return (m_iRsrchReq[iInd]);
+}
 
-inline int CUnitData::_GetSpottingRange () const { ASSERT_STRICT_VALID (this); return (m_iSpottingRange); }
-inline int CUnitData::_GetRange () const { ASSERT_STRICT_VALID (this); return (m_iRange); }
-inline int CUnitData::_GetAccuracy () const { ASSERT_STRICT_VALID (this); return (m_iAccuracy); }
+inline int CUnitData::GetPeople() const {
+    ASSERT_STRICT_VALID (this);
+    return (m_iPeople);
+}
+
+inline int CUnitData::GetDamagePoints() const {
+    ASSERT_STRICT_VALID (this);
+    return (m_iDamagePoints);
+}
+
+inline int CUnitData::GetTargetType() const {
+    ASSERT_STRICT_VALID (this);
+    return (m_iTargetType);
+}
+
+inline int CUnitData::_GetFireRate() const {
+    ASSERT_STRICT_VALID (this);
+    return (m_iFireRate);
+}
+
+inline std::string const &CUnitData::GetDesc() const {
+    ASSERT_STRICT_VALID (this);
+    return (m_sDesc);
+}
+
+inline std::string const &CUnitData::GetText() const {
+    ASSERT_STRICT_VALID (this);
+    return (m_sText);
+}
+
+inline int CUnitData::GetCX() const {
+    ASSERT_STRICT_VALID (this);
+    return (m_cx);
+}
+
+inline int CUnitData::GetCY() const {
+    ASSERT_STRICT_VALID (this);
+    return (m_cy);
+}
+
+inline int CUnitData::_GetSpottingRange() const {
+    ASSERT_STRICT_VALID (this);
+    return (m_iSpottingRange);
+}
+
+inline int CUnitData::_GetRange() const {
+    ASSERT_STRICT_VALID (this);
+    return (m_iRange);
+}
+
+inline int CUnitData::_GetAccuracy() const {
+    ASSERT_STRICT_VALID (this);
+    return (m_iAccuracy);
+}
 
 //   CUnit
-inline void CUnit::SetStore (int iInd, int iNum) 
-																{ m_iUpdateMat = 2;
-																	m_aiStore[iInd] = iNum; }
-inline void CUnit::AddToStore (int iInd, int iNum)
-																{ if (iNum < 0)
-																		m_iUpdateMat = 2;
-																	else
-																		if ( (iNum > 0) && (m_iUpdateMat < 1) )
-																			m_iUpdateMat = 1;
-																	m_aiStore[iInd] += iNum; }
-inline int CUnit::GetSpottingRange () const { ASSERT_STRICT_VALID (this); return (m_iSpottingRange); }
-inline int CUnit::GetRange () const { ASSERT_STRICT_VALID (this); return (m_iRange); }
-inline int CUnit::GetAccuracy () const { ASSERT_STRICT_VALID (this); return (m_iAccuracy); }
-inline int CUnit::GetFireRate () const { ASSERT_STRICT_VALID (this); return (m_iFireRate); }
+inline void CUnit::SetStore(int iInd, int iNum) {
+    m_iUpdateMat = 2;
+    m_aiStore[iInd] = iNum;
+}
 
-inline BOOL CUnit::IsPaused () const { ASSERT_STRICT_VALID (this); return ((BOOL) (m_unitFlags & stopped)); }
-inline BOOL CUnit::IsWaiting () const { ASSERT_STRICT_VALID (this); return ((BOOL) (m_unitFlags & event)); }
+inline void CUnit::AddToStore(int iInd, int iNum) {
+    if (iNum < 0)
+        m_iUpdateMat = 2;
+    else if ((iNum > 0) && (m_iUpdateMat < 1))
+        m_iUpdateMat = 1;
+    m_aiStore[iInd] += iNum;
+}
 
-inline int CUnit::GetDamagePoints () const { return (m_iDamagePoints); }
-inline int CUnit::GetDamagePer () const { return (m_iDamagePer); }
-inline int CUnit::GetLastShowDamagePer () const { return (m_iLastShowDamagePer); }
-inline float CUnit::GetDamageMult () const { return (m_fDamageMult); }
-inline float CUnit::GetDamPerfMult () const { return (m_fDamPerfMult); }
-inline CUnitData const * CUnit::GetData () const { ASSERT_STRICT_VALID (this); return (m_pUnitData); }
-inline DWORD CUnit::GetID () const { ASSERT_STRICT_VALID (this); return (m_dwID); }
-inline CPlayer * CUnit::GetOwner () const { ASSERT_STRICT_VALID (this); return (m_pOwner); }
-inline int CUnit::GetStore (int iInd) const { ASSERT_STRICT_VALID (this);
-															ASSERT_STRICT ((0 <= iInd) && (iInd < CMaterialTypes::GetNumTypes ()));
-															return ( m_aiStore[iInd]); }
-inline CUnit::UNIT_TYPE CUnit::GetUnitType () const { ASSERT_STRICT_VALID (this); return ( m_iUnitType); }
-inline void CUnit::DecSee (int iPlyrNum) { ASSERT (m_pdwPlyrsSee[iPlyrNum] > 0); m_pdwPlyrsSee[iPlyrNum]--; }
-inline BOOL CUnit::GetSee (CUnit * pSpotter) { return ( m_pdwPlyrsSee [pSpotter->GetOwner()->GetPlyrNum ()] != 0); }
+inline int CUnit::GetSpottingRange() const {
+    ASSERT_STRICT_VALID (this);
+    // Total Surveillance edict: live vision modifier applied on read (clamped — callers index
+    // arrays with the result). Edict-off (mult<=1) returns the raw value unchanged.
+    CPlayer* pOwner = GetOwner ();
+    if ( pOwner != NULL ) {
+        float fMult = pOwner->GetEdictVisionMult ();
+        if ( fMult > 1.0f )
+            return ( __min ( MAX_SPOTTING, (int)( m_iSpottingRange * fMult + 0.5f ) ) );
+    }
+    return (m_iSpottingRange);
+}
+
+inline int CUnit::GetRange() const {
+    ASSERT_STRICT_VALID (this);
+    return (m_iRange);
+}
+
+inline int CUnit::GetAccuracy() const {
+    ASSERT_STRICT_VALID (this);
+    return (m_iAccuracy);
+}
+
+inline int CUnit::GetFireRate() const {
+    ASSERT_STRICT_VALID (this);
+    return (m_iFireRate);
+}
+
+inline BOOL CUnit::IsPaused() const {
+    ASSERT_STRICT_VALID (this);
+    return ((BOOL) (m_unitFlags & stopped));
+}
+
+inline BOOL CUnit::IsWaiting() const {
+    ASSERT_STRICT_VALID (this);
+    return ((BOOL) (m_unitFlags & event));
+}
+
+inline int CUnit::GetDamagePoints() const { return (m_iDamagePoints); }
+
+inline int CUnit::GetDamagePer() const { return (m_iDamagePer); }
+
+inline int CUnit::GetLastShowDamagePer() const { return (m_iLastShowDamagePer); }
+
+inline float CUnit::GetDamageMult() const { return (m_fDamageMult); }
+
+inline float CUnit::GetDamPerfMult() const { return (m_fDamPerfMult); }
+
+inline CUnitData const *CUnit::GetData() const {
+    ASSERT_STRICT_VALID (this);
+    return (m_pUnitData);
+}
+
+inline DWORD CUnit::GetID() const {
+    ASSERT_STRICT_VALID (this);
+    return (m_dwID);
+}
+
+inline CPlayer *CUnit::GetOwner() const {
+    ASSERT_STRICT_VALID (this);
+    return (m_pOwner);
+}
+
+inline int CUnit::GetStore(int iInd) const {
+    ASSERT_STRICT_VALID (this);
+    ASSERT_STRICT ((0 <= iInd) && (iInd < CMaterialTypes::GetNumTypes()));
+    return (m_aiStore[iInd]);
+}
+
+inline CUnit::UNIT_TYPE CUnit::GetUnitType() const {
+    ASSERT_STRICT_VALID (this);
+    return (m_iUnitType);
+}
+
+inline void CUnit::DecSee(int iPlyrNum) {
+    ASSERT (m_pdwPlyrsSee[iPlyrNum] > 0);
+    m_pdwPlyrsSee[iPlyrNum]--;
+}
+
+inline BOOL CUnit::GetSee(CUnit *pSpotter) { return (m_pdwPlyrsSee[pSpotter->GetOwner()->GetPlyrNum()] != 0); }
 
 
-inline void * CProjBase::operator new ( size_t iSiz ) 
-											{ TRAP ( iSiz > PROJ_BASE_ALLOC_SIZE ); 
-												return MemAllocFS ( m_memPool ); }
-inline void *	CProjBase::operator new ( size_t iSiz, const char *, int ) 
-											{	return MemAllocFS ( m_memPool ); }
-inline void CProjBase::operator delete ( void * pBuf ) 
-											{ MemFreeFS ( pBuf ); }
-inline CInitProjMem::CInitProjMem () 
-											{ CProjBase::m_memPool = MemPoolInitFS ( PROJ_BASE_ALLOC_SIZE, 64, MEM_POOL_SERIALIZE ); }
+inline void *CProjBase::operator new(size_t iSiz) {
+    // Guard against the actual block size, not PROJ_BASE_ALLOC_SIZE: the pool
+    // hands out PROJ_POOL_BLOCK-byte blocks, so an object larger than that is
+    // the real overrun condition.
+    TRAP(iSiz > PROJ_POOL_BLOCK);
+    return m_memPool.alloc();
+}
 
-inline void CProjMap::Remove (CProjBase * pProj)
-											{	Remove (CHexCoord (pProj->GetMapLoc ()), pProj); }
-inline DWORD CProjMap::ToArg (CMapLoc const & _ml) const 
-											{ return (((DWORD) (_ml.x >> HEX_HT_PWR) << 16) | (DWORD) (_ml.y >> HEX_HT_PWR)); }
-inline DWORD CProjMap::ToArg (CHexCoord const & _hex) const 
-											{ return (((DWORD) _hex.X () << 16) | (DWORD) _hex.Y ()); }
-inline void CProjMap::Move (CHexCoord const & _hex, CProjBase * pProj)
-											{ if (_hex.SameHex (pProj->GetMapLoc ()))
-													return;
-												Remove (_hex, pProj);
-												Add (pProj); }
-inline CProjBase * CProjMap::GetFirst ( CHexCoord _hex ) const
-											{ CProjBase * pPb;
-												if (Lookup ( ToArg (_hex), pPb ) != NULL)
-													return (pPb);
-												return (NULL); }
-inline CProjBase * CProjMap::GetNext ( CProjBase * pOn )
-											{ return pOn->m_pNext; }
+inline void *CProjBase::operator new(size_t iSiz, const char *, int) { return m_memPool.alloc(); }
+
+inline void CProjBase::operator delete(void *pBuf) { m_memPool.free(pBuf); }
+
+inline CInitProjMem::CInitProjMem() {
+    // new memory pool inits itself
+//    CProjBase::m_memPool = MemPoolInitFS(PROJ_BASE_ALLOC_SIZE, 64, MEM_POOL_SERIALIZE);
+}
+
+inline void CProjMap::Remove(CProjBase *pProj) { Remove(CHexCoord(pProj->GetMapLoc()), pProj); }
+
+inline DWORD CProjMap::ToArg(CMapLoc const &_ml) const {
+    return (((DWORD) (_ml.x >> HEX_HT_PWR) << 16) | (DWORD) (_ml.y >> HEX_HT_PWR));
+}
+
+inline DWORD CProjMap::ToArg(CHexCoord const &_hex) const { return (((DWORD) _hex.X() << 16) | (DWORD) _hex.Y()); }
+
+inline void CProjMap::Move(CHexCoord const &_hex, CProjBase *pProj) {
+    if (_hex.SameHex(pProj->GetMapLoc()))
+        return;
+    Remove(_hex, pProj);
+    Add(pProj);
+}
+
+inline CProjBase *CProjMap::GetFirst(CHexCoord _hex) const {
+    CProjBase *pPb;
+    if (Lookup(ToArg(_hex), pPb) != NULL)
+        return (pPb);
+    return (NULL);
+}
+
+inline CProjBase *CProjMap::GetNext(CProjBase *pOn) { return pOn->m_pNext; }
 
 
 #endif

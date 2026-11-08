@@ -2,93 +2,110 @@
 //
 //  CAIUnit.cpp :  CAIUnit object implementation
 //                 Divide and Conquer AI
-//               
+//
 //  Last update:    09/19/96
 //
 //  Copyright (c) 1995, 1996. Windward Studios, Inc. - All Rights Reserved
 //
 ////////////////////////////////////////////////////////////////////////////
 
+#include "caiunit.hpp"
+
+#include "aisnap.h"  // Tier-B per-tick world snapshot (lock-free reads)
+#include "caidata.hpp"
+#include "logging.h"  // dave's logging system
 #include "stdafx.h"
-#include "CAIUnit.hpp"
-#include "CAIData.hpp"
-#include "logging.h"	// dave's logging system
+#include "enprobes.h"   // probe gates - was relying on a transitive include
+#if EN_AI_PROBES_ECON && defined(_WIN32)
+#include <intrin.h>  // _ReturnAddress for the [CRANEORD] caller tag
+#endif
+
+#include "Perf.h"  // ai.snap.hit/miss counters (gated by EN_PERF)
 
 
 #if THREADS_ENABLED
-extern CException *pException;		// standard exception for yielding
+extern CException* pException;  // standard exception for yielding
 #endif
 
-extern CAIData *pGameData;	// pointer to game data interface
-extern CRITICAL_SECTION cs;	// used by threads
+extern CAIData*         pGameData;  // pointer to game data interface
+extern CRITICAL_SECTION cs;         // used by threads
 
 #define new DEBUG_NEW
 
 CAIUnit::CAIUnit( DWORD dwID, int iOwner, int iType, int iTypeUnit )
 {
-	m_dwID = dwID;
-	m_iOwner = iOwner;
-	m_iType = iType;	// is either CUnit::vehicle or CUnit::building
-	m_iTypeUnit = iTypeUnit; // type of building or vehicle
+    m_dwID      = dwID;
+    m_iOwner    = iOwner;
+    m_iType     = iType;      // is either CUnit::vehicle or CUnit::building
+    m_iTypeUnit = iTypeUnit;  // type of building or vehicle
 
-	m_bControl = TRUE;
-	m_wGoal = FALSE;
-	m_wTask = FALSE;
-	m_dwData = 0;
-	m_wStatus = 0;
-	m_plCopyData = NULL;
-	m_pwaParams = NULL;
-	m_pdwaParams = NULL;
-	
-	ASSERT_VALID( this );
-	
-	try
-	{
-		m_pwaParams = new WORD[CAI_SIZE];
-		for( int i=0; i<CAI_SIZE; ++i )
-			m_pwaParams[i] = 0;
-	}
-	catch( CException e )
-	{
-		if( m_pwaParams != NULL )
-		{
-			delete [] m_pwaParams;
-			m_pwaParams = NULL;
-		}
-		throw(ERR_CAI_BAD_NEW);
-	}
+    m_bControl   = TRUE;
+    m_wGoal      = FALSE;
+    m_wTask      = FALSE;
+    m_dwData     = 0;
+    m_wStatus    = 0;
+    m_plCopyData = NULL;
+    m_pwaParams  = NULL;
+    m_pdwaParams = NULL;
 
-	try
-	{
-		m_pdwaParams = new DWORD[CAI_SIZE];
-		for( int i=0; i<CAI_SIZE; ++i )
-			m_pdwaParams[i] = 0;
-	}
-	catch( CException e )
-	{
-		if( m_pdwaParams != NULL )
-		{
-			delete [] m_pdwaParams;
-			m_pdwaParams = NULL;
-		}
-		throw(ERR_CAI_BAD_NEW);
-	}
+    m_dwTimeLastAtkCmd = 0;  // attack-alert cooldown stamp (transient, not saved)
+    m_dwStuckSince     = 0;  // stuck-watch (transient)
+    m_dwStuckHex       = 0;
+    m_dwResendDest     = 0;
+    m_wResendCnt       = 0;
+    m_dwInBldgSince    = 0;
+    m_dwErrHex         = 0;
+    m_wErrCnt          = 0;
+    m_dwRoadStopSeen   = 0;
+    m_dwClaimHex       = 0;  // #69 router claim liveness (transient)
+    m_dwClaimStill     = 0;
+
+    ASSERT_VALID( this );
+
+    try
+    {
+        m_pwaParams = new WORD[CAI_SIZE];
+        for ( int i = 0; i < CAI_SIZE; ++i ) m_pwaParams[i] = 0;
+    }
+    catch ( CException* e )
+    {
+        if ( m_pwaParams != NULL )
+        {
+            delete[] m_pwaParams;
+            m_pwaParams = NULL;
+        }
+        throw( ERR_CAI_BAD_NEW );
+    }
+
+    try
+    {
+        m_pdwaParams = new DWORD[CAI_SIZE];
+        for ( int i = 0; i < CAI_SIZE; ++i ) m_pdwaParams[i] = 0;
+    }
+    catch ( CException* e )
+    {
+        if ( m_pdwaParams != NULL )
+        {
+            delete[] m_pdwaParams;
+            m_pdwaParams = NULL;
+        }
+        throw( ERR_CAI_BAD_NEW );
+    }
 
 
-
-	try
-	{
-		m_plCopyData = new CAICopyList();
-	}
-	catch( CException e )
-	{
-		if( m_plCopyData != NULL )
-		{
-			delete m_plCopyData;
-			m_plCopyData = NULL;
-		}
-		throw(ERR_CAI_BAD_NEW);
-	}
+    try
+    {
+        m_plCopyData = new CAICopyList( );
+    }
+    catch ( CException* e )
+    {
+        if ( m_plCopyData != NULL )
+        {
+            delete m_plCopyData;
+            m_plCopyData = NULL;
+        }
+        throw( ERR_CAI_BAD_NEW );
+    }
 }
 
 //
@@ -96,517 +113,756 @@ CAIUnit::CAIUnit( DWORD dwID, int iOwner, int iType, int iTypeUnit )
 // from the various game data class objects into CAICopy
 // objects and store them in the CAICopyList of this unit
 //
-void CAIUnit::Update( CUnitData const *pData )
+void CAIUnit::Update( CUnitData const* pData )
 {
-	ASSERT_VALID( this );
-	ASSERT_VALID( m_plCopyData );
-	ASSERT_VALID( pData );
+    ASSERT_VALID( this );
+    ASSERT_VALID( m_plCopyData );
+    ASSERT_VALID( pData );
 
-	// get current pointer to data copy or create a new one
-	CAICopy *pCopy = m_plCopyData->GetCopy( CAICopy::CUnitData );
-	if( pCopy == NULL )
-	{
-		try
-		{
-			pCopy = new CAICopy( CAICopy::CUnitData );
-			m_plCopyData->AddTail( (CObject *)pCopy );
-		}
-		catch( CException e )
-		{
-			if( pCopy != NULL )
-			{
-				delete pCopy;
-				pCopy = NULL;
-			}
-			throw(ERR_CAI_BAD_NEW);
-		}
-	}
+    // get current pointer to data copy or create a new one
+    CAICopy* pCopy = m_plCopyData->GetCopy( CAICopy::CUnitData );
+    if ( pCopy == NULL )
+    {
+        try
+        {
+            pCopy = new CAICopy( CAICopy::CUnitData );
+            m_plCopyData->AddTail( (CObject*)pCopy );
+        }
+        catch ( CException* e )
+        {
+            if ( pCopy != NULL )
+            {
+                delete pCopy;
+                pCopy = NULL;
+            }
+            throw( ERR_CAI_BAD_NEW );
+        }
+    }
 
-	// now update the current data copy from the game data
-	pCopy->m_aiDataIn[CAI_PEOPLE] = pData->GetPeople();
-//	pCopy->m_aiDataIn[CAI_MAXMATERIAL] = pData->GetMaxMaterials();
-//	pCopy->m_aiDataIn[CAI_SPOTTING] = pData->GetSpottingRange();
-	pCopy->m_aiDataIn[CAI_DAMAGEPTS] = pData->GetDamagePoints();
-//	pCopy->m_aiDataIn[CAI_INITIATIVE] = pData->GetInitiative();
-//	pCopy->m_aiDataIn[CAI_RANGE] = pData->GetRange();
-//	pCopy->m_aiDataIn[CAI_SOFTATTACK] = pData->GetAttack(CUnitData::soft);
-//	pCopy->m_aiDataIn[CAI_HARDATTACK] = pData->GetAttack(CUnitData::hard);
-//	pCopy->m_aiDataIn[CAI_NAVALATTACK] = pData->GetAttack(CUnitData::naval);
-	pCopy->m_aiDataIn[CAI_TARGETTYPE] = pData->GetTargetType();
-//	pCopy->m_aiDataIn[CAI_GRDDEFENSE] = pData->GetGroundDefense();
-//	pCopy->m_aiDataIn[CAI_CLSDEFENSE] = pData->GetCloseDefense();
-//	pCopy->m_aiDataIn[CAI_FIRERATE] = pData->GetFireRate();
-//	pCopy->m_aiDataIn[CAI_ACCURACY] = pData->GetAccuracy();
+    // now update the current data copy from the game data
+    pCopy->m_aiDataIn[CAI_PEOPLE] = pData->GetPeople( );
+    //	pCopy->m_aiDataIn[CAI_MAXMATERIAL] = pData->GetMaxMaterials();
+    //	pCopy->m_aiDataIn[CAI_SPOTTING] = pData->GetSpottingRange();
+    pCopy->m_aiDataIn[CAI_DAMAGEPTS] = pData->GetDamagePoints( );
+    //	pCopy->m_aiDataIn[CAI_INITIATIVE] = pData->GetInitiative();
+    //	pCopy->m_aiDataIn[CAI_RANGE] = pData->GetRange();
+    //	pCopy->m_aiDataIn[CAI_SOFTATTACK] = pData->GetAttack(CUnitData::soft);
+    //	pCopy->m_aiDataIn[CAI_HARDATTACK] = pData->GetAttack(CUnitData::hard);
+    //	pCopy->m_aiDataIn[CAI_NAVALATTACK] = pData->GetAttack(CUnitData::naval);
+    pCopy->m_aiDataIn[CAI_TARGETTYPE] = pData->GetTargetType( );
+    //	pCopy->m_aiDataIn[CAI_GRDDEFENSE] = pData->GetGroundDefense();
+    //	pCopy->m_aiDataIn[CAI_CLSDEFENSE] = pData->GetCloseDefense();
+    //	pCopy->m_aiDataIn[CAI_FIRERATE] = pData->GetFireRate();
+    //	pCopy->m_aiDataIn[CAI_ACCURACY] = pData->GetAccuracy();
 }
 
-void CAIUnit::Update( CBuildMaterials const *pData )
+void CAIUnit::Update( CBuildMaterials const* pData )
 {
-	ASSERT_VALID( this );
-	ASSERT_VALID( m_plCopyData );
-	ASSERT_VALID( pData );
+    ASSERT_VALID( this );
+    ASSERT_VALID( m_plCopyData );
+    ASSERT_VALID( pData );
 
-	// get current pointer to data copy or create a new one
-	CAICopy *pCopy = m_plCopyData->GetCopy( CAICopy::CBuildMaterials );
-	if( pCopy == NULL )
-	{
-		try
-		{
-			pCopy = new CAICopy( CAICopy::CBuildMaterials );
-			m_plCopyData->AddTail( (CObject *)pCopy );
-		}
-		catch( CException e )
-		{
-			if( pCopy != NULL )
-			{
-				delete pCopy;
-				pCopy = NULL;
-			}
-			throw(ERR_CAI_BAD_NEW);
-		}
-	}
-	// first clear out data slots
-	for( int i=0; i<CAI_DATA_SLOTS; ++i )
-	{
-		pCopy->m_aiDataIn[i] = 0;
-		pCopy->m_aiDataOut[i] = 0;
-	}
+    // get current pointer to data copy or create a new one
+    CAICopy* pCopy = m_plCopyData->GetCopy( CAICopy::CBuildMaterials );
+    if ( pCopy == NULL )
+    {
+        try
+        {
+            pCopy = new CAICopy( CAICopy::CBuildMaterials );
+            m_plCopyData->AddTail( (CObject*)pCopy );
+        }
+        catch ( CException* e )
+        {
+            if ( pCopy != NULL )
+            {
+                delete pCopy;
+                pCopy = NULL;
+            }
+            throw( ERR_CAI_BAD_NEW );
+        }
+    }
+    // first clear out data slots
+    for ( int i = 0; i < CAI_DATA_SLOTS; ++i )
+    {
+        pCopy->m_aiDataIn[i]  = 0;
+        pCopy->m_aiDataOut[i] = 0;
+    }
 
-	// now update the current data copy from the game data
-	for( i=0; i<CMaterialTypes::num_types; ++i )
-	{
-		pCopy->m_aiDataIn[i] = pData->GetInput(i);
-		pCopy->m_aiDataOut[i] = pData->GetOutput(i);
-	}
-	// BUGBUG type appears to be gone
-	//pCopy->m_aiDataIn[CAI_TYPEBUILD] = pData->GetType();
-	pCopy->m_aiDataOut[CAI_TIMEBUILD] = pData->GetTime();
-}
-
-
-void CAIUnit::Update( CBuildMine const *pData )
-{
-	ASSERT_VALID( this );
-	ASSERT_VALID( m_plCopyData );
-	ASSERT_VALID( pData );
-
-	// get current pointer to data copy or create a new one
-	CAICopy *pCopy = m_plCopyData->GetCopy( CAICopy::CBuildMine );
-	if( pCopy == NULL )
-	{
-		try
-		{
-			pCopy = new CAICopy( CAICopy::CBuildMine );
-			m_plCopyData->AddTail( (CObject *)pCopy );
-		}
-		catch( CException e )
-		{
-			if( pCopy != NULL )
-			{
-				delete pCopy;
-				pCopy = NULL;
-			}
-			throw(ERR_CAI_BAD_NEW);
-		}
-	}
-	// time to mine some quantity?
-	pCopy->m_aiDataOut[CAI_TIMEBUILD] = pData->GetTimeToMine();
-	// material mined
-	pCopy->m_aiDataOut[CAI_TYPEBUILD] = pData->GetTypeMines();
+    // now update the current data copy from the game data
+    for ( int i = 0; i < CMaterialTypes::num_types; ++i )
+    {
+        pCopy->m_aiDataIn[i]  = pData->GetInput( i );
+        pCopy->m_aiDataOut[i] = pData->GetOutput( i );
+    }
+    // BUGBUG type appears to be gone
+    // pCopy->m_aiDataIn[CAI_TYPEBUILD] = pData->GetType();
+    pCopy->m_aiDataOut[CAI_TIMEBUILD] = pData->GetTime( );
 }
 
 
-void CAIUnit::Update( CBuildFarm const *pData )
+void CAIUnit::Update( CBuildMine const* pData )
 {
-	ASSERT_VALID( this );
-	ASSERT_VALID( m_plCopyData );
-	ASSERT_VALID( pData );
+    ASSERT_VALID( this );
+    ASSERT_VALID( m_plCopyData );
+    ASSERT_VALID( pData );
 
-	// get current pointer to data copy or create a new one
-	CAICopy *pCopy = m_plCopyData->GetCopy( CAICopy::CBuildFarm );
-	if( pCopy == NULL )
-	{
-		try
-		{
-			pCopy = new CAICopy( CAICopy::CBuildFarm );
-			m_plCopyData->AddTail( (CObject *)pCopy );
-		}
-		catch( CException e )
-		{
-			if( pCopy != NULL )
-			{
-				delete pCopy;
-				pCopy = NULL;
-			}
-			throw(ERR_CAI_BAD_NEW);
-		}
-	}
-	// time to farm some quantity?
-	pCopy->m_aiDataOut[CAI_TIMEBUILD] = pData->GetTimeToFarm();
-	// quantity produced in that time
-	pCopy->m_aiDataOut[CAI_PRODUCES] = pData->GetQuantity();
-	// material farmed
-	pCopy->m_aiDataOut[CAI_TYPEBUILD] = pData->GetTypeFarm();
+    // get current pointer to data copy or create a new one
+    CAICopy* pCopy = m_plCopyData->GetCopy( CAICopy::CBuildMine );
+    if ( pCopy == NULL )
+    {
+        try
+        {
+            pCopy = new CAICopy( CAICopy::CBuildMine );
+            m_plCopyData->AddTail( (CObject*)pCopy );
+        }
+        catch ( CException* e )
+        {
+            if ( pCopy != NULL )
+            {
+                delete pCopy;
+                pCopy = NULL;
+            }
+            throw( ERR_CAI_BAD_NEW );
+        }
+    }
+    // time to mine some quantity?
+    pCopy->m_aiDataOut[CAI_TIMEBUILD] = pData->GetTimeToMine( );
+    // material mined
+    pCopy->m_aiDataOut[CAI_TYPEBUILD] = pData->GetTypeMines( );
 }
 
 
-void CAIUnit::Update( CBuildUnit const *pData )
+void CAIUnit::Update( CBuildFarm const* pData )
 {
-	ASSERT_VALID( this );
-	ASSERT_VALID( m_plCopyData );
-	ASSERT_VALID( pData );
+    ASSERT_VALID( this );
+    ASSERT_VALID( m_plCopyData );
+    ASSERT_VALID( pData );
 
-	// get current pointer to data copy or create a new one
-	CAICopy *pCopy = m_plCopyData->GetCopy( CAICopy::CBuildUnit );
-	if( pCopy == NULL )
-	{
-		try
-		{
-			pCopy = new CAICopy( CAICopy::CBuildUnit );
-			m_plCopyData->AddTail( (CObject *)pCopy );
-		}
-		catch( CException e )
-		{
-			if( pCopy != NULL )
-			{
-				delete pCopy;
-				pCopy = NULL;
-			}
-			throw(ERR_CAI_BAD_NEW);
-		}
-	}
-	
-	// first clear out data slots
-	for( int i=0; i<CAI_DATA_SLOTS; ++i )
-	{
-		pCopy->m_aiDataIn[i] = 0;
-		pCopy->m_aiDataOut[i] = 0;
-	}
-
-	// now update the current data copy from the game data
-	for( i=0; i<CMaterialTypes::num_build_types; ++i )
-		pCopy->m_aiDataIn[i] = pData->GetInput(i);
-
-	pCopy->m_aiDataIn[CAI_TYPEVEHICLE] = pData->GetVehType();
-	pCopy->m_aiDataOut[CAI_TIMEBUILD] = pData->GetTime();
-}																  
-
-void CAIUnit::Update( CStructureData const *pData )
-{
-	ASSERT_VALID( this );
-	ASSERT_VALID( m_plCopyData );
-	ASSERT_VALID( pData );
-
-	// get current pointer to data copy or create a new one
-	CAICopy *pCopy = m_plCopyData->GetCopy( CAICopy::CStructureData );
-	if( pCopy == NULL )
-	{
-		try
-		{
-			pCopy = new CAICopy( CAICopy::CStructureData );
-			m_plCopyData->AddTail( (CObject *)pCopy );
-		}
-		catch( CException e )
-		{
-			if( pCopy != NULL )
-			{
-				delete pCopy;
-				pCopy = NULL;
-			}
-			throw(ERR_CAI_BAD_NEW);
-		}
-	}
-	// first clear out data slots
-	for( int i=0; i<CAI_DATA_SLOTS; ++i )
-	{
-		pCopy->m_aiDataIn[i] = 0;
-		pCopy->m_aiDataOut[i] = 0;
-	}
-
-	// now update the current data copy from the game data
-	for( i=0; i<CMaterialTypes::num_build_types; ++i )
-		pCopy->m_aiDataIn[i] = pData->GetBuild(i);
-
-	
-	pCopy->m_aiDataOut[CAI_MORALE] = pData->GetMoraleEffect();
-	pCopy->m_aiDataOut[CAI_POWER] = pData->GetPower();
-	pCopy->m_aiDataOut[CAI_NOPOWER] = pData->GetNoPower();
-	pCopy->m_aiDataOut[CAI_UNIONTYPE] = pData->GetUnionType();
-	
-	pCopy->m_aiDataOut[CAI_TIMEBUILD] = pData->GetTimeBuild();
-}
-
-void CAIUnit::Update( CTransportData const * /*pData*/ )
-{
-	ASSERT_VALID( this );
-	ASSERT_VALID( m_plCopyData );
-	//ASSERT_VALID( pData );
-
-	// get current pointer to data copy or create a new one
-	CAICopy *pCopy = m_plCopyData->GetCopy( CAICopy::CTransportData );
-	if( pCopy == NULL )
-	{
-		try
-		{
-			pCopy = new CAICopy( CAICopy::CTransportData );
-			m_plCopyData->AddTail( (CObject *)pCopy );
-		}
-		catch( CException e )
-		{
-			if( pCopy != NULL )
-			{
-				delete pCopy;
-				pCopy = NULL;
-			}
-			throw(ERR_CAI_BAD_NEW);
-		}
-	}
-	// now update the current data copy from the game data
-	// BUGBUG CTransportData has no public access to its data
+    // get current pointer to data copy or create a new one
+    CAICopy* pCopy = m_plCopyData->GetCopy( CAICopy::CBuildFarm );
+    if ( pCopy == NULL )
+    {
+        try
+        {
+            pCopy = new CAICopy( CAICopy::CBuildFarm );
+            m_plCopyData->AddTail( (CObject*)pCopy );
+        }
+        catch ( CException* e )
+        {
+            if ( pCopy != NULL )
+            {
+                delete pCopy;
+                pCopy = NULL;
+            }
+            throw( ERR_CAI_BAD_NEW );
+        }
+    }
+    // time to farm some quantity?
+    pCopy->m_aiDataOut[CAI_TIMEBUILD] = pData->GetTimeToFarm( );
+    // quantity produced in that time
+    pCopy->m_aiDataOut[CAI_PRODUCES] = pData->GetQuantity( );
+    // material farmed
+    pCopy->m_aiDataOut[CAI_TYPEBUILD] = pData->GetTypeFarm( );
 }
 
 
-void CAIUnit::Update( CBuilding *pData )
+void CAIUnit::Update( CBuildUnit const* pData )
 {
-	ASSERT_VALID( this );
-	ASSERT_VALID( m_plCopyData );
-	ASSERT_VALID( pData );
+    ASSERT_VALID( this );
+    ASSERT_VALID( m_plCopyData );
+    ASSERT_VALID( pData );
 
-	// get current pointer to data copy or create a new one
-	CAICopy *pCopy = m_plCopyData->GetCopy( CAICopy::CBuilding );
-	if( pCopy == NULL )
-	{
-		try
-		{
-			pCopy = new CAICopy( CAICopy::CBuilding );
-			m_plCopyData->AddTail( (CObject *)pCopy );
-		}
-		catch( CException e )
-		{
-			if( pCopy != NULL )
-			{
-				delete pCopy;
-				pCopy = NULL;
-			}
-			throw(ERR_CAI_BAD_NEW);
-		}
-	}
-	// first clear out data slots
-	for( int i=0; i<CAI_DATA_SLOTS; ++i )
-	{
-		pCopy->m_aiDataIn[i] = 0;
-		pCopy->m_aiDataOut[i] = 0;
-	}
+    // get current pointer to data copy or create a new one
+    CAICopy* pCopy = m_plCopyData->GetCopy( CAICopy::CBuildUnit );
+    if ( pCopy == NULL )
+    {
+        try
+        {
+            pCopy = new CAICopy( CAICopy::CBuildUnit );
+            m_plCopyData->AddTail( (CObject*)pCopy );
+        }
+        catch ( CException* e )
+        {
+            if ( pCopy != NULL )
+            {
+                delete pCopy;
+                pCopy = NULL;
+            }
+            throw( ERR_CAI_BAD_NEW );
+        }
+    }
 
-	// now update the current data copy from the game data
-	for( i=0; i<CMaterialTypes::num_types; ++i )
-		pCopy->m_aiDataIn[i] = pData->GetStore(i);
+    // first clear out data slots
+    for ( int i = 0; i < CAI_DATA_SLOTS; ++i )
+    {
+        pCopy->m_aiDataIn[i]  = 0;
+        pCopy->m_aiDataOut[i] = 0;
+    }
 
-	CHexCoord hex;
-	//hex = pData->GetHex();
-	hex = pData->GetExitHex();
-	pCopy->m_aiDataOut[CAI_LOC_X] = hex.X();
-	pCopy->m_aiDataOut[CAI_LOC_Y] = hex.Y();
-	
-	pCopy->m_aiDataOut[CAI_ISCONSTRUCTING] = (int)pData->IsConstructing();
-	pCopy->m_aiDataOut[CAI_ISPAUSED] = (int)pData->IsPaused();
-	pCopy->m_aiDataOut[CAI_ISWAITING] = (int)pData->IsWaiting();
-	pCopy->m_aiDataOut[CAI_PRODUCES] = 
-		(int)pData->GetData()->GetUnionType();
+    // now update the current data copy from the game data
+    for ( int i = 0; i < CMaterialTypes::num_build_types; ++i )
+    {
+        pCopy->m_aiDataIn[i] = pData->GetInput( i );
+    }
 
-	pCopy->m_aiDataOut[CAI_DAMAGE] = pData->GetDamagePer();
-	//pCopy->m_aiDataOut[CAI_EFFECTIVE] = pData->GetExperience();
-	//pCopy->m_aiDataOut[CAI_AMMO] = pData->GetAmmo();
-	// the family type of the building type
-	pCopy->m_aiDataOut[CAI_BUILDTYPE] = pData->GetData()->GetBldgType();
-	// the specific type of the building
-	pCopy->m_aiDataOut[CAI_TYPEBUILD] = pData->GetData()->GetType();
+    pCopy->m_aiDataIn[CAI_TYPEVEHICLE] = pData->GetVehType( );
+    pCopy->m_aiDataOut[CAI_TIMEBUILD]  = pData->GetTime( );
 }
 
-void CAIUnit::Update( CVehicle *pData )
+void CAIUnit::Update( CStructureData const* pData )
 {
-	ASSERT_VALID( this );
-	ASSERT_VALID( m_plCopyData );
-	ASSERT_VALID( pData );
+    ASSERT_VALID( this );
+    ASSERT_VALID( m_plCopyData );
+    ASSERT_VALID( pData );
 
-	// get current pointer to data copy or create a new one
-	CAICopy *pCopy = m_plCopyData->GetCopy( CAICopy::CVehicle );
-	if( pCopy == NULL )
-	{
-		try
-		{
-			pCopy = new CAICopy( CAICopy::CVehicle );
-			m_plCopyData->AddTail( (CObject *)pCopy );
-		}
-		catch( CException e )
-		{
-			if( pCopy != NULL )
-			{
-				delete pCopy;
-				pCopy = NULL;
-			}
-			throw(ERR_CAI_BAD_NEW);
-		}
-	}
-	// first clear out data slots
-	for( int i=0; i<CAI_DATA_SLOTS; ++i )
-	{
-		pCopy->m_aiDataIn[i] = 0;
-		pCopy->m_aiDataOut[i] = 0;
-	}
+    // get current pointer to data copy or create a new one
+    CAICopy* pCopy = m_plCopyData->GetCopy( CAICopy::CStructureData );
+    if ( pCopy == NULL )
+    {
+        try
+        {
+            pCopy = new CAICopy( CAICopy::CStructureData );
+            m_plCopyData->AddTail( (CObject*)pCopy );
+        }
+        catch ( CException* e )
+        {
+            if ( pCopy != NULL )
+            {
+                delete pCopy;
+                pCopy = NULL;
+            }
+            throw( ERR_CAI_BAD_NEW );
+        }
+    }
+    // first clear out data slots
+    for ( int i = 0; i < CAI_DATA_SLOTS; ++i )
+    {
+        pCopy->m_aiDataIn[i]  = 0;
+        pCopy->m_aiDataOut[i] = 0;
+    }
 
-	// now update the current data copy from the game data
-	for( i=0; i<CMaterialTypes::num_types; ++i )
-		pCopy->m_aiDataIn[i] = pData->GetStore(i);
+    // now update the current data copy from the game data
+    for ( int i = 0; i < CMaterialTypes::num_build_types; ++i )
+    {
+        pCopy->m_aiDataIn[i] = pData->GetBuild( i );
+    }
 
-	
-	CHexCoord hex = pData->GetHexHead();
-	pCopy->m_aiDataOut[CAI_LOC_X] = hex.X();
-	pCopy->m_aiDataOut[CAI_LOC_Y] = hex.Y();
 
-	// BUGBUG no public access to prev and dest hexes
-	//pCopy->m_aiDataOut[CAI_PREV_X] = pData->m_hexPrev.m_iX;
-	//pCopy->m_aiDataOut[CAI_PREV_Y] = pData->m_hexPrev.m_iY;
-	CHexCoord hexDest = pData->GetHexDest();
-	pCopy->m_aiDataOut[CAI_DEST_X] = hexDest.X();
-	pCopy->m_aiDataOut[CAI_DEST_Y] = hexDest.Y();
+    pCopy->m_aiDataOut[CAI_MORALE]    = pData->GetMoraleEffect( );
+    pCopy->m_aiDataOut[CAI_POWER]     = pData->GetPower( );
+    pCopy->m_aiDataOut[CAI_NOPOWER]   = pData->GetNoPower( );
+    pCopy->m_aiDataOut[CAI_UNIONTYPE] = pData->GetUnionType( );
 
-	//pCopy->m_aiDataOut[CAI_FUEL] = pData->GetFuel();
-	pCopy->m_aiDataOut[CAI_DAMAGE] = pData->GetDamagePer();
-	//pCopy->m_aiDataOut[CAI_EFFECTIVE] = pData->GetExperience();
-	//pCopy->m_aiDataOut[CAI_AMMO] = pData->GetAmmo();
-	// the specific type of the vehicle
-	pCopy->m_aiDataOut[CAI_TYPEVEHICLE] = pData->GetData()->GetType();
+    pCopy->m_aiDataOut[CAI_TIMEBUILD] = pData->GetTimeBuild( );
+}
+
+void CAIUnit::Update( CTransportData const* /*pData*/ )
+{
+    ASSERT_VALID( this );
+    ASSERT_VALID( m_plCopyData );
+    // ASSERT_VALID( pData );
+
+    // get current pointer to data copy or create a new one
+    CAICopy* pCopy = m_plCopyData->GetCopy( CAICopy::CTransportData );
+    if ( pCopy == NULL )
+    {
+        try
+        {
+            pCopy = new CAICopy( CAICopy::CTransportData );
+            m_plCopyData->AddTail( (CObject*)pCopy );
+        }
+        catch ( CException* e )
+        {
+            if ( pCopy != NULL )
+            {
+                delete pCopy;
+                pCopy = NULL;
+            }
+            throw( ERR_CAI_BAD_NEW );
+        }
+    }
+    // now update the current data copy from the game data
+    // BUGBUG CTransportData has no public access to its data
+}
+
+
+void CAIUnit::Update( CBuilding* pData )
+{
+    ASSERT_VALID( this );
+    ASSERT_VALID( m_plCopyData );
+    ASSERT_VALID( pData );
+
+    // get current pointer to data copy or create a new one
+    CAICopy* pCopy = m_plCopyData->GetCopy( CAICopy::CBuilding );
+    if ( pCopy == NULL )
+    {
+        try
+        {
+            pCopy = new CAICopy( CAICopy::CBuilding );
+            m_plCopyData->AddTail( (CObject*)pCopy );
+        }
+        catch ( CException* e )
+        {
+            if ( pCopy != NULL )
+            {
+                delete pCopy;
+                pCopy = NULL;
+            }
+            throw( ERR_CAI_BAD_NEW );
+        }
+    }
+    // first clear out data slots
+    for ( int i = 0; i < CAI_DATA_SLOTS; ++i )
+    {
+        pCopy->m_aiDataIn[i]  = 0;
+        pCopy->m_aiDataOut[i] = 0;
+    }
+
+    // now update the current data copy from the game data
+    for ( int i = 0; i < CMaterialTypes::num_types; ++i )
+    {
+        pCopy->m_aiDataIn[i] = pData->GetStore( i );
+    }
+
+    CHexCoord hex;
+    // hex = pData->GetHex();
+    hex                           = pData->GetExitHex( );
+    pCopy->m_aiDataOut[CAI_LOC_X] = hex.X( );
+    pCopy->m_aiDataOut[CAI_LOC_Y] = hex.Y( );
+
+    pCopy->m_aiDataOut[CAI_ISCONSTRUCTING] = (int)pData->IsConstructing( );
+    pCopy->m_aiDataOut[CAI_ISPAUSED]       = (int)pData->IsPaused( );
+    pCopy->m_aiDataOut[CAI_ISWAITING]      = (int)pData->IsWaiting( );
+    pCopy->m_aiDataOut[CAI_PRODUCES]       = (int)pData->GetData( )->GetUnionType( );
+
+    pCopy->m_aiDataOut[CAI_DAMAGE] = pData->GetDamagePer( );
+    // pCopy->m_aiDataOut[CAI_EFFECTIVE] = pData->GetExperience();
+    // pCopy->m_aiDataOut[CAI_AMMO] = pData->GetAmmo();
+    //  the family type of the building type
+    pCopy->m_aiDataOut[CAI_BUILDTYPE] = pData->GetData( )->GetBldgType( );
+    // the specific type of the building
+    pCopy->m_aiDataOut[CAI_TYPEBUILD] = pData->GetData( )->GetType( );
+}
+
+void CAIUnit::Update( CVehicle* pData )
+{
+    ASSERT_VALID( this );
+    ASSERT_VALID( m_plCopyData );
+    ASSERT_VALID( pData );
+
+    // get current pointer to data copy or create a new one
+    CAICopy* pCopy = m_plCopyData->GetCopy( CAICopy::CVehicle );
+    if ( pCopy == NULL )
+    {
+        try
+        {
+            pCopy = new CAICopy( CAICopy::CVehicle );
+            m_plCopyData->AddTail( (CObject*)pCopy );
+        }
+        catch ( CException* e )
+        {
+            if ( pCopy != NULL )
+            {
+                delete pCopy;
+                pCopy = NULL;
+            }
+            throw( ERR_CAI_BAD_NEW );
+        }
+    }
+    // first clear out data slots
+    for ( int i = 0; i < CAI_DATA_SLOTS; ++i )
+    {
+        pCopy->m_aiDataIn[i]  = 0;
+        pCopy->m_aiDataOut[i] = 0;
+    }
+
+    // now update the current data copy from the game data
+    for ( int i = 0; i < CMaterialTypes::num_types; ++i )
+    {
+        pCopy->m_aiDataIn[i] = pData->GetStore( i );
+    }
+
+
+    CHexCoord hex                 = pData->GetHexHead( );
+    pCopy->m_aiDataOut[CAI_LOC_X] = hex.X( );
+    pCopy->m_aiDataOut[CAI_LOC_Y] = hex.Y( );
+
+    // BUGBUG no public access to prev and dest hexes
+    // pCopy->m_aiDataOut[CAI_PREV_X] = pData->m_hexPrev.m_iX;
+    // pCopy->m_aiDataOut[CAI_PREV_Y] = pData->m_hexPrev.m_iY;
+    CHexCoord hexDest              = pData->GetHexDest( );
+    pCopy->m_aiDataOut[CAI_DEST_X] = hexDest.X( );
+    pCopy->m_aiDataOut[CAI_DEST_Y] = hexDest.Y( );
+
+    // pCopy->m_aiDataOut[CAI_FUEL] = pData->GetFuel();
+    pCopy->m_aiDataOut[CAI_DAMAGE] = pData->GetDamagePer( );
+    // pCopy->m_aiDataOut[CAI_EFFECTIVE] = pData->GetExperience();
+    // pCopy->m_aiDataOut[CAI_AMMO] = pData->GetAmmo();
+    //  the specific type of the vehicle
+    pCopy->m_aiDataOut[CAI_TYPEVEHICLE] = pData->GetData( )->GetType( );
 }
 //
-// get a current pointer to data copy based on 
+// Tier-B: fill the CBuilding copy from the per-tick snapshot.
+// Mirrors Update( CBuilding* ) field-for-field (see that function).
+//
+void CAIUnit::UpdateFromSnap( const AiBldgSnap& snap )
+{
+    ASSERT_VALID( this );
+    ASSERT_VALID( m_plCopyData );
+
+    CAICopy* pCopy = m_plCopyData->GetCopy( CAICopy::CBuilding );
+    if ( pCopy == NULL )
+    {
+        try
+        {
+            pCopy = new CAICopy( CAICopy::CBuilding );
+            m_plCopyData->AddTail( (CObject*)pCopy );
+        }
+        catch ( CException* e )
+        {
+            if ( pCopy != NULL )
+            {
+                delete pCopy;
+                pCopy = NULL;
+            }
+            throw( ERR_CAI_BAD_NEW );
+        }
+    }
+    for ( int i = 0; i < CAI_DATA_SLOTS; ++i )
+    {
+        pCopy->m_aiDataIn[i]  = 0;
+        pCopy->m_aiDataOut[i] = 0;
+    }
+
+    for ( int i = 0; i < CMaterialTypes::num_types; ++i ) pCopy->m_aiDataIn[i] = snap.aiStore[i];
+
+    pCopy->m_aiDataOut[CAI_LOC_X] = snap.iExitX;
+    pCopy->m_aiDataOut[CAI_LOC_Y] = snap.iExitY;
+
+    pCopy->m_aiDataOut[CAI_ISCONSTRUCTING] = snap.bConstructing;
+    pCopy->m_aiDataOut[CAI_ISPAUSED]       = snap.bPaused;
+    pCopy->m_aiDataOut[CAI_ISWAITING]      = snap.bWaiting;
+    pCopy->m_aiDataOut[CAI_PRODUCES]       = snap.iUnionType;
+
+    pCopy->m_aiDataOut[CAI_DAMAGE]    = snap.iDamagePer;
+    pCopy->m_aiDataOut[CAI_BUILDTYPE] = snap.iBldgType;
+    pCopy->m_aiDataOut[CAI_TYPEBUILD] = snap.iType;
+}
+
+//
+// Tier-B: fill the CVehicle copy from the per-tick snapshot.
+// Mirrors Update( CVehicle* ) field-for-field (see that function).
+//
+void CAIUnit::UpdateFromSnap( const AiVehSnap& snap )
+{
+    ASSERT_VALID( this );
+    ASSERT_VALID( m_plCopyData );
+
+    CAICopy* pCopy = m_plCopyData->GetCopy( CAICopy::CVehicle );
+    if ( pCopy == NULL )
+    {
+        try
+        {
+            pCopy = new CAICopy( CAICopy::CVehicle );
+            m_plCopyData->AddTail( (CObject*)pCopy );
+        }
+        catch ( CException* e )
+        {
+            if ( pCopy != NULL )
+            {
+                delete pCopy;
+                pCopy = NULL;
+            }
+            throw( ERR_CAI_BAD_NEW );
+        }
+    }
+    for ( int i = 0; i < CAI_DATA_SLOTS; ++i )
+    {
+        pCopy->m_aiDataIn[i]  = 0;
+        pCopy->m_aiDataOut[i] = 0;
+    }
+
+    for ( int i = 0; i < CMaterialTypes::num_types; ++i ) pCopy->m_aiDataIn[i] = snap.aiStore[i];
+
+    pCopy->m_aiDataOut[CAI_LOC_X]  = snap.iHeadX;
+    pCopy->m_aiDataOut[CAI_LOC_Y]  = snap.iHeadY;
+    pCopy->m_aiDataOut[CAI_DEST_X] = snap.iDestX;
+    pCopy->m_aiDataOut[CAI_DEST_Y] = snap.iDestY;
+
+    pCopy->m_aiDataOut[CAI_DAMAGE]      = snap.iDamagePer;
+    pCopy->m_aiDataOut[CAI_TYPEVEHICLE] = snap.iType;
+}
+
+//
+// Tier-B: try to satisfy a GetCopyData request from the per-tick snapshot,
+// without touching the global game lock. The snapshot entry also serves as a
+// lock-free liveness check (dead units fall out of it on the next publish),
+// preserving the legacy behaviour where a dead unit's refresh was skipped.
+// Static type data (CStructureData/CTransportData/CBuild*) is served from the
+// immutable type tables via the snapshotted type id — the same const objects
+// the legacy path reached through the live unit pointer.
+//
+BOOL CAIUnit::ServeFromSnapshot( int iType )
+{
+    if ( !AiSnap::Enabled( ) )
+        return FALSE;
+
+    if ( m_iType == CUnit::building )
+    {
+        AiBldgSnap snap;
+        if ( !AiSnap::CopyBldg( m_dwID, snap ) )
+        {
+            Perf::CounterInc( "ai.snap.miss" );
+            return FALSE;
+        }
+
+        // owner-validation parity with the legacy path: GetBuildingData
+        // (caidata.cpp) returns NULL on an owner mismatch (e.g. after a
+        // give_unit while our m_iOwner is stale), which skipped the refresh
+        // and served the stale copy. Fall back so that behaviour is kept.
+        if ( m_iOwner != CAI_OPFOR_UNIT && snap.iOwner != m_iOwner )
+        {
+            Perf::CounterInc( "ai.snap.miss" );
+            return FALSE;
+        }
+        Perf::CounterInc( "ai.snap.hit" );
+
+        switch ( iType )
+        {
+        case CAICopy::CBuilding:
+            UpdateFromSnap( snap );
+            return TRUE;
+
+        case CAICopy::CUnitData:
+        case CAICopy::CStructureData:
+        case CAICopy::CBuildMaterials:
+        case CAICopy::CBuildMine:
+        case CAICopy::CBuildFarm:
+        {
+            CStructureData const* pData = pGameData->GetStructureData( snap.iType );
+            if ( pData == NULL )
+                return FALSE;
+
+            if ( iType == CAICopy::CUnitData )
+                Update( (CUnitData const*)pData );
+            else if ( iType == CAICopy::CStructureData )
+                Update( pData );
+            else if ( iType == CAICopy::CBuildMaterials )
+            {
+                if ( pData->GetBldMaterials( ) == NULL )
+                    return FALSE;
+                Update( pData->GetBldMaterials( ) );
+            }
+            else if ( iType == CAICopy::CBuildMine )
+            {
+                if ( pData->GetBldMine( ) == NULL )
+                    return FALSE;
+                Update( pData->GetBldMine( ) );
+            }
+            else  // CAICopy::CBuildFarm
+            {
+                if ( pData->GetBldFarm( ) == NULL )
+                    return FALSE;
+                Update( pData->GetBldFarm( ) );
+            }
+            return TRUE;
+        }
+
+        case CAICopy::CBuildUnit:
+            // current production (vehicle factory) or repair record; both are
+            // stable static-table pointers captured at publish time
+            if ( snap.pProducing != NULL )
+            {
+                Update( snap.pProducing );
+                return TRUE;
+            }
+            if ( snap.pRepairing != NULL )
+            {
+                Update( snap.pRepairing );
+                return TRUE;
+            }
+            // not producing: let the legacy path decide (it allows a NULL
+            // copy return in this case)
+            return FALSE;
+
+        default:
+            return FALSE;
+        }
+    }
+    else if ( m_iType == CUnit::vehicle )
+    {
+        AiVehSnap snap;
+        if ( !AiSnap::CopyVeh( m_dwID, snap ) )
+        {
+            Perf::CounterInc( "ai.snap.miss" );
+            return FALSE;
+        }
+
+        // owner-validation parity (see building branch above)
+        if ( m_iOwner != CAI_OPFOR_UNIT && snap.iOwner != m_iOwner )
+        {
+            Perf::CounterInc( "ai.snap.miss" );
+            return FALSE;
+        }
+        Perf::CounterInc( "ai.snap.hit" );
+
+        switch ( iType )
+        {
+        case CAICopy::CVehicle:
+            UpdateFromSnap( snap );
+            return TRUE;
+
+        case CAICopy::CUnitData:
+        case CAICopy::CTransportData:
+        {
+            CTransportData const* pData = pGameData->GetTransportData( snap.iType );
+            if ( pData == NULL )
+                return FALSE;
+            if ( iType == CAICopy::CUnitData )
+                Update( (CUnitData const*)pData );
+            else
+                Update( pData );
+            return TRUE;
+        }
+
+        default:
+            return FALSE;
+        }
+    }
+
+    return FALSE;
+}
+
+//
+// get a current pointer to data copy based on
 // the type of data requested
 //
-CAICopy *CAIUnit::GetCopyData( int iType )
+CAICopy* CAIUnit::GetCopyData( int iType )
 {
-	ASSERT_VALID( this );
-	ASSERT_VALID( m_plCopyData );
+    ASSERT_VALID( this );
+    ASSERT_VALID( m_plCopyData );
 
-	CVehicle *pVehicle = NULL;
-	CBuilding *pBldg = NULL;
+    // Tier-B fast path: serve from the per-tick snapshot, no global lock.
+    // Falls through to the legacy locked path when the snapshot can't help
+    // (disabled via EN_AISNAP=0, unit not yet/no longer in the snapshot, or
+    // a request the snapshot doesn't carry).
+    if ( ServeFromSnapshot( iType ) )
+        return ( m_plCopyData->GetCopy( iType ) );
 
-	EnterCriticalSection (&cs);
+    CVehicle*  pVehicle = NULL;
+    CBuilding* pBldg    = NULL;
 
-	switch( iType )
-	{
-		case CAICopy::CUnitData :
-			if( m_iType == CUnit::building )
-			{
-				CBuilding const *pBldg = 
-					pGameData->GetBuildingData( m_iOwner, m_dwID );
-				if( pBldg == NULL )
-					break;
-				CStructureData const *pData = pBldg->GetData();
-				Update( (CUnitData const *)pData );
-			}
-			else if( m_iType == CUnit::vehicle )
-			{
-				CVehicle *pVehicle = 
-					pGameData->GetVehicleData( m_iOwner, m_dwID );
-				if( pVehicle == NULL )
-					break;
+    EnterCriticalSection( &cs );
 
-				CTransportData const *pData = pVehicle->GetData();
-				Update( (CUnitData const *)pData );
-			}
-			break;
+    switch ( iType )
+    {
+    case CAICopy::CUnitData:
+        if ( m_iType == CUnit::building )
+        {
+            CBuilding const* pBldg = pGameData->GetBuildingData( m_iOwner, m_dwID );
+            if ( pBldg == NULL )
+                break;
+            CStructureData const* pData = pBldg->GetData( );
+            Update( (CUnitData const*)pData );
+        }
+        else if ( m_iType == CUnit::vehicle )
+        {
+            CVehicle* pVehicle = pGameData->GetVehicleData( m_iOwner, m_dwID );
+            if ( pVehicle == NULL )
+                break;
 
-		case CAICopy::CVehicle :
-		case CAICopy::CTransportData :
-			
-			pVehicle = pGameData->GetVehicleData( m_iOwner, m_dwID );
-			if( pVehicle == NULL )
-				break;
+            CTransportData const* pData = pVehicle->GetData( );
+            Update( (CUnitData const*)pData );
+        }
+        break;
 
-			// update CVehicle copy data
-			if( iType == CAICopy::CVehicle )
-				Update( pVehicle );
-			// update CTransportData copy data
-			else if( iType == CAICopy::CTransportData )
-				Update( pVehicle->GetData() );
+    case CAICopy::CVehicle:
+    case CAICopy::CTransportData:
 
-			break;
+        pVehicle = pGameData->GetVehicleData( m_iOwner, m_dwID );
+        if ( pVehicle == NULL )
+            break;
 
-		case CAICopy::CBuilding :
-		case CAICopy::CStructureData :
-		case CAICopy::CBuildMaterials :
-		case CAICopy::CBuildMine:
-		case CAICopy::CBuildFarm:
-		// BUGBUG build units are now an array of CBuildUnit objects
-		// contained in the CBuildVehicle pointer from CStructureData
-		//
-		case CAICopy::CBuildUnit :
+        // update CVehicle copy data
+        if ( iType == CAICopy::CVehicle )
+            Update( pVehicle );
+        // update CTransportData copy data
+        else if ( iType == CAICopy::CTransportData )
+            Update( pVehicle->GetData( ) );
 
-			// get CBuilding *pBldg from game for this unit
-			pBldg = pGameData->GetBuildingData( m_iOwner, m_dwID );
-			if( pBldg == NULL )
-				break;
+        break;
 
-			// update CBuilding copy data
-			if( iType == CAICopy::CBuilding )
-				Update( pBldg );
-			// update CStructureData copy data
-			else if( iType == CAICopy::CStructureData )
-				Update( pBldg->GetData() );
-			// update CBuildMaterials copy data
-			else if( iType == CAICopy::CBuildMaterials )
-				Update( pBldg->GetData()->GetBldMaterials() );
-			// update CBuildMine copy data
-			else if( iType == CAICopy::CBuildMine )
-				Update( pBldg->GetData()->GetBldMine() );
-			// update CBuildFarm copy data
-			else if( iType == CAICopy::CBuildFarm )
-				Update( pBldg->GetData()->GetBldFarm() );
-			// update CBuildUnit copy data
-			else if( iType == CAICopy::CBuildUnit )
-			{
-				if( pBldg->GetData()->GetUnionType()
-					== CStructureData::UTvehicle )
-				{
-					// capture data based on what the building
-					// is producing or the 1st thing it could
-					// produce if it is not producing anything
-					CVehicleBuilding *pVehBldg =
-						(CVehicleBuilding *)pBldg;
-					CBuildUnit const *pBuildVeh = pVehBldg->GetBldUnt();
+    case CAICopy::CBuilding:
+    case CAICopy::CStructureData:
+    case CAICopy::CBuildMaterials:
+    case CAICopy::CBuildMine:
+    case CAICopy::CBuildFarm:
+    // BUGBUG build units are now an array of CBuildUnit objects
+    // contained in the CBuildVehicle pointer from CStructureData
+    //
+    case CAICopy::CBuildUnit:
 
-					if( pBuildVeh != NULL )
-						Update( pBuildVeh );
+        // get CBuilding *pBldg from game for this unit
+        pBldg = pGameData->GetBuildingData( m_iOwner, m_dwID );
+        if ( pBldg == NULL )
+            break;
 
-					// if the building is not currently producing
-					// a vehicle, then allow a NULL return
-				}
-				if( pBldg->GetData()->GetUnionType()
-					== CStructureData::UTrepair )
-				{
-					// convert current building to a repair building
-					CRepairBuilding *pRepBldg = 
-						(CRepairBuilding *)pBldg;
-					// is there a vehicle in getting a repair?
-					CVehicle *pVehRepairing = pRepBldg->GetVehRepairing();
-					if( pVehRepairing == NULL )
-						break;
-					// get the repair data for that vehicle
-					CBuildRepair const *pBuildRep = pRepBldg->GetData();
+        // update CBuilding copy data
+        if ( iType == CAICopy::CBuilding )
+            Update( pBldg );
+        // update CStructureData copy data
+        else if ( iType == CAICopy::CStructureData )
+            Update( pBldg->GetData( ) );
+        // update CBuildMaterials copy data
+        else if ( iType == CAICopy::CBuildMaterials )
+            Update( pBldg->GetData( )->GetBldMaterials( ) );
+        // update CBuildMine copy data
+        else if ( iType == CAICopy::CBuildMine )
+            Update( pBldg->GetData( )->GetBldMine( ) );
+        // update CBuildFarm copy data
+        else if ( iType == CAICopy::CBuildFarm )
+            Update( pBldg->GetData( )->GetBldFarm( ) );
+        // update CBuildUnit copy data
+        else if ( iType == CAICopy::CBuildUnit )
+        {
+            if ( pBldg->GetData( )->GetUnionType( ) == CStructureData::UTvehicle )
+            {
+                // capture data based on what the building
+                // is producing or the 1st thing it could
+                // produce if it is not producing anything
+                CVehicleBuilding* pVehBldg  = (CVehicleBuilding*)pBldg;
+                CBuildUnit const* pBuildVeh = pVehBldg->GetBldUnt( );
 
-					// BUGBUG may get total materials needed from using
-					// pBuildRep->GetTotalRepair(iInd) 
+                if ( pBuildVeh != NULL )
+                    Update( pBuildVeh );
 
-					CBuildUnit const *pBuildVeh = 
-						pBuildRep->GetRepair(pVehRepairing->GetData()->GetType());
-					if( pBuildVeh != NULL )
-						Update( pBuildVeh );
-				}
-			}
-			break;
-	}
-	LeaveCriticalSection (&cs);
+                // if the building is not currently producing
+                // a vehicle, then allow a NULL return
+            }
+            if ( pBldg->GetData( )->GetUnionType( ) == CStructureData::UTrepair )
+            {
+                // convert current building to a repair building
+                CRepairBuilding* pRepBldg = (CRepairBuilding*)pBldg;
+                // is there a vehicle in getting a repair?
+                CVehicle* pVehRepairing = pRepBldg->GetVehRepairing( );
+                if ( pVehRepairing == NULL )
+                    break;
+                // get the repair data for that vehicle
+                CBuildRepair const* pBuildRep = pRepBldg->GetData( );
 
-	return( m_plCopyData->GetCopy(iType) );
+                // BUGBUG may get total materials needed from using
+                // pBuildRep->GetTotalRepair(iInd)
+
+                CBuildUnit const* pBuildVeh = pBuildRep->GetRepair( pVehRepairing->GetData( )->GetType( ) );
+                if ( pBuildVeh != NULL )
+                    Update( pBuildVeh );
+            }
+        }
+        break;
+    }
+    LeaveCriticalSection( &cs );
+
+    return ( m_plCopyData->GetCopy( iType ) );
 }
 
 /*
@@ -614,20 +870,20 @@ CAICopy *CAIUnit::GetCopyData( int iType )
 class CMsgRepairVeh : public CNetCmd
 {
 public:
-		CMsgRepairVeh () : CNetCmd (repair_veh) {}
-		CMsgRepairVeh (CVehicle const * pVeh);
+        CMsgRepairVeh () : CNetCmd (repair_veh) {}
+        CMsgRepairVeh (CVehicle const * pVeh);
 
-	DWORD			m_dwIDVeh;
+    DWORD			m_dwIDVeh;
 };
 
 */
 void CAIUnit::RepairVehicle( void )
 {
-	CMsgRepairVeh msg;
-	msg.m_dwIDVeh = m_dwID;
-	
-	theGame.PostToServer( (CNetCmd *)&msg, sizeof(CMsgRepairVeh) );
-	//theGame.PostToAll( (CNetCmd *)&msg, sizeof(CMsgRepairVeh) );
+    CMsgRepairVeh msg;
+    msg.m_dwIDVeh = m_dwID;
+
+    theGame.PostToServer( (CNetCmd*)&msg, sizeof( CMsgRepairVeh ) );
+    // theGame.PostToAll( (CNetCmd *)&msg, sizeof(CMsgRepairVeh) );
 }
 
 
@@ -636,11 +892,11 @@ void CAIUnit::RepairVehicle( void )
 class CMsgRepairBldg : public CNetCmd
 {
 public:
-		CMsgRepairBldg () : CNetCmd (repair_bldg) {}
-		CMsgRepairBldg (CVehicle const * pVeh, CBuilding const * pBldg);
+        CMsgRepairBldg () : CNetCmd (repair_bldg) {}
+        CMsgRepairBldg (CVehicle const * pVeh, CBuilding const * pBldg);
 
-	DWORD			m_dwIDVeh;
-	DWORD			m_dwIDBldg;
+    DWORD			m_dwIDVeh;
+    DWORD			m_dwIDBldg;
 };
 */
 //
@@ -648,12 +904,12 @@ public:
 //
 void CAIUnit::RepairBuilding( void )
 {
-	CMsgRepairBldg msg;
-	msg.m_dwIDVeh = m_dwID;
-	msg.m_dwIDBldg = m_dwData;
-	
-	theGame.PostToServer( (CNetCmd *)&msg, sizeof(CMsgRepairBldg) );
-	//theGame.PostToAll( (CNetCmd *)&msg, sizeof(CMsgRepairBldg) );
+    CMsgRepairBldg msg;
+    msg.m_dwIDVeh  = m_dwID;
+    msg.m_dwIDBldg = m_dwData;
+
+    theGame.PostToServer( (CNetCmd*)&msg, sizeof( CMsgRepairBldg ) );
+    // theGame.PostToAll( (CNetCmd *)&msg, sizeof(CMsgRepairBldg) );
 }
 
 /* // as of 2/18/96 this is the message
@@ -661,10 +917,10 @@ void CAIUnit::RepairBuilding( void )
 class CMsgUnloadCarrier : public CNetCmd
 {
 public:
-		CMsgUnloadCarrier () : CNetCmd (unload_carrier) {}
-		CMsgUnloadCarrier (CVehicle const * pVeh);
+        CMsgUnloadCarrier () : CNetCmd (unload_carrier) {}
+        CMsgUnloadCarrier (CVehicle const * pVeh);
 
-	DWORD		m_dwID;		// unit carrying it
+    DWORD		m_dwID;		// unit carrying it
 };
 */
 
@@ -673,11 +929,11 @@ public:
 //
 void CAIUnit::UnloadCargo( void )
 {
-	CMsgUnloadCarrier msg;
-	msg.m_dwID = m_dwID;
-	
-	//theGame.PostToServer( (CNetCmd *)&msg, sizeof(CMsgUnloadCarrier) );
-	theGame.PostToAll( (CNetCmd *)&msg, sizeof(CMsgUnloadCarrier) );
+    CMsgUnloadCarrier msg;
+    msg.m_dwID = m_dwID;
+
+    // theGame.PostToServer( (CNetCmd *)&msg, sizeof(CMsgUnloadCarrier) );
+    theGame.PostToAll( (CNetCmd*)&msg, sizeof( CMsgUnloadCarrier ) );
 }
 
 //
@@ -685,72 +941,106 @@ void CAIUnit::UnloadCargo( void )
 //
 void CAIUnit::LoadUnit( DWORD dwCargo )
 {
-/* // load a carrier
-class CMsgLoadCarrier : public CNetCmd
-{
-public:
-		CMsgLoadCarrier () : CNetCmd (load_carrier) {}
-		CMsgLoadCarrier (CVehicle const * pCargo, CVehicle const * pCarrier);
+    /* // load a carrier
+    class CMsgLoadCarrier : public CNetCmd
+    {
+    public:
+            CMsgLoadCarrier () : CNetCmd (load_carrier) {}
+            CMsgLoadCarrier (CVehicle const * pCargo, CVehicle const * pCarrier);
 
-	DWORD		m_dwIDCargo;			// unit to carry
-	DWORD		m_dwIDCarrier;		// unit carrying it
-};
-*/
-	CMsgLoadCarrier msg;
-	msg.m_dwIDCargo = dwCargo;
-	msg.m_dwIDCarrier = m_dwID;
-	//theGame.PostToServer( (CNetCmd *)&msg, sizeof(CMsgLoadCarrier) );
-	theGame.PostToAll( (CNetCmd *)&msg, sizeof(CMsgLoadCarrier) );
+        DWORD		m_dwIDCargo;			// unit to carry
+        DWORD		m_dwIDCarrier;		// unit carrying it
+    };
+    */
+    CMsgLoadCarrier msg;
+    msg.m_dwIDCargo   = dwCargo;
+    msg.m_dwIDCarrier = m_dwID;
+    // theGame.PostToServer( (CNetCmd *)&msg, sizeof(CMsgLoadCarrier) );
+    theGame.PostToAll( (CNetCmd*)&msg, sizeof( CMsgLoadCarrier ) );
 }
 
 //
 // set the destination of this unit to that
 // of the passed building
 //
-void CAIUnit::SetDestination( CAIUnit *pCAIBldg )
+void CAIUnit::SetDestination( CAIUnit* pCAIBldg )
 {
-	ASSERT_VALID( this );
+    ASSERT_VALID( this );
 
-	EnterCriticalSection (&cs);
+    EnterCriticalSection( &cs );
 
-	// BUGBUG get current location of the unit for which
-	// the destination is being set to make sure the unit
-	// is not being requested to go to its current location
-	CHexCoord hexVeh;
-	CVehicle *pVehicle = 
-		pGameData->GetVehicleData( m_iOwner, m_dwID );
-	if( pVehicle != NULL )
-		hexVeh = pVehicle->GetHexHead();
+    // BUGBUG get current location of the unit for which
+    // the destination is being set to make sure the unit
+    // is not being requested to go to its current location
+    CHexCoord hexVeh;
+    BOOL      bInBldgB = FALSE;
+    CVehicle* pVehicle = pGameData->GetVehicleData( m_iOwner, m_dwID );
+    if ( pVehicle != NULL )
+    {
+        hexVeh   = pVehicle->GetHexHead( );
+        bInBldgB = pVehicle->IsInBuilding( );
+    }
 
-	CBuilding *pBldg = 
-		pGameData->GetBuildingData( 
-		pCAIBldg->GetOwner(), pCAIBldg->GetID() );
-	if( pBldg != NULL )
-	{
-		// this should be the entrance to the building?
-		//CHexCoord hex = pBldg->GetHex();
-		CHexCoord hex = pBldg->GetExitHex();
+    CBuilding* pBldg = pGameData->GetBuildingData( pCAIBldg->GetOwner( ), pCAIBldg->GetID( ) );
+    if ( pBldg != NULL )
+    {
+        // this should be the entrance to the building?
+        // CHexCoord hex = pBldg->GetHex();
+        CHexCoord hex = pBldg->GetExitHex( );
 
-		//CMsgVehSetDest (DWORD dwID, CHexCoord const & hex, int iMode);
-		//pMsg = new CMsgVehSetDest( m_dwID, hex, CVehicle::_goto );
-		CMsgVehSetDest msg( m_dwID, hex, CVehicle::moving );
-		LeaveCriticalSection (&cs);
+        // a truck/crane standing ON the exit hex: an order there would be
+        // dropped below and it freezes at the doorstep. Order it INTO the
+        // building instead - entry re-arms arrival; trucks unload, cranes
+        // weld from INSIDE the site (operator-confirmed)
+        BOOL bTruck = pGameData->IsTruck( m_dwID ) ||
+                      GetTypeUnit( ) == CTransportData::construction;
+        if ( hex == hexVeh && bTruck )
+            hex = pBldg->GetHex( );
 
-		// don't bother if current location is the same as destination
-		if( hex == hexVeh )
-			return;
+        // CMsgVehSetDest (DWORD dwID, CHexCoord const & hex, int iMode);
+        // pMsg = new CMsgVehSetDest( m_dwID, hex, CVehicle::_goto );
+        CMsgVehSetDest msg( m_dwID, hex, CVehicle::moving );
+        LeaveCriticalSection( &cs );
+
+        // same-location: drop for non-trucks; for a truck send the wake
+        // (instant arrival -> handler unloads/loads; see CHexCoord overload)
+        if ( hex == hexVeh && !bTruck )
+            return;
+
+        // same 30s repeat-dedupe as SetDestination(CHexCoord&): the AI re-issues
+        // the SAME dest to the SAME unit every Manage pass — measured 650
+        // veh_set_dest/s at 15 players (g.mt.58), each one a server-side
+        // pathfind (8.3k path calls/s) = the sustained game-start grind.
+        // parked INSIDE a building, the next-leg order is a correction, not
+        // spam (trucks sat 12 min inside sources waiting for the sweep nudge)
+        // vsd.bypass.bldg counts orders the REPAIRED form (the CHexCoord overload
+        // at the bottom of this file, which gives an in-building repeat a 5s
+        // cooldown) would have suppressed, and this one lets through because
+        // !bInBldgB short-circuits the whole conjunction. That is the leak under
+        // test; it is a count, it changes nothing.
+        if ( Perf::IsEnabled( ) && bInBldgB && hex == m_hexLastDest &&
+             theGame.GettimeGetTime( ) < m_timeLastDest + 30 * 1000 )
+            Perf::CounterInc( "vsd.bypass.bldg" );
+        if ( !bInBldgB && hex == m_hexLastDest &&
+             theGame.GettimeGetTime( ) < m_timeLastDest + 30 * 1000 )
+        {
+            Perf::CounterInc( "vsd.dedup.bldg" );
+            return;
+        }
+        m_hexLastDest  = hex;
+        m_timeLastDest = theGame.GettimeGetTime( );
 
 #ifdef _LOGOUT
 
-	logPrintf(LOG_PRI_ALWAYS, LOG_AI_MISC, 
-	"\nCAIUnit::SetDestination() player %d unit %ld going to %d,%d \n", 
-		m_iOwner, m_dwID, hex.X(), hex.Y() );
+        logPrintf( LOG_PRI_ALWAYS, LOG_AI_MISC, "\nCAIUnit::SetDestination() player %d unit %ld going to %d,%d \n",
+                   m_iOwner, m_dwID, hex.X( ), hex.Y( ) );
 #endif
-		theGame.PostToServer( (CNetCmd *)&msg, sizeof(CMsgVehSetDest) );
-		return;
-	}
+        Perf::CounterInc( "vsd.src.bldg" );
+        theGame.PostToServer( (CNetCmd*)&msg, sizeof( CMsgVehSetDest ) );
+        return;
+    }
 
-	LeaveCriticalSection (&cs);
+    LeaveCriticalSection( &cs );
 }
 //
 // send a vehicle to a specific sub-hex, possibly to load
@@ -758,48 +1048,73 @@ void CAIUnit::SetDestination( CAIUnit *pCAIBldg )
 //
 void CAIUnit::SetDestination( CSubHex& subHexDest )
 {
-	ASSERT_VALID( this );
+    ASSERT_VALID( this );
 
-	BOOL bNobug = FALSE;
-	if( subHexDest.x > 512 || subHexDest.y > 512 )
-		bNobug = TRUE;
+    BOOL bNobug = FALSE;
+    if ( subHexDest.x > 512 || subHexDest.y > 512 )
+        bNobug = TRUE;
 
-	// BUGBUG get current location of the unit for which
-	// the destination is being set to make sure the unit
-	// is not being requested to go to its current location
-	EnterCriticalSection (&cs);
-	CSubHex subHexVeh;
-	CVehicle *pVehicle = 
-		pGameData->GetVehicleData( m_iOwner, m_dwID );
-	if( pVehicle != NULL )
-		subHexVeh = pVehicle->GetPtHead();
-	LeaveCriticalSection (&cs);
+    // BUGBUG get current location of the unit for which
+    // the destination is being set to make sure the unit
+    // is not being requested to go to its current location
+    EnterCriticalSection( &cs );
+    CSubHex   subHexVeh;
+    BOOL      bInBldgS = FALSE;
+    CVehicle* pVehicle = pGameData->GetVehicleData( m_iOwner, m_dwID );
+    if ( pVehicle != NULL )
+    {
+        subHexVeh = pVehicle->GetPtHead( );
+        bInBldgS  = pVehicle->IsInBuilding( );
+    }
+    LeaveCriticalSection( &cs );
 
-	// don't bother if current location is the same as destination
-	if( subHexDest == subHexVeh )
-		return;
+    // same-location: drop for non-trucks; a truck gets the wake instead
+    // (instant arrival -> handler unloads/loads; see CHexCoord overload)
+    if ( subHexDest == subHexVeh && !pGameData->IsTruck( m_dwID ) &&
+         GetTypeUnit( ) != CTransportData::construction )
+        return;
 
-	//CMsgVehSetDest (DWORD dwID, CSubHex const & hex, int iMode);
-/*
-CMsgVehSetDest::CMsgVehSetDest (DWORD dwID, CHexCoord const & hex, int iMode) : CNetCmd (veh_set_dest)
-{
+    // same 30s repeat-dedupe as SetDestination(CHexCoord&) — see the
+    // building-overload comment (g.mt.58 flood, 650 veh_set_dest/s).
+    {
+        CHexCoord hexDest( ( subHexDest.x / 2 ), ( subHexDest.y / 2 ) );
+        // parked INSIDE a building: next-leg order is a correction, not spam
+        // same bypass measurement as the building overload above
+        if ( Perf::IsEnabled( ) && bInBldgS && hexDest == m_hexLastDest &&
+             theGame.GettimeGetTime( ) < m_timeLastDest + 30 * 1000 )
+            Perf::CounterInc( "vsd.bypass.sub" );
+        if ( !bInBldgS && hexDest == m_hexLastDest &&
+             theGame.GettimeGetTime( ) < m_timeLastDest + 30 * 1000 )
+        {
+            Perf::CounterInc( "vsd.dedup.sub" );
+            return;
+        }
+        m_hexLastDest  = hexDest;
+        m_timeLastDest = theGame.GettimeGetTime( );
+    }
 
-	m_dwID = dwID;
-	m_hex = hex;
-	m_sub = CSubHex (hex.X()*2, hex.Y()*2);
-	m_iSub = CVehicle::full;
-	m_iMode = iMode;
-	ASSERT_CMD (this);
-}
-*/
-	
-	// kludge because the subhex form of the ctor is not implemented
-	CHexCoord hex( (subHexDest.x/2), (subHexDest.y/2) );
-	CMsgVehSetDest msg( m_dwID, hex, CVehicle::moving );
-	msg.m_sub = subHexDest;
+    // CMsgVehSetDest (DWORD dwID, CSubHex const & hex, int iMode);
+    /*
+    CMsgVehSetDest::CMsgVehSetDest (DWORD dwID, CHexCoord const & hex, int iMode) : CNetCmd (veh_set_dest)
+    {
 
-	//CMsgVehSetDest msg( m_dwID, subHexDest, CVehicle::moving );
-	theGame.PostToServer( (CNetCmd *)&msg, sizeof(CMsgVehSetDest) );
+        m_dwID = dwID;
+        m_hex = hex;
+        m_sub = CSubHex (hex.X()*2, hex.Y()*2);
+        m_iSub = CVehicle::full;
+        m_iMode = iMode;
+        ASSERT_CMD (this);
+    }
+    */
+
+    // kludge because the subhex form of the ctor is not implemented
+    CHexCoord      hex( ( subHexDest.x / 2 ), ( subHexDest.y / 2 ) );
+    CMsgVehSetDest msg( m_dwID, hex, CVehicle::moving );
+    msg.m_sub = subHexDest;
+
+    // CMsgVehSetDest msg( m_dwID, subHexDest, CVehicle::moving );
+    Perf::CounterInc( "vsd.src.sub" );
+    theGame.PostToServer( (CNetCmd*)&msg, sizeof( CMsgVehSetDest ) );
 }
 
 //
@@ -807,39 +1122,69 @@ CMsgVehSetDest::CMsgVehSetDest (DWORD dwID, CHexCoord const & hex, int iMode) : 
 //
 void CAIUnit::SetDestination( CHexCoord& m_hex )
 {
-	ASSERT_VALID( this );
+    ASSERT_VALID( this );
 
-	// if we gave it this dest in the last minute - don't repeat
-	if ( m_hex == m_hexLastDest )
-		if ( theGame.GettimeGetTime() < m_timeLastDest + 30 * 1000 )
-			return;
-	m_hexLastDest = m_hex;
-	m_timeLastDest = theGame.GettimeGetTime ();
+    // BUGBUG get current location of the unit for which
+    // the destination is being set to make sure the unit
+    // is not being requested to go to its current location
+    EnterCriticalSection( &cs );
+    CHexCoord hexVeh;
+    BOOL      bInBldg  = FALSE;
+    CVehicle* pVehicle = pGameData->GetVehicleData( m_iOwner, m_dwID );
+    if ( pVehicle != NULL )
+    {
+        hexVeh  = pVehicle->GetHexHead( );
+        bInBldg = pVehicle->IsInBuilding( );
+    }
+    LeaveCriticalSection( &cs );
 
-	// BUGBUG get current location of the unit for which
-	// the destination is being set to make sure the unit
-	// is not being requested to go to its current location
-	EnterCriticalSection (&cs);
-	CHexCoord hexVeh;
-	CVehicle *pVehicle = 
-		pGameData->GetVehicleData( m_iOwner, m_dwID );
-	if( pVehicle != NULL )
-		hexVeh = pVehicle->GetHexHead();
-	LeaveCriticalSection (&cs);
+    // if we gave it this dest in the last minute - don't repeat.
+    // EXCEPT inside a building: the exit order after unload often re-targets
+    // the entry hex the truck was just sent to, and the dedupe would strand
+    // it inside until a sweep nudge. A parked-inside repeat still needs a
+    // SHORT cooldown - the unlimited bypass echoed (order->instant arrival->
+    // order, 4/s per stuck truck) and the flood starved every AI sweep.
+    if ( m_hex == m_hexLastDest )
+        if ( theGame.GettimeGetTime( ) < m_timeLastDest + ( bInBldg ? 5 : 30 ) * 1000 )
+        {
+#if EN_AI_PROBES_ECON && defined(_WIN32)
+            if ( pGameData->IsTruck( m_dwID ) )
+            { char szZ[80]; sprintf( szZ, "[SETDEST] truck %lu DEDUPED\n", (unsigned long)m_dwID ); OutputDebugStringA( szZ ); }
+#endif
+            Perf::CounterInc( bInBldg ? "vsd.dedup.hex.inbldg" : "vsd.dedup.hex" );
+            return;
+        }
+    m_hexLastDest  = m_hex;
+    m_timeLastDest = theGame.GettimeGetTime( );
 
-	// don't bother if current location is the same as destination
-	if( m_hex == hexVeh )
-		return;
+    // same-location orders: for a TRUCK, send anyway - the engine answers
+    // with an instant arrival the handler consumes (unload/load/redispatch),
+    // waking trucks parked inside buildings that no other event can reach.
+    // Dropping it silently was the freeze: parked-inside trucks never tick
+    // the stopped-post and the AI never re-orders IN_USE trucks.
+    if ( m_hex == hexVeh && !pGameData->IsTruck( m_dwID ) &&
+         GetTypeUnit( ) != CTransportData::construction )
+        return;
 
-#ifdef _LOGOUT
-	logPrintf(LOG_PRI_ALWAYS, LOG_AI_MISC, 
-	"\nCAIUnit::SetDestination() player %d unit %ld going to %d,%d \n", 
-		m_iOwner, m_dwID, m_hex.X(), m_hex.Y() );
+#if EN_AI_PROBES_ECON && defined(_WIN32)
+    if ( pGameData->IsTruck( m_dwID ) )
+    { char szZ[80]; sprintf( szZ, "[SETDEST] truck %lu %s\n", (unsigned long)m_dwID, m_hex == hexVeh ? "WAKE" : "POSTED" ); OutputDebugStringA( szZ ); }
+    // every crane movement order, with the CALLER (resolve via PDB) - the
+    // "why is this crane going there" ledger
+    if ( GetTypeUnit( ) == CTransportData::construction )
+    {
+        char szC[128];
+        sprintf( szC, "[CRANEORD] plyr %d crane %lu task %u at %d,%d -> %d,%d from %p\n", m_iOwner,
+                 (unsigned long)m_dwID, (unsigned)GetTask( ), hexVeh.X( ), hexVeh.Y( ), m_hex.X( ), m_hex.Y( ),
+                 _ReturnAddress( ) );
+        OutputDebugStringA( szC );
+    }
 #endif
 
-	//CMsgVehSetDest (DWORD dwID, CHexCoord const & hex, int iMode);
-	CMsgVehSetDest msg( m_dwID, m_hex, CVehicle::moving );
-	theGame.PostToServer( (CNetCmd *)&msg, sizeof(CMsgVehSetDest) );
+    // CMsgVehSetDest (DWORD dwID, CHexCoord const & hex, int iMode);
+    CMsgVehSetDest msg( m_dwID, m_hex, CVehicle::moving );
+    Perf::CounterInc( "vsd.src.hex" );
+    theGame.PostToServer( (CNetCmd*)&msg, sizeof( CMsgVehSetDest ) );
 }
 
 /*
@@ -847,14 +1192,14 @@ void CAIUnit::SetDestination( CHexCoord& m_hex )
 class CMsgAttack : public CNetCmd
 {
 public:
-		CMsgAttack (DWORD dwShooter, DWORD dwTarget);
+        CMsgAttack (DWORD dwShooter, DWORD dwTarget);
 
-		DWORD				m_dwShooter;		// unit shooting
-		DWORD				m_dwTarget;			// unit being shot at
+        DWORD				m_dwShooter;		// unit shooting
+        DWORD				m_dwTarget;			// unit being shot at
 
 #ifdef _DEBUG
 public:
-	void AssertValid() const;
+    void AssertValid() const;
 #endif
 };
 */
@@ -866,19 +1211,55 @@ public:
 // which will allow the AI to attack a unit.  when available it will
 // probably be dwID driven and not hex as indicated below
 //
-//void CAIUnit::AttackHex( CHexCoord& m_hex )
-void CAIUnit::AttackUnit( DWORD dwTarget  )
+// void CAIUnit::AttackHex( CHexCoord& m_hex )
+void CAIUnit::AttackUnit( DWORD dwTarget )
 {
-	ASSERT_VALID( this );
+    ASSERT_VALID( this );
 
-	// also, need to record the dwID of this CAIUnit 
-	// as attacking the targeted opfor unit by putting
-	// it in the dwParams of the target unit and recording
-	// the targeted opfor in the CAIUnit::m_dwData
-	m_dwData = dwTarget;
+    // also, need to record the dwID of this CAIUnit
+    // as attacking the targeted opfor unit by putting
+    // it in the dwParams of the target unit and recording
+    // the targeted opfor in the CAIUnit::m_dwData
+    m_dwData = dwTarget;
 
-	CMsgAttack msg( m_dwID, dwTarget );
-	theGame.PostToServer( (CNetCmd *)&msg, sizeof(CMsgAttack) );
+    // stamp for the attack-alert feedback-loop cooldown: AttackAlert() will not
+    // re-issue this same order again until the cooldown elapses (per-hit
+    // unit_damage alerts were re-commanding the same target ~2x/sec forever)
+    m_dwTimeLastAtkCmd = theGame.GettimeGetTime( );
+
+    // Don't re-order a vehicle onto the target it is already engaging (every
+    // AssignUnits pass re-runs SeekOpfor). Only when attacking and stopped or
+    // moving: in other route modes _SetTarget also restarts a blocked unit.
+    if ( GetType( ) == CUnit::vehicle )
+    {
+        BOOL bEngaged = FALSE;
+        EnterCriticalSection( &cs );
+        CVehicle* pVeh = theVehicleMap.GetVehicle( m_dwID );
+        if ( pVeh != NULL && pVeh->GetTarget( ) != NULL )
+        {
+            CUnit* pTgt = theVehicleMap.GetVehicle( dwTarget );
+            // resolve the target as the engine's Attack() does: a vehicle
+            // not owning its hex is hit via its building, else its carrier
+            if ( pTgt != NULL && !( (CVehicle*)pTgt )->GetHexOwnership( ) )
+            {
+                CUnit* pCover = theBuildingHex._GetBuilding( ( (CVehicle*)pTgt )->GetPtHead( ) );
+                if ( pCover != NULL )
+                    pTgt = pCover;
+                else if ( ( (CVehicle*)pTgt )->GetTransport( ) != NULL )
+                    pTgt = ( (CVehicle*)pTgt )->GetTransport( );
+            }
+            if ( pTgt == NULL )
+                pTgt = theBuildingMap.GetBldg( dwTarget );
+            bEngaged = pTgt != NULL && pVeh->GetTarget( ) == pTgt && pVeh->GetEvent( ) == CVehicle::attack &&
+                       ( pVeh->GetRouteMode( ) == CVehicle::stop || pVeh->GetRouteMode( ) == CVehicle::moving );
+        }
+        LeaveCriticalSection( &cs );
+        if ( bEngaged )
+            return;
+    }
+
+    CMsgAttack msg( m_dwID, dwTarget );
+    theGame.PostToServer( (CNetCmd*)&msg, sizeof( CMsgAttack ) );
 }
 
 //
@@ -886,13 +1267,13 @@ void CAIUnit::AttackUnit( DWORD dwTarget  )
 //
 int CAIUnit::AttackCount( void )
 {
-	int iCnt=0;
-	for( int i=0; i<CAI_SIZE; ++i )
-	{
-		if( m_pdwaParams[i] )
-			iCnt++;
-	}
-	return( iCnt );
+    int iCnt = 0;
+    for ( int i = 0; i < CAI_SIZE; ++i )
+    {
+        if ( m_pdwaParams[i] )
+            iCnt++;
+    }
+    return ( iCnt );
 }
 
 //
@@ -901,17 +1282,17 @@ int CAIUnit::AttackCount( void )
 //
 void CAIUnit::AttackedBy( DWORD dwAttacker )
 {
-	for( int i=0; i<CAI_SIZE; ++i )
-	{
-		// only store it once
-		if( m_pdwaParams[i] == dwAttacker )
-			return;
-		if( !m_pdwaParams[i] )
-		{
-			m_pdwaParams[i] = dwAttacker;
-			return;
-		}
-	}
+    for ( int i = 0; i < CAI_SIZE; ++i )
+    {
+        // only store it once
+        if ( m_pdwaParams[i] == dwAttacker )
+            return;
+        if ( !m_pdwaParams[i] )
+        {
+            m_pdwaParams[i] = dwAttacker;
+            return;
+        }
+    }
 }
 
 
@@ -925,12 +1306,12 @@ void CAIUnit::AttackedBy( DWORD dwAttacker )
 //
 BOOL CAIUnit::IsAttacked( void )
 {
-	for( int i=0; i<CAI_SIZE; ++i )
-	{
-		if( m_pdwaParams[i] )
-			return TRUE;
-	}
-	return FALSE;
+    for ( int i = 0; i < CAI_SIZE; ++i )
+    {
+        if ( m_pdwaParams[i] )
+            return TRUE;
+    }
+    return FALSE;
 }
 
 /*
@@ -938,15 +1319,15 @@ BOOL CAIUnit::IsAttacked( void )
 class CMsgTransMat : public CNetCmd
 {
 public:
-		CMsgTransMat (CUnit const *pSrc, CUnit const *pDest);
+        CMsgTransMat (CUnit const *pSrc, CUnit const *pDest);
 
-		DWORD				m_dwIDSrc;		// ID of unit giving up materials
-		DWORD				m_dwIDDest;		// ID of unit receiving materials
-		short int		m_aiMat [CMaterialTypes::num_types];	// materials to transfer
+        DWORD				m_dwIDSrc;		// ID of unit giving up materials
+        DWORD				m_dwIDDest;		// ID of unit receiving materials
+        short int		m_aiMat [CMaterialTypes::num_types];	// materials to transfer
 
 #ifdef _DEBUG
 public:
-	void AssertValid() const;
+    void AssertValid() const;
 #endif
 };
 */
@@ -954,212 +1335,209 @@ public:
 // move the material ided by the iMaterial, from the unit ided
 // by dwFromID to the unit ided by dwToID
 //
-void CAIUnit::MoveMaterial( int iMaterial, int iQty,
-	DWORD dwFromID, DWORD dwToID )
+void CAIUnit::MoveMaterial( int iMaterial, int iQty, DWORD dwFromID, DWORD dwToID )
 {
-	CMsgTransMat msg;
-	msg.m_dwIDSrc = dwFromID;
-	msg.m_dwIDDest = dwToID;
-	memset( msg.m_aiMat, 0, sizeof (msg.m_aiMat));
-	msg.m_aiMat[iMaterial] = iQty;
-	theGame.PostToServer( (CNetCmd *)&msg, sizeof(CMsgTransMat) );
+    CMsgTransMat msg;
+    msg.m_dwIDSrc  = dwFromID;
+    msg.m_dwIDDest = dwToID;
+    memset( msg.m_aiMat, 0, sizeof( msg.m_aiMat ) );
+    msg.m_aiMat[iMaterial] = iQty;
+    theGame.PostToServer( (CNetCmd*)&msg, sizeof( CMsgTransMat ) );
 }
 
 WORD CAIUnit::GetParam( WORD wOffset )
 {
-	ASSERT_VALID( this );
-	if( m_pwaParams == NULL )
-		return( FALSE );
-	ASSERT( wOffset < CAI_SIZE );
-	if( wOffset < CAI_SIZE )
-		return( m_pwaParams[wOffset] );
-	return( FALSE );
+    ASSERT_VALID( this );
+    if ( m_pwaParams == NULL )
+        return ( FALSE );
+    ASSERT( wOffset < CAI_SIZE );
+    if ( wOffset < CAI_SIZE )
+        return ( m_pwaParams[wOffset] );
+    return ( FALSE );
 }
 
 void CAIUnit::SetParam( WORD wOffset, WORD wValue )
 {
-	ASSERT_VALID( this );
-	if( m_pwaParams == NULL )
-		return;
-	ASSERT( wOffset < CAI_SIZE );
-	if( wOffset < CAI_SIZE )
-		m_pwaParams[wOffset] = wValue;
+    ASSERT_VALID( this );
+    if ( m_pwaParams == NULL )
+        return;
+    ASSERT( wOffset < CAI_SIZE );
+    if ( wOffset < CAI_SIZE )
+        m_pwaParams[wOffset] = wValue;
 }
 
 DWORD CAIUnit::GetParamDW( WORD wOffset )
 {
-	ASSERT_VALID( this );
-	if( m_pdwaParams == NULL )
-		return( FALSE );
-	
-	ASSERT( wOffset < CAI_SIZE );
-	if( wOffset < CAI_SIZE )
-		return( m_pdwaParams[wOffset] );
-	return( FALSE );
+    ASSERT_VALID( this );
+    if ( m_pdwaParams == NULL )
+        return ( FALSE );
 
+    ASSERT( wOffset < CAI_SIZE );
+    if ( wOffset < CAI_SIZE )
+        return ( m_pdwaParams[wOffset] );
+    return ( FALSE );
 }
 
 void CAIUnit::SetParamDW( WORD wOffset, DWORD dwValue )
 {
-	ASSERT_VALID( this );
-	if( m_pdwaParams == NULL )
-		return;
-	
-	ASSERT( wOffset < CAI_SIZE );
-	if( wOffset < CAI_SIZE )
-		m_pdwaParams[wOffset] = dwValue;
+    ASSERT_VALID( this );
+    if ( m_pdwaParams == NULL )
+        return;
+
+    ASSERT( wOffset < CAI_SIZE );
+    if ( wOffset < CAI_SIZE )
+        m_pdwaParams[wOffset] = dwValue;
 }
 
 //
 // clears only DW parameter array
 //
-void CAIUnit::ClearParamDW(void)
+void CAIUnit::ClearParamDW( void )
 {
-	ASSERT_VALID( this );
-	if( m_pdwaParams == NULL )
-		return;
-	for( int i=0; i<CAI_SIZE; ++i )
-	{
-		m_pdwaParams[i] = 0;
-	}
+    ASSERT_VALID( this );
+    if ( m_pdwaParams == NULL )
+        return;
+    for ( int i = 0; i < CAI_SIZE; ++i )
+    {
+        m_pdwaParams[i] = 0;
+    }
 }
 //
 // clears both parameter arrays
 //
-void CAIUnit::ClearParam(void)
+void CAIUnit::ClearParam( void )
 {
-	ASSERT_VALID( this );
-	if( m_pwaParams == NULL ||
-		m_pdwaParams == NULL )
-		return;
-	for( int i=0; i<CAI_SIZE; ++i )
-	{
-		m_pwaParams[i] = 0;
-		m_pdwaParams[i] = 0;
-	}
+    ASSERT_VALID( this );
+    if ( m_pwaParams == NULL || m_pdwaParams == NULL )
+        return;
+    for ( int i = 0; i < CAI_SIZE; ++i )
+    {
+        m_pwaParams[i]  = 0;
+        m_pdwaParams[i] = 0;
+    }
 }
 
 DWORD CAIUnit::GetID( void )
 {
-	ASSERT_VALID( this );
-	return m_dwID;
+    ASSERT_VALID( this );
+    return m_dwID;
 }
 
 void CAIUnit::SetID( DWORD dwID )
 {
-	ASSERT_VALID( this );
-	m_dwID = dwID;
+    ASSERT_VALID( this );
+    m_dwID = dwID;
 }
 
 int CAIUnit::GetOwner( void )
 {
-	ASSERT_VALID( this );
-	return m_iOwner;
+    ASSERT_VALID( this );
+    return m_iOwner;
 }
 
 void CAIUnit::SetOwner( int iOwner )
 {
-	ASSERT_VALID( this );
-	m_iOwner = iOwner;
+    ASSERT_VALID( this );
+    m_iOwner = iOwner;
 }
 
 int CAIUnit::GetType( void )
 {
-	ASSERT_VALID( this );
-	return m_iType;
+    ASSERT_VALID( this );
+    return m_iType;
 }
 
 void CAIUnit::SetType( int iType )
 {
-	ASSERT_VALID( this );
-	m_iType = iType;
+    ASSERT_VALID( this );
+    m_iType = iType;
 }
 
 int CAIUnit::GetTypeUnit( void )
 {
-	ASSERT_VALID( this );
-	return m_iTypeUnit;
+    ASSERT_VALID( this );
+    return m_iTypeUnit;
 }
 
 
 BOOL CAIUnit::IsControl( void )
 {
-	return m_bControl;
+    return m_bControl;
 }
 
 void CAIUnit::SetControl( BOOL bControl )
 {
-	m_bControl = bControl;
+    m_bControl = bControl;
 }
 
 WORD CAIUnit::GetGoal( void )
 {
-	ASSERT_VALID( this );
-	return m_wGoal;
+    ASSERT_VALID( this );
+    return m_wGoal;
 }
 
 void CAIUnit::SetGoal( WORD wGoal )
 {
-	ASSERT_VALID( this );
-	m_wGoal = wGoal;
+    ASSERT_VALID( this );
+    m_wGoal = wGoal;
 }
 
 WORD CAIUnit::GetTask( void )
 {
-	ASSERT_VALID( this );
-	return m_wTask;
+    ASSERT_VALID( this );
+    return m_wTask;
 }
 
 void CAIUnit::SetTask( WORD wTask )
 {
-	ASSERT_VALID( this );
-	m_wTask = wTask;
+    ASSERT_VALID( this );
+    m_wTask = wTask;
 }
 
 DWORD CAIUnit::GetDataDW( void )
 {
-	ASSERT_VALID( this );
-	return m_dwData;
+    ASSERT_VALID( this );
+    return m_dwData;
 }
 
 void CAIUnit::SetDataDW( DWORD dwData )
 {
-	ASSERT_VALID( this );
-	m_dwData = dwData;
+    ASSERT_VALID( this );
+    m_dwData = dwData;
 }
 
 WORD CAIUnit::GetStatus( void )
 {
-	ASSERT_VALID( this );
-	return m_wStatus;
+    ASSERT_VALID( this );
+    return m_wStatus;
 }
 
 void CAIUnit::SetStatus( WORD wStatus )
 {
-	ASSERT_VALID( this );
-	m_wStatus = wStatus;
+    ASSERT_VALID( this );
+    m_wStatus = wStatus;
 }
 
-CAIUnit::~CAIUnit()
+CAIUnit::~CAIUnit( )
 {
-	ASSERT_VALID( this );
+    ASSERT_VALID( this );
 
-	if( m_plCopyData != NULL )
-	{
-		delete m_plCopyData;
-		m_plCopyData = NULL;
-	}
+    if ( m_plCopyData != NULL )
+    {
+        delete m_plCopyData;
+        m_plCopyData = NULL;
+    }
 
-	if( m_pwaParams != NULL )
-	{
-		delete [] m_pwaParams;
-		m_pwaParams = NULL;
-	}
-	if( m_pdwaParams != NULL )
-	{
-		delete [] m_pdwaParams;
-		m_pdwaParams = NULL;
-	}
+    if ( m_pwaParams != NULL )
+    {
+        delete[] m_pwaParams;
+        m_pwaParams = NULL;
+    }
+    if ( m_pdwaParams != NULL )
+    {
+        delete[] m_pdwaParams;
+        m_pdwaParams = NULL;
+    }
 }
 
 
@@ -1168,177 +1546,173 @@ CAIUnit::~CAIUnit()
 
 CAIUnitList::~CAIUnitList( void )
 {
-	ASSERT_VALID( this );
-    DeleteList();
+    ASSERT_VALID( this );
+    DeleteList( );
 }
 //
 // retrieve a pointer to a unit controlled by another player
 // either HP or AI.
 //
-CAIUnit *CAIUnitList::GetOpForUnit( DWORD dwID )
+CAIUnit* CAIUnitList::GetOpForUnit( DWORD dwID )
 {
-	// if already known, then return it
-	CAIUnit *pOpFor = GetUnit( dwID );
-	if( pOpFor != NULL )
-		return( pOpFor );
+    // if already known, then return it
+    CAIUnit* pOpFor = GetUnit( dwID );
+    if ( pOpFor != NULL )
+        return ( pOpFor );
 
-	// else get a copy from the game and save it
+    // else get a copy from the game and save it
 
-	// NOTE: the thread must be granted exclusive access
-	EnterCriticalSection (&cs);
+    // NOTE: the thread must be granted exclusive access
+    EnterCriticalSection( &cs );
 
-	CVehicle *pVehicle =
-		theVehicleMap.GetVehicle( dwID ); 
-	if( pVehicle != NULL )
-	{
-		if( !pVehicle->IsFlag(CUnit::dying) )
-		{
-			try
-			{
-			// CAIUnit::CAIUnit( DWORD dwID, int iOwner, int iType )
-			pOpFor = new CAIUnit( dwID, 
-				pVehicle->GetOwner()->GetPlyrNum(), 
-				pVehicle->GetUnitType(), pVehicle->GetData()->GetType() );
+    CVehicle* pVehicle = theVehicleMap.GetVehicle( dwID );
+    if ( pVehicle != NULL )
+    {
+        if ( !pVehicle->IsFlag( CUnit::dying ) )
+        {
+            try
+            {
+                // CAIUnit::CAIUnit( DWORD dwID, int iOwner, int iType )
+                pOpFor = new CAIUnit( dwID, pVehicle->GetOwner( )->GetPlyrNum( ), pVehicle->GetUnitType( ),
+                                      pVehicle->GetData( )->GetType( ) );
 
-			AddTail( (CObject *)pOpFor );
-			}
-			catch( CException e )
-			{
-			LeaveCriticalSection (&cs);
-			throw(ERR_CAI_BAD_NEW);
-			}
-		}
-	}
-	else
-	{
-		CBuilding *pBldg = theBuildingMap.GetBldg( dwID );
-		if( pBldg != NULL )
-		{
-			if( !pBldg->IsFlag(CUnit::dying) )
-			{
-				try
-				{
-				// CAIUnit::CAIUnit( DWORD dwID, int iOwner, int iType )
-				pOpFor = new CAIUnit( dwID, 
-				pBldg->GetOwner()->GetPlyrNum(), 
-				pBldg->GetUnitType(), pBldg->GetData()->GetType() );
+                AddTail( (CObject*)pOpFor );
+            }
+            catch ( CException* e )
+            {
+                LeaveCriticalSection( &cs );
+                throw( ERR_CAI_BAD_NEW );
+            }
+        }
+    }
+    else
+    {
+        CBuilding* pBldg = theBuildingMap.GetBldg( dwID );
+        if ( pBldg != NULL )
+        {
+            if ( !pBldg->IsFlag( CUnit::dying ) )
+            {
+                try
+                {
+                    // CAIUnit::CAIUnit( DWORD dwID, int iOwner, int iType )
+                    pOpFor = new CAIUnit( dwID, pBldg->GetOwner( )->GetPlyrNum( ), pBldg->GetUnitType( ),
+                                          pBldg->GetData( )->GetType( ) );
 
-				AddTail( (CObject *)pOpFor );
-				}
-				catch( CException e )
-				{
-				LeaveCriticalSection (&cs);
-				throw(ERR_CAI_BAD_NEW);
-				}
-			}
-		}
-	}
-	LeaveCriticalSection (&cs);
-	
-	return( pOpFor );
+                    AddTail( (CObject*)pOpFor );
+                }
+                catch ( CException* e )
+                {
+                    LeaveCriticalSection( &cs );
+                    throw( ERR_CAI_BAD_NEW );
+                }
+            }
+        }
+    }
+    LeaveCriticalSection( &cs );
+
+    return ( pOpFor );
 }
 
 //
 // find the closest repair type of building passed, that has the fewest
 // units assigned for repair, that is the closest to the hex passed
 //
-CAIUnit *CAIUnitList::GetClosestRepair( int iPlayer, int iBldg, CHexCoord& hex )
+CAIUnit* CAIUnitList::GetClosestRepair( int iPlayer, int iBldg, CHexCoord& hex )
 {
-	ASSERT_VALID( this );
-	CHexCoord hexBldg, hexBest;
-	int iBest = 0xFFFE, iDist, iAssigned, iRepairCount;
-	iRepairCount = iBest;
+    ASSERT_VALID( this );
+    CHexCoord hexBldg, hexBest;
+    int       iBest = 0xFFFE, iDist, iAssigned, iRepairCount;
+    iRepairCount    = iBest;
 
-	CAIUnit *paiBldg = NULL;
-	BOOL bBoat = FALSE;
-	if( iBldg != CStructureData::repair )
-		bBoat = TRUE;
+    CAIUnit* paiBldg = NULL;
+    BOOL     bBoat   = FALSE;
+    if ( iBldg != CStructureData::repair )
+        bBoat = TRUE;
 
-	
-    POSITION pos = GetHeadPosition();
-    while( pos != NULL )
-    {   
-        CAIUnit *pRepBldg = (CAIUnit *)GetNext( pos );
-        if( pRepBldg != NULL )
+
+    POSITION pos = GetHeadPosition( );
+    while ( pos != NULL )
+    {
+        CAIUnit* pRepBldg = (CAIUnit*)GetNext( pos );
+        if ( pRepBldg != NULL )
         {
-        	ASSERT_VALID( pRepBldg );
+            ASSERT_VALID( pRepBldg );
 
-            if( pRepBldg->GetOwner() != iPlayer )
+            if ( pRepBldg->GetOwner( ) != iPlayer )
                 continue;
 
-			// since there are 2 types of ship repair centers and one
-			// type of vehicle repair center, we have to hard code to tell
-			if( bBoat )
-			{
-            	if( pRepBldg->GetTypeUnit() != CStructureData::shipyard_1 &&
-            		pRepBldg->GetTypeUnit() != CStructureData::shipyard_3 )
-                	continue;
-			}
-			else // iBldg should be CStructureData::repair
-			{
-            	if( pRepBldg->GetTypeUnit() != iBldg )
-                	continue;
-			}
+            // since there are 2 types of ship repair centers and one
+            // type of vehicle repair center, we have to hard code to tell
+            if ( bBoat )
+            {
+                if ( pRepBldg->GetTypeUnit( ) != CStructureData::shipyard_1 &&
+                     pRepBldg->GetTypeUnit( ) != CStructureData::shipyard_3 )
+                    continue;
+            }
+            else  // iBldg should be CStructureData::repair
+            {
+                if ( pRepBldg->GetTypeUnit( ) != iBldg )
+                    continue;
+            }
 
-			BOOL bIsConstructing = FALSE;
-			hexBldg.X(0);
-			hexBldg.Y(0);
-			EnterCriticalSection (&cs);
-			CBuilding *pBldg = 
-				theBuildingMap.GetBldg( pRepBldg->GetID() );
-			if( pBldg != NULL )
-			{
-				hexBldg = pBldg->GetExitHex();
-				bIsConstructing = pBldg->IsConstructing();
-			}
-			LeaveCriticalSection (&cs);
+            BOOL bIsConstructing = FALSE;
+            hexBldg.X( 0 );
+            hexBldg.Y( 0 );
+            EnterCriticalSection( &cs );
+            CBuilding* pBldg = theBuildingMap.GetBldg( pRepBldg->GetID( ) );
+            if ( pBldg != NULL )
+            {
+                hexBldg         = pBldg->GetExitHex( );
+                bIsConstructing = pBldg->IsConstructing( );
+            }
+            LeaveCriticalSection( &cs );
 
-			if( bIsConstructing )
-				continue;
-			if( !hexBldg.X() && !hexBldg.Y() )
-				continue;
+            if ( bIsConstructing )
+                continue;
+            if ( !hexBldg.X( ) && !hexBldg.Y( ) )
+                continue;
 
 #if THREADS_ENABLED
-			// BUGBUG this function must yield
-			myYieldThread();
-			//if( myYieldThread() == TM_QUIT )
-			//	throw(ERR_CAI_TM_QUIT); // THROW( pException );
+            // BUGBUG this function must yield
+            myYieldThread( );
+            // if( myYieldThread() == TM_QUIT )
+            //	throw(ERR_CAI_TM_QUIT); // THROW( pException );
 #endif
-			// consider that units of the appropriate type may be already
-			// assigned for repair at that center, and therefore we want
-			// the repair center with the fewest units assigned that is
-			// the closest to the hex passed
-			iAssigned = GetRepairCount( iPlayer, pRepBldg->GetID() );
-			if( iAssigned < iRepairCount )
-			{
-				iRepairCount = iAssigned;
-				iBest = 0xFFFE;
-			}
+            // consider that units of the appropriate type may be already
+            // assigned for repair at that center, and therefore we want
+            // the repair center with the fewest units assigned that is
+            // the closest to the hex passed
+            iAssigned = GetRepairCount( iPlayer, pRepBldg->GetID( ) );
+            if ( iAssigned < iRepairCount )
+            {
+                iRepairCount = iAssigned;
+                iBest        = 0xFFFE;
+            }
 
-			// skip repair centers with more than detected fewest assignments
-			if( iAssigned > iRepairCount )
-				continue;
+            // skip repair centers with more than detected fewest assignments
+            if ( iAssigned > iRepairCount )
+                continue;
 
-			// repair centers with the same number assigned, as fewest,
-			// are allowed to continue for range test
-			
-			// consider range to desired hex, looking for closest
-			iDist = pGameData->GetRangeDistance( hex, hexBldg );
-			if( iDist && iDist < iBest )
-			{
-				paiBldg = pRepBldg;
-				iBest = iDist;
-				hexBest = hexBldg;
-			}
+            // repair centers with the same number assigned, as fewest,
+            // are allowed to continue for range test
+
+            // consider range to desired hex, looking for closest
+            iDist = pGameData->GetRangeDistance( hex, hexBldg );
+            if ( iDist && iDist < iBest )
+            {
+                paiBldg = pRepBldg;
+                iBest   = iDist;
+                hexBest = hexBldg;
+            }
         }
     }
 
-	if( paiBldg != NULL )
-	{
-		hex = hexBest;
-		return( paiBldg );
-	}
-    return( NULL );
+    if ( paiBldg != NULL )
+    {
+        hex = hexBest;
+        return ( paiBldg );
+    }
+    return ( NULL );
 }
 
 //
@@ -1348,137 +1722,161 @@ CAIUnit *CAIUnitList::GetClosestRepair( int iPlayer, int iBldg, CHexCoord& hex )
 //
 int CAIUnitList::GetRepairCount( int iPlayer, DWORD dwRepBldg )
 {
-	int iCount = 0;
+    int iCount = 0;
 
-    POSITION pos = GetHeadPosition();
-    while( pos != NULL )
-    {   
-        CAIUnit *pUnit = (CAIUnit *)GetNext( pos );
-        if( pUnit != NULL )
+    POSITION pos = GetHeadPosition( );
+    while ( pos != NULL )
+    {
+        CAIUnit* pUnit = (CAIUnit*)GetNext( pos );
+        if ( pUnit != NULL )
         {
-#if 0 //THREADS_ENABLED
-			// BUGBUG this function must yield
+#if AI_THREADS_ENABLED
+       //  BUGBUG this function must yield
 			myYieldThread();
 			//if( myYieldThread() == TM_QUIT )
 			//	throw(ERR_CAI_TM_QUIT); // THROW( pException );
 #endif
-        	ASSERT_VALID( pUnit );
+            ASSERT_VALID( pUnit );
 
-            if( pUnit->GetOwner() != iPlayer )
+            if ( pUnit->GetOwner( ) != iPlayer )
                 continue;
-            if( pUnit->GetType() != CUnit::vehicle )
+            if ( pUnit->GetType( ) != CUnit::vehicle )
                 continue;
-			// this vehicle is assigned to be repaired at the
-			// repair center passed in
-			if( pUnit->GetDataDW() == dwRepBldg )
-				iCount++;
-		}
-	}
-	return( iCount );
+            // this vehicle is assigned to be repaired at the
+            // repair center passed in
+            if ( pUnit->GetDataDW( ) == dwRepBldg )
+                iCount++;
+        }
+    }
+    return ( iCount );
 }
 
 //
 // find the building of the type passed, belonging to the player passed,
 // that is closest to the hex passed
 //
-CAIUnit *CAIUnitList::GetClosest( int iPlayer, int iBldg, CHexCoord& hex )
+CAIUnit* CAIUnitList::GetClosest( int iPlayer, int iBldg, CHexCoord& hex )
 {
-	ASSERT_VALID( this );
-	CHexCoord hexBldg, hexBest;
-	int iBest = 0xFFFE, iDist;
-	CAIUnit *paiBldg = NULL;
+    ASSERT_VALID( this );
+    CHexCoord hexBldg, hexBest;
+    int       iBest   = 0xFFFE, iDist;
+    CAIUnit*  paiBldg = NULL;
 
-    POSITION pos = GetHeadPosition();
-    while( pos != NULL )
-    {   
-        CAIUnit *pUnit = (CAIUnit *)GetNext( pos );
-        if( pUnit != NULL )
+    POSITION pos = GetHeadPosition( );
+    while ( pos != NULL )
+    {
+        CAIUnit* pUnit = (CAIUnit*)GetNext( pos );
+        if ( pUnit != NULL )
         {
 #if THREADS_ENABLED
-			// BUGBUG this function must yield
-			myYieldThread();
-			//if( myYieldThread() == TM_QUIT )
-			//	throw(ERR_CAI_TM_QUIT); // THROW( pException );
+            // BUGBUG this function must yield
+            myYieldThread( );
+            // if( myYieldThread() == TM_QUIT )
+            //	throw(ERR_CAI_TM_QUIT); // THROW( pException );
 #endif
-        	ASSERT_VALID( pUnit );
+            ASSERT_VALID( pUnit );
 
-            if( pUnit->GetOwner() != iPlayer )
+            if ( pUnit->GetOwner( ) != iPlayer )
                 continue;
-            if( pUnit->GetTypeUnit() != iBldg )
+            if ( pUnit->GetTypeUnit( ) != iBldg )
                 continue;
 
-			hexBldg.X(0);
-			hexBldg.Y(0);
-			EnterCriticalSection (&cs);
-			CBuilding *pBldg = theBuildingMap.GetBldg( pUnit->GetID() );
-			if( pBldg != NULL )
-			{
-				hexBldg = pBldg->GetExitHex();
-			}
-			LeaveCriticalSection (&cs);
+            hexBldg.X( 0 );
+            hexBldg.Y( 0 );
+            EnterCriticalSection( &cs );
+            CBuilding* pBldg = theBuildingMap.GetBldg( pUnit->GetID( ) );
+            if ( pBldg != NULL )
+            {
+                hexBldg = pBldg->GetExitHex( );
+            }
+            LeaveCriticalSection( &cs );
 
-			if( !hexBldg.X() && !hexBldg.Y() )
-				continue;
+            if ( !hexBldg.X( ) && !hexBldg.Y( ) )
+                continue;
 
-			iDist = pGameData->GetRangeDistance( hex, hexBldg );
-			if( iDist && iDist < iBest )
-			{
-				paiBldg = pUnit;
-				iBest = iDist;
-				hexBest = hexBldg;
-			}
+            iDist = pGameData->GetRangeDistance( hex, hexBldg );
+            if ( iDist && iDist < iBest )
+            {
+                paiBldg = pUnit;
+                iBest   = iDist;
+                hexBest = hexBldg;
+            }
         }
     }
 
-	if( paiBldg != NULL )
-	{
-		hex = hexBest;
-		return( paiBldg );
-	}
-    return( NULL );
+    if ( paiBldg != NULL )
+    {
+        hex = hexBest;
+        return ( paiBldg );
+    }
+    return ( NULL );
 }
 
 //
 // return a pointer to the CAIUnit object matching the id passed
 //
-CAIUnit *CAIUnitList::GetUnitNY( DWORD dwId )
+//
+// shadowed CObList mutators: keep the O(1) id index exact. See the class
+// comment in caiunit.hpp -- ALL list mutation in this codebase goes through
+// these four (the internal helpers below route through them too).
+//
+POSITION CAIUnitList::AddTail( CObject* pObj )
 {
-	ASSERT_VALID( this );
+    CAIUnit* pUnit = (CAIUnit*)pObj;
+    if ( pUnit != NULL )
+        m_index[pUnit->GetID( )] = pUnit;
+    return CObList::AddTail( pObj );
+}
 
-    POSITION pos = GetHeadPosition();
-    while( pos != NULL )
-    {   
-        CAIUnit *pUnit = (CAIUnit *)GetNext( pos );
-        if( pUnit != NULL )
+// index maintenance on REMOVAL is by VALUE, never by deref: borrowed lists
+// (m_plBldgsNeed / m_plTrucksAvailable) hold pointers that may already be
+// FREED (soak97 AV: RemoveHead's GetID() read 0xDD fill off a dead head).
+// Objects being ADDED are alive by contract, so AddTail keeps its deref.
+static void xIndexEraseByValue( std::unordered_map<DWORD, CAIUnit*>& index, CAIUnit* pUnit )
+{
+    if ( pUnit == NULL )
+        return;
+    for ( std::unordered_map<DWORD, CAIUnit*>::iterator it = index.begin( ); it != index.end( ); ++it )
+        if ( it->second == pUnit )  // pointer compare only - pUnit may be freed
         {
-        	ASSERT_VALID( pUnit );
-
-            if( pUnit->GetID() == dwId )
-                return( pUnit );
+            index.erase( it );
+            return;
         }
-    }
-    return( NULL );
+}
+
+void CAIUnitList::RemoveAt( POSITION pos )
+{
+    xIndexEraseByValue( m_index, (CAIUnit*)GetAt( pos ) );
+    CObList::RemoveAt( pos );
+}
+
+CObject* CAIUnitList::RemoveHead( void )
+{
+    CObject* pObj = CObList::RemoveHead( );
+    xIndexEraseByValue( m_index, (CAIUnit*)pObj );
+    return pObj;
+}
+
+void CAIUnitList::RemoveAll( void )
+{
+    m_index.clear( );
+    CObList::RemoveAll( );
+}
+
+CAIUnit* CAIUnitList::GetUnitNY( DWORD dwId )
+{
+    // O(1) via the id index (was an O(n) walk over the whole list)
+    std::unordered_map<DWORD, CAIUnit*>::const_iterator it = m_index.find( dwId );
+    return ( it != m_index.end( ) ) ? it->second : NULL;
 }
 //
 // return a pointer to the CAIUnit object matching the id passed
 //
-CAIUnit *CAIUnitList::GetUnit( DWORD dwId )
+CAIUnit* CAIUnitList::GetUnit( DWORD dwId )
 {
-	ASSERT_VALID( this );
-
-    POSITION pos = GetHeadPosition();
-    while( pos != NULL )
-    {   
-        CAIUnit *pUnit = (CAIUnit *)GetNext( pos );
-        if( pUnit != NULL )
-        {
-        	ASSERT_VALID( pUnit );
-
-            if( pUnit->GetID() == dwId )
-                return( pUnit );
-        }
-    }
-    return( NULL );
+    // O(1) via the id index (was an O(n) walk over the whole list)
+    std::unordered_map<DWORD, CAIUnit*>::const_iterator it = m_index.find( dwId );
+    return ( it != m_index.end( ) ) ? it->second : NULL;
 }
 
 //
@@ -1486,18 +1884,18 @@ CAIUnit *CAIUnitList::GetUnit( DWORD dwId )
 //
 void CAIUnitList::ClearTarget( DWORD dwTarget )
 {
-	ASSERT_VALID( this );
+    ASSERT_VALID( this );
 
-    POSITION pos = GetHeadPosition();
-    while( pos != NULL )
-    {   
-        CAIUnit *pUnit = (CAIUnit *)GetNext( pos );
-        if( pUnit != NULL )
+    POSITION pos = GetHeadPosition( );
+    while ( pos != NULL )
+    {
+        CAIUnit* pUnit = (CAIUnit*)GetNext( pos );
+        if ( pUnit != NULL )
         {
-        	ASSERT_VALID( pUnit );
+            ASSERT_VALID( pUnit );
 
-            if( pUnit->GetDataDW() == dwTarget )
-                pUnit->SetDataDW(0); 
+            if ( pUnit->GetDataDW( ) == dwTarget )
+                pUnit->SetDataDW( 0 );
         }
     }
 }
@@ -1507,78 +1905,78 @@ void CAIUnitList::ClearTarget( DWORD dwTarget )
 //
 void CAIUnitList::DeleteList( void )
 {
-	ASSERT_VALID( this );
+    ASSERT_VALID( this );
 
-    if( GetCount() )
+    if ( GetCount( ) )
     {
-        POSITION pos = GetHeadPosition();
-        while( pos != NULL )
-        {   
-            CAIUnit *pUnit = (CAIUnit *)GetNext( pos );
-            if( pUnit != NULL )
+        POSITION pos = GetHeadPosition( );
+        while ( pos != NULL )
+        {
+            CAIUnit* pUnit = (CAIUnit*)GetNext( pos );
+            if ( pUnit != NULL )
             {
-            	ASSERT_VALID( pUnit );
+                ASSERT_VALID( pUnit );
 
                 delete pUnit;
             }
         }
     }
-    RemoveAll();
+    RemoveAll( );
 }
 
 void CAIUnitList::AddUnit( DWORD dwID )
 {
-	int iPlayer = 0;
-	int iType = 0xFFFE;
-	int iUnitType = 0xFFFE;
-	BOOL bControl = FALSE;
+    int  iPlayer   = 0;
+    int  iType     = 0xFFFE;
+    int  iUnitType = 0xFFFE;
+    BOOL bControl  = FALSE;
 
-	EnterCriticalSection (&cs);
-	CVehicle *pVehicle = theVehicleMap.GetVehicle( dwID );
-	if( pVehicle != NULL )
-	{
-		iPlayer = pVehicle->GetOwner()->GetPlyrNum();
-		iType = CUnit::vehicle;
-		iUnitType = pVehicle->GetData()->GetType();
-		bControl = pVehicle->GetOwner()->IsAI();
-	}
-	else
-	{
-		CBuilding *pBldg = theBuildingMap.GetBldg( dwID );
-		if( pBldg != NULL )
-		{
-			iPlayer = pBldg->GetOwner()->GetPlyrNum();
-			iType = CUnit::building;
-			iUnitType = pBldg->GetData()->GetType();
-			bControl = pBldg->GetOwner()->IsAI();
-		}
-		else
-			return;
-	}
-	LeaveCriticalSection (&cs);
+    EnterCriticalSection( &cs );
+    CVehicle* pVehicle = theVehicleMap.GetVehicle( dwID );
+    if ( pVehicle != NULL )
+    {
+        iPlayer   = pVehicle->GetOwner( )->GetPlyrNum( );
+        iType     = CUnit::vehicle;
+        iUnitType = pVehicle->GetData( )->GetType( );
+        bControl  = pVehicle->GetOwner( )->IsAI( );
+    }
+    else
+    {
+        CBuilding* pBldg = theBuildingMap.GetBldg( dwID );
+        if ( pBldg != NULL )
+        {
+            iPlayer   = pBldg->GetOwner( )->GetPlyrNum( );
+            iType     = CUnit::building;
+            iUnitType = pBldg->GetData( )->GetType( );
+            bControl  = pBldg->GetOwner( )->IsAI( );
+        }
+        else
+            return;
+    }
+    LeaveCriticalSection( &cs );
 
-	if( !iPlayer )
-		return;
+    if ( !iPlayer )
+        return;
 
-	CAIUnit *pUnit = NULL;
-	try
-	{
-		// CAIUnit( DWORD dwID, int iOwner, class, type );
-		pUnit = new CAIUnit( dwID, iPlayer, iType, iUnitType );
-		ASSERT_VALID( pUnit );
-		AddTail( (CObject *)pUnit );
-	}
-	catch( CException e )
-	{
-		// need to report this error occurred
-		throw(ERR_CAI_BAD_NEW);
-	}
-	
-	if( pUnit == NULL )
-		return;
+    CAIUnit* pUnit = NULL;
+    try
+    {
+        // CAIUnit( DWORD dwID, int iOwner, class, type );
+        pUnit = new CAIUnit( dwID, iPlayer, iType, iUnitType );
+        ASSERT_VALID( pUnit );
+        AddTail( (CObject*)pUnit );
+    }
+    catch ( CException* e )
+    {
+        // need to report this error occurred
+        throw( ERR_CAI_BAD_NEW );
+    }
 
-	// indicate what controls this unit
-	pUnit->SetControl(bControl);
+    if ( pUnit == NULL )
+        return;
+
+    // indicate what controls this unit
+    pUnit->SetControl( bControl );
 }
 
 //
@@ -1586,29 +1984,28 @@ void CAIUnitList::AddUnit( DWORD dwID )
 //
 void CAIUnitList::RemoveUnits( int iPlayer )
 {
-	ASSERT_VALID( this );
+    ASSERT_VALID( this );
 
-	CAIUnit *pUnit = NULL;
+    CAIUnit* pUnit = NULL;
     POSITION pos1, pos2;
-    for( pos1 = GetHeadPosition(); 
-        ( pos2 = pos1 ) != NULL; )
+    for ( pos1 = GetHeadPosition( ); ( pos2 = pos1 ) != NULL; )
     {
-        pUnit = (CAIUnit *)GetNext( pos1 );
-        if( pUnit != NULL )
+        pUnit = (CAIUnit*)GetNext( pos1 );
+        if ( pUnit != NULL )
         {
             ASSERT_VALID( pUnit );
 
-        	if( pUnit->GetOwner() != iPlayer )
-            	continue;
+            if ( pUnit->GetOwner( ) != iPlayer )
+                continue;
         }
 
-        pUnit = (CAIUnit *)GetAt( pos2 );
-        if( pUnit != NULL )
+        pUnit = (CAIUnit*)GetAt( pos2 );
+        if ( pUnit != NULL )
         {
             ASSERT_VALID( pUnit );
 
-        	RemoveAt( pos2 );
-        	delete pUnit;
+            RemoveAt( pos2 );
+            delete pUnit;
         }
     }
 }
@@ -1619,122 +2016,162 @@ void CAIUnitList::RemoveUnits( int iPlayer )
 //
 void CAIUnitList::RemoveUnit( DWORD dwID, BOOL bObjectToo /*=TRUE*/ )
 {
-	ASSERT_VALID( this );
+    ASSERT_VALID( this );
 
-	// no need to remove that which is not there
-	CAIUnit *pUnit = GetUnit( dwID );
-	if( pUnit == NULL )
-		return;
+    // no need to remove that which is not there
+    CAIUnit* pUnit = GetUnit( dwID );
+    if ( pUnit == NULL )
+        return;
 
     POSITION pos1, pos2;
-    for( pos1 = GetHeadPosition(); 
-        ( pos2 = pos1 ) != NULL; )
+    for ( pos1 = GetHeadPosition( ); ( pos2 = pos1 ) != NULL; )
     {
-        pUnit = (CAIUnit *)GetNext( pos1 );
-        if( pUnit != NULL )
+        pUnit = (CAIUnit*)GetNext( pos1 );
+        if ( pUnit != NULL )
         {
             ASSERT_VALID( pUnit );
 
-        	if( pUnit->GetID() != dwID )
-            	continue;
+            if ( pUnit->GetID( ) != dwID )
+                continue;
         }
 
-        pUnit = (CAIUnit *)GetAt( pos2 );
-        if( pUnit != NULL )
+        pUnit = (CAIUnit*)GetAt( pos2 );
+        if ( pUnit != NULL )
         {
             ASSERT_VALID( pUnit );
 
-        	RemoveAt( pos2 );
-			if( bObjectToo )
-        		delete pUnit;
-        	break;
+            RemoveAt( pos2 );
+            if ( bObjectToo )
+                delete pUnit;
+            break;
         }
     }
 }
 
-
-void CAIUnitList::Load( CFile *pFile )
+void CAIUnitList::Load( CArchive& ar )
 {
-	// make any old units go away
-	if( GetCount() )
-		DeleteList();
+    // make any old units go away
+    if ( GetCount( ) )
+        DeleteList( );
 
-	UnitBuff ubUnit;
+    UnitBuff ubUnit;
 
-	// now get count of units
-	int iCnt;
-	pFile->Read( (void*)&iCnt, sizeof(int) );
+    // now get count of units
+    int iCnt = 0;
+    try
+    {
+        ar >> iCnt;
+    }
+    catch ( CFileException* /*theException*/ )
+    {
+        throw( ERR_CAI_BAD_FILE );
+    }
 
-	if( iCnt )
-	{
-		int iBytes;
-		for( int i=0; i<iCnt; ++i )
-		{
-			// read file data into buffer
-			iBytes = 
-				pFile->Read( (void*)&ubUnit, sizeof(UnitBuff) );
+    if ( iCnt )
+    {
+        for ( int idx = 0; idx < iCnt; ++idx )
+        {
+            // read file data into buffer
+            UINT uBytes;
+            try
+            {
+                uBytes = ar.Read( (void*)&ubUnit, (UINT)sizeof( UnitBuff ) );
+            }
+            catch ( CFileException* /*theException*/ )
+            {
+                throw( ERR_CAI_BAD_FILE );
+            }
 
-			// BUGBUG how should read errors be reported?
-			if( iBytes != sizeof(UnitBuff) )
-				return;
+            // BUGBUG how should read errors be reported?
+            if ( uBytes != sizeof( UnitBuff ) )
+                throw( ERR_CAI_BAD_FILE );
 
-			//CAIUnit( DWORD dwID, int iOwner, int iType, int iTypeUnit );
-			CAIUnit *pUnit = new CAIUnit( ubUnit.dwID, ubUnit.iOwner,
-					ubUnit.iType, ubUnit.iTypeUnit );
+            CAIUnit* pUnit = NULL;
+            try
+            {
+                // CAIUnit( DWORD dwID, int iOwner, int iType, int iTypeUnit );
+                pUnit = new CAIUnit( ubUnit.dwID, ubUnit.iOwner, ubUnit.iType, ubUnit.iTypeUnit );
+            }
+            catch ( CException* /*e*/ )
+            {
+                // memory allocation failure
+                throw( ERR_CAI_BAD_NEW );
+            }
 
-			pUnit->SetControl(ubUnit.bControl); 
-			pUnit->SetGoal(ubUnit.wGoal);
-			pUnit->SetTask(ubUnit.wTask);
-			pUnit->SetDataDW(ubUnit.dwData);
-			pUnit->SetStatus(ubUnit.wStatus);
+            pUnit->SetControl( ubUnit.bControl );
+            pUnit->SetGoal( ubUnit.wGoal );
+            pUnit->SetTask( ubUnit.wTask );
+            pUnit->SetDataDW( ubUnit.dwData );
+            pUnit->SetStatus( ubUnit.wStatus );
 
-			for(int i=0; i<CAI_SIZE; ++i )
-			{
-				pUnit->SetParam(i,ubUnit.iParams[i]);
-				pUnit->SetParamDW(i,ubUnit.dwParams[i]);
-			}
+            for ( int i = 0; i < CAI_SIZE; ++i )
+            {
+                pUnit->SetParam( i, ubUnit.iParams[i] );
+                pUnit->SetParamDW( i, ubUnit.dwParams[i] );
+            }
 
-			// put the unit in the list
-			AddTail( (CObject *)pUnit );
-		}
-	}
+            // put the unit in the list
+            AddTail( (CObject*)pUnit );
+        }
+    }
 }
 
-void CAIUnitList::Save( CFile *pFile )
+void CAIUnitList::Save( CArchive& ar )
 {
-	UnitBuff ubUnit;
+    UnitBuff ubUnit;
 
-	int iCnt = GetCount();
-	pFile->Write( (const void*)&iCnt, sizeof(int) );
+    int iCnt = GetCount( );
+    try
+    {
+        ar << iCnt;
+    }
+    catch ( CFileException* /*theException*/ )
+    {
+        throw( ERR_CAI_BAD_FILE );
+    }
 
-	if( iCnt )
-	{
-       	POSITION pos = GetHeadPosition();
-        while( pos != NULL )
-        {   
-            CAIUnit *pUnit = (CAIUnit *)GetNext( pos );
-            if( pUnit != NULL )
+    if ( iCnt )
+    {
+        POSITION pos = GetHeadPosition( );
+        while ( pos != NULL )
+        {
+            CAIUnit* pUnit = (CAIUnit*)GetNext( pos );
+            if ( pUnit == NULL )
+                continue;
+
+            ubUnit.dwID      = pUnit->GetID( );
+            ubUnit.iOwner    = pUnit->GetOwner( );
+            ubUnit.iType     = pUnit->GetType( );
+            ubUnit.iTypeUnit = pUnit->GetTypeUnit( );
+            ubUnit.bControl  = pUnit->IsControl( );
+            ubUnit.wGoal     = pUnit->GetGoal( );
+            ubUnit.wTask     = pUnit->GetTask( );
+            ubUnit.dwData    = pUnit->GetDataDW( );
+            ubUnit.wStatus   = pUnit->GetStatus( );
+
+            for ( int i = 0; i < CAI_SIZE; ++i )
             {
-				ubUnit.dwID = pUnit->GetID();
-				ubUnit.iOwner = pUnit->GetOwner();
-				ubUnit.iType = pUnit->GetType();
-				ubUnit.iTypeUnit = pUnit->GetTypeUnit();
-				ubUnit.bControl = pUnit->IsControl();
-				ubUnit.wGoal = pUnit->GetGoal();
-				ubUnit.wTask = pUnit->GetTask();
-				ubUnit.dwData = pUnit->GetDataDW();
-				ubUnit.wStatus = pUnit->GetStatus();
+                ubUnit.iParams[i]  = pUnit->GetParam( i );
+                ubUnit.dwParams[i] = pUnit->GetParamDW( i );
+            }
 
-				for(int i=0; i<CAI_SIZE; ++i )
-				{
-					ubUnit.iParams[i] = pUnit->GetParam(i);
-					ubUnit.dwParams[i] = pUnit->GetParamDW(i);
-				}
-                	
-				pFile->Write( (const void*)&ubUnit, sizeof(UnitBuff) );
+            try
+            {
+                try
+                {
+                    ar.Write( (const void*)&ubUnit, (UINT)sizeof( UnitBuff ) );
+                }
+                catch ( CFileException* /*theException*/ )
+                {
+                    throw( ERR_CAI_BAD_FILE );
+                }
+            }
+            catch ( CFileException* /*theException*/ )
+            {
+                throw( ERR_CAI_BAD_FILE );
             }
         }
-	}
+    }
 }
 
 // end of CAIUnit.cpp

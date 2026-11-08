@@ -1,0 +1,198 @@
+//---------------------------------------------------------------------------
+// WinMain.cpp — Phase 4c entry point replacing MFC's AfxWinMain.
+//
+// MFC's CMAKE_MFC_FLAG=2 used to pull in an auto-generated WinMain via
+// AfxWinMain in mfcsXX.lib. AfxWinMain calls AfxGetApp() which assumes a
+// CWinApp-derived static instance; CConquerApp now inherits CWinAppStub
+// (no MFC), so AfxGetApp would return garbage and crash.
+//
+// Defining our own WinMain here makes the linker prefer this entry over
+// the MFC one. We then directly drive the CConquerApp lifecycle:
+//   theApp.m_hInstance = hInstance
+//   theApp.InitInstance()
+//   theApp.Run()
+//   theApp.ExitInstance()
+//---------------------------------------------------------------------------
+
+#include "stdafx.h"
+#include "en_logpath.h"   // EnLogCaptureLaunchDir - must run before the exe-dir chdir
+#include "en_hangdump.h"  // hang watchdog + the shared dump-path helper
+
+#include "lastplnt.h"
+#include "SDL2DisplayMetrics.h"
+
+#include <dbghelp.h>
+#include <time.h>
+#if defined( _DEBUG )
+#include <crtdbg.h>
+#endif
+#pragma comment( lib, "dbghelp.lib" )
+
+extern CConquerApp theApp;
+
+// ---------------------------------------------------------------------------
+// Full-memory crash dumps. Writes a complete .dmp (MiniDumpWithFullMemory, so
+// stacks are never truncated) on any unhandled exception. No admin / WER
+// LocalDumps needed. Captures the AI worker threads' stacks too — important
+// since the slowdown/crash bug lives in the AI sim. Dumps go to %EN_DUMP_DIR%,
+// else %LOCALAPPDATA%\EnemyNations\crashdumps (the old hardcoded d:\tmp path
+// silently wrote nothing on a tester box with no D: drive), else d:\tmp.
+// ---------------------------------------------------------------------------
+#ifdef _WIN32
+static LONG WINAPI EnWriteFullDump( EXCEPTION_POINTERS* ep )
+{
+    // Folder choice, name stamp and the %TEMP% fallback live in EnDumpOpenFile
+    // (en_hangdump.cpp) so the hang dumper writes to exactly the same place.
+    // Prefix "full" keeps the crash dump's historical name enations_full_*.dmp.
+    char path[MAX_PATH]; path[0] = '\0';
+    HANDLE hf = (HANDLE)EnDumpOpenFile( "full", path, MAX_PATH );
+    if ( hf != INVALID_HANDLE_VALUE )
+    {
+        MINIDUMP_EXCEPTION_INFORMATION mei;
+        mei.ThreadId          = GetCurrentThreadId();
+        mei.ExceptionPointers = ep;
+        mei.ClientPointers    = FALSE;
+
+        MINIDUMP_TYPE type = (MINIDUMP_TYPE)(
+            MiniDumpWithFullMemory | MiniDumpWithHandleData |
+            MiniDumpWithThreadInfo | MiniDumpWithFullMemoryInfo );
+
+        BOOL  bWrote = MiniDumpWriteDump( GetCurrentProcess(), GetCurrentProcessId(), hf,
+                                          type, ep ? &mei : NULL, NULL, NULL );
+        DWORD dwErr  = bWrote ? 0 : GetLastError();
+        CloseHandle( hf );
+        if ( !bWrote )
+            DeleteFileA( path );   // a partial dump is not a dump
+
+        char msg[MAX_PATH + 64];
+        if ( bWrote )
+            _snprintf_s( msg, sizeof( msg ), _TRUNCATE, "ENDUMP: wrote full dump %s\n", path );
+        else
+            _snprintf_s( msg, sizeof( msg ), _TRUNCATE, "ENDUMP: MiniDumpWriteDump failed (0x%08lx), deleted %s\n",
+                         (unsigned long)dwErr, path );
+        OutputDebugStringA( msg );
+    }
+    return EXCEPTION_EXECUTE_HANDLER;   // let the process terminate after dumping
+}
+#endif // _WIN32 (Windows minidump crash handler; no dbghelp on Linux)
+
+extern "C" int APIENTRY WinMain( HINSTANCE hInstance,
+                                 HINSTANCE hPrevInstance,
+                                 LPSTR     lpCmdLine,
+                                 int       nCmdShow )
+{
+    (void)hPrevInstance;
+    EnDpi::InitializeProcess();
+    (void)lpCmdLine;
+    (void)nCmdShow;
+
+    // Install the full-memory crash dumper as early as possible so any later
+    // fault (incl. assert/STATUS_BREAKPOINT and AI-thread faults) is captured
+    // with complete stacks.
+#ifdef _WIN32
+    SetUnhandledExceptionFilter( EnWriteFullDump );
+#endif
+
+    // Hang watchdog: the filter above only fires on an EXCEPTION. A hard freeze
+    // (main loop stops pumping, no fault) produced nothing at all, so the
+    // operator's frozen session had to be killed with zero evidence. This
+    // writes the same full-memory dump when the main thread stops pumping SDL
+    // events for EN_HANGDUMP_SECS (default 40s). Diagnostic only - it never
+    // touches the process state. Debug: on; Release: set EN_HANGDUMP=1.
+    EnHangWatchdogStart( );
+
+    // Capture the launch cwd BEFORE the chdir below, so debug logs land where the
+    // game was launched from (the run dir) instead of following the exe into the
+    // build tree. See en_logpath.h.
+    EnLogCaptureLaunchDir( );
+
+#ifdef _WIN32
+    // Anchor cwd to the exe dir so ENations.dat / data/ / res/ resolve however we
+    // were launched. CDataFile uses cwd-relative paths, so a shortcut with a
+    // different "Start in", an absolute-path launch, or running the built exe from
+    // the build dir (no .dat there) threw an uncaught ERR_DATAFILE_NO_ENTRY: no
+    // window, no message, nothing logged. GH #8.
+    // Port of the linux_main.cpp fix, which MSVC does not build.
+    // No-op when cwd is already the exe dir, so Explorer launches always worked.
+    {
+        char exePath[ MAX_PATH ];
+        if ( GetModuleFileNameA( NULL, exePath, sizeof( exePath ) ) > 0 )
+        {
+            char* slash = strrchr( exePath, '\\' );
+            if ( slash )
+            {
+                *slash = '\0';
+                ::SetCurrentDirectoryA( exePath );
+            }
+        }
+    }
+#endif
+
+#if defined( _DEBUG ) && defined( _WIN32 )
+    // CRT debug asserts (checked-iterator "list iterators incompatible", _ASSERTE,
+    // heap checks) default to a MODAL Abort/Retry/Ignore dialog — which silently
+    // freezes unattended test sessions until someone clicks it (and blocks ALL
+    // game input, looking like a hang). Route them to OutputDebugString instead
+    // (dbgcatch.ps1 captures it) and CONTINUE — the same "log + keep going" policy
+    // en_assert.h applies to the game's own ASSERTs. Real faults still crash and
+    // produce a full dump via the filter above.
+    _CrtSetReportMode( _CRT_ASSERT, _CRTDBG_MODE_DEBUG );
+    _CrtSetReportMode( _CRT_ERROR,  _CRTDBG_MODE_DEBUG );
+#endif
+
+#if defined( _DEBUG ) && defined( _WIN32 )
+    // Heap-corruption hunt. Two combat crashes landed in unrelated places
+    // (recalloc_dbg via CVehicle::DeletePath, and msctf via the msg pump) — the
+    // classic signature of a wild write that detonates later somewhere random.
+    // With EN_HEAPCHECK=1 the CRT validates the ENTIRE heap on every alloc/free
+    // (_CRTDBG_CHECK_ALWAYS_DF), so corruption faults right next to the operation
+    // that caused it instead of much later — turning "random crash" into a stack
+    // pointing at the culprit (captured by EnWriteFullDump above). Very slow, so
+    // it's opt-in. EN_HEAPFREQ=N uses _CRTDBG_CHECK_EVERY_N (cheaper) instead.
+    {
+        const char* hc = getenv( "EN_HEAPCHECK" );
+        const char* hf = getenv( "EN_HEAPFREQ" );
+        if ( ( hc && hc[0] && hc[0] != '0' ) || ( hf && hf[0] ) )
+        {
+            int flags = _CrtSetDbgFlag( _CRTDBG_REPORT_FLAG );
+            flags |= _CRTDBG_ALLOC_MEM_DF;
+            if ( hf && hf[0] )
+            {
+                // Check every N allocations. The CRT encodes the frequency in the
+                // HIGH 16 bits of the flag word; the predefined _CRTDBG_CHECK_EVERY_N_DF
+                // constants are literally (N<<16). So we set the count directly and
+                // must NOT also OR one of those constants (that would change N).
+                int n = atoi( hf ); if ( n < 1 ) n = 1024;
+                flags = ( flags & 0x0000FFFF ) | ( n << 16 );
+            }
+            else
+            {
+                flags |= _CRTDBG_CHECK_ALWAYS_DF;
+            }
+            _CrtSetDbgFlag( flags );
+            // Send CRT asserts/heap reports to the debugger (OutputDebugString)
+            // so dbgcatch.ps1 can capture them, and don't pop a modal dialog.
+            _CrtSetReportMode( _CRT_ERROR, _CRTDBG_MODE_DEBUG );
+            _CrtSetReportMode( _CRT_ASSERT, _CRTDBG_MODE_DEBUG );
+            _CrtSetReportMode( _CRT_WARN,  _CRTDBG_MODE_DEBUG );
+            OutputDebugStringA( "ENHEAP: full heap validation ENABLED\n" );
+        }
+    }
+#endif
+
+    // Bootstrap CWinAppStub members the app expects.
+    theApp.m_hInstance = hInstance;
+
+    // App lifecycle.
+    int exitCode = 0;
+    if ( theApp.InitInstance() )
+    {
+        exitCode = theApp.Run();
+    }
+    // Run() has returned: the main loop is gone for good, so a "silent main
+    // thread" from here on is just shutdown, not a hang. Stop the watchdog.
+    EnHangWatchdogStop( );
+    theApp.ExitInstance();
+
+    return exitCode;
+}

@@ -9,14 +9,16 @@
 #ifndef __MSGS_H__
 #define __MSGS_H__
 
+#include <_msgs.h>
 
-enum {
-	_WM_FIRST_LIB = WM_FIRST_APP,
-	WM_PLAY_FLIC,
-	WM_ACTIVATE_MUSIC,
-	MSG_BTN_CLICKED,
-	MSG_BTN_DBLCLK,
-	WM_MY_DISPLAYCHANGE,
-	};
+enum
+{
+    _WM_FIRST_LIB = WM_FIRST_APP,
+    WM_PLAY_FLIC,
+    WM_ACTIVATE_MUSIC,
+    MSG_BTN_CLICKED,
+    MSG_BTN_DBLCLK,
+    WM_MY_DISPLAYCHANGE,
+};
 
 #endif

@@ -1,0 +1,329 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project DefaultTargets="Build" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup Label="ProjectConfigurations">
+    <ProjectConfiguration Include="Debug|Win32">
+      <Configuration>Debug</Configuration>
+      <Platform>Win32</Platform>
+    </ProjectConfiguration>
+    <ProjectConfiguration Include="Release|Win32">
+      <Configuration>Release</Configuration>
+      <Platform>Win32</Platform>
+    </ProjectConfiguration>
+    <ProjectConfiguration Include="Debug|x64">
+      <Configuration>Debug</Configuration>
+      <Platform>x64</Platform>
+    </ProjectConfiguration>
+    <ProjectConfiguration Include="Release|x64">
+      <Configuration>Release</Configuration>
+      <Platform>x64</Platform>
+    </ProjectConfiguration>
+  </ItemGroup>
+  <ItemGroup>
+    <ClCompile Include="ADVANCED.CPP" />
+    <ClCompile Include="ADVDLG.CPP" />
+    <ClCompile Include="ASTRING.CPP" />
+    <ClCompile Include="COMMNET.CPP" />
+    <ClCompile Include="COMSTATD.CPP" />
+    <ClCompile Include="COREERR.CPP" />
+    <ClCompile Include="CSTRING.CPP" />
+    <ClCompile Include="DATALINK.CPP" />
+    <ClCompile Include="DATALOG.CPP" />
+    <ClCompile Include="DIALER.CPP" />
+    <ClCompile Include="DPENGINE.CPP" />
+    <ClCompile Include="DPNET.CPP" />
+    <ClCompile Include="DXFER.CPP" />
+    <ClCompile Include="FRCODER.CPP" />
+    <ClCompile Include="IPX16NET.CPP" />
+    <ClCompile Include="IPX16STB.CPP" />
+    <ClCompile Include="ISLIST.CPP" />
+    <ClCompile Include="ISLISTIT.CPP" />
+    <ClCompile Include="MAINFRM.CPP" />
+    <ClCompile Include="MDMDRVR.CPP" />
+    <ClCompile Include="MDMNET.CPP" />
+    <ClCompile Include="MEMPOOL.CPP" />
+    <ClCompile Include="MESSAGE.CPP" />
+    <ClCompile Include="NBDLG.CPP" />
+    <ClCompile Include="NBNET.CPP" />
+    <ClCompile Include="NDLINK.CPP" />
+    <ClCompile Include="REF.CPP" />
+    <ClCompile Include="RWERR.CPP" />
+    <ClCompile Include="SLIST.CPP" />
+    <ClCompile Include="SLISTIT.CPP" />
+    <ClCompile Include="SMAP.CPP" />
+    <ClCompile Include="STDAFX.CPP" />
+    <ClCompile Include="TAPINET.CPP" />
+    <ClCompile Include="TAPIUTIL.CPP" />
+    <ClCompile Include="TCPIPXDL.CPP" />
+    <ClCompile Include="TCPNET.CPP" />
+    <ClCompile Include="TEXT1.CPP" />
+    <ClCompile Include="TOOLERR.CPP" />
+    <ClCompile Include="TWSIPX.CPP" />
+    <ClCompile Include="vdmnew.cpp" />
+    <ClCompile Include="VDMPLAY.CPP" />
+    <ClCompile Include="VDMPLUI.CPP" />
+    <ClCompile Include="VPDP.CPP" />
+    <ClCompile Include="VPENGINE.CPP" />
+    <ClCompile Include="VPNET.CPP" />
+    <ClCompile Include="VPUT16.CPP" />
+    <ClCompile Include="VPUTIL.CPP" />
+    <ClCompile Include="VPWINSK.CPP" />
+    <ClCompile Include="VPXFER.CPP" />
+    <ClCompile Include="W16COMM.CPP" />
+    <ClCompile Include="W32COMM.CPP" />
+    <ClCompile Include="WSIPXNET.CPP" />
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="ADVDLG.H" />
+    <ClInclude Include="ASTRING.H" />
+    <ClInclude Include="ASTRLIST.H" />
+    <ClInclude Include="BASE.H" />
+    <ClInclude Include="COMMNET.H" />
+    <ClInclude Include="COMMPORT.H" />
+    <ClInclude Include="COMSTATD.H" />
+    <ClInclude Include="DATAGRAM.H" />
+    <ClInclude Include="DATALINK.H" />
+    <ClInclude Include="DATALOG.H" />
+    <ClInclude Include="DEFMISC.H" />
+    <ClInclude Include="DIALER.H" />
+    <ClInclude Include="DLINKI.H" />
+    <ClInclude Include="DPENGINE.H" />
+    <ClInclude Include="DPNET.H" />
+    <ClInclude Include="DXFER.H" />
+    <ClInclude Include="FRCODER.H" />
+    <ClInclude Include="GENERIC.H" />
+    <ClInclude Include="generic.hpp" />
+    <ClInclude Include="generic.hxx" />
+    <ClInclude Include="HELP.H" />
+    <ClInclude Include="IPX16NET.H" />
+    <ClInclude Include="IPX16STB.H" />
+    <ClInclude Include="MAINFRM.H" />
+    <ClInclude Include="MDMDRVR.H" />
+    <ClInclude Include="MDMNET.H" />
+    <ClInclude Include="NB30.H" />
+    <ClInclude Include="NBDLG.H" />
+    <ClInclude Include="NBNET.H" />
+    <ClInclude Include="NDLINK.H" />
+    <ClInclude Include="RESOURCE.H" />
+    <ClInclude Include="SMAP.H" />
+    <ClInclude Include="STDAFX.H" />
+    <ClInclude Include="TAPINET.H" />
+    <ClInclude Include="TAPIUTIL.H" />
+    <ClInclude Include="TCPIPXDL.H" />
+    <ClInclude Include="TCPNET.H" />
+    <ClInclude Include="TDLOG.H" />
+    <ClInclude Include="VDMPLUI.H" />
+    <ClInclude Include="VERSION.H" />
+    <ClInclude Include="VPENGINE.H" />
+    <ClInclude Include="VPINT.H" />
+    <ClInclude Include="VPLIST.H" />
+    <ClInclude Include="VPNET.H" />
+    <ClInclude Include="VPPARAM.H" />
+    <ClInclude Include="VPUTIL.H" />
+    <ClInclude Include="VPWINSK.H" />
+    <ClInclude Include="VPXFER.H" />
+    <ClInclude Include="W16COMM.H" />
+    <ClInclude Include="W32COMM.H" />
+    <ClInclude Include="W32SUT.H" />
+    <ClInclude Include="WNOTQUE.H" />
+    <ClInclude Include="WSIPXNET.H" />
+    <ClInclude Include="_DEFS.H" />
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="ECBPOST.ASM" />
+    <None Include="NBPOST.ASM" />
+    <None Include="NBPOST.LST" />
+    <None Include="VDMPLAY.DEF" />
+    <None Include="VDMPLAY.INI" />
+    <None Include="VDMPLUI.DEF" />
+    <None Include="VDMPLUI.RC2" />
+  </ItemGroup>
+  <ItemGroup>
+    <ResourceCompile Include="DIALOG.RC" />
+    <ResourceCompile Include="Vdmplay.RC" />
+    <ResourceCompile Include="VDMPLUI.RC" />
+    <ResourceCompile Include="VER32.RC" />
+    <ResourceCompile Include="VERSION.RC" />
+  </ItemGroup>
+  <ItemGroup>
+    <Image Include="BITMAP1.BMP" />
+    <Image Include="DISCON.ICO" />
+    <Image Include="ICON1.ICO" />
+  </ItemGroup>
+  <ItemGroup>
+    <Text Include="README.TXT" />
+    <Text Include="T.TXT" />
+    <Text Include="VDMPLAY.TXT" />
+    <Text Include="VMPLAY.TXT" />
+    <Text Include="VPLOG1.TXT" />
+    <Text Include="VPLOG2.TXT" />
+    <Text Include="X.LOG" />
+    <Text Include="ZIPEXCL.TXT" />
+  </ItemGroup>
+  <PropertyGroup Label="Globals">
+    <VCProjectVersion>16.0</VCProjectVersion>
+    <ProjectGuid>{3A8DBE72-4479-4B6D-BCFA-5C67AB1EA318}</ProjectGuid>
+    <Keyword>MFCProj</Keyword>
+    <RootNamespace>proj</RootNamespace>
+    <WindowsTargetPlatformVersion>10.0</WindowsTargetPlatformVersion>
+  </PropertyGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'" Label="Configuration">
+    <ConfigurationType>Application</ConfigurationType>
+    <UseDebugLibraries>true</UseDebugLibraries>
+    <PlatformToolset>v142</PlatformToolset>
+    <CharacterSet>MultiByte</CharacterSet>
+    <UseOfMfc>Dynamic</UseOfMfc>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'" Label="Configuration">
+    <ConfigurationType>Application</ConfigurationType>
+    <UseDebugLibraries>false</UseDebugLibraries>
+    <PlatformToolset>v142</PlatformToolset>
+    <WholeProgramOptimization>true</WholeProgramOptimization>
+    <CharacterSet>MultiByte</CharacterSet>
+    <UseOfMfc>Dynamic</UseOfMfc>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'" Label="Configuration">
+    <ConfigurationType>Application</ConfigurationType>
+    <UseDebugLibraries>true</UseDebugLibraries>
+    <PlatformToolset>v142</PlatformToolset>
+    <CharacterSet>MultiByte</CharacterSet>
+    <UseOfMfc>Dynamic</UseOfMfc>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'" Label="Configuration">
+    <ConfigurationType>Application</ConfigurationType>
+    <UseDebugLibraries>false</UseDebugLibraries>
+    <PlatformToolset>v142</PlatformToolset>
+    <WholeProgramOptimization>true</WholeProgramOptimization>
+    <CharacterSet>MultiByte</CharacterSet>
+    <UseOfMfc>Dynamic</UseOfMfc>
+  </PropertyGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.props" />
+  <ImportGroup Label="ExtensionSettings">
+  </ImportGroup>
+  <ImportGroup Label="Shared">
+  </ImportGroup>
+  <ImportGroup Label="PropertySheets" Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
+    <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
+  </ImportGroup>
+  <ImportGroup Label="PropertySheets" Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">
+    <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
+  </ImportGroup>
+  <ImportGroup Label="PropertySheets" Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
+    <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
+  </ImportGroup>
+  <ImportGroup Label="PropertySheets" Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
+    <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
+  </ImportGroup>
+  <PropertyGroup Label="UserMacros" />
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
+    <LinkIncremental>true</LinkIncremental>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
+    <LinkIncremental>true</LinkIncremental>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">
+    <LinkIncremental>false</LinkIncremental>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
+    <LinkIncremental>false</LinkIncremental>
+  </PropertyGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
+    <ClCompile>
+      <PrecompiledHeader>Use</PrecompiledHeader>
+      <WarningLevel>Level3</WarningLevel>
+      <SDLCheck>true</SDLCheck>
+      <PreprocessorDefinitions>WIN32;_WINDOWS;_DEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PrecompiledHeaderFile>pch.h</PrecompiledHeaderFile>
+    </ClCompile>
+    <Link>
+      <SubSystem>Windows</SubSystem>
+    </Link>
+    <Midl>
+      <MkTypLibCompatible>false</MkTypLibCompatible>
+      <ValidateAllParameters>true</ValidateAllParameters>
+      <PreprocessorDefinitions>_DEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+    </Midl>
+    <ResourceCompile>
+      <Culture>0x0409</Culture>
+      <PreprocessorDefinitions>_DEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <AdditionalIncludeDirectories>$(IntDir);%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+    </ResourceCompile>
+  </ItemDefinitionGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
+    <ClCompile>
+      <PrecompiledHeader>Use</PrecompiledHeader>
+      <WarningLevel>Level3</WarningLevel>
+      <SDLCheck>true</SDLCheck>
+      <PreprocessorDefinitions>_WINDOWS;_DEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PrecompiledHeaderFile>pch.h</PrecompiledHeaderFile>
+    </ClCompile>
+    <Link>
+      <SubSystem>Windows</SubSystem>
+    </Link>
+    <Midl>
+      <MkTypLibCompatible>false</MkTypLibCompatible>
+      <ValidateAllParameters>true</ValidateAllParameters>
+      <PreprocessorDefinitions>_DEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+    </Midl>
+    <ResourceCompile>
+      <Culture>0x0409</Culture>
+      <PreprocessorDefinitions>_DEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <AdditionalIncludeDirectories>$(IntDir);%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+    </ResourceCompile>
+  </ItemDefinitionGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">
+    <ClCompile>
+      <PrecompiledHeader>Use</PrecompiledHeader>
+      <WarningLevel>Level3</WarningLevel>
+      <FunctionLevelLinking>true</FunctionLevelLinking>
+      <IntrinsicFunctions>true</IntrinsicFunctions>
+      <SDLCheck>true</SDLCheck>
+      <PreprocessorDefinitions>WIN32;_WINDOWS;NDEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PrecompiledHeaderFile>pch.h</PrecompiledHeaderFile>
+    </ClCompile>
+    <Link>
+      <SubSystem>Windows</SubSystem>
+      <EnableCOMDATFolding>true</EnableCOMDATFolding>
+      <OptimizeReferences>true</OptimizeReferences>
+    </Link>
+    <Midl>
+      <MkTypLibCompatible>false</MkTypLibCompatible>
+      <ValidateAllParameters>true</ValidateAllParameters>
+      <PreprocessorDefinitions>NDEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+    </Midl>
+    <ResourceCompile>
+      <Culture>0x0409</Culture>
+      <PreprocessorDefinitions>NDEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <AdditionalIncludeDirectories>$(IntDir);%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+    </ResourceCompile>
+  </ItemDefinitionGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
+    <ClCompile>
+      <PrecompiledHeader>Use</PrecompiledHeader>
+      <WarningLevel>Level3</WarningLevel>
+      <FunctionLevelLinking>true</FunctionLevelLinking>
+      <IntrinsicFunctions>true</IntrinsicFunctions>
+      <SDLCheck>true</SDLCheck>
+      <PreprocessorDefinitions>_WINDOWS;NDEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PrecompiledHeaderFile>pch.h</PrecompiledHeaderFile>
+    </ClCompile>
+    <Link>
+      <SubSystem>Windows</SubSystem>
+      <EnableCOMDATFolding>true</EnableCOMDATFolding>
+      <OptimizeReferences>true</OptimizeReferences>
+    </Link>
+    <Midl>
+      <MkTypLibCompatible>false</MkTypLibCompatible>
+      <ValidateAllParameters>true</ValidateAllParameters>
+      <PreprocessorDefinitions>NDEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+    </Midl>
+    <ResourceCompile>
+      <Culture>0x0409</Culture>
+      <PreprocessorDefinitions>NDEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <AdditionalIncludeDirectories>$(IntDir);%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+    </ResourceCompile>
+  </ItemDefinitionGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
+  <ImportGroup Label="ExtensionTargets">
+  </ImportGroup>
+</Project>

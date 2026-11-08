@@ -17,33 +17,27 @@ IMPLEMENT_SERIAL( CAIQueue, CObList, 0 );
 
 #define new DEBUG_NEW
 
-CAIQueue::CAIQueue( int iPlayer )
-{
-	m_iPlayer = iPlayer;
-	m_Pos = NULL;
+CAIQueue::CAIQueue( int iPlayer ) {
+    m_iPlayer = iPlayer;
+    m_Pos = NULL;
 }
 
-CAIQueue::~CAIQueue()
-{
-	DeleteList();
+CAIQueue::~CAIQueue() {
+    DeleteList();
 }
 
 //
 // delete CNetCmd objects in the list
 //
-void CAIQueue::DeleteList( void )
-{
-	ASSERT_VALID( this );
+void CAIQueue::DeleteList( void ) {
+    ASSERT_VALID( this );
 
-    if( GetCount() )
-    {
+    if ( GetCount() ) {
         POSITION pos = GetHeadPosition();
-        while( pos != NULL )
-        {   
-            CAIMsg *pMsg = (CAIMsg *)GetNext( pos );
-            if( pMsg != NULL )
-            {
-            	ASSERT_VALID( pMsg );
+        while ( pos != NULL ) {
+            CAIMsg* pMsg = (CAIMsg*)GetNext( pos );
+            if ( pMsg != NULL ) {
+                ASSERT_VALID( pMsg );
 
                 delete pMsg;
             }
@@ -53,25 +47,21 @@ void CAIQueue::DeleteList( void )
 }
 
 
-void CAIQueue::Serialize( CArchive& archive )
-{
+void CAIQueue::Serialize( CArchive& archive ) {
     ASSERT_VALID( this );
 
     CObList::Serialize( archive );
 
-    if( archive.IsStoring() )
-    {
-    	archive << (WORD)m_iPlayer;
-		//archive << m_Pos;
-	}
-    else
-    {
-		// BUGBUG will the pos be correct from a serialization?
-		WORD wJunk;
-    	archive >> wJunk;
-    	m_iPlayer = (int)wJunk;
-		//archive >> m_Pos;
-	}
+    if ( archive.IsStoring() ) {
+        archive << (WORD)m_iPlayer;
+        //archive << m_Pos;
+    } else {
+        // BUGBUG will the pos be correct from a serialization?
+        WORD wJunk;
+        archive >> wJunk;
+        m_iPlayer = (int)wJunk;
+        //archive >> m_Pos;
+    }
 }
 
 // end of CAIQueue.cpp

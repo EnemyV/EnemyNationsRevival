@@ -1,8 +1,8 @@
 // dlgflic.cpp : implementation file
 //
 //--------------------------------------------------------------------------
-//	Copyright (c) 1995, 1996. Windward Studios, Inc.
-//	All Rights Reserved.
+// Copyright (c) 1995, 1996. Windward Studios, Inc.
+// All Rights Reserved.
 //
 //--------------------------------------------------------------------------
 
@@ -16,7 +16,7 @@
 static char BASED_CODE THIS_FILE[] = __FILE__;
 #endif
 
-const int IDC_FLIC 	  = 100;
+const int IDC_FLIC    = 100;
 
 static RGBQUAD Gargbquad[ 256 ];
 
@@ -26,11 +26,11 @@ static RGBQUAD Gargbquad[ 256 ];
 // CFlic::CFlic
 //---------------------------------------------------------------------------
 CFlic::CFlic(
-	char const *pszName )
-	:
-		m_strName( pszName )
+    char const *pszName )
+    :
+        m_strName( pszName )
 {
-	m_ptrflcinfo = new CFlcInfo;
+    m_ptrflcinfo = new CFlcInfo;
 }
 
 
@@ -43,7 +43,7 @@ CFlic::CFlic(
 void
 CDlgFlic::SavePalette()
 {
-	thePal.GetColors( Gargbquad, 0, 256 );
+    thePal.GetColors( Gargbquad, 0, 256 );
 }
 
 //---------------------------------------------------------------------------
@@ -52,8 +52,8 @@ CDlgFlic::SavePalette()
 void
 CDlgFlic::RestorePalette()
 {
-	thePal.Init();
-	thePal.SetColors( Gargbquad, 0, 256 );
+    thePal.Init();
+    thePal.SetColors( Gargbquad, 0, 256 );
 }
 
 //---------------------------------------------------------------------------
@@ -61,9 +61,9 @@ CDlgFlic::RestorePalette()
 //---------------------------------------------------------------------------
 void
 CDlgFlic::Play(
-	CFlic	* pflic )
+    CFlic * pflic )
 {
-	Play( &pflic );
+    Play( &pflic );
 }
 
 //---------------------------------------------------------------------------
@@ -71,62 +71,62 @@ CDlgFlic::Play(
 //---------------------------------------------------------------------------
 void
 CDlgFlic::Play(
-	CFlic	** ppflics,
-	int	   nFlics )
+    CFlic ** ppflics,
+    int    nFlics )
 {
-	SavePalette();
-	ShowCursor( FALSE );
+    SavePalette();
+    ShowCursor( FALSE );
 
-	CDlgFlic	dlgflic( ppflics, nFlics );
+    CDlgFlic dlgflic( ppflics, nFlics );
 
-	try		// FIXIT: Check how to handle exceptions with dialog boxes
-	{
-		dlgflic.DoModal();
-	}
+    try  // FIXIT: Check how to handle exceptions with dialog boxes
+    {
+        dlgflic.DoModal();
+    }
 
-	catch ( ... )
-	{
-		RestorePalette();
-		ShowCursor( TRUE );
+    catch ( ... )
+    {
+        RestorePalette();
+        ShowCursor( TRUE );
 
-		throw;
-	}
+        throw;
+    }
 
-	RestorePalette();
+    RestorePalette();
 
-	ShowCursor( TRUE );
+    ShowCursor( TRUE );
 }
 
 //---------------------------------------------------------------------------
 // CDlgFlic::CDlgFlic
 //---------------------------------------------------------------------------
 CDlgFlic::CDlgFlic(
-	CFlic	** ppflic,
-	int		nFlics )
-	:
-		CDialog   ( IDD, &theApp.m_wndMain ),
-		m_ppflic  ( ppflic  ),
-		m_nFlics	 ( nFlics ),
-		m_iFlic	 ( 0      ),
-		m_bStarted( FALSE  )
+    CFlic ** ppflic,
+    int  nFlics )
+    :
+        CDialog   ( IDD, &theApp.m_wndMain ),
+        m_ppflic  ( ppflic  ),
+        m_nFlics  ( nFlics ),
+        m_iFlic  ( 0      ),
+        m_bStarted( FALSE  )
 {
-	//{{AFX_DATA_INIT(CDlgFlic)
-	// NOTE: the ClassWizard will add member initialization here
-	//}}AFX_DATA_INIT
+    //{{AFX_DATA_INIT(CDlgFlic)
+    // NOTE: the ClassWizard will add member initialization here
+    //}}AFX_DATA_INIT
 }
 
 
 BEGIN_MESSAGE_MAP(CDlgFlic, CDialog)
-	//{{AFX_MSG_MAP(CDlgFlic)
-	ON_WM_MBUTTONDOWN()
-	ON_WM_RBUTTONDOWN()
-	ON_MESSAGE( WM_CTLCOLORDLG, OnCtlColorDlg )
-	ON_MESSAGE( WM_PLAY_FLIC,   OnPlay )
-	ON_WM_PAINT()
-	ON_CONTROL( FLC_STOP, IDC_FLIC, OnFlicStop )
-	ON_CONTROL( FLC_KEY,  IDC_FLIC, OnFlicKey  )
-	ON_WM_LBUTTONDOWN()
-	//}}AFX_MSG_MAP
+    //{{AFX_MSG_MAP(CDlgFlic)
+    ON_WM_MBUTTONDOWN()
+    ON_WM_RBUTTONDOWN()
+    ON_MESSAGE( WM_CTLCOLORDLG, OnCtlColorDlg )
+    ON_MESSAGE( WM_PLAY_FLIC,   OnPlay )
+    ON_WM_PAINT()
+    ON_CONTROL( FLC_STOP, IDC_FLIC, OnFlicStop )
+    ON_CONTROL( FLC_KEY,  IDC_FLIC, OnFlicKey  )
+    ON_WM_LBUTTONDOWN()
+    //}}AFX_MSG_MAP
 END_MESSAGE_MAP()
 
 
@@ -139,12 +139,12 @@ END_MESSAGE_MAP()
 void
 CDlgFlic::OnFlicStop()
 {
-	m_iFlic++;
+    m_iFlic++;
 
-	if ( m_iFlic >= m_nFlics )
-		EndDialog( 0 );
-	else
-		PostMessage( WM_PLAY_FLIC );
+    if ( m_iFlic >= m_nFlics )
+        EndDialog( 0 );
+    else
+        PostMessage( WM_PLAY_FLIC );
 }
 
 //--------------------------------------------------------------------------
@@ -153,7 +153,7 @@ CDlgFlic::OnFlicStop()
 void
 CDlgFlic::OnFlicKey()
 {
-	Stop();
+    Stop();
 }
 
 //--------------------------------------------------------------------------
@@ -162,21 +162,21 @@ CDlgFlic::OnFlicKey()
 BOOL
 CDlgFlic::OnInitDialog()
 {
-	CDialog::OnInitDialog();
+    CDialog::OnInitDialog();
 
-	CRect	rect( 0, 0, theApp.m_iScrnX, theApp.m_iScrnY );
+    CRect rect( 0, 0, theApp.m_iScrnX, theApp.m_iScrnY );
 
-	SetWindowPos( &wndTopMost, 0, 0, rect.Width(), rect.Height(), SWP_SHOWWINDOW );
+    SetWindowPos( &wndTopMost, 0, 0, rect.Width(), rect.Height(), SWP_SHOWWINDOW );
 
-	CPoint	ptCenter   = CPoint( rect.Width() / 2, rect.Height() / 2 );
-	CRect		rectCenter = CRect ( ptCenter.x, ptCenter.y, ptCenter.x + 1, ptCenter.y + 1 );
+    CPoint ptCenter   = CPoint( rect.Width() / 2, rect.Height() / 2 );
+    CRect  rectCenter = CRect ( ptCenter.x, ptCenter.y, ptCenter.x + 1, ptCenter.y + 1 );
 
-	BOOL	bOK = m_flcctrl.Create( WS_CHILD | WS_VISIBLE, rectCenter, this, IDC_FLIC );
+    BOOL bOK = m_flcctrl.Create( WS_CHILD | WS_VISIBLE, rectCenter, this, IDC_FLIC );
 
-	if ( !bOK )
-		EndDialog( 1 );	// FIXIT: exception?
+    if ( !bOK )
+        EndDialog( 1 ); // FIXIT: exception?
 
-	return TRUE;
+    return TRUE;
 }
 
 //--------------------------------------------------------------------------
@@ -184,14 +184,14 @@ CDlgFlic::OnInitDialog()
 //--------------------------------------------------------------------------
 LRESULT
 CDlgFlic::OnPlay(
-	WPARAM,
-	LPARAM )
+    WPARAM,
+    LPARAM )
 {
-	Ptr< CFile >	ptrfile = theDataFile.OpenAsFile( m_ppflic[ m_iFlic ]->GetName() );
+    Ptr< CFile > ptrfile = theDataFile.OpenAsFile( m_ppflic[ m_iFlic ]->GetName() );
 
-	m_flcctrl.Play( ptrfile, m_ppflic[ m_iFlic ]->GetInfo() );
+    m_flcctrl.Play( ptrfile, m_ppflic[ m_iFlic ]->GetInfo() );
 
-	return 0;
+    return 0;
 }
 
 //--------------------------------------------------------------------------
@@ -200,8 +200,8 @@ CDlgFlic::OnPlay(
 void
 CDlgFlic::Stop()
 {
-	if ( m_flcctrl.IsPlaying() )
-		m_flcctrl.Stop();
+    if ( m_flcctrl.IsPlaying() )
+        m_flcctrl.Stop();
 }
 
 //--------------------------------------------------------------------------
@@ -210,7 +210,7 @@ CDlgFlic::Stop()
 void
 CDlgFlic::OnOK()
 {
-	Stop();
+    Stop();
 }
 
 //--------------------------------------------------------------------------
@@ -219,7 +219,7 @@ CDlgFlic::OnOK()
 void
 CDlgFlic::OnCancel()
 {
-	Stop();
+    Stop();
 }
 
 //--------------------------------------------------------------------------
@@ -227,10 +227,10 @@ CDlgFlic::OnCancel()
 //--------------------------------------------------------------------------
 LRESULT
 CDlgFlic::OnCtlColorDlg(
-	WPARAM,
-	LPARAM )
+    WPARAM,
+    LPARAM )
 {
-	return ( LRESULT )( HBRUSH )::GetStockObject( BLACK_BRUSH );
+    return ( LRESULT )( HBRUSH )::GetStockObject( BLACK_BRUSH );
 }
 
 //--------------------------------------------------------------------------
@@ -238,14 +238,14 @@ CDlgFlic::OnCtlColorDlg(
 //--------------------------------------------------------------------------
 void CDlgFlic::OnPaint() 
 {
-	CDialog::OnPaint();
+    CDialog::OnPaint();
 
-	if ( !m_bStarted )
-	{
-		m_bStarted = TRUE;
+    if ( !m_bStarted )
+    {
+        m_bStarted = TRUE;
 
-		PostMessage( WM_PLAY_FLIC );
-	}
+        PostMessage( WM_PLAY_FLIC );
+    }
 }
 
 //--------------------------------------------------------------------------
@@ -253,9 +253,9 @@ void CDlgFlic::OnPaint()
 //--------------------------------------------------------------------------
 void CDlgFlic::OnLButtonDown(UINT nFlags, CPoint point) 
 {
-	CDialog::OnLButtonDown(nFlags, point);
+    CDialog::OnLButtonDown(nFlags, point);
 
-	Stop();
+    Stop();
 }
 
 //--------------------------------------------------------------------------
@@ -263,9 +263,9 @@ void CDlgFlic::OnLButtonDown(UINT nFlags, CPoint point)
 //--------------------------------------------------------------------------
 void CDlgFlic::OnMButtonDown(UINT nFlags, CPoint point) 
 {
-	CDialog::OnMButtonDown(nFlags, point);
+    CDialog::OnMButtonDown(nFlags, point);
 
-	Stop();
+    Stop();
 }
 
 //--------------------------------------------------------------------------
@@ -273,7 +273,7 @@ void CDlgFlic::OnMButtonDown(UINT nFlags, CPoint point)
 //--------------------------------------------------------------------------
 void CDlgFlic::OnRButtonDown(UINT nFlags, CPoint point) 
 {
-	CDialog::OnRButtonDown(nFlags, point);
+    CDialog::OnRButtonDown(nFlags, point);
 
-	Stop();
+    Stop();
 }

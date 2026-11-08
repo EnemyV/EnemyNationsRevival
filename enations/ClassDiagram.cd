@@ -1,0 +1,3217 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<ClassDiagram MajorVersion="1" MinorVersion="1">
+  <Class Name="CResourceKeeper" Collapsed="true">
+    <Position X="199" Y="9.5" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>gAAAAAAAAAAAAAAAIAAAAAAAAAAAAAAAAAAAAAgAAAA=</HashCode>
+      <FileName>src\ADVDLG.CPP</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="_BTN_DATA" Collapsed="true">
+    <Position X="181.5" Y="0.5" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>AAAIAAAAAgAAgCAAAAAAAAAAAAAAAQAAAABgAAAAAAA=</HashCode>
+      <FileName>src\lastplnt.cpp</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="CBBData" Collapsed="true">
+    <Position X="195.5" Y="2.5" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>AgAAEAAgAAAAAAAAAACAAAAAAAAAAAAAAgAAAAIAAAA=</HashCode>
+      <FileName>src\Netapi.cpp</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="CSetMin" Collapsed="true">
+    <Position X="186.75" Y="10.5" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>AAAAAAAAAAAAAAAAAAAAAAgAAAAAAAAAAAAAAAABAEI=</HashCode>
+      <FileName>src\new_unit.cpp</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="CGetMin" Collapsed="true">
+    <Position X="193.75" Y="7.5" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>AAAAAAAAAACAAAEAAAAAAAAAAAAAAAAAAAAAAAABAAA=</HashCode>
+      <FileName>src\new_unit.cpp</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="SinInit" Collapsed="true">
+    <Position X="181.5" Y="13.5" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>AAAgAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=</HashCode>
+      <FileName>src\sprite.cpp</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="FeatherInit" Collapsed="true">
+    <Position X="195.5" Y="12.5" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>AAAAAAAAAAAAAAAAAAAAAAAAIAAAAAAAAAAAAAAAAAA=</HashCode>
+      <FileName>src\sprite.cpp</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="CHexCoordColumnIter" Collapsed="true">
+    <Position X="197.25" Y="7.5" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>AEAAAAJAAAACQAAACEAAAIAAACAEAAAAAAggAAAIAAA=</HashCode>
+      <FileName>src\terrain.cpp</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="CTileDrawInfo" Collapsed="true">
+    <Position X="3" Y="12.5" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>AwAAAAAAAAAAAoAAACAAAaAAAIAAAAAAAAAiQAAAAAA=</HashCode>
+      <FileName>src\terrain.cpp</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="CExplosionDrawInfo" Collapsed="true">
+    <Position X="0.75" Y="13.75" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAiAAAAAAA=</HashCode>
+      <FileName>src\terrain.cpp</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="CStructureDrawInfo" Collapsed="true">
+    <Position X="3" Y="13.75" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>AQBAAAAAAAAAAgQAAAAAAQAAAAAAAAAAAAAiAAAAAAA=</HashCode>
+      <FileName>src\terrain.cpp</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="CVehicleDrawInfo" Collapsed="true">
+    <Position X="5.25" Y="13.75" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAiAAAAAAA=</HashCode>
+      <FileName>src\terrain.cpp</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="CDrawInfoPool" Collapsed="true">
+    <Position X="199" Y="6.5" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>AAQgAQAAAAAABICAAEAAAAAAIQAABAgAAAAAgAAARAI=</HashCode>
+      <FileName>src\terrain.cpp</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="CTileDraw" Collapsed="true">
+    <Position X="185" Y="11.5" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>CAAAAAAAAAACAACAQAAAAAAAAAAAAAQAAAAAAAAIAAA=</HashCode>
+      <FileName>src\terrain.cpp</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="IsometricInit" Collapsed="true">
+    <Position X="197.25" Y="12.5" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAEAAAAAAAAA=</HashCode>
+      <FileName>src\unit.cpp</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="CNewDest" Collapsed="true">
+    <Position X="186.75" Y="9.5" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>AAAAAAAggCAAAAAAAAIAAAAAAAAAAAAAAAAAAAAAAAA=</HashCode>
+      <FileName>src\Vehmove.cpp</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="CAdvComDlg" Collapsed="true">
+    <Position X="185" Y="0.5" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>AIAAAAEAAAAAAAAAABAAAAEBAAAAQgAAAAAAAAAAAAA=</HashCode>
+      <FileName>src\ADVDLG.H</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="CAdvIpxDdlg" Collapsed="true">
+    <Position X="186.75" Y="0.5" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>AAQAIAAAAgAAAAAAABAQAAABAAAAQAAAAEAAAAAAAAA=</HashCode>
+      <FileName>src\ADVDLG.H</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="CAdvMdmDlg" Collapsed="true">
+    <Position X="188.5" Y="0.5" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>AIAAAAEAAAAAAAAIEBAAAAGBAAAAQAAAAAAAAAAAAAA=</HashCode>
+      <FileName>src\ADVDLG.H</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="CAdvMdmSetting" Collapsed="true">
+    <Position X="190.25" Y="0.5" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>AAAAAAACAAAAAYAAABAAAAABAAAAQAAAABAAABAAAAA=</HashCode>
+      <FileName>src\ADVDLG.H</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="CAdvNbDlg" Collapsed="true">
+    <Position X="192" Y="0.5" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>AAAAAAEAAABAAEAAABAAAAABAAIAQAAAAAAAAAAABAA=</HashCode>
+      <FileName>src\ADVDLG.H</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="CAdvTcpDlg" Collapsed="true">
+    <Position X="193.75" Y="0.5" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>CAAAIAUAAAAAAAAAABAAAAAJAAAAQAAAAAAAAAAAAAA=</HashCode>
+      <FileName>src\ADVDLG.H</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="CWndUnitStat" Collapsed="true">
+    <Position X="10.75" Y="17" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>AACAAAgAgAIAAAAAAIAAAAAACBAAAAAAAAAAgAAAAAA=</HashCode>
+      <FileName>src\area.h</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="CWndAreaStatic" Collapsed="true">
+    <Position X="199" Y="11.5" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>AACAQCUgAAkAAAAAAAAABAAQAGAAkAABAEQAgQQAAAA=</HashCode>
+      <FileName>src\area.h</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="CListUnits" Collapsed="true">
+    <Position X="190.25" Y="8.5" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>AAAAAAAAAAAAAAAAAAAAAACAAQAAAAAAIAAAAAAAAAA=</HashCode>
+      <FileName>src\area.h</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="CWndArea" Collapsed="true">
+    <Position X="197.25" Y="11.5" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>tVLff2MF4Q/AAzsrqCTNJGpe+jJP8H2sTk/WsIzckWk=</HashCode>
+      <FileName>src\area.h</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="CAreaList" Collapsed="true">
+    <Position X="193.75" Y="2.5" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>gAAAAQAFIADAACAACAgEgAQEQAAAAAABAAAAAEAAiAA=</HashCode>
+      <FileName>src\area.h</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="CWndInfo" Collapsed="true">
+    <Position X="183.25" Y="12.5" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>AACAAAAAwAEAAAAAAAkAAAAACAAAAEAAAAABAAAAAgA=</HashCode>
+      <FileName>src\area.h</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="CViewHexCoord" Collapsed="true">
+    <Position X="193.75" Y="11.5" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAEAA=</HashCode>
+      <FileName>src\base.h</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="CBitMatrix" Collapsed="true">
+    <Position X="13.5" Y="17.5" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>AAQAAgAAABAABAFAAAAAAAAAAAAAAACAAAAAAABAAAA=</HashCode>
+      <FileName>src\base.h</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="CHexValidMatrix" Collapsed="true">
+    <Position X="13.5" Y="18.75" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>AIAAAAAAABAAAAAAAAAAAAABAEAAAAAAAAAAIAAAAAA=</HashCode>
+      <FileName>src\base.h</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="CHexCoord" Collapsed="true">
+    <Position X="195.5" Y="7.5" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>MAAhgggEABAQAAAAAAAABQAgREgIAAAAAGAgASgAYgI=</HashCode>
+      <FileName>src\base.h</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="CSubHex" Collapsed="true">
+    <Position X="202.5" Y="10.5" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>AAAgAAAAAAAAAAAACAAEAQAgAAAAAAAAACAAAQgAAgI=</HashCode>
+      <FileName>src\base.h</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="CMapLoc" Collapsed="true">
+    <Position X="0.5" Y="15.5" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>BBAgAIABAAAEAIAAABgAAAAAAAAAAAAAAACAAAgAAAA=</HashCode>
+      <FileName>src\base.h</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="CMapLoc3D" Collapsed="true">
+    <Position X="0.5" Y="17" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>AAEAAAAAAAAAACAAAAAAAAAAAAEAAAAAAAAgAAAAAAA=</HashCode>
+      <FileName>src\base.h</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="CHitInfo" Collapsed="true">
+    <Position X="199" Y="7.5" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>AAAAAAUAgQAAAIAQCAgAAIgAAAAQBAgAADAAACAAAAA=</HashCode>
+      <FileName>src\base.h</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="CAnimAtr" Collapsed="true">
+    <Position X="192" Y="2.5" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>AIAAKAIAYEAEDAAIHuIDEoMBKBBIAAgBgBAiCgCCAAA=</HashCode>
+      <FileName>src\base.h</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="CWheelTypes" Collapsed="true">
+    <Position X="195.5" Y="11.5" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=</HashCode>
+      <FileName>src\base.h</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="CMaterialTypes" Collapsed="true">
+    <Position X="192" Y="8.5" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>AAAQAAAAAAAAAABAgAgAAAAAgAAAAAgAAAAAAQAAAAE=</HashCode>
+      <FileName>src\base.h</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="CBmBtnData" Collapsed="true">
+    <Position X="199" Y="2.5" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>ACAAAAAABAgACAAAAAAAAEAAAAAAAAICAAACAAIAAQA=</HashCode>
+      <FileName>src\BMBUTTON.H</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="CTextBtnData" Collapsed="true">
+    <Position X="183.25" Y="11.5" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>ADAAAAAAAAAAAAAAAAAAAAAAAwBAAAAAAAACAAIAAAA=</HashCode>
+      <FileName>src\BMBUTTON.H</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="CMyButton" Collapsed="true">
+    <Position X="1.75" Y="19.5" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>AAABAAAAAAEAAAAAAAQAAAAAIBAAAEAARACAAQAQCBA=</HashCode>
+      <FileName>src\BMBUTTON.H</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="CBmButton" Collapsed="true">
+    <Position X="0.5" Y="21" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>AgoAAAAAAAABAAAAAEAAAAAAAAAAAEAAAAAAAAAAAAA=</HashCode>
+      <FileName>src\BMBUTTON.H</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="CTextButton" Collapsed="true">
+    <Position X="2.75" Y="21" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>AAAAAAAEAAECCAAAAEAAAAAAAAAAAEAAAAAAEAAAAAA=</HashCode>
+      <FileName>src\BMBUTTON.H</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="CBridgeUnit" Collapsed="true">
+    <Position X="24.75" Y="25.5" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>ACAAAAiAAAAAGhAACACAABkIEAAAgAAAAggCAAQhAAA=</HashCode>
+      <FileName>src\bridge.h</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="CBridge" Collapsed="true">
+    <Position X="200.75" Y="2.5" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>EAIAAgAAAARQCJAACACAgAAIAEAAAEAQEwAAQFYhAAA=</HashCode>
+      <FileName>src\bridge.h</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="CBridgeMap" Collapsed="true">
+    <Position X="204.25" Y="2.5" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>AAIAIAAAAAAAAAAgAAAAAAAAACAAAAAAAQAAAAAAAAA=</HashCode>
+      <FileName>src\bridge.h</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="CBridgeHex" Collapsed="true">
+    <Position X="202.5" Y="2.5" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>AAAAAAAAAAAABAAAAABAAAAAABAAAAAAACAIAAAAgAA=</HashCode>
+      <FileName>src\bridge.h</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="CStructure" Collapsed="true">
+    <Position X="3.25" Y="8.5" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>IAJAAAgAEAAAAAQQCEQAACgAAAAAAAACACAAAgCAAAA=</HashCode>
+      <FileName>src\building.h</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="CStructureType" Collapsed="true">
+    <Position X="200.75" Y="10.5" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>AAAAAAAAAAAAAABACAAAAAAAAAAAAAABAAAgQAAAAAA=</HashCode>
+      <FileName>src\building.h</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="CStructureData" Collapsed="true">
+    <Position X="16.5" Y="3" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>BBAYhIACREABAAQAigAVACCUgQgIESmBhAAAEAgRAgM=</HashCode>
+      <FileName>src\building.h</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="CBuildMaterials" Collapsed="true">
+    <Position X="24.25" Y="4.5" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>AQAAIACAAAEAAAAACAAAAAAAAAAAAEAAAAAAAAAAAAQ=</HashCode>
+      <FileName>src\building.h</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="CBuildUnit" Collapsed="true">
+    <Position X="185" Y="3.5" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>AQAAAACACAEAAAAACAAAAACAAAAAAAAAAAAAAAAAAAA=</HashCode>
+      <FileName>src\building.h</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="CBuildVehicle" Collapsed="true">
+    <Position X="26.5" Y="4.5" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>AAAAAAAQgAAAAgCACAAAAAAEAEAAAAAAAEAAAAAAAAA=</HashCode>
+      <FileName>src\building.h</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="CBuildHousing" Collapsed="true">
+    <Position X="28.75" Y="4.5" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>AAAAAAAAAAAgAAAACAAAAAAAAAAAAAAgAAAAAAAAEAA=</HashCode>
+      <FileName>src\building.h</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="CBuildCommand" Collapsed="true">
+    <Position X="4" Y="4.5" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>AAAAAAAAAAAAAAAACAAAAAAAAAAAAABAAAAAAAAAAAA=</HashCode>
+      <FileName>src\building.h</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="CBuildEmbassy" Collapsed="true">
+    <Position X="6.25" Y="4.5" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>AAAAAAAAAAAAAAAICAAAAAAAAAAAAAAAAAAAAAAAAAA=</HashCode>
+      <FileName>src\building.h</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="CBuildFort" Collapsed="true">
+    <Position X="8.5" Y="4.5" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>AIAAAAAAAAAAAAAACAAAAAAAAAAAAAAAAAAAAAAAAAA=</HashCode>
+      <FileName>src\building.h</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="CBuildPower" Collapsed="true">
+    <Position X="10.75" Y="4.5" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>ARAAAAAAAAABAAAASAAAAAAAAABAAQAAAAAAAAABAAA=</HashCode>
+      <FileName>src\building.h</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="CBuildResearch" Collapsed="true">
+    <Position X="13" Y="4.5" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>AAAAAAAAAAAAAAAASAAAAAAAAEBAAAAAAAAAAAAAAAA=</HashCode>
+      <FileName>src\building.h</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="CBuildRepair" Collapsed="true">
+    <Position X="15.25" Y="4.5" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>AAAgAAhAAAAAAACACAAAAAAACAAAAAAAAQAQAAAAAIA=</HashCode>
+      <FileName>src\building.h</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="CBuildShipyard" Collapsed="true">
+    <Position X="26.5" Y="5.75" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>AAAAAAgAAAAAAAAACAAAAQAAAAAAEAAAAAAAAAAAAAA=</HashCode>
+      <FileName>src\building.h</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="CBuildWarehouse" Collapsed="true">
+    <Position X="17.5" Y="4.5" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>AAAAAAgAAAAAAAAACAAAAAAAAAAAAAAAAAAAAAAAAAA=</HashCode>
+      <FileName>src\building.h</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="CBuildMine" Collapsed="true">
+    <Position X="19.75" Y="4.5" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>ggAAAAAAAAEAAAAAiAAECAAAAAAAAAAAAAAAAAAAAgA=</HashCode>
+      <FileName>src\building.h</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="CBuildFarm" Collapsed="true">
+    <Position X="22" Y="4.5" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>AAAAADAAQAECAAAAiAAAAAAAAAAAAAgQAAAAAAAAAAE=</HashCode>
+      <FileName>src\building.h</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="CBuilding" Collapsed="true">
+    <Position X="12.25" Y="26.75" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>gyEJAIiyOdD00qhAmwQViGqAmXiEcGyhRjiLlEE4QO4=</HashCode>
+      <FileName>src\building.h</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="CMaterialBuilding" Collapsed="true">
+    <Position X="4.5" Y="28.25" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>CQAAAAAAAAAAAAAACAAQAAAAAAAAAAAgAACIAAAAAAA=</HashCode>
+      <FileName>src\building.h</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="CVehicleBuilding" Collapsed="true">
+    <Position X="6.75" Y="28.25" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>gwAAAQQAAoAIgAAASEAQAAIAgCgAgAAkAAioAAAAiAI=</HashCode>
+      <FileName>src\building.h</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="CRepairBuilding" Collapsed="true">
+    <Position X="9" Y="28.25" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>gxgAAAAAEkAAAAIACEAQAAAAgCAAAAAgAAqIAAAIiAQ=</HashCode>
+      <FileName>src\building.h</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="CShipyardBuilding" Collapsed="true">
+    <Position X="6.75" Y="29.75" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>gxgAAAAAkkAAAAIASAAQAAAAgCEAAAAgAArIAAAQCAQ=</HashCode>
+      <FileName>src\building.h</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="CPowerBuilding" Collapsed="true">
+    <Position X="11.25" Y="28.25" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>IQAAAAAAAAAAAAAACAAQAACAAAAAAAAgAACIAAAAAAA=</HashCode>
+      <FileName>src\building.h</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="CWarehouseBuilding" Collapsed="true">
+    <Position X="13.5" Y="28.25" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>AAAAAQAAAAAAAAAACAAQAAAAAAAAAAAAAAAAAAAAAAA=</HashCode>
+      <FileName>src\building.h</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="CHousingBuilding" Collapsed="true">
+    <Position X="15.75" Y="28.25" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>AAAAAAAAAAAAAQAAAAAAAAAAACAAAAAgAAgAAAAAAAA=</HashCode>
+      <FileName>src\building.h</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="CMineBuilding" Collapsed="true">
+    <Position X="18" Y="28.25" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>ABAAEAAAAAQCAAAACAAAgQIAgCAAAAQgAAEIAAAQAAA=</HashCode>
+      <FileName>src\building.h</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="CLandUse" Collapsed="true">
+    <Position X="188.5" Y="8.5" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>AAAAAAAAACAAAgwAAAAAAAAAAAAAAAAAAAAAAAAAAAA=</HashCode>
+      <FileName>src\building.h</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="CFarmBuilding" Collapsed="true">
+    <Position X="20.25" Y="28.25" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>AAAEAAAAgAAAAAgACAAAgAAAgCAAAAAgAAgAAQAAAAU=</HashCode>
+      <FileName>src\building.h</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="CBuildingMap" Collapsed="true">
+    <Position X="183.25" Y="3.5" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>AAIAIAAgAIAAAAAAAAAABAAAAAAAAAAAAAAAAAAAAAA=</HashCode>
+      <FileName>src\building.h</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="CBuildingHex" Collapsed="true">
+    <Position X="181.5" Y="3.5" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>AAQAAAAAAQAAAAQAAABAAAAAABAAASAAAAAIABAAAAA=</HashCode>
+      <FileName>src\building.h</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="CAICopy" Collapsed="true">
+    <Position X="195.5" Y="0.5" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>AAAAAAAAAAAAAAAAAAAAAAAAAAAAIMAAAAAAAAABAAA=</HashCode>
+      <FileName>src\CAICOPY.HPP</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="CAICopyList" Collapsed="true">
+    <Position X="197.25" Y="0.5" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>CgAAAAAAAAAAAAAAAEAIAAAAAAAABAAAAAAAAAAAAAA=</HashCode>
+      <FileName>src\CAICOPY.HPP</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="CAIData" Collapsed="true">
+    <Position X="199" Y="0.5" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>JAMQABxAAURQAAAIAQoIICgnBAAiBAACEAgWSIAgCgA=</HashCode>
+      <FileName>src\CAIDATA.HPP</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="CAIGoalMgr" Collapsed="true">
+    <Position X="204.25" Y="0.5" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>DXsSnedIw03/xVEQOvwROVFycQDwDFOeGBs9xRFgSCc=</HashCode>
+      <FileName>src\CAIGMGR.HPP</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="CAIGoal" Collapsed="true">
+    <Position X="200.75" Y="0.5" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>AAAAAAgAABAACAAAACAAgAAEAAAAAAEAGAIQAAABAAA=</HashCode>
+      <FileName>src\CAIGOAL.HPP</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="CAIGoalList" Collapsed="true">
+    <Position X="202.5" Y="0.5" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>AAAAAAAAAAAAAQAAAAAZAAAAAAAAAAAAAAAAIAAAAQA=</HashCode>
+      <FileName>src\CAIGOAL.HPP</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="CAIHex" Collapsed="true">
+    <Position X="181.5" Y="1.5" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>AAAAAAAAAAIAAAgAAAAAAAAACAAABAAAAGAAAAAAAAA=</HashCode>
+      <FileName>src\CAIHEX.HPP</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="CAIInitPos" Collapsed="true">
+    <Position X="183.25" Y="1.5" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>AAEAAIAAAQARAEAAABAAAAAAEIAAAAAAAAAAEAoAAAA=</HashCode>
+      <FileName>src\CAIINIT.HPP</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="CAILog" Collapsed="true">
+    <Position X="185" Y="1.5" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>AAAAAIAAAAAAIAAAAAAAAAAAAAAIAACAAAAAAAGEAAA=</HashCode>
+      <FileName>src\CAILOG.HPP</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="CAIMap" Collapsed="true">
+    <Position X="186.75" Y="1.5" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>CEDAmIACIECLASQAAIEAIIAAIAAAACgonGAIkIgMASQ=</HashCode>
+      <FileName>src\CAIMAP.HPP</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="CAIMapUtil" Collapsed="true">
+    <Position X="188.5" Y="1.5" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>iEkB6soUoc3LEI4cCX4eQqAlMIjgQAcpyErIxAAJSKg=</HashCode>
+      <FileName>src\CAIMAPUT.HPP</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="CAIMgr" Collapsed="true">
+    <Position X="190.25" Y="1.5" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>WCg0yuRIwpWTyoEBgrUCAQYCEBgcGQEiACAQBdGAEAU=</HashCode>
+      <FileName>src\CAIMGR.HPP</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="CAIMgrList" Collapsed="true">
+    <Position X="192" Y="1.5" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>AAAABAAAAAAQAAAAAAAICAAQAAAAAAQAAABAAAAAAAA=</HashCode>
+      <FileName>src\CAIMGR.HPP</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="CAIMsg" Collapsed="true">
+    <Position X="193.75" Y="1.5" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>BAAAAAAAAAACAAAEAAAQAAAAACAAQgAQAGAEAAQAMEA=</HashCode>
+      <FileName>src\CAIMSG.HPP</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="CAIOpFor" Collapsed="true">
+    <Position X="195.5" Y="1.5" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>ACRAyJQg5SADOAAIAiIAVgQEAAQAFBIA0BJI6gAABAA=</HashCode>
+      <FileName>src\CAIOPFOR.HPP</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="CAIOpForList" Collapsed="true">
+    <Position X="197.25" Y="1.5" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>AABQgIAgQAAEAAAAAASIAAAAAAAAAQAYAAAAAAAAAAg=</HashCode>
+      <FileName>src\CAIOPFOR.HPP</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="CAIQueue" Collapsed="true">
+    <Position X="199" Y="1.5" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>AAAAAAAAAAQBAAAAAAAIAAAQACAAAAAAAgAAAAAAAAA=</HashCode>
+      <FileName>src\CAIQUEUE.HPP</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="CAIRouter" Collapsed="true">
+    <Position X="200.75" Y="1.5" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>AFAFgIAoQBgBAAAAMBJABAIAEAIAAAQAggMAAAAAAAA=</HashCode>
+      <FileName>src\CAIROUTE.HPP</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="CAISavLd" Collapsed="true">
+    <Position X="202.5" Y="1.5" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>RUQAgoAAAAAQAAABgAAAAAQAEEQAAAAAAAAAUAAAEAA=</HashCode>
+      <FileName>src\CAISAVLD.HPP</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="CAIStart" Collapsed="true">
+    <Position X="204.25" Y="1.5" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>EAAAgIgQIEAAISAICAgAAAAgASAiAAAgAACIRAAAQIQ=</HashCode>
+      <FileName>src\CAISTART.HPP</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="CAITask" Collapsed="true">
+    <Position X="181.5" Y="2.5" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>AABAAAQIAABAAAAAAAgAgIAEQIgAUAEAAAIGBAABIAA=</HashCode>
+      <FileName>src\CAITASK.HPP</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="CAITaskList" Collapsed="true">
+    <Position X="183.25" Y="2.5" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>AAAARAAAAACAAAEIABAIBAAAQAAQAAAAgAAIgAAAAAA=</HashCode>
+      <FileName>src\CAITASK.HPP</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="CAITaskMgr" Collapsed="true">
+    <Position X="185" Y="2.5" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>IuCRAEwAEEEBAIJBQEAhJQAoSZAAAAEGggThQGB7Aas=</HashCode>
+      <FileName>src\CAITMGR.HPP</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="CAIUnit" Collapsed="true">
+    <Position X="186.75" Y="2.5" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>II1IQgAIFMANAABAAQgQgMAFUoQYhAEQBBMAAIQBQAA=</HashCode>
+      <FileName>src\CAIUNIT.HPP</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="CAIUnitList" Collapsed="true">
+    <Position X="188.5" Y="2.5" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>AABIgICAgSAAAAAAAAAIAACAAQAAQAAAAAAAAEAQACA=</HashCode>
+      <FileName>src\CAIUNIT.HPP</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="CDlgCdLoc" Collapsed="true">
+    <Position X="185" Y="4.5" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>AAEAACEAAAAAAAAAABAAAAAJAAAAAAAAAAAEAAAAAAA=</HashCode>
+      <FileName>src\CdLoc.h</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="CDlgChatAll" Collapsed="true">
+    <Position X="186.75" Y="4.5" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>AAAEAAECAAEAAAgCkBAAAAAQAAAAUgAAAAAgAAAAAAA=</HashCode>
+      <FileName>src\chat.h</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="CChatBar" Collapsed="true">
+    <Position X="188.5" Y="3.5" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>QAAAAAAAAAEAAAAEgAAAAAAAAAAAAAAAAACAAAAAAAA=</HashCode>
+      <FileName>src\CHATBAR.H</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="CHPRouter" Collapsed="true">
+    <Position X="202.5" Y="7.5" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>IMQFgNRgdRxRiABAtDDgUAIGvIqSQAQAz8MGAgwEUCA=</HashCode>
+      <FileName>src\CHPROUTE.HPP</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="CPathMap" Collapsed="true">
+    <Position X="188.5" Y="9.5" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>ABiiAIIQBkEBWY4AABBEABJBQAgKQQgGQAUKAKCIAAA=</HashCode>
+      <FileName>src\CPATHMAP.H</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="CCell" Collapsed="true">
+    <Position X="186.75" Y="3.5" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>AQAAAAAAhAAAEAAAAAAAARAAAAAAAAAAAGAgAQAAgAA=</HashCode>
+      <FileName>src\CPATHMGR.H</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="CPathMgr" Collapsed="true">
+    <Position X="190.25" Y="9.5" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>AQggAAIQhkEBW4QAAABEgAIJQApCRwEGQAECAaCAACg=</HashCode>
+      <FileName>src\CPATHMGR.H</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="CDlgLoadMulti" Collapsed="true">
+    <Position X="185" Y="5.5" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>AARIQCECAAAAAAAAIBAAAAABAAAAQGAAAAAAAAAAAAA=</HashCode>
+      <FileName>src\CREATMUL.H</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="CDlgCreateMulti" Collapsed="true">
+    <Position X="190.25" Y="4.5" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>AARAACUCAACBgQAgABAAAKABAAAAQEAAAAAAgAAAAAA=</HashCode>
+      <FileName>src\CREATMUL.H</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="CDlgCreatePublish" Collapsed="true">
+    <Position X="192" Y="4.5" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>AABBICUIAACEAGAAABAAACABAACQQkgACAgAAAAABgA=</HashCode>
+      <FileName>src\CREATMUL.H</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="CCreateMultiBase" Collapsed="true">
+    <Position X="20" Y="11.25" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>AAAAAgAAAABAAAABCBAIAAAAAAAAAgAAAAgAAAAAAAI=</HashCode>
+      <FileName>src\CREATMUL.H</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="CCreateMulti" Collapsed="true">
+    <Position X="14" Y="12.75" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>AAAAAgAAAAAAAAAACAAAACEgAAAAAAAAAAACAAAACAI=</HashCode>
+      <FileName>src\CREATMUL.H</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="CCreateLoadMulti" Collapsed="true">
+    <Position X="19.75" Y="12.75" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>AAAAAgAEAAAAACAACAAAAAAAAAAAAgAAAIACAAAABAI=</HashCode>
+      <FileName>src\CREATMUL.H</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="CDlgCreateSingle" Collapsed="true">
+    <Position X="193.75" Y="4.5" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>AAAAACECAAAAABAADBAAACABAAAAQUAAAAAAAgAAQAA=</HashCode>
+      <FileName>src\CREATSIN.H</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="CCreateSingle" Collapsed="true">
+    <Position X="17" Y="10.75" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>AAAAAgAAAAAAAAACCAgQACAAAAAAAAAAAAACAAAAAAI=</HashCode>
+      <FileName>src\CREATSIN.H</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="CCreateLoadSingle" Collapsed="true">
+    <Position X="17" Y="12.75" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>AAAAAgAAAAAAACAACAAAAAAEAAAAAgEAAAACAAAAAAI=</HashCode>
+      <FileName>src\CREATSIN.H</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="CCreditLine" Collapsed="true">
+    <Position X="197.25" Y="3.5" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>AAAAIEAAAAAAAAAgAQABBAAAAAAAAAAAAAAAAAAAAAA=</HashCode>
+      <FileName>src\credits.h</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="CWndCredits" Collapsed="true">
+    <Position X="204.25" Y="11.5" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>AICBIAAAIAMAAAEABIAAUAAAACIAAEAAACAIAAAQAAA=</HashCode>
+      <FileName>src\credits.h</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="CCutScene" Collapsed="true">
+    <Position X="199" Y="3.5" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>AAAAAAAAAAAABAEAAAAAAAQAAAAgAAAAAAAAABAAAAA=</HashCode>
+      <FileName>src\CUTSCENE.H</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="CWndCutScene" Collapsed="true">
+    <Position X="181.5" Y="12.5" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>gEiBKAAAMAWAgAAAIQAAAAgQACAAEEIBAAAABACAAAA=</HashCode>
+      <FileName>src\CUTSCENE.H</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="CDlgScnDesc" Collapsed="true">
+    <Position X="190.25" Y="6.5" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>AEAAAAEAAAiAAAAAABAAACAAAAABAAAAAAAgAAAAAAA=</HashCode>
+      <FileName>src\CUTSCENE.H</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="CFlic" Collapsed="true">
+    <Position X="186.75" Y="7.5" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>AAAAAAAAAAAAAAAAAAAAAAAAAgAAAECAAAAAAAAARAA=</HashCode>
+      <FileName>src\dlgflic.h</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="CDlgFlic" Collapsed="true">
+    <Position X="200.75" Y="4.5" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>QICACCEQAACAAAASAAABAAABCgAAAAAAoAAAAICQAAA=</HashCode>
+      <FileName>src\dlgflic.h</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="CDlgModelessMsg" Collapsed="true">
+    <Position X="190.25" Y="5.5" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>AAAABAAAAAAAAAAAgBAAAAAAAAAAQEAAAAAAAAAAAAA=</HashCode>
+      <FileName>src\DlgMsg.h</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="CDlgReg" Collapsed="true">
+    <Position X="181.5" Y="6.5" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>AEAAACAAAAAgAAAAABAAAAABAAAAAAAAAAAAAAAAAAA=</HashCode>
+      <FileName>src\DlgReg.h</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="CDataTransfer" Collapsed="true">
+    <Position X="0.5" Y="4.5" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>AgFAAAAAApEQBABBAMAAJAACABAAQAEAAQCAQASAARA=</HashCode>
+      <FileName>src\DXFER.H</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="CBitmapLib" Collapsed="true">
+    <Position X="197.25" Y="2.5" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>QAAAAAAAAAgAAAAAAAAAAAAAAAAAAAACBIACAACAAAA=</HashCode>
+      <FileName>src\icons.h</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="CStatData" Collapsed="true">
+    <Position X="197.25" Y="10.5" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>AhAAAAEAAAEAwAAAEAABAAAACAAgUAAAIICGAAIAAAA=</HashCode>
+      <FileName>src\icons.h</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="CIcons" Collapsed="true">
+    <Position X="204.25" Y="7.5" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>AAAAAAAAAAAAAAAAACAAAQAAAAAAAAAiAAAGAACAAAA=</HashCode>
+      <FileName>src\icons.h</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="CStatInst" Collapsed="true">
+    <Position X="199" Y="10.5" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>AWAIIAAxIAAACABUCpAIAAAAgIAgACAABAIEAAAACIA=</HashCode>
+      <FileName>src\icons.h</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="CWndStatBar" Collapsed="true">
+    <Position X="9.75" Y="15.5" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>AACIAAAACAEAAAAAAIAAAAAAQLAAAGAAIAEAAAAAAIA=</HashCode>
+      <FileName>src\icons.h</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="CMySplitterWnd" Collapsed="true">
+    <Position X="204.25" Y="8.5" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>AAAAAAAAAQCAAAAAAAAAAAAQAABBAAAAAAAAAAAAAAA=</HashCode>
+      <FileName>src\IPCCHAT.H</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="CChatWnd" Collapsed="true">
+    <Position X="192" Y="3.5" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>AAQBQBAAAwEEAESIBAAAAAAIACAAEgCAAAKACAAAAAw=</HashCode>
+      <FileName>src\IPCCHAT.H</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="CChatView" Collapsed="true">
+    <Position X="190.25" Y="3.5" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>AAAAAAAAAAAAAAAACABAgAAAgAAAAAAAAgEAAAAAAAA=</HashCode>
+      <FileName>src\IPCCHAT.H</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="CSendView" Collapsed="true">
+    <Position X="185" Y="10.5" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>QAAAACAAAAAAAAAACABAgAAIkAIAAAAAEEAACAAAAAA=</HashCode>
+      <FileName>src\IPCCHAT.H</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="CMyHeaderCtrl" Collapsed="true">
+    <Position X="202.5" Y="8.5" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>AAAAAAAAAAAAAAAAAEAAAAAAAAAAAEIAAAAAAAAAAAA=</HashCode>
+      <FileName>src\IPCCOMM.H</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="CEMailLB" Collapsed="true">
+    <Position X="200.75" Y="6.5" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>AAQAAAAAAAgAAAFAAEAAAAAAAAAAAACAAAAAEAAAIAE=</HashCode>
+      <FileName>src\IPCCOMM.H</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="CWndComm" Collapsed="true">
+    <Position X="202.5" Y="11.5" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>EAWBBkCAhCkVAQGAYQAS0AAfEGhAUEAAAAIBGAMQABA=</HashCode>
+      <FileName>src\IPCCOMM.H</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="CMsgIPC" Collapsed="true">
+    <Position X="197.25" Y="8.5" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>AwIAAAAAAAAAAQAAAACAAAAIAAAAAAgAAAAACgABAEA=</HashCode>
+      <FileName>src\IPCMSG.HPP</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="CEMsg" Collapsed="true">
+    <Position X="202.5" Y="6.5" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>AAJAAAAAAAAAAQAAAACAAAYIACAAAAAAAAIACAABAAA=</HashCode>
+      <FileName>src\IPCMSG.HPP</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="CEMsgList" Collapsed="true">
+    <Position X="204.25" Y="6.5" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>ASBAAAAAAEAAAAAAAAAIAAAAAAAAAAAAAAAAJAAAAAA=</HashCode>
+      <FileName>src\IPCMSG.HPP</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="CIPCPlayer" Collapsed="true">
+    <Position X="185" Y="8.5" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>AARAAAAAAgAAABAAAAAAAAAAASAAAAAAAAIAAQAAAAA=</HashCode>
+      <FileName>src\IPCPLAY.H</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="CIPCPlayerList" Collapsed="true">
+    <Position X="186.75" Y="8.5" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>AAAAAAEAAAAAAAAAABEIAAAAABAAAEAAAAAAAAAAAAA=</HashCode>
+      <FileName>src\IPCPLAY.H</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="CPlyrMsgStatusDlg" Collapsed="true">
+    <Position X="193.75" Y="9.5" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>EIABACEAAAAAAAAAgBAAAAABBAQAAAAAAAAAAAAEAAA=</HashCode>
+      <FileName>src\IPCPLAY.H</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="CWndMailRead" Collapsed="true">
+    <Position X="185" Y="12.5" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>AAUBAAABACEQAgCAoAAggAAAACAAUEQAAAIBCAAAAAA=</HashCode>
+      <FileName>src\IPCREAD.H</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="CSendCombo" Collapsed="true">
+    <Position X="183.25" Y="10.5" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>CAAAAAAAAAAAEAEAAEAAAAAAAAACAACAAIAAAAAEIAA=</HashCode>
+      <FileName>src\IPCSEND.H</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="CDlgCompose" Collapsed="true">
+    <Position X="188.5" Y="4.5" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>AAYIIClAgAERAQDAgBAAAAABAAAAUIBAAAAACMAAIAA=</HashCode>
+      <FileName>src\IPCSEND.H</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="CGameInfo" Collapsed="true">
+    <Position X="190.25" Y="7.5" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>BARAAAAAAAIAAAAACAAAAAAAAIAAAAAAAIAEgEAEAAA=</HashCode>
+      <FileName>src\JOIN.H</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="CDlgJoinPublish" Collapsed="true">
+    <Position X="181.5" Y="5.5" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>AARAACEIAACEAAABABAAACgBIGAAYEgAAAARAAAAQAA=</HashCode>
+      <FileName>src\JOIN.H</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="CDlgJoinGame" Collapsed="true">
+    <Position X="202.5" Y="4.5" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>AIALBCEpAACADABgJJAgAQDRAAARYEAAAAAAoIAAAgA=</HashCode>
+      <FileName>src\JOIN.H</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="CDlgJoinPlayers" Collapsed="true">
+    <Position X="204.25" Y="4.5" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>AAAAAAFIAAAIAAAAABAIAABABAAAAEAAAAgAAAAAAgA=</HashCode>
+      <FileName>src\JOIN.H</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="CJoinMulti" Collapsed="true">
+    <Position X="11" Y="10.75" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>hAAAAwAABAAAACAACBAoACAQAAAAAhAAAAgSAAAAAAI=</HashCode>
+      <FileName>src\JOIN.H</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="SE_Exception" Collapsed="true">
+    <Position X="200.75" Y="12.5" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>AQAAQAABAEAAAAAAAAAAAAAAAAAABAAAAAAAAAAAAAA=</HashCode>
+      <FileName>src\lastplnt.h</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="AIinit" Collapsed="true">
+    <Position X="183.25" Y="0.5" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>CAAAAAACAAAgAAAgAACAAAAAAAAAAAAAAAAAAAAAAAA=</HashCode>
+      <FileName>src\lastplnt.h</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="CDlgMain" Collapsed="true">
+    <Position X="188.5" Y="5.5" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>BECBAqEMAAFAAABAgBAKABZBBCAAEAAAAAAAUAAAAEA=</HashCode>
+      <FileName>src\lastplnt.h</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="CDlgVer" Collapsed="true">
+    <Position X="197.25" Y="6.5" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>gAAABAEAAAAAACICABAAEAAAAAAAEAAAAgQAAIAQAIA=</HashCode>
+      <FileName>src\lastplnt.h</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="CZoomData" Collapsed="true">
+    <Position X="193.75" Y="12.5" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>AAAAAAAAAAAAAAAAQAAAAAAIAAAAAAAAAAAEAAAAAEA=</HashCode>
+      <FileName>src\lastplnt.h</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="CConquerApp" Collapsed="true">
+    <Position X="195.5" Y="3.5" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>hKu4SHAeoWm8M1gj6DEKFgz7xnz9uIRooq0+rMclnvc=</HashCode>
+      <FileName>src\lastplnt.h</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="CDlgStackDump" Collapsed="true">
+    <Position X="192" Y="6.5" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>AAAAIAAAAAAAAAAAABIAAAAAAAAAAQIAAAAAAAAAAAA=</HashCode>
+      <FileName>src\lastplnt.h</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="CDlgLicense" Collapsed="true">
+    <Position X="183.25" Y="5.5" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>AAAAMAEABBQAAAAAABAIACAAAAAAAAAAAAAAAAAAAAI=</HashCode>
+      <FileName>src\License.h</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="CDlgLoadTruck" Collapsed="true">
+    <Position X="186.75" Y="5.5" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>CYABADEAgABRACAAgVKAASIBogEEAABBAIEAKABgIQA=</HashCode>
+      <FileName>src\loadtruk.h</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="CMinerals" Collapsed="true">
+    <Position X="193.75" Y="8.5" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>BAAAAAAAAAACQAAACAAQAAAEAAAAAAkAAAAgAAARAAA=</HashCode>
+      <FileName>src\MINERALS.H</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="CWndMovie" Collapsed="true">
+    <Position X="188.5" Y="12.5" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>AACBAAgDAGEAAABCgAgAKAAQAIAAAEDAAAAAAEAQAQg=</HashCode>
+      <FileName>src\movie.h</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="CNetApi" Collapsed="true">
+    <Position X="181.5" Y="9.5" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>BAgYAAAQpCSAAghALEMAAAAACAAAAAEGAAkAAACBGYA=</HashCode>
+      <FileName>src\NETAPI.H</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="CNetPublish" Collapsed="true">
+    <Position X="185" Y="9.5" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>BgAAAAAAAAIAAQBIAAAIEAgAAYAAAQAAAIABgEAAAIA=</HashCode>
+      <FileName>src\NETAPI.H</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="CNetJoin" Collapsed="true">
+    <Position X="183.25" Y="9.5" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>AgQAAAAAAAAAAAAAAAAAAAgAAAAAAAAAAAAAAAAAAoA=</HashCode>
+      <FileName>src\NETAPI.H</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="CNetCmd" Collapsed="true">
+    <Position X="93.5" Y="19.5" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>AAIAAgAAAIIAAAAAAAAAAAAAAEAAQEkAAAAAAAAAAQA=</HashCode>
+      <FileName>src\NETCMD.H</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="CNetReady" Collapsed="true">
+    <Position X="19.25" Y="21" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>AAAAAAAAAAAAAAAACAAAAAAAAAAAAAAAAAAAMAAAAIA=</HashCode>
+      <FileName>src\NETCMD.H</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="CNetPlyrJoin" Collapsed="true">
+    <Position X="26" Y="21" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>AiQAEAAAACAEAAAASBAAAAgAEAAIAAAAAAAAAAEAAoA=</HashCode>
+      <FileName>src\NETCMD.H</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="CNetEnumPlyrs" Collapsed="true">
+    <Position X="32.75" Y="21" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>AAAAAAAAAAAAAAAACAAAAAAAAAAAAAAAQAAAAEAAAAA=</HashCode>
+      <FileName>src\NETCMD.H</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="CNetSelectPlyr" Collapsed="true">
+    <Position X="41.75" Y="21" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>AAQAAAAQAAAAAAAACAAAAAAAAAAAQAAAQAAAAAAAIIA=</HashCode>
+      <FileName>src\NETCMD.H</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="CNetYouAre" Collapsed="true">
+    <Position X="48.5" Y="21" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>AAAAAAAAAAAAAACACAAAAAAAAAAAQAAAAAAAAAAAAIA=</HashCode>
+      <FileName>src\NETCMD.H</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="CNetPlayer" Collapsed="true">
+    <Position X="55.25" Y="21" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>AgQAAQAAAEAAAAAACAAAAIAAAAAAAAAAQAAAIAAAAoA=</HashCode>
+      <FileName>src\NETCMD.H</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="CNetStart" Collapsed="true">
+    <Position X="62" Y="21" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>AAAAAAAAAAAAASAoCACAAAAAACAgAAAIAAAAAAAAAAA=</HashCode>
+      <FileName>src\NETCMD.H</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="CNetPlyrStatus" Collapsed="true">
+    <Position X="71" Y="21" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>AABAAAAAAAAAAAAAAAAAAAAAAAAAAAAAQIAAAAAAAAA=</HashCode>
+      <FileName>src\NETCMD.H</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="CNetInitDone" Collapsed="true">
+    <Position X="80" Y="21" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>AAAAAAAAAAAAAAAAAAAAAAAAAAAAEAAAAAAAAAAAAIA=</HashCode>
+      <FileName>src\NETCMD.H</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="CNetChat" Collapsed="true">
+    <Position X="86.75" Y="21" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>AgAAAAIAAAAAAAAAAAAAAAgAAAAAQAAAAAAAAAAAAAA=</HashCode>
+      <FileName>src\NETCMD.H</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="CNetPlay" Collapsed="true">
+    <Position X="95.75" Y="21" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>AAAAAAAAAAAAAAAAAAAAAAAAAAAgAAAACAAAAAAAAAA=</HashCode>
+      <FileName>src\NETCMD.H</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="CNetToAi" Collapsed="true">
+    <Position X="100.25" Y="21" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>AAAAAAAAAAAAAAAAAAAAgAAAAAAAAAAAAAAAAAAAAIA=</HashCode>
+      <FileName>src\NETCMD.H</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="CNetToHp" Collapsed="true">
+    <Position X="109.25" Y="21" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>AAQAAAAAAAAAAAAAAAAAAAgAAAAAAAAAQAAAAAAAAIA=</HashCode>
+      <FileName>src\NETCMD.H</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="CNetGetFile" Collapsed="true">
+    <Position X="116" Y="21" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>AAAAAAAAAAAAAAAAAgAAAAAAAAAAQAABAAAAAAAIAIA=</HashCode>
+      <FileName>src\NETCMD.H</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="_CMsgVeh" Collapsed="true">
+    <Position X="124" Y="21" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>AAgAAAAAICAgAAAACAAAAAAIgAACAAAAAAAAAIQBAIA=</HashCode>
+      <FileName>src\NETCMD.H</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="_CMsgBldg" Collapsed="true">
+    <Position X="134" Y="21" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>gAAABAAAAAAACAAACAIAQAAIgAAAAAAAAAAAgAABAIA=</HashCode>
+      <FileName>src\NETCMD.H</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="_CMsgRoad" Collapsed="true">
+    <Position X="147.5" Y="21" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>AAAAAAAAgAAAAAAACAAAAEAAAAAAAAAAAAAAAAQgAIA=</HashCode>
+      <FileName>src\NETCMD.H</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="_CMsgBridge" Collapsed="true">
+    <Position X="158.75" Y="21" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>AAAAAAAAgAAQAAAACgKAAAAAACAAAAAAAAAAAAIAAIA=</HashCode>
+      <FileName>src\NETCMD.H</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="_CMsgVehGo" Collapsed="true">
+    <Position X="169" Y="21" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>AAAAAAAQ4CAAiACACAAAEAIAAAACAAAQEAAgSAQJAYI=</HashCode>
+      <FileName>src\NETCMD.H</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="CMsgUnitDamage" Collapsed="true">
+    <Position X="176.75" Y="21" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>AAAEAAIAAAAAAgAACAAACAAACAAAAAAAAAAAIAAAAAA=</HashCode>
+      <FileName>src\NETCMD.H</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="CMsgUnitSetDamage" Collapsed="true">
+    <Position X="8" Y="21" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>AAAMAAAAAAAAAAAACAAAAAAAAAAAAAAAAAAAIAAQAAA=</HashCode>
+      <FileName>src\NETCMD.H</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="CMsgPlaceBldg" Collapsed="true">
+    <Position X="131.75" Y="22.5" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>AAAAAAAAAAAgAQAACAAAAAAAAAAAAAAAIAAAAAAAAAA=</HashCode>
+      <FileName>src\NETCMD.H</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="CMsgPlaceVeh" Collapsed="true">
+    <Position X="122.75" Y="22.5" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>AAAQAAAAAAAAAAAACAAAAAAAAAAAAAAAIAAAAAAAAAA=</HashCode>
+      <FileName>src\NETCMD.H</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="CMsgBuildBldg" Collapsed="true">
+    <Position X="134" Y="22.5" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>AgAAAAAAAAAgAAAACAAAAAAAAAAAAAAAIAAAAAAAAAA=</HashCode>
+      <FileName>src\NETCMD.H</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="CMsgBuildVeh" Collapsed="true">
+    <Position X="35" Y="21" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>AAAAAAAACAAAgAgACAAAAAAAAAAAAAAAAAAAAAQAAAA=</HashCode>
+      <FileName>src\NETCMD.H</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="CMsgBuildRoad" Collapsed="true">
+    <Position X="145.25" Y="22.5" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>AAAAAAAAAAAgAAAACAAAAAAAAAAACAAAIAAAAAAAAAA=</HashCode>
+      <FileName>src\NETCMD.H</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="CMsgBuildBridge" Collapsed="true">
+    <Position X="156.5" Y="22.5" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>AAAAAAAAAAAgAAgACAAAAAAAAAAAAAAAIAAAAAAAAAA=</HashCode>
+      <FileName>src\NETCMD.H</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="CMsgVehGoto" Collapsed="true">
+    <Position X="167.75" Y="22.5" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>AAAAAAAIAAAgAAAACAACAAAAAAAAAAAAAAAAAAAIAAA=</HashCode>
+      <FileName>src\NETCMD.H</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="CMsgTransMat" Collapsed="true">
+    <Position X="64.25" Y="21" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>AAAAIAAAAAAAAAIACAAAAAAAAAAAEQAAAAAAAAAAAAA=</HashCode>
+      <FileName>src\NETCMD.H</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="CMsgUnitControl" Collapsed="true">
+    <Position X="73.25" Y="21" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>AAAAAAQAAAAAAAAACAAAAAAAAAAAAAAgAAAAAAQAAAA=</HashCode>
+      <FileName>src\NETCMD.H</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="CMsgUnitRepair" Collapsed="true">
+    <Position X="82.25" Y="21" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>AAAIACAAAAAAAAAACAAAAAAAAAAAAgAAEAAAAQQAAAA=</HashCode>
+      <FileName>src\NETCMD.H</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="CMsgDestroyUnit" Collapsed="true">
+    <Position X="89" Y="21" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>IAAAAAAAAAAAAAAACAAAAAAAAAAAAAAAAAAAAAQAAAA=</HashCode>
+      <FileName>src\NETCMD.H</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="CMsgBldgNew" Collapsed="true">
+    <Position X="136.25" Y="22.5" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>AAAAAAAAAEAAAAAACAAAAAAAAAAAAAAAAAAAAAAAAAA=</HashCode>
+      <FileName>src\NETCMD.H</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="CMsgBldgStat" Collapsed="true">
+    <Position X="102.5" Y="21" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>BAAAAAAAAAAAACAACAAAAAAgAAAEACgAABAAAAQBAIA=</HashCode>
+      <FileName>src\NETCMD.H</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="CMsgVehNew" Collapsed="true">
+    <Position X="125" Y="22.5" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>AAAAAAAABAAAAAAACAAAAAAAAAAAAAAAAAAAAAAAAAA=</HashCode>
+      <FileName>src\NETCMD.H</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="CMsgVehStat" Collapsed="true">
+    <Position X="118.25" Y="21" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>BAAAAAAACAAAAAAACAAAAAAAAAAAAAAAoAAAAAQAAIA=</HashCode>
+      <FileName>src\NETCMD.H</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="CMsgVehLoc" Collapsed="true">
+    <Position X="170" Y="22.5" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>AAAAAAAAAAAAAAAACAAAABAAAAAAAAAAAAAAAAAAAAA=</HashCode>
+      <FileName>src\NETCMD.H</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="CMsgVehDest" Collapsed="true">
+    <Position X="138.5" Y="21" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>AAAAAAAAACAAAAAACAAAAAAAAAABAAAAAAAAAAQAAIA=</HashCode>
+      <FileName>src\NETCMD.H</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="CMsgRoadNew" Collapsed="true">
+    <Position X="147.5" Y="22.5" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>AAAAAAAAAAAAAAAACAAAAAAAAAAAAAAAAAAAAABAAAA=</HashCode>
+      <FileName>src\NETCMD.H</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="CMsgRoadDone" Collapsed="true">
+    <Position X="149.75" Y="22.5" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>AAAAAAAAAAAAAAAACAAAAAAAAAAAAAAAAAAAgAAAAAA=</HashCode>
+      <FileName>src\NETCMD.H</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="CMsgBridgeNew" Collapsed="true">
+    <Position X="158.75" Y="22.5" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>QAAAAAAAAAAAAAAACAAAAAAAAAAAAAAAAAAAAAAAAAA=</HashCode>
+      <FileName>src\NETCMD.H</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="CMsgBridgeDone" Collapsed="true">
+    <Position X="161" Y="22.5" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>AAAAAAAAAAAAAAAACAAAAAAABAAAAAAAAAAAAAAAAAA=</HashCode>
+      <FileName>src\NETCMD.H</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="CMsgVehSetDest" Collapsed="true">
+    <Position X="10.25" Y="21" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>AAAAAAAAgIQAAgAACAAgAAAAAAAAAAAAAAAAAAQAAAA=</HashCode>
+      <FileName>src\NETCMD.H</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="CMsgUnitDying" Collapsed="true">
+    <Position X="14.75" Y="21" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>AABAAAAAAAAAAIAAAAAAAAAAAAAAAAAAAAAAAAQAAIA=</HashCode>
+      <FileName>src\NETCMD.H</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="CMsgDeleteUnit" Collapsed="true">
+    <Position X="21.5" Y="21" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>AAIAAAAAAAAAAIAACAAAAAAAAAAAAAAAAAAAAAQAAIA=</HashCode>
+      <FileName>src\NETCMD.H</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="CMsgAttack" Collapsed="true">
+    <Position X="28.25" Y="21" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>AAAAAAAAAAQAAAAACAAAAAAAAABAAAAAgAAAAAAAAAA=</HashCode>
+      <FileName>src\NETCMD.H</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="CMsgDeployIt" Collapsed="true">
+    <Position X="37.25" Y="21" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>AAAAAAAAAAAAACAACAAAAAAAAAAAAAAAAAAAAAQAAAA=</HashCode>
+      <FileName>src\NETCMD.H</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="CMsgPlyrDying" Collapsed="true">
+    <Position X="44" Y="21" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>AAAAAAAAAAAAAAAAAAAgAAAAAAAAAAAAAAAAAAAAAIA=</HashCode>
+      <FileName>src\NETCMD.H</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="CMsgPlyrDead" Collapsed="true">
+    <Position X="50.75" Y="21" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABAAAQAAAAA=</HashCode>
+      <FileName>src\NETCMD.H</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="CMsgRsrch" Collapsed="true">
+    <Position X="57.5" Y="21" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>AAAAAAAAAAAAAAAgAAAAAAAAAAAAAAAAAAAAAAAAAYA=</HashCode>
+      <FileName>src\NETCMD.H</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="CMsgLoadCarrier" Collapsed="true">
+    <Position X="66.5" Y="21" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>AAAAAAAAACAAAAAAAAAACAAAAAAAAAAAAAAQAAAAAAA=</HashCode>
+      <FileName>src\NETCMD.H</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="CMsgUnloadCarrier" Collapsed="true">
+    <Position X="75.5" Y="21" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>AAAAAAAACAAAAAAAAAAAAAAAAAAAAAAAAAAAAAQAAAA=</HashCode>
+      <FileName>src\NETCMD.H</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="CMsgUnitAttacked" Collapsed="true">
+    <Position X="84.5" Y="21" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>AAAAAAgABAEDAAAACAIAAAAAAQAAAAAAAAAAAAAAAAA=</HashCode>
+      <FileName>src\NETCMD.H</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="CMsgBuildCiv" Collapsed="true">
+    <Position X="91.25" Y="21" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>AAAAAAAAAAAAAAAACAAAAAAAAAAABAAAAAAAAQAAAIA=</HashCode>
+      <FileName>src\NETCMD.H</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="CMsgSeeUnit" Collapsed="true">
+    <Position X="98" Y="21" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>AAAAAAAABAAFAAAAiAAAIACAAQAAAAAAAAAAAAAAAAA=</HashCode>
+      <FileName>src\NETCMD.H</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="CMsgRepairVeh" Collapsed="true">
+    <Position X="104.75" Y="21" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>AAAAAAAAAAAAAAAAAAIQAAAAAAAAAAAAAAAAAAAAAAA=</HashCode>
+      <FileName>src\NETCMD.H</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="CMsgRepairBldg" Collapsed="true">
+    <Position X="111.5" Y="21" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>AAAAAAAAACAAAAAAAAIAAAAIAAAAAAAAAAAAAAAAAAA=</HashCode>
+      <FileName>src\NETCMD.H</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="CMsgScenario" Collapsed="true">
+    <Position X="120.5" Y="21" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>AQAAAAAAACAAgAAAAAAAAAAAAEAAAAAAAAAAAAAAAAA=</HashCode>
+      <FileName>src\NETCMD.H</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="CMsgScenarioAtk" Collapsed="true">
+    <Position X="127.25" Y="21" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>AQAAAAIAACAAAAAAAAAAAAAAIAAAAAAAAgAAAAIAAAA=</HashCode>
+      <FileName>src\NETCMD.H</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="CMsgLoaded" Collapsed="true">
+    <Position X="140.75" Y="21" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>AAAAAAAAACAAAAAAAAAAAAAAAAAAAAAAAAAQEAAAAAA=</HashCode>
+      <FileName>src\NETCMD.H</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="CMsgRepaired" Collapsed="true">
+    <Position X="152" Y="21" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>AAAAAAAAAAAAAAAAAAIAAAAAAAAAAAAAAAAAAIAAAIA=</HashCode>
+      <FileName>src\NETCMD.H</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="CMsgAiMsg" Collapsed="true">
+    <Position X="163.25" Y="21" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>AgAAAAAAAAAAAAAAAAAAAAgAQAAAAAAAAAAAAAAABIA=</HashCode>
+      <FileName>src\NETCMD.H</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="CMsgOutOfLos" Collapsed="true">
+    <Position X="172.25" Y="21" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>AAAAAAIQAAAAAAAQAAEACAAAAAAAAAAAAAAAAAAAAAA=</HashCode>
+      <FileName>src\NETCMD.H</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="CMsgMatChange" Collapsed="true">
+    <Position X="179" Y="21" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>gAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAQAAIA=</HashCode>
+      <FileName>src\NETCMD.H</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="CMsgSetRelations" Collapsed="true">
+    <Position X="12.5" Y="21" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>AAAAAAEAAAAAAAAAAAAAAABAAAAABAAAAAAAAAAAAAQ=</HashCode>
+      <FileName>src\NETCMD.H</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="CMsgBldgMat" Collapsed="true">
+    <Position X="17" Y="21" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>AAAAAEAAAAAAAAAAAAAAAAAAAIAAAQAAAAAAAAQAAAA=</HashCode>
+      <FileName>src\NETCMD.H</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="CMsgGameSpeed" Collapsed="true">
+    <Position X="23.75" Y="21" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>AAAAAAAAAAAAAAAAAAAAEAAAAAAAAAAACAAAAAAAAIA=</HashCode>
+      <FileName>src\NETCMD.H</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="CMsgNewServer" Collapsed="true">
+    <Position X="30.5" Y="21" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAACAAAAIA=</HashCode>
+      <FileName>src\NETCMD.H</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="CMsgGiveUnit" Collapsed="true">
+    <Position X="39.5" Y="21" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>AAAAAAAAAAAACAAAAAAAAAABAAAAAAAAAAAAAAQAAIA=</HashCode>
+      <FileName>src\NETCMD.H</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="CMsgSetTime" Collapsed="true">
+    <Position X="46.25" Y="21" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>AAAAAAAAAAAAAAAAAADAAAAAAAAAAAAAAAAAAAAAAAA=</HashCode>
+      <FileName>src\NETCMD.H</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="CMsgStartFile" Collapsed="true">
+    <Position X="53" Y="21" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>AAAEAAAAAAAAAAAAAAAAAAABAAAAAAAgAAAAAAAAAAA=</HashCode>
+      <FileName>src\NETCMD.H</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="CMsgStartLoadedGame" Collapsed="true">
+    <Position X="59.75" Y="21" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABAAAAAAAAA=</HashCode>
+      <FileName>src\NETCMD.H</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="CMsgCancelLoad" Collapsed="true">
+    <Position X="68.75" Y="21" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAARAAAAAAAAAA=</HashCode>
+      <FileName>src\NETCMD.H</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="CMsgPauseMsg" Collapsed="true">
+    <Position X="77.75" Y="21" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>AAAAAAAAAAAAAAAAAAAAAAIAAAAAAAAAAAAAAACAAIA=</HashCode>
+      <FileName>src\NETCMD.H</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="CMsgVehCompLocElem" Collapsed="true">
+    <Position X="200.75" Y="8.5" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>BAAAiAQAgABEiACAQAABEIAAAAAAAEAQAAAgCAQKAII=</HashCode>
+      <FileName>src\NETCMD.H</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="CMsgVehCompLoc" Collapsed="true">
+    <Position X="93.5" Y="21" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>AAAAAAAAAABABAAAEAAAAAAAQAAAgAAAAAAAAAAEAAA=</HashCode>
+      <FileName>src\NETCMD.H</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="CMsgCompUnitDamageElem" Collapsed="true">
+    <Position X="195.5" Y="8.5" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAgAAAAAQABAA=</HashCode>
+      <FileName>src\NETCMD.H</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="CMsgCompUnitDamage" Collapsed="true">
+    <Position X="107" Y="21" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>AAAAAAAoAAAABAAAEAAAAAAAQQAAAAAAAAAAAAAAAAA=</HashCode>
+      <FileName>src\NETCMD.H</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="CMsgCompUnitSetDamage" Collapsed="true">
+    <Position X="113.75" Y="21" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>AAAAAAAgAAAABAAAEAIAAAAAQQAAAAAAAAAAAAAAAAA=</HashCode>
+      <FileName>src\NETCMD.H</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="CMsgShootElem" Collapsed="true">
+    <Position X="199" Y="8.5" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>AAAACAIAAAAAAAAAAAAAAAAAAAAAAEAAAAAAACQAAAA=</HashCode>
+      <FileName>src\NETCMD.H</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="CMsgShoot" Collapsed="true">
+    <Position X="129.5" Y="21" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>AAAAAAAAAAAABAQAEAABAAAAQAAAAAAAAAAAAAAABAA=</HashCode>
+      <FileName>src\NETCMD.H</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="CNetAiGpf" Collapsed="true">
+    <Position X="143" Y="21" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>AAAAAAAAgAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAIA=</HashCode>
+      <FileName>src\NETCMD.H</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="CNetRsrchDisc" Collapsed="true">
+    <Position X="154.25" Y="21" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>AAAAQAAAAAAAAAAAAAAAAAAAAABAAAAAAAAAAAAAAIA=</HashCode>
+      <FileName>src\NETCMD.H</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="CNetNeedSaveInfo" Collapsed="true">
+    <Position X="165.5" Y="21" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>AAAAAAAACAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAIA=</HashCode>
+      <FileName>src\NETCMD.H</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="CNetSaveInfo" Collapsed="true">
+    <Position X="174.5" Y="21" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>AAACAAAAAAgAIAAAAABAgAAAAAABAAAAAAAAAIAAAIA=</HashCode>
+      <FileName>src\NETCMD.H</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="CDlgCreateStatus" Collapsed="true">
+    <Position X="195.5" Y="4.5" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>AAAAACEAAQQAAAAAgBAAEAABQAQAAEAAAAAAAAAgAII=</HashCode>
+      <FileName>src\NEW_GAME.H</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="CDlgPlayerList" Collapsed="true">
+    <Position X="200.75" Y="5.5" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>AgAJBAFAAAAIjABABJAIACDDBAAQAkAAJAkAAIAAAgA=</HashCode>
+      <FileName>src\NEW_GAME.H</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="CCreateBase" Collapsed="true">
+    <Position X="17" Y="8" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>IAwAAgQCAAAAQWAoaBEoACAQBABAAgAAAAgmgEAAAMI=</HashCode>
+      <FileName>src\NEW_GAME.H</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="CMultiBase" Collapsed="true">
+    <Position X="17" Y="9.25" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>AAAAAgABAAAAAAAACAAAQAAAgAAAAAAAAAAAAAEAAAI=</HashCode>
+      <FileName>src\NEW_GAME.H</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="CCreateNewBase" Collapsed="true">
+    <Position X="14" Y="9.5" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>AAAAAgAAAAAAAAAAAAAAAAAAAAAAAAAAAAAgIQAAAAI=</HashCode>
+      <FileName>src\NEW_GAME.H</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="CCreateLoadBase" Collapsed="true">
+    <Position X="19.25" Y="9.5" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>AAAAAgAAgAAAAAAAAAAAAAAAAAAAAAAAAACAAABAAAI=</HashCode>
+      <FileName>src\NEW_GAME.H</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="CDlgOptions" Collapsed="true">
+    <Position X="192" Y="5.5" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>QAAIAAMEgAAAAAAQABAAAAMBAgAAgAAIAAAAAAAAAAA=</HashCode>
+      <FileName>src\options.h</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="CDlgAdvOptions" Collapsed="true">
+    <Position X="202.5" Y="3.5" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>AAQAAAEAIAAAIAAEABAAAQIBAAQAQAABAAAAIAAIAAA=</HashCode>
+      <FileName>src\options.h</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="CDlgPickWait" Collapsed="true">
+    <Position X="199" Y="5.5" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>AAAAACAAAEAAAAAAABAAAAAAAAAAAAAAAAAAAAAAAAA=</HashCode>
+      <FileName>src\PICKRACE.H</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="CDlgPickRace" Collapsed="true">
+    <Position X="197.25" Y="5.5" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>AATBICEAAAEICAAAABABACABBAQAQEAAAAAABhAAAkg=</HashCode>
+      <FileName>src\PICKRACE.H</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="CDlgPickPlayer" Collapsed="true">
+    <Position X="195.5" Y="5.5" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>AAVBACEAAAAIAAAAABABACABAAAAQkAAAAAABAAAAkg=</HashCode>
+      <FileName>src\PICKRACE.H</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="CCitCon" Collapsed="true">
+    <Position X="193.75" Y="3.5" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>AAAgCAAAAAAAChAAiAAAAAAAAAgAAAAAAAgiAAAAAgA=</HashCode>
+      <FileName>src\PLAYER.H</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="CPlayer" Collapsed="true">
+    <Position X="192" Y="9.5" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>m4xoxUCgkOq1odmuXGrmpcwqlXbn5emA1N9jaKzj9t4=</HashCode>
+      <FileName>src\PLAYER.H</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="CGame" Collapsed="true">
+    <Position X="188.5" Y="7.5" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>HUzpH2NzbDVWK/V8LLl8ssXniicxUJkp6/grqNOZI2c=</HashCode>
+      <FileName>src\PLAYER.H</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="CDlgPlyrList" Collapsed="true">
+    <Position X="202.5" Y="5.5" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>AACBAAFQAAAKIAAAgDEAAQACCAAAAAAAAAAQAAAgAAA=</HashCode>
+      <FileName>src\PlyrList.h</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="CRaceDef" Collapsed="true">
+    <Position X="197.25" Y="9.5" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>AAFAAAEAAAAEAIBASEAAAAAAAFBAAAABAAACwACAQgA=</HashCode>
+      <FileName>src\Racedata.h</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="CInitData" Collapsed="true">
+    <Position X="181.5" Y="8.5" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>AAAAAAAAAAAABAAAQAQABAQAACBAAAAAAAAggAAAQAA=</HashCode>
+      <FileName>src\Racedata.h</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="CDlgRelations" Collapsed="true">
+    <Position X="183.25" Y="6.5" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>AAADACUAAIIIAACAgBAAAAABBAQAAAEAAAAAAABBKAE=</HashCode>
+      <FileName>src\relation.h</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="CDlgStats" Collapsed="true">
+    <Position X="193.75" Y="6.5" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>AAQAAAEAAAAAAAAAgBAAAAABABAQAECABAAAAAAAQIA=</HashCode>
+      <FileName>src\relation.h</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="CRsrchStatus" Collapsed="true">
+    <Position X="181.5" Y="10.5" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>AAAAAAAAEAAAAAAAAAAAEAAAACABAAAAAAAAAAAAAAA=</HashCode>
+      <FileName>src\RESEARCH.H</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="CRsrchItem" Collapsed="true">
+    <Position X="204.25" Y="9.5" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>AARBAAAAAAAAAiAASEAAAAEAAAAABAAAAEAAAAABAAA=</HashCode>
+      <FileName>src\RESEARCH.H</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="CRsrchArray" Collapsed="true">
+    <Position X="202.5" Y="9.5" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>AAAAAAAAAAAAIAAAAAAAAAAAAAAAAAAAAAAAAACAAAA=</HashCode>
+      <FileName>src\RESEARCH.H</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="CDlgResearch" Collapsed="true">
+    <Position X="185" Y="6.5" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>AAjTAqGAAAEACAABgBAAAAQBVAQBAIEEAAJAAAAAAAA=</HashCode>
+      <FileName>src\RESEARCH.H</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="CDlgDiscover" Collapsed="true">
+    <Position X="197.25" Y="4.5" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>AAAAAAEAAAAAAgABgBAIAAAAEAAAAAAAACAAAAAAAAA=</HashCode>
+      <FileName>src\RESEARCH.H</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="CDlgScenario" Collapsed="true">
+    <Position X="188.5" Y="6.5" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>AAAAACEAAAAAAQAgABAAACABAAAAQUCAAAAAAAAAAAA=</HashCode>
+      <FileName>src\SCENARIO.H</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="CCreateScenario" Collapsed="true">
+    <Position X="14" Y="10.75" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>AAAAAAAAAQAAAAAACAAAACAAAAAAAAAIAAACAACAAAA=</HashCode>
+      <FileName>src\SCENARIO.H</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="SFXGROUP" Collapsed="true">
+    <Position X="202.5" Y="12.5" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=</HashCode>
+      <FileName>src\SFX.H</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="SOUNDS" Collapsed="true">
+    <Position X="183.25" Y="13.5" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>AAAAAAAAAAAAAAAAAAAAgAAAAAAAAAAAAAAAAAAAAAA=</HashCode>
+      <FileName>src\SFX.H</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="VOICES" Collapsed="true">
+    <Position X="185" Y="13.5" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>AAAAAAAAAAAAAAAAAAAAgAAAAAAAAAAAAAAAAAAAAAA=</HashCode>
+      <FileName>src\SFX.H</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="MUSIC" Collapsed="true">
+    <Position X="199" Y="12.5" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>AAAAAAAAAAAAAAAAAAAAgAAAAAAAAAAAAAAAAAAAAAA=</HashCode>
+      <FileName>src\SFX.H</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="SFXPRIORITY" Collapsed="true">
+    <Position X="204.25" Y="12.5" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=</HashCode>
+      <FileName>src\SFX.H</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="CSpriteDIBParms" Collapsed="true">
+    <Position X="190.25" Y="10.5" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>AAAAAAIAAAEAAAAACAAAAAAAAAACAAAAAAAAAAABAAQ=</HashCode>
+      <FileName>src\sprite.h</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="CDrawParms" Collapsed="true">
+    <Position X="14.75" Y="14.5" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>AAAAAQAAgAAAAEAAAAAAABCAAAAQAAAACAAUgAAgAAA=</HashCode>
+      <FileName>src\sprite.h</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="CTerrainDrawParms" Collapsed="true">
+    <Position X="13.5" Y="15.75" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>AAAEAAAAAAAgAAAAAAgAAIAAAAAAAQAAAAAAAAAAAAA=</HashCode>
+      <FileName>src\sprite.h</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="CQuadDrawParms" Collapsed="true">
+    <Position X="15.75" Y="15.75" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>AAAAAAAAAAAgAAAAAAAAAACAEIAAAgAAAAAACAQAAAA=</HashCode>
+      <FileName>src\sprite.h</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="CHotSpotKey" Collapsed="true">
+    <Position X="200.75" Y="7.5" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>AEAAAAAAgAAAAAAAAQAAAQAAAAAAAAAAAAAAAAABAAA=</HashCode>
+      <FileName>src\sprite.h</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="CViewCoord" Collapsed="true">
+    <Position X="42" Y="14.25" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>AEAAIAAAAAAAAAAAAAAAQAAAAAAAAACAAAAAAAAAAAA=</HashCode>
+      <FileName>src\sprite.h</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="CHotSpot" Collapsed="true">
+    <Position X="42" Y="15.5" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>AEAAEAAAAgAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=</HashCode>
+      <FileName>src\sprite.h</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="CSpriteView" Collapsed="true">
+    <Position X="195.5" Y="10.5" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>BHGRAABBBMBAAgAQAwFIAEAAUCABEQAAAGpCIgAEgAA=</HashCode>
+      <FileName>src\sprite.h</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="CSpriteParms" Collapsed="true">
+    <Position X="193.75" Y="10.5" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>AEAAAAIAAAEAAAAAAAAAICAAAAAAAQIAAAIAAAABCAA=</HashCode>
+      <FileName>src\sprite.h</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="CSprite" Collapsed="true">
+    <Position X="4" Y="9.5" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>AFIIAFIGAAEAAAAQAQEAoAIAAgQBARAAADIyCAABAgA=</HashCode>
+      <FileName>src\sprite.h</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="CEffectSprite" Collapsed="true">
+    <Position X="0.75" Y="10.75" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>AEAAAAwAAgAAAAAAAAAAAAAAAAAAAAAAAAABAAAAAAA=</HashCode>
+      <FileName>src\sprite.h</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="CStructureSprite" Collapsed="true">
+    <Position X="3" Y="10.75" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>AEAAAAgAAAAAACAAAAAAAAAAAAAAAAQAAAABAAAAAAA=</HashCode>
+      <FileName>src\sprite.h</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="CTerrainSprite" Collapsed="true">
+    <Position X="5.25" Y="10.75" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>AEAAABAAAAAAAAAAAAAAAAAAAAAgAAAAAAABAAAAAAA=</HashCode>
+      <FileName>src\sprite.h</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="CVehicleSprite" Collapsed="true">
+    <Position X="7.5" Y="10.75" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>AEAAAAAAAAAAAAAAAAAAAAAAAAAAAAQAAQABAAAAAAA=</HashCode>
+      <FileName>src\sprite.h</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="CSpriteIDInfo" Collapsed="true">
+    <Position X="192" Y="10.5" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>AAQAAAAAAAAAAAAQAQQAAAAAAAAAhAAAAAAAAAAAAAA=</HashCode>
+      <FileName>src\sprite.h</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="CSpriteCollectionInfo" Collapsed="true">
+    <Position X="188.5" Y="10.5" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>gAQAAAAAAAACAgCQCAAgAAAAAAAABAAAIAAAAAAAAAA=</HashCode>
+      <FileName>src\sprite.h</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="CSpriteCollection" Collapsed="true">
+    <Position X="6.5" Y="5.5" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>AAQIAAAAAAABEAAACAKCICBwAAAAAAAQIAEFAAihAgA=</HashCode>
+      <FileName>src\sprite.h</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="CAmbient" Collapsed="true">
+    <Position X="190.25" Y="2.5" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>AAAgIQABAQoABAEACAEACAIAACAQAAAAAABgABAUAAA=</HashCode>
+      <FileName>src\sprite.h</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="CTile" Collapsed="true">
+    <Position X="20.25" Y="22.5" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>AAAAAAAAAAAAEAAACAAEACAAACAAAQAAAAEAAAAAAAA=</HashCode>
+      <FileName>src\sprite.h</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="CUnitTile" Collapsed="true">
+    <Position X="19" Y="24" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>CADAFACABSgAAoQASCAAAAAAACAAAAAAoAAEAAEAIAA=</HashCode>
+      <FileName>src\sprite.h</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="CEffectTile" Collapsed="true">
+    <Position X="30.25" Y="25.5" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>AAAAEAAAAQBAEAAAAAAAAAAAACAAAAAAAAABAAAAAAA=</HashCode>
+      <FileName>src\sprite.h</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="CSimpleTile" Collapsed="true">
+    <Position X="38.25" Y="24" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>AAAAAAAAAAAAAAAACAAAAAAAACAACAAAAAAAAAAAAAA=</HashCode>
+      <FileName>src\sprite.h</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="CTerrainShowStat" Collapsed="true">
+    <Position X="181.5" Y="11.5" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>AAAAAAAAAAAAAAAAAQAAAAAAAAAAAAAgAAACAACAAAA=</HashCode>
+      <FileName>src\terrain.h</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="CHex" Collapsed="true">
+    <Position X="38.25" Y="25.5" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>jBIAAhCgAAAEskCAChDIYAo0CCAACEUQAokiBiABhAA=</HashCode>
+      <FileName>src\terrain.h</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="CTerrainData" Collapsed="true">
+    <Position X="204.25" Y="10.5" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>AABAIAAACAAAAAJACAQAAgAAABAAAAAAgAAAAAABwAA=</HashCode>
+      <FileName>src\terrain.h</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="CTerrain" Collapsed="true">
+    <Position X="12.25" Y="8.5" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>IABAAAAAEAAAAAAACMAAAAQAAQAAAAAAAAAAAgAAAAA=</HashCode>
+      <FileName>src\terrain.h</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="CGameMap" Collapsed="true">
+    <Position X="192" Y="7.5" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>YAYAAQFgkMMqgAiACKJCQgihyCQIAJArgGkCAZyLpAI=</HashCode>
+      <FileName>src\terrain.h</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="CWndStatLine" Collapsed="true">
+    <Position X="8.5" Y="17" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>AACAAAAAAAEAgAAAAIAAAAEAAAgAAAIAAAAAAAAAAAA=</HashCode>
+      <FileName>src\toolbar.h</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="CWndBar" Collapsed="true">
+    <Position X="200.75" Y="11.5" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>SAOFACEwIAuCQQAQCIAAQJAABDABAEkASAYFAAAAIAI=</HashCode>
+      <FileName>src\toolbar.h</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="CDlgTestSounds" Collapsed="true">
+    <Position X="195.5" Y="6.5" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>AAgAAIGQBAAAQgABUBABQAACAAABAAQAAAAABAAAAAA=</HashCode>
+      <FileName>src\tstsnds.h</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="CWndMain" Collapsed="true">
+    <Position X="186.75" Y="12.5" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>GMHR4gABAAVVAAFABJAAABRARGpASEABCAgQSBQQEAA=</HashCode>
+      <FileName>src\ui.h</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="CDlgRandNum" Collapsed="true">
+    <Position X="204.25" Y="5.5" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>AAAAEAAAAAAAgAAAABAAAAAAAAAAAAAAAAAAAAAAAAA=</HashCode>
+      <FileName>src\ui.h</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="CDlgAiPos" Collapsed="true">
+    <Position X="204.25" Y="3.5" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>BAAAAAEAABQAAAAAABAAAAAhAAAgAAAAAAAAAAAAAAA=</HashCode>
+      <FileName>src\ui.h</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="CDlgFile" Collapsed="true">
+    <Position X="199" Y="4.5" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>QAAJBBkEiAAAIAAYgBIAABMBAgAAAAEIAAAAAAAAAAA=</HashCode>
+      <FileName>src\ui.h</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="CDlgSaveMsg" Collapsed="true">
+    <Position X="186.75" Y="6.5" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>AAAAIAAAAAAAACAAABAQAAAAACAAAAAAAAAAAAAAAAA=</HashCode>
+      <FileName>src\ui.h</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="CDlgPause" Collapsed="true">
+    <Position X="193.75" Y="5.5" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>AAAAIAEAAAAAAAAAgBAAAAAAAAAEAAAAAAAAAAAAAAA=</HashCode>
+      <FileName>src\ui.h</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="CUnitShowStat" Collapsed="true">
+    <Position X="188.5" Y="11.5" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>AAAAAAAAAAgAAAAAAAAAAAAAAAAgAAAgAAACAACAAAA=</HashCode>
+      <FileName>src\unit.h</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="CFlameSpot" Collapsed="true">
+    <Position X="185" Y="7.5" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>AAAAAAAAAAAAAgAAAAAAAAAAAEAAAACAAAACBAAAAAA=</HashCode>
+      <FileName>src\unit.h</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="CDamageDisplay" Collapsed="true">
+    <Position X="200.75" Y="3.5" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>AAAAAACAEKAAAgAAAAAAAAAAAAAAAAAAAAACAAAAABA=</HashCode>
+      <FileName>src\unit.h</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="CUnitData" Collapsed="true">
+    <Position X="15.25" Y="1.5" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>BAHCoBAggAAEmQhIiAEYARSkgAjB4EAo4AAAARQBSAA=</HashCode>
+      <FileName>src\unit.h</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="CSpriteStore&lt;T&gt;" Collapsed="true">
+    <Position X="6.5" Y="7" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>AAAQAAAAAAAAEAAAAAIAAAAAAAAAAAAAAAAAAAAAAAA=</HashCode>
+      <FileName>src\unit.h</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="CTurrets" Collapsed="true">
+    <Position X="5.5" Y="8.5" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>AAAAAAAAAAAAAAAACEABAAAAAAAAAAAAAAAAAgAAAAA=</HashCode>
+      <FileName>src\unit.h</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="CMuzzleFlashes" Collapsed="true">
+    <Position X="7.75" Y="8.5" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>AAAAgAAAAAAAAAAACEAAAAAAAAAAAAAAAAAAAgAAAAA=</HashCode>
+      <FileName>src\unit.h</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="CTree" Collapsed="true">
+    <Position X="31.5" Y="26.75" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>AAAAAAAAAAAAAgAAAAAAAAAAEAAAAAAAAAAAAAAAAAA=</HashCode>
+      <FileName>src\unit.h</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="CEffect" Collapsed="true">
+    <Position X="10" Y="8.5" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>AAAAAAAgACAAAAAACEAAAAAgAAAFAAAAAQAAAgCAAAA=</HashCode>
+      <FileName>src\unit.h</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="CFlag" Collapsed="true">
+    <Position X="33.75" Y="26.75" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>AAAAAAAAAAABAgAACAAAAAAAACAAAAAAAAACAAAAAAg=</HashCode>
+      <FileName>src\unit.h</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="CMuzzleFlash" Collapsed="true">
+    <Position X="36" Y="25.5" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>AAAAACAAAAAAEAAAAAAAAAAAACAAAAAAAAAAAAAAAAA=</HashCode>
+      <FileName>src\unit.h</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="CTurret" Collapsed="true">
+    <Position X="2.25" Y="25.5" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>AAAAAAAAAAABGAAACgIAAAAAACAAAAAAAAACAACgAAA=</HashCode>
+      <FileName>src\unit.h</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="CUnit" Collapsed="true">
+    <Position X="13.5" Y="25.5" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>tSBQv6DFlvKYHwnsCG9Mg+q8paLKANSmj/gkRs1KLUA=</HashCode>
+      <FileName>src\unit.h</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="CExplData" Collapsed="true">
+    <Position X="181.5" Y="7.5" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>BAgAAAIAAIABgAAAAEAAAAAAAAAAAAAAAIAAAAAAAAA=</HashCode>
+      <FileName>src\unit.h</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="CExplGrp" Collapsed="true">
+    <Position X="183.25" Y="7.5" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>AAAAAAAAEAABAAAABMAAAAAAAAAAAAAAAAAhAAAAAAA=</HashCode>
+      <FileName>src\unit.h</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="CProjBase" Collapsed="true">
+    <Position X="28" Y="26.75" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>AACAAEIAAAAAAggAEAAAAQAAAAAAAAEYAgAAgAABAAA=</HashCode>
+      <FileName>src\unit.h</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="CInitProjMem" Collapsed="true">
+    <Position X="183.25" Y="8.5" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAEAAA=</HashCode>
+      <FileName>src\unit.h</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="CProjectile" Collapsed="true">
+    <Position X="27" Y="28.25" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>ABAAABIAAAAAAgAIAAAAAAAAAIAIAAAAABAAgCAAAEA=</HashCode>
+      <FileName>src\unit.h</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="CExplosion" Collapsed="true">
+    <Position X="29.25" Y="28.25" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>AAAAAAAAABAAAgAAAAAAAAAAAAAAAAAAAAAAgEAAAAA=</HashCode>
+      <FileName>src\unit.h</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="CProjMap" Collapsed="true">
+    <Position X="195.5" Y="9.5" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>AAIAAAAAAIAAAAAAAAAABAAACBAAAAIAAAAAAQAAAAA=</HashCode>
+      <FileName>src\unit.h</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="CWndRoute" Collapsed="true">
+    <Position X="190.25" Y="12.5" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>AgCBgAGEACEAQAEAgAAAAgAAAKEgsEAAAEBAAKAAEIA=</HashCode>
+      <FileName>src\unit_wnd.h</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="CWndListUnits" Collapsed="true">
+    <Position X="9.75" Y="12.5" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>kQCBAAAAAMEADAAAABAAAAAARSQAEAAAIABIAAIAAAA=</HashCode>
+      <FileName>src\unit_wnd.h</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="CWndListBuildings" Collapsed="true">
+    <Position X="8.5" Y="14" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>AAAAAAAAAAEAAAAAAAAAAAIAACAAAEAQAAAAAAAAAAA=</HashCode>
+      <FileName>src\unit_wnd.h</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="CWndListVehicles" Collapsed="true">
+    <Position X="10.75" Y="14" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>AAAAAAAAAAUAAAAAAAAAAAAAACAAAEAAAAAAAAAAAAA=</HashCode>
+      <FileName>src\unit_wnd.h</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="CUnitButton" Collapsed="true">
+    <Position X="186.75" Y="11.5" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>ABABAgAAQAEACBAAAkgAAAQEAAAAAGAARIAAAAAQABA=</HashCode>
+      <FileName>src\unit_wnd.h</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="CDlgBuildStructure" Collapsed="true">
+    <Position X="181.5" Y="4.5" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>AACBAjGAQAEBgAAAjBAgAA4RBACBIEIGARQAAQAACgA=</HashCode>
+      <FileName>src\unit_wnd.h</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="CDlgBuildTransport" Collapsed="true">
+    <Position X="183.25" Y="4.5" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>QACBAiGEQAEQiAAAjBEACAQRRACBAMAEABAAJQAAAAA=</HashCode>
+      <FileName>src\unit_wnd.h</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="CTransport" Collapsed="true">
+    <Position X="1" Y="8.5" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>AABQAAAAEAAAMRAQGEAAAAgAAAAAAAAAAAAAAgCCAAA=</HashCode>
+      <FileName>src\vehicle.h</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="CTransportData" Collapsed="true">
+    <Position X="1.75" Y="3" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>AIERAABbBABAAAEACALAEAQkQCkAAAEAQIAABRUBAAA=</HashCode>
+      <FileName>src\vehicle.h</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="CRoute" Collapsed="true">
+    <Position X="200.75" Y="9.5" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>AAABAAQAAAAAAkAAAAAAgQAAACAAAAAAAAAAAAABAAA=</HashCode>
+      <FileName>src\vehicle.h</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="CVehicle" Collapsed="true">
+    <Position X="22.5" Y="26.75" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>hQ8372CB8+KR/jT6eW3glF6Um35bEfx9Pp2LjGe76/8=</HashCode>
+      <FileName>src\vehicle.h</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="CVehicleMap" Collapsed="true">
+    <Position X="192" Y="11.5" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>AAIAAAAAAAAAAAQAAAAABAAAAAAABAAAAAAAAAAAAEA=</HashCode>
+      <FileName>src\vehicle.h</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="CVehicleHex" Collapsed="true">
+    <Position X="190.25" Y="11.5" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>AAAAAAAAAAAAAAAAAABAAAAAABAABAAAAAAIABAAQEA=</HashCode>
+      <FileName>src\vehicle.h</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="CVPTransfer" Collapsed="true">
+    <Position X="0.5" Y="5.75" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>AAEQAAQAgAAAAQBAAIAAIAQCBAABQAACAGCAQACAAAA=</HashCode>
+      <FileName>src\VPXFER.H</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="CWndWorld" Collapsed="true">
+    <Position X="192" Y="12.5" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>sBCH4CFxgIE0ikWIACBStGBEZPAocslqBhRCIQz4gZI=</HashCode>
+      <FileName>src\world.h</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Struct Name="dpEnumCtx" Collapsed="true">
+    <Position X="192" Y="14.75" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>AAAAAAAAAgAAAAAAAAAAAAAEAAAAAAAAAAAAAAAAAgA=</HashCode>
+      <FileName>src\ADVANCED.CPP</FileName>
+    </TypeIdentifier>
+  </Struct>
+  <Struct Name="tagCLOSEST_HEX" Collapsed="true">
+    <Position X="34.5" Y="34.5" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>AABACAAAAAAAAAAABIAAAAAAAAAAAAAQAAARAAAAAAA=</HashCode>
+      <FileName>src\area.cpp</FileName>
+    </TypeIdentifier>
+  </Struct>
+  <Struct Name="tagDROP" Collapsed="true">
+    <Position X="195.5" Y="14.75" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>AAAAAAAAAAAAAAAAAAAIEAAAAAAAAAAABAAAAAAAAAA=</HashCode>
+      <FileName>src\Mainloop.cpp</FileName>
+    </TypeIdentifier>
+  </Struct>
+  <Struct Name="tagCHECK3" Collapsed="true">
+    <Position X="193.75" Y="14.75" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>AAAAgAAAACAAAAAAAAEAAAAAAAAAAAAAAAAAAAAAAAA=</HashCode>
+      <FileName>src\terrain.cpp</FileName>
+    </TypeIdentifier>
+  </Struct>
+  <Struct Name="caihex_buffer" Collapsed="true">
+    <Position X="34.5" Y="29.5" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>AAAAgAAAAAIAAAAACAAAAAAAAAAEAAAAAAEAAAAAAAA=</HashCode>
+      <FileName>src\CAI.H</FileName>
+    </TypeIdentifier>
+  </Struct>
+  <Struct Name="caiunit_buffer" Collapsed="true">
+    <Position X="34.5" Y="18.5" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>AQAAAACEAAIAIAAAAAAAgAgAEAAAAABAGAAAAAAAAAA=</HashCode>
+      <FileName>src\CAI.H</FileName>
+    </TypeIdentifier>
+  </Struct>
+  <Struct Name="caimsg_buffer" Collapsed="true">
+    <Position X="34.5" Y="13.5" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>AAAAAAAAAAAAAQAACAAQgABAAAAAAAgIAAEAACAAAAA=</HashCode>
+      <FileName>src\CAI.H</FileName>
+    </TypeIdentifier>
+  </Struct>
+  <Struct Name="opfor_buffer" Collapsed="true">
+    <Position X="34.5" Y="10.5" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>AACAACACAAAAAAgAAAAAEAICAAQAAAAAAAAAAAAAAAA=</HashCode>
+      <FileName>src\CAI.H</FileName>
+    </TypeIdentifier>
+  </Struct>
+  <Struct Name="goal_buffer" Collapsed="true">
+    <Position X="32.5" Y="2.5" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>AQAAAQAAAAAAAAAAAgAAAAAAAAAAAAAAAAAAAAAAAAA=</HashCode>
+      <FileName>src\CAI.H</FileName>
+    </TypeIdentifier>
+  </Struct>
+  <Struct Name="task_buffer" Collapsed="true">
+    <Position X="31.5" Y="7.5" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>AQAAAQCAAAAAAAAAAAAAAABAAAEAAAAAAAAAAAAACAA=</HashCode>
+      <FileName>src\CAI.H</FileName>
+    </TypeIdentifier>
+  </Struct>
+  <Struct Name="tagAI_INIT" Collapsed="true">
+    <Position X="5.5" Y="32.5" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>AAAAAAAAAAgAAAAAAAAIAAAAAAAAAAAAAAAAAAAAAAA=</HashCode>
+      <FileName>src\PLAYER.H</FileName>
+    </TypeIdentifier>
+  </Struct>
+  <Struct Name="CBlockInfo" Collapsed="true">
+    <Position X="181.5" Y="14.75" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>AEAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAACAAAQ=</HashCode>
+      <FileName>src\sprite.h</FileName>
+    </TypeIdentifier>
+  </Struct>
+  <Struct Name="CLayoutInfo" Collapsed="true">
+    <Position X="185" Y="14.75" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>AEAAAAAAAAAAAAAAAAAAAAAAAAAABAAAAAAAAAgAAAA=</HashCode>
+      <FileName>src\sprite.h</FileName>
+    </TypeIdentifier>
+  </Struct>
+  <Struct Name="CDIBLayoutInfo" Collapsed="true">
+    <Position X="183.25" Y="14.75" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>AEAAAAAAAAAAAAAAAAAQAAAAAAAAAAAAAAAAAAAAAAA=</HashCode>
+      <FileName>src\sprite.h</FileName>
+    </TypeIdentifier>
+  </Struct>
+  <Struct Name="CSpriteDIB" Collapsed="true">
+    <Position X="186.75" Y="14.75" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>IEAQAoAAJAFCAgAAABBAJGBEEiCABIABCQQXAEBh6QY=</HashCode>
+      <FileName>src\sprite.h</FileName>
+    </TypeIdentifier>
+  </Struct>
+  <Struct Name="CSpriteHdr" Collapsed="true">
+    <Position X="188.5" Y="14.75" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>AEABAAAABAAAAAEQAAAAAAAAAAAAAAAAAAAAAAACAAA=</HashCode>
+      <FileName>src\sprite.h</FileName>
+    </TypeIdentifier>
+  </Struct>
+  <Struct Name="CSuperviewInfo" Collapsed="true">
+    <Position X="190.25" Y="14.75" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>AEAAAAAACAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=</HashCode>
+      <FileName>src\sprite.h</FileName>
+    </TypeIdentifier>
+  </Struct>
+  <Struct Name="VPMsgHdr" Collapsed="true">
+    <Position X="5" Y="18.25" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>AACQAIQAAAIAAAAAAAAAAAAAAAAAAAAAAAAAAAAAQAg=</HashCode>
+      <FileName>src\VDMPLAY.H</FileName>
+    </TypeIdentifier>
+  </Struct>
+  <Struct Name="VPNetAddress" Collapsed="true">
+    <Position X="22.5" Y="14" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>AAAAAAAAAAAAIAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=</HashCode>
+      <FileName>src\VDMPLAY.H</FileName>
+    </TypeIdentifier>
+  </Struct>
+  <Struct Name="VPGUID" Collapsed="true">
+    <Position X="26.5" Y="18.5" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>AAAAAAACAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=</HashCode>
+      <FileName>src\VDMPLAY.H</FileName>
+    </TypeIdentifier>
+  </Struct>
+  <Struct Name="VPSessionInfo" Collapsed="true">
+    <Position X="22.5" Y="31.75" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>ABAAACAAAAQAAAAAABgAAAABAAAAQAAAAAAAAAAAAQA=</HashCode>
+      <FileName>src\VDMPLAY.H</FileName>
+    </TypeIdentifier>
+  </Struct>
+  <Struct Name="VPPlayerInfo" Collapsed="true">
+    <Position X="18.5" Y="31.75" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>AAAAAAAACAAAAAgAABEAAAAAAAAAAAAAAAAAAAAQAAA=</HashCode>
+      <FileName>src\VDMPLAY.H</FileName>
+    </TypeIdentifier>
+  </Struct>
+  <Struct Name="VPPlayerEnumInfo" Collapsed="true">
+    <Position X="14.5" Y="31.75" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>ABAAAAAAAAAAAAAAAAAAAAAAAAAAABAAAAAAAAAAAEA=</HashCode>
+      <FileName>src\VDMPLAY.H</FileName>
+    </TypeIdentifier>
+  </Struct>
+  <Struct Name="VPFTInfo" Collapsed="true">
+    <Position X="30.5" Y="14.75" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>ARAIFAQAAAAACAAAgAAAAAAAEAAAAAAAAAACAAAAAAA=</HashCode>
+      <FileName>src\VDMPLAY.H</FileName>
+    </TypeIdentifier>
+  </Struct>
+  <Struct Name="VPMessage" Collapsed="true">
+    <Position X="10.5" Y="31.75" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>AAhAAAAgAACBEAAAAAEAAAEAAgAAAACAAAIIAAAAAAA=</HashCode>
+      <FileName>src\VDMPLAY.H</FileName>
+    </TypeIdentifier>
+  </Struct>
+  <Struct Name="VPTcpData" Collapsed="true">
+    <Position X="1.5" Y="31.75" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>AAAAAAAAAAAAAAAAABAAAAAAEAAAAAAAAAAAAAAAAAA=</HashCode>
+      <FileName>src\VDMPLAY.H</FileName>
+    </TypeIdentifier>
+  </Struct>
+  <Struct Name="VPIpxData" Collapsed="true">
+    <Position X="26.5" Y="13.75" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>AAAAAAAAAAAAAAAAAAAAAAAAEAAAAAAAAEIAAAAAAAA=</HashCode>
+      <FileName>src\VDMPLAY.H</FileName>
+    </TypeIdentifier>
+  </Struct>
+  <Struct Name="VPNetbiosData" Collapsed="true">
+    <Position X="24.5" Y="8.75" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>AAAAAAAAAAAAAAAAAAAAAAEAAAAAAAAAAAAAEAAAAAA=</HashCode>
+      <FileName>src\VDMPLAY.H</FileName>
+    </TypeIdentifier>
+  </Struct>
+  <Struct Name="VPCommData" Collapsed="true">
+    <Position X="6.5" Y="23.75" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>AAAAIABAAQAAAAAAAAAIAAAAAAAAAAAAAAAAAAEAAAA=</HashCode>
+      <FileName>src\VDMPLAY.H</FileName>
+    </TypeIdentifier>
+  </Struct>
+  <Typedef Name="UCHAR" Collapsed="true">
+    <Position X="195.5" Y="17" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=</HashCode>
+      <FileName>src\ADVANCED.CPP</FileName>
+    </TypeIdentifier>
+  </Typedef>
+  <Typedef Name="PUCHAR" Collapsed="true">
+    <Position X="190.25" Y="17" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=</HashCode>
+      <FileName>src\ADVANCED.CPP</FileName>
+    </TypeIdentifier>
+  </Typedef>
+  <Typedef Name="ULONG" Collapsed="true">
+    <Position X="197.25" Y="17" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=</HashCode>
+      <FileName>src\ADVANCED.CPP</FileName>
+    </TypeIdentifier>
+  </Typedef>
+  <Typedef Name="PCHAR" Collapsed="true">
+    <Position X="188.5" Y="17" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=</HashCode>
+      <FileName>src\ADVDLG.CPP</FileName>
+    </TypeIdentifier>
+  </Typedef>
+  <Typedef Name="CLOSEST_HEX" Collapsed="true">
+    <Position X="34.5" Y="36.5" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=</HashCode>
+      <FileName>src\area.cpp</FileName>
+    </TypeIdentifier>
+  </Typedef>
+  <Typedef Name="SETPIXEL" Collapsed="true">
+    <Position X="192" Y="17" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=</HashCode>
+      <FileName>src\world.cpp</FileName>
+    </TypeIdentifier>
+  </Typedef>
+  <Typedef Name="CAIHexBuff" Collapsed="true">
+    <Position X="34.5" Y="31.5" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=</HashCode>
+      <FileName>src\CAI.H</FileName>
+    </TypeIdentifier>
+  </Typedef>
+  <Typedef Name="UnitBuff" Collapsed="true">
+    <Position X="37.5" Y="18.5" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=</HashCode>
+      <FileName>src\CAI.H</FileName>
+    </TypeIdentifier>
+  </Typedef>
+  <Typedef Name="MsgBuff" Collapsed="true">
+    <Position X="34.5" Y="15.5" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=</HashCode>
+      <FileName>src\CAI.H</FileName>
+    </TypeIdentifier>
+  </Typedef>
+  <Typedef Name="OpForBuff" Collapsed="true">
+    <Position X="34.5" Y="8.5" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=</HashCode>
+      <FileName>src\CAI.H</FileName>
+    </TypeIdentifier>
+  </Typedef>
+  <Typedef Name="GoalBuff" Collapsed="true">
+    <Position X="32.5" Y="0.5" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=</HashCode>
+      <FileName>src\CAI.H</FileName>
+    </TypeIdentifier>
+  </Typedef>
+  <Typedef Name="TaskBuff" Collapsed="true">
+    <Position X="31.5" Y="5.5" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=</HashCode>
+      <FileName>src\CAI.H</FileName>
+    </TypeIdentifier>
+  </Typedef>
+  <Typedef Name="TRANS_FUNC" Collapsed="true">
+    <Position X="193.75" Y="17" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=</HashCode>
+      <FileName>src\lastplnt.h</FileName>
+    </TypeIdentifier>
+  </Typedef>
+  <Typedef Name="FNYIELDFUNC" Collapsed="true">
+    <Position X="185" Y="17" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=</HashCode>
+      <FileName>src\lastplnt.h</FileName>
+    </TypeIdentifier>
+  </Typedef>
+  <Typedef Name="AI_INIT" Collapsed="true">
+    <Position X="5.5" Y="34.5" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=</HashCode>
+      <FileName>src\PLAYER.H</FileName>
+    </TypeIdentifier>
+  </Typedef>
+  <Typedef Name="CAnchor" Collapsed="true">
+    <Position X="42" Y="12.25" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=</HashCode>
+      <FileName>src\sprite.h</FileName>
+    </TypeIdentifier>
+  </Typedef>
+  <Typedef Name="FNENUMHEX" Collapsed="true">
+    <Position X="181.5" Y="17" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=</HashCode>
+      <FileName>src\terrain.h</FileName>
+    </TypeIdentifier>
+  </Typedef>
+  <Typedef Name="FNSTATUSLINE" Collapsed="true">
+    <Position X="183.25" Y="17" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=</HashCode>
+      <FileName>src\toolbar.h</FileName>
+    </TypeIdentifier>
+  </Typedef>
+  <Typedef Name="LPCVOID" Collapsed="true">
+    <Position X="186.75" Y="17" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=</HashCode>
+      <FileName>src\VDMPLAY.H</FileName>
+    </TypeIdentifier>
+  </Typedef>
+  <Typedef Name="VPHANDLE" Collapsed="true">
+    <Position X="30.5" Y="33.5" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=</HashCode>
+      <FileName>src\VDMPLAY.H</FileName>
+    </TypeIdentifier>
+  </Typedef>
+  <Typedef Name="VPSESSIONHANDLE" Collapsed="true">
+    <Position X="30.5" Y="31.5" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=</HashCode>
+      <FileName>src\VDMPLAY.H</FileName>
+    </TypeIdentifier>
+  </Typedef>
+  <Typedef Name="VPPLAYERID" Collapsed="true">
+    <Position X="26.5" Y="33.5" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=</HashCode>
+      <FileName>src\VDMPLAY.H</FileName>
+    </TypeIdentifier>
+  </Typedef>
+  <Typedef Name="LPVPPLAYERID" Collapsed="true">
+    <Position X="26.5" Y="31.5" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=</HashCode>
+      <FileName>src\VDMPLAY.H</FileName>
+    </TypeIdentifier>
+  </Typedef>
+  <Typedef Name="VPMSGHDR" Collapsed="true">
+    <Position X="5" Y="16.25" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=</HashCode>
+      <FileName>src\VDMPLAY.H</FileName>
+    </TypeIdentifier>
+  </Typedef>
+  <Typedef Name="LPVPMSGHDR" Collapsed="true">
+    <Position X="5" Y="20.25" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=</HashCode>
+      <FileName>src\VDMPLAY.H</FileName>
+    </TypeIdentifier>
+  </Typedef>
+  <Typedef Name="LPCVPMSGHDR" Collapsed="true">
+    <Position X="8" Y="19.25" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=</HashCode>
+      <FileName>src\VDMPLAY.H</FileName>
+    </TypeIdentifier>
+  </Typedef>
+  <Typedef Name="VPNETADDRESS" Collapsed="true">
+    <Position X="19.5" Y="16" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=</HashCode>
+      <FileName>src\VDMPLAY.H</FileName>
+    </TypeIdentifier>
+  </Typedef>
+  <Typedef Name="LPVPNETADDRESS" Collapsed="true">
+    <Position X="22.5" Y="12" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=</HashCode>
+      <FileName>src\VDMPLAY.H</FileName>
+    </TypeIdentifier>
+  </Typedef>
+  <Typedef Name="LPCVPNETADDRESS" Collapsed="true">
+    <Position X="16.5" Y="18" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=</HashCode>
+      <FileName>src\VDMPLAY.H</FileName>
+    </TypeIdentifier>
+  </Typedef>
+  <Typedef Name="LPVPGUID" Collapsed="true">
+    <Position X="26.5" Y="22.5" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=</HashCode>
+      <FileName>src\VDMPLAY.H</FileName>
+    </TypeIdentifier>
+  </Typedef>
+  <Typedef Name="LPCVPGUID" Collapsed="true">
+    <Position X="23.5" Y="19.5" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=</HashCode>
+      <FileName>src\VDMPLAY.H</FileName>
+    </TypeIdentifier>
+  </Typedef>
+  <Typedef Name="VPSESSIONID" Collapsed="true">
+    <Position X="22.5" Y="16" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=</HashCode>
+      <FileName>src\VDMPLAY.H</FileName>
+    </TypeIdentifier>
+  </Typedef>
+  <Typedef Name="LPVPSESSIONID" Collapsed="true">
+    <Position X="19.5" Y="18" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=</HashCode>
+      <FileName>src\VDMPLAY.H</FileName>
+    </TypeIdentifier>
+  </Typedef>
+  <Typedef Name="LPCVPSESSIONID" Collapsed="true">
+    <Position X="22.5" Y="18" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=</HashCode>
+      <FileName>src\VDMPLAY.H</FileName>
+    </TypeIdentifier>
+  </Typedef>
+  <Typedef Name="VPSESSIONINFO" Collapsed="true">
+    <Position X="22.5" Y="33.75" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=</HashCode>
+      <FileName>src\VDMPLAY.H</FileName>
+    </TypeIdentifier>
+  </Typedef>
+  <Typedef Name="LPVPSESSIONINFO" Collapsed="true">
+    <Position X="22.5" Y="29.75" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=</HashCode>
+      <FileName>src\VDMPLAY.H</FileName>
+    </TypeIdentifier>
+  </Typedef>
+  <Typedef Name="LPCVPSESSIONINFO" Collapsed="true">
+    <Position X="22.5" Y="35.75" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=</HashCode>
+      <FileName>src\VDMPLAY.H</FileName>
+    </TypeIdentifier>
+  </Typedef>
+  <Typedef Name="VPPLAYERINFO" Collapsed="true">
+    <Position X="18.5" Y="33.75" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=</HashCode>
+      <FileName>src\VDMPLAY.H</FileName>
+    </TypeIdentifier>
+  </Typedef>
+  <Typedef Name="LPVPPLAYERINFO" Collapsed="true">
+    <Position X="18.5" Y="29.75" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=</HashCode>
+      <FileName>src\VDMPLAY.H</FileName>
+    </TypeIdentifier>
+  </Typedef>
+  <Typedef Name="LPCVPPLAYERINFO" Collapsed="true">
+    <Position X="18.5" Y="35.75" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=</HashCode>
+      <FileName>src\VDMPLAY.H</FileName>
+    </TypeIdentifier>
+  </Typedef>
+  <Typedef Name="VPPENUMINFO" Collapsed="true">
+    <Position X="14.5" Y="33.75" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=</HashCode>
+      <FileName>src\VDMPLAY.H</FileName>
+    </TypeIdentifier>
+  </Typedef>
+  <Typedef Name="LPVPENUMINFO" Collapsed="true">
+    <Position X="14.5" Y="29.75" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=</HashCode>
+      <FileName>src\VDMPLAY.H</FileName>
+    </TypeIdentifier>
+  </Typedef>
+  <Typedef Name="LPCVPPENUMINFO" Collapsed="true">
+    <Position X="14.5" Y="35.75" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=</HashCode>
+      <FileName>src\VDMPLAY.H</FileName>
+    </TypeIdentifier>
+  </Typedef>
+  <Typedef Name="VPFTINFO" Collapsed="true">
+    <Position X="30.5" Y="16.75" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=</HashCode>
+      <FileName>src\VDMPLAY.H</FileName>
+    </TypeIdentifier>
+  </Typedef>
+  <Typedef Name="LPVPFTINFO" Collapsed="true">
+    <Position X="30.5" Y="12.75" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=</HashCode>
+      <FileName>src\VDMPLAY.H</FileName>
+    </TypeIdentifier>
+  </Typedef>
+  <Typedef Name="LPCVPFTINFO" Collapsed="true">
+    <Position X="30.5" Y="18.75" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=</HashCode>
+      <FileName>src\VDMPLAY.H</FileName>
+    </TypeIdentifier>
+  </Typedef>
+  <Typedef Name="VPMESSAGE" Collapsed="true">
+    <Position X="10.5" Y="33.75" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=</HashCode>
+      <FileName>src\VDMPLAY.H</FileName>
+    </TypeIdentifier>
+  </Typedef>
+  <Typedef Name="LPVPMESSAGE" Collapsed="true">
+    <Position X="10.5" Y="29.75" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=</HashCode>
+      <FileName>src\VDMPLAY.H</FileName>
+    </TypeIdentifier>
+  </Typedef>
+  <Typedef Name="LPCVPMESSAGE" Collapsed="true">
+    <Position X="10.5" Y="35.75" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=</HashCode>
+      <FileName>src\VDMPLAY.H</FileName>
+    </TypeIdentifier>
+  </Typedef>
+  <Typedef Name="VPTCPDATA" Collapsed="true">
+    <Position X="1.5" Y="33.75" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=</HashCode>
+      <FileName>src\VDMPLAY.H</FileName>
+    </TypeIdentifier>
+  </Typedef>
+  <Typedef Name="LPVPTCPDATA" Collapsed="true">
+    <Position X="1.5" Y="29.75" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=</HashCode>
+      <FileName>src\VDMPLAY.H</FileName>
+    </TypeIdentifier>
+  </Typedef>
+  <Typedef Name="LPCVPTCPDATA" Collapsed="true">
+    <Position X="1.5" Y="35.75" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=</HashCode>
+      <FileName>src\VDMPLAY.H</FileName>
+    </TypeIdentifier>
+  </Typedef>
+  <Typedef Name="VPIPXDATA" Collapsed="true">
+    <Position X="27.5" Y="11.75" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=</HashCode>
+      <FileName>src\VDMPLAY.H</FileName>
+    </TypeIdentifier>
+  </Typedef>
+  <Typedef Name="LPVPIPXDATA" Collapsed="true">
+    <Position X="26.5" Y="15.75" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=</HashCode>
+      <FileName>src\VDMPLAY.H</FileName>
+    </TypeIdentifier>
+  </Typedef>
+  <Typedef Name="LPCVPIPXDATA" Collapsed="true">
+    <Position X="27.5" Y="9.75" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=</HashCode>
+      <FileName>src\VDMPLAY.H</FileName>
+    </TypeIdentifier>
+  </Typedef>
+  <Typedef Name="VPNETBIOSDATA" Collapsed="true">
+    <Position X="23.5" Y="6.75" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=</HashCode>
+      <FileName>src\VDMPLAY.H</FileName>
+    </TypeIdentifier>
+  </Typedef>
+  <Typedef Name="LPVPNETBIOSDATA" Collapsed="true">
+    <Position X="24.5" Y="10.75" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=</HashCode>
+      <FileName>src\VDMPLAY.H</FileName>
+    </TypeIdentifier>
+  </Typedef>
+  <Typedef Name="LPCVPNETBIOSDATA" Collapsed="true">
+    <Position X="21.5" Y="8.75" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=</HashCode>
+      <FileName>src\VDMPLAY.H</FileName>
+    </TypeIdentifier>
+  </Typedef>
+  <Typedef Name="VPCOMMDATA" Collapsed="true">
+    <Position X="5.5" Y="21.75" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=</HashCode>
+      <FileName>src\VDMPLAY.H</FileName>
+    </TypeIdentifier>
+  </Typedef>
+  <Typedef Name="LPVPCOMMDATA" Collapsed="true">
+    <Position X="6.5" Y="25.75" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=</HashCode>
+      <FileName>src\VDMPLAY.H</FileName>
+    </TypeIdentifier>
+  </Typedef>
+  <Typedef Name="LPCVPCOMMDATA" Collapsed="true">
+    <Position X="3.5" Y="23.75" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=</HashCode>
+      <FileName>src\VDMPLAY.H</FileName>
+    </TypeIdentifier>
+  </Typedef>
+  <Enum Name="__unnamed_enum_0004_1" Collapsed="true">
+    <Position X="181.5" Y="16" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>AAAAAAAAAAEAAAAAAAAAAAAAAAAAAAAEAAAAAAAAAIA=</HashCode>
+      <FileName>src\area.cpp</FileName>
+    </TypeIdentifier>
+  </Enum>
+  <Enum Name="__unnamed_enum_006a_1" Collapsed="true">
+    <Position X="183.25" Y="16" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>AAIAAggABAAQAAAAAAgQAAIAAAAAAAGAAoAABAABAAA=</HashCode>
+      <FileName>src\ERROR.H</FileName>
+    </TypeIdentifier>
+  </Enum>
+  <Enum Name="__unnamed_enum_006b_1" Collapsed="true">
+    <Position X="185" Y="16" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>AAAAAAAAAAAAAEAEAAAAAAAAIAAAAAIAAAAAAAAAAAA=</HashCode>
+      <FileName>src\EVENT.H</FileName>
+    </TypeIdentifier>
+  </Enum>
+  <Enum Name="__unnamed_enum_006b_2" Collapsed="true">
+    <Position X="186.75" Y="16" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>QCAAUAyAAMECAkAEABmABAEuBAIAhECAcoCAgAQ80AQ=</HashCode>
+      <FileName>src\EVENT.H</FileName>
+    </TypeIdentifier>
+  </Enum>
+  <Enum Name="__unnamed_enum_006b_3" Collapsed="true">
+    <Position X="188.5" Y="16" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>AAAAAAAAAAAAAAAAAAAQAAEAAAoAAAAAAAAAEEAgBAA=</HashCode>
+      <FileName>src\EVENT.H</FileName>
+    </TypeIdentifier>
+  </Enum>
+  <Enum Name="__unnamed_enum_0096_1" Collapsed="true">
+    <Position X="190.25" Y="16" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>ACAAAAIAAAACAAAAAAABAAAgAAAAAAIAAAAAAAAAAAA=</HashCode>
+      <FileName>src\MSGS.H</FileName>
+    </TypeIdentifier>
+  </Enum>
+  <Enum Name="VPNOTIFICATION" Collapsed="true">
+    <Position X="195.5" Y="16" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>BAAAIEAAAAAAEAAAAAAAAgBAAAABAAAAAgAAAIBAAAA=</HashCode>
+      <FileName>src\VDMPLAY.H</FileName>
+    </TypeIdentifier>
+  </Enum>
+  <Enum Name="VPTRANSPORT" Collapsed="true">
+    <Position X="200.75" Y="16" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>AgAAAAABAACAAAAAAQAAgAAAAAAAAIAAAAAAEAAAAAA=</HashCode>
+      <FileName>src\VDMPLAY.H</FileName>
+    </TypeIdentifier>
+  </Enum>
+  <Enum Name="VPERRORS" Collapsed="true">
+    <Position X="193.75" Y="16" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>AAAAAAGABAAAJAAAAABAAAAGAAAAAGAAQAAAAAKCAAA=</HashCode>
+      <FileName>src\VDMPLAY.H</FileName>
+    </TypeIdentifier>
+  </Enum>
+  <Enum Name="VP_SESSIONFLAGS" Collapsed="true">
+    <Position X="192" Y="16" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>AAAAAAAAAAAAAAAAAAAAAAAAAAAAgAAAAAAAAAAAAAA=</HashCode>
+      <FileName>src\VDMPLAY.H</FileName>
+    </TypeIdentifier>
+  </Enum>
+  <Enum Name="VPPLAYERFLAGS" Collapsed="true">
+    <Position X="197.25" Y="16" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>AAAAAAAAAAAAAAAAAAABAAAAAAAAAAAAAAAAAEAAAAA=</HashCode>
+      <FileName>src\VDMPLAY.H</FileName>
+    </TypeIdentifier>
+  </Enum>
+  <Enum Name="VPSENDFLAGS" Collapsed="true">
+    <Position X="199" Y="16" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>AAAAAAAAAAAAAAAAAAAAgAAAAAAEAAAAAAAAAAAAAAA=</HashCode>
+      <FileName>src\VDMPLAY.H</FileName>
+    </TypeIdentifier>
+  </Enum>
+  <Font Name="Segoe UI" Size="9" />
+</ClassDiagram>

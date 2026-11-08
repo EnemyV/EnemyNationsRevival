@@ -9,7 +9,8 @@
 //
 ////////////////////////////////////////////////////////////////////////////
 
-#include <afxwin.h>
+// CObject comes from mfc_compat.h (via stdafx.h).
+#include <windows.h>
 
 #ifndef __CAIHEX_HPP__
 #define __CAIHEX_HPP__

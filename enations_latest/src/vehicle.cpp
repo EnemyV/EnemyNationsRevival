@@ -7,6 +7,9 @@
 
 
 #include "stdafx.h"
+#include "en_logpath.h"   // EnLogPath - logs to the launch dir, not the exe dir
+#include "SDL2GameDialogs.h"
+#include "SDL2RouteWindow.h"   // #38: refresh the route window as orders are consumed
 #include "event.h"
 #include "lastplnt.h"
 #include "cpathmgr.h"
@@ -14,6 +17,7 @@
 #include "chproute.hpp"
 #include "bridge.h"
 #include "area.h"
+#include "enprobes.h"
 
 #include "building.inl"
 #include "vehicle.inl"
@@ -26,1547 +30,2395 @@ static char BASED_CODE THIS_FILE[] = __FILE__;
 #endif
 #define new DEBUG_NEW
 
-
-int aiBaseDir[9] = { 7, 6, 5, 0, 0, 4, 1, 2, 3 };
-int aiDir[9] = { 7*EIGHTH_ROT, 6*EIGHTH_ROT, 5*EIGHTH_ROT, 0, 0, 4*EIGHTH_ROT, 1*EIGHTH_ROT, 2*EIGHTH_ROT, 3*EIGHTH_ROT };
-
-
-BOOL CVehicle::TestStuck ()
+#if EN_GAMEPLAY_PROBES
+// Diagnostic sink: appends to bridge_debug.log in the run dir. Deliberately NOT
+// OutputDebugString — that needs a live DBWIN listener, and a dead or duplicated one
+// silently drops the line AND stalls the calling thread ~10s (July ODS-gap lag bug).
+void EnBridgeDbgLog( const char* pszMsg )
 {
+    FILE* f = fopen( EnLogPath( "bridge_debug.log" ).c_str(), "a" );
+    if ( f != NULL ) { fputs( pszMsg, f ); fclose( f ); }
+}
 
-  // only do this for local AI vehicles
-	if ( (! GetOwner()->IsLocal ()) || (GetOwner()->IsAI ()) )
-		return FALSE;
+// #38 ORDER DISPATCH TRACE (bug #114). One line per dispatch, completion, failure,
+// end, stall and REFUSED poll, with the busy-test fields that caused the refusal, so
+// the next occurrence names the path instead of needing a repro. Same file sink and
+// the same reason as above; compiled out with EN_GAMEPLAY_PROBES (0 by default).
+void EnOrderDbgLog( const char* pszMsg )
+{
+    FILE* f = fopen( EnLogPath( "order_debug.log" ).c_str(), "a" );
+    if ( f != NULL ) { fputs( pszMsg, f ); fclose( f ); }
+}
 
-  // only for trucks & cranes		
-	if ( ( ! GetData()->IsTransport () ) && ( ! GetData()->IsCrane () ) )
-		return FALSE;
+// veh, the four busy-test fields, the queue depth and the cursor kind: everything
+// NextOrder reads. Call it with a short verb and an optional detail string.
+void CVehicle::OrderProbe( char const* pszWhat, char const* pszWhy ) const
+{
+    char szO[256];
+    sprintf( szO, "[ORDER] %-9s veh %lu state %d event %d mode %d bldg %d "
+                  "hold %d resume %d rows %d kind %d hex %d,%d retry %d%s%s\n",
+             pszWhat, (unsigned long) GetID( ), (int) m_iOrderState, (int) m_iEvent,
+             (int) m_cMode, m_pBldg != NULL ? 1 : 0, m_iHoldFrames, m_bResume ? 1 : 0,
+             (int) m_route.GetCount( ), (int) m_iOrderKind, m_hexOrder.X( ), m_hexOrder.Y( ),
+             (int) m_iOrderRetry, ( pszWhy != NULL ) ? " - " : "", ( pszWhy != NULL ) ? pszWhy : "" );
+    EnOrderDbgLog( szO );
+}
+#endif
 
-  // are we there?
-	if ( m_hexDest.SameHex ( m_ptHead ) )
-		return FALSE;
+#if EN_GAMEPLAY_PROBES
+  #define ORDER_PROBE(w, y)  OrderProbe (w, y)
+#else
+  #define ORDER_PROBE(w, y)  ((void) 0)
+#endif
 
-	if ( m_dwTimeJump > theGame.GettimeGetTime () )
-		return FALSE;
-	m_dwTimeJump = theGame.GettimeGetTime () + 1000 * TRUCK_JUMP_TIME;
+// #114 stall watch tuning. The dwell is long enough that a couple of frames of
+// movement re-planning never trips it, short enough that a wedged queue recovers
+// while the player is still looking at it.
+static DWORD const ORDER_STALL_MS    = 3000;   // idle-but-armed before a re-drive
+static int   const ORDER_STALL_TRIES = 3;      // re-drives before the order is given up
 
-  // ok, we transport to the dest if we can
-	CBuilding * pBldg = theBuildingHex._GetBuilding ( m_ptDest );
-	if ( pBldg != NULL )
-	  {
-	  if ( ! CanEnterBldg (pBldg) )
-      {
-      TRAP ();
-  		return FALSE;
-      }
+int aiBaseDir[9] = {7, 6, 5, 0, 0, 4, 1, 2, 3};
+int aiDir[9] = {7 * EIGHTH_ROT, 6 * EIGHTH_ROT, 5 * EIGHTH_ROT, 0, 0, 4 * EIGHTH_ROT, 1 * EIGHTH_ROT, 2 * EIGHTH_ROT,
+                3 * EIGHTH_ROT};
 
-    if ( m_pTransport != NULL )
-      {
-      TRAP ();
-			POSITION pos = m_pTransport->m_lstCargo.Find ( this );
-      if ( pos != NULL )
-  			m_pTransport->m_lstCargo.RemoveAt ( pos );
-			m_pTransport = NULL;
-      }
 
-		ReleaseOwnership ();
-		ForceAtDest ();
-		ArrivedDest ();
- 		return TRUE;
+BOOL CVehicle::TestStuck() {
+
+    // Diagnostic: prove physical recovery without the legacy six-minute hop.
+    if (TrafficOpts() & 128)
+        return FALSE;
+
+    // VANILLA GUARD RESTORED (operator, 2026-07-16: 'horrible change, revert
+    // for sure'): 2cc7163c flipped this so the 6-min stuck-escape ran for AI
+    // vehicles - TELEPORTING AI trucks/cranes into their destination buildings
+    if ((!GetOwner()->IsLocal()) || (GetOwner()->IsAI()))
+        return FALSE;
+
+    // only for trucks & cranes
+    if ((!GetData()->IsTransport()) && (!GetData()->IsCrane()))
+        return FALSE;
+
+    // are we there?
+    if (m_hexDest.SameHex(m_ptHead))
+        return FALSE;
+
+    if (m_dwTimeJump > theGame.GettimeGetTime())
+        return FALSE;
+    m_dwTimeJump = theGame.GettimeGetTime() + 1000 * TRUCK_JUMP_TIME;
+
+    // ok, we transport to the dest if we can
+    // NOTE: the TRAPs below were 1996 curiosity breakpoints in a path that was
+    // dead for AI units until the gate ruling; they fire on ROUTINE states for a
+    // 6-min-stuck unit (occupied hexes, unenterable dest) and killed Debug
+    // observation runs. Logged instead - TestStuck only; TRAP stays fatal elsewhere.
+    CBuilding *pBldg = theBuildingHex._GetBuilding(m_ptDest);
+    if (pBldg != NULL) {
+        if (!CanEnterBldg(pBldg)) {
+#if EN_AI_PROBES_ECON && defined(_WIN32)
+            { char szT[64]; sprintf(szT, "[TSTRAP] veh %lu entercant\n", (unsigned long)GetID()); OutputDebugStringA(szT); }
+#endif
+            return FALSE;
+        }
+
+        if (m_pTransport != NULL) {
+#if EN_AI_PROBES_ECON && defined(_WIN32)
+            { char szT[64]; sprintf(szT, "[TSTRAP] veh %lu carried\n", (unsigned long)GetID()); OutputDebugStringA(szT); }
+#endif
+            POSITION pos = m_pTransport->m_lstCargo.Find(this);
+            if (pos != NULL)
+                m_pTransport->m_lstCargo.RemoveAt(pos);
+            m_pTransport = NULL;
+        }
+
+        ReleaseOwnership();
+        ForceAtDest();
+        ArrivedDest();
+        WaitLog("[LEGACY-JUMP] veh %d into building %d head %d,%d owned %d",
+                GetID(), pBldg->GetID(), m_ptHead.x, m_ptHead.y, (int)m_cOwn);
+#if EN_AI_PROBES_ECON && defined(_WIN32)
+        {
+            char szJ[80];
+            sprintf(szJ, "[JUMP] plyr %d veh %lu into bldg %lu\n", GetOwner()->GetPlyrNum(),
+                    (unsigned long)GetID(), (unsigned long)pBldg->GetID());
+            OutputDebugStringA(szJ);
+        }
+#endif
+        return TRUE;
     }
 
-  // if no path left, give up
-	if ( (m_phexPath == NULL) || (m_iPathLen < m_iPathOff+5) )
-		return FALSE;
+    // if no path left, give up
+    if ((m_phexPath == NULL) || (m_iPathLen < m_iPathOff + 5))
+        return FALSE;
 
-  // not a building, can we find a clear set of hexes along it's path?
-	CHexCoord * pHexOn = m_phexPath + m_iPathOff + 2;
-  int iNumTries = m_iPathLen - m_iPathOff - 3;
-  while ( iNumTries > 0 )
-    {
-    // do we have a clear hex?
-	  if ( ! ( theMap._GetHex ( *pHexOn )->GetUnits () & CHex::unit ) )
-      {
-      // put it here pointing at the next hex
-  		ReleaseOwnership ();
-      if ( pHexOn->X () < (pHexOn+1)->X () )
-        {
-        TRAP ();
-		    m_ptTail.x = pHexOn->X () * 2;
-		    m_ptHead.y = m_ptTail.y = pHexOn->Y () * 2 + 1;
-		    m_ptHead.x = m_ptTail.x + 1;
+    // not a building, can we find a clear set of hexes along it's path?
+    CHexCoord *pHexOn = m_phexPath + m_iPathOff + 2;
+    int iNumTries = m_iPathLen - m_iPathOff - 3;
+    while (iNumTries > 0) {
+        // do we have a clear hex?
+        if (!(theMap._GetHex(*pHexOn)->GetUnits() & CHex::unit)) {
+            // put it here pointing at the next hex
+            ReleaseOwnership();
+            if (pHexOn->X() < (pHexOn + 1)->X()) {
+                m_ptTail.x = pHexOn->X() * 2;
+                m_ptHead.y = m_ptTail.y = pHexOn->Y() * 2 + 1;
+                m_ptHead.x = m_ptTail.x + 1;
+            } else if (pHexOn->X() > (pHexOn + 1)->X()) {
+                m_ptHead.x = pHexOn->X() * 2;
+                m_ptHead.y = m_ptTail.y = pHexOn->Y() * 2;
+                m_ptTail.x = m_ptHead.x + 1;
+            } else if (pHexOn->Y() < (pHexOn + 1)->Y()) {
+                m_ptHead.y = pHexOn->Y() * 2 + 1;
+                m_ptHead.x = m_ptTail.x = pHexOn->X() * 2;
+                m_ptTail.y = m_ptHead.y - 1;
+            } else {
+                m_ptHead.y = pHexOn->Y() * 2;
+                m_ptHead.x = m_ptTail.x = pHexOn->X() * 2 + 1;
+                m_ptTail.y = m_ptHead.y + 1;
+            }
+
+            // get it going
+            if (m_pTransport != NULL) {
+#if EN_AI_PROBES_ECON && defined(_WIN32)
+                { char szT[64]; sprintf(szT, "[TSTRAP] veh %lu carried2\n", (unsigned long)GetID()); OutputDebugStringA(szT); }
+#endif
+                POSITION pos = m_pTransport->m_lstCargo.Find(this);
+                if (pos != NULL)
+                    m_pTransport->m_lstCargo.RemoveAt(pos);
+                m_pTransport = NULL;
+            }
+
+            m_ptNext = m_ptHead;
+            m_hexNext = *(pHexOn + 1);
+            SetMoveParams(FALSE);
+            AtNewLoc();
+            TakeOwnership();
+            _SetRouteMode(moving);
+            WaitLog("[LEGACY-JUMP] veh %d along path head %d,%d tail %d,%d owned %d",
+                    GetID(), m_ptHead.x, m_ptHead.y, m_ptTail.x, m_ptTail.y, (int)m_cOwn);
+#if EN_AI_PROBES_ECON && defined(_WIN32)
+            { char szF[96]; sprintf(szF, "[STUCKHOP] veh %lu hopped along path (6-min fallback)\n",
+                                    (unsigned long)GetID()); OutputDebugStringA(szF); }
+#endif
+            return TRUE;
         }
-      else
-        if ( pHexOn->X () > (pHexOn+1)->X () )
-          {
-          TRAP ();
-		      m_ptHead.x = pHexOn->X () * 2;
-		      m_ptHead.y = m_ptTail.y = pHexOn->Y () * 2;
-  		    m_ptTail.x = m_ptHead.x + 1;
-          }
+
+        pHexOn++;
+        iNumTries--;  // was never decremented (since 1996): loop walked past the path array
+    }
+
+    // we failed
+#if EN_AI_PROBES_ECON && defined(_WIN32)
+    { char szT[64]; sprintf(szT, "[TSTRAP] veh %lu nofree\n", (unsigned long)GetID()); OutputDebugStringA(szT); }
+#endif
+    return FALSE;
+}
+
+void CVehicle::Operate() {
+
+    xASSERT_VALID (ASSERT_PRI_ANAL, ASSERT_VEH_MOVE, this);
+
+#if EN_TRAFFIC_PROBES
+    // Both probes below are hard-wired to one test save's bridge box (x 18-42, y 332-348),
+    // so they compile out with the other traffic probes rather than run in a shipping build.
+    // Bridge census (probe only). The queue does not drain in ANY build, control
+    // included, and almost nobody crosses. Before tuning mechanisms further, find
+    // out what these vehicles are actually trying to do.
+    if (GetOwner()->IsMe()) {
+        CHexCoord _hC(GetHexHead());
+        if ((_hC.X() >= 18) && (_hC.X() <= 42) && (_hC.Y() >= 332) && (_hC.Y() <= 348) &&
+            (theGame.GettimeGetTime() - m_dwCensus > 60000)) {
+            m_dwCensus = theGame.GettimeGetTime();
+            WaitLog("[CENSUS] veh %d type %d at %d,%d mode %d event %d dest %d,%d pathlen %d",
+                    GetID(), GetData()->GetType(), _hC.X(), _hC.Y(), (int) m_cMode, (int) m_iEvent,
+                    m_hexDest.X(), m_hexDest.Y(), (int) m_iPathLen);
+        }
+    }
+
+    // LANE OCCUPANCY, every truck on the deck, not only the stuck ones.
+    //
+    // My lane numbers so far came from [BLOCK], which fires only for a BLOCKED
+    // vehicle - a truck wedged in the wrong lane keeps being sampled while a truck
+    // driving correctly is never sampled at all, so that ratio cannot tell a working
+    // lane rule from a broken one. This is the instrument WinFable asked for: a
+    // periodic census of EVERY deck truck's sub-lane and travel direction, so
+    // wrong-lane share is a property of the fleet rather than of the jam.
+    if (GetOwner()->IsMe() && GetData()->IsTransport() &&
+        (theGame.GettimeGetTime() - m_dwLaneLog > 2000)) {
+        CHexCoord _hL(GetHexHead());
+        if ((_hL.X() >= 18) && (_hL.X() <= 42) && (_hL.Y() >= 332) && (_hL.Y() <= 348)) {
+            m_dwLaneLog = theGame.GettimeGetTime();
+            WaitLog("[LANE] veh %d hex %d,%d head %d,%d tail %d,%d mode %d dest %d,%d",
+                    GetID(), _hL.X(), _hL.Y(), m_ptHead.x, m_ptHead.y, m_ptTail.x, m_ptTail.y,
+                    (int) m_cMode, m_hexDest.X(), m_hexDest.Y());
+        }
+    }
+#endif
+
+    // stuck watch + adjacent clearance request ("panic"), before the stopped test so
+    // a truck making space is still ticked, but it is gated on the vehicle being ours
+    // and automatic inside JamEligible.
+    JamWatch();
+
+    if (m_iFrameHit > 0) {
+        m_iFrameHit -= theGame.GetFramesElapsed();
+        if (m_iFrameHit <= 0) {
+            m_iFrameHit = 0;
+            theApp.m_wndWorld.SetVehHit();
+        }
+    }
+
+    if ((m_unitFlags & (dying | stopped)) || (GetOwner() == NULL))
+        return;
+
+    // A retreat hold has run out - rejoin the haul. Counted in GAME FRAMES the way
+    // m_iFrameHit above is, so a paused game pauses the hold. This sits AFTER the
+    // stopped test on purpose: a truck the player parked stays parked.
+    // Only while actually STOPPED. A hold armed at the moment a truck gives up must
+    // start when it reaches its parking spot, not tick away during the drive there.
+    // A failed route can stop on the roadway without arriving at its parking
+    // target. Cancel that unusable hold and retry the saved job on this update.
+    // A hold armed during movement still keeps its full duration until arrival.
+    if ((m_iHoldFrames > 0) && (m_cMode == stop) && m_cOwn && GetOwner()->IsLocal()) {
+        if (ClearOfRoad(m_ptHead) && ClearOfRoad(m_ptTail))
+            m_iHoldFrames -= theGame.GetFramesElapsed();
         else
-          if ( pHexOn->Y () < (pHexOn+1)->Y () )
-            {
-            TRAP ();
-		        m_ptHead.y = pHexOn->Y () * 2 + 1;
-		        m_ptHead.x = m_ptTail.x = pHexOn->X () * 2;
-    		    m_ptTail.y = m_ptHead.y - 1;
-            }
-          else
-            {
-		        m_ptHead.y = pHexOn->Y () * 2;
-		        m_ptHead.x = m_ptTail.x = pHexOn->X () * 2 + 1;
-    		    m_ptTail.y = m_ptHead.y + 1;
-            }
+            m_iHoldFrames = 0;
+        if (m_iHoldFrames <= 0) {
+            m_iHoldFrames = 0;
 
-      // get it going
-      if ( m_pTransport != NULL )
-        {
-        TRAP ();
-			  POSITION pos = m_pTransport->m_lstCargo.Find ( this );
-        if ( pos != NULL )
-    			m_pTransport->m_lstCargo.RemoveAt ( pos );
-		  	m_pTransport = NULL;
+            // If there is no job left to go back to, UNDEAFEN the truck. The hold
+            // buys its silence by setting told_ai_stop without anybody actually
+            // being told, so a hold that ends with nothing to resume would leave it
+            // parked, unreported and idle for the rest of the game. Clearing the
+            // flag lets the stop branch below notify the router the normal way.
+            //
+            // A hold that ends exactly on the saved job's destination sub has nowhere to
+            // resume TO (ResumeJob returns FALSE), but the arrival there never ran - the
+            // hold branch of ArrivedDest returned before its event switch. Run it now,
+            // or a crane holding on its build site sits idle with the build event set.
+            BOOL bThere = m_bResume && (m_subResume == m_ptHead);
+            if (!ResumeJob()) {
+                m_bFlags &= ~told_ai_stop;
+                if (bThere)
+                    ArrivedDest();
+            }
         }
-
-      m_ptNext = m_ptHead;
-			m_hexNext =	* (pHexOn + 1);
-      SetMoveParams ( FALSE );
-    	AtNewLoc ();
-			TakeOwnership ();
-		  _SetRouteMode (moving);
-    	return TRUE;
-      }
-
-    TRAP ();
-    pHexOn ++;
     }
 
-  // we failed
-  TRAP ();
-	return FALSE;
-}
+    // are we destroying?
+    if (GetOwner()->IsLocal() && (m_unitFlags & CUnit::destroying)) {
+        int iNum = (int) theGame.GetOpersElapsed() + m_lOperMod;
+        div_t dtKill = div(iNum, AVG_SPEED_MUL);
+        m_lOperMod = dtKill.rem;
+        if (dtKill.quot > 0)
+            AddDamageThisTurn(this, dtKill.quot);
+    }
 
-void CVehicle::Operate ()
-{
+    // #38 ORDER QUEUE, COMPLETION HALF (bug #114). A crane's job at a site ends when its
+    // own tie to that site goes - finished, destroyed, or taken away. That is a fact about
+    // the CRANE, not about its movement mode, and it must be read OUTSIDE case stop.
+    // CBuilding::Construct -> CVehicle::StopConstruction -> ExitBuilding leaves a crane
+    // that was welded INSIDE the finished building with m_cOwn FALSE, and ExitBuilding
+    // then puts it in cant_deploy, not stop (vehmove.cpp ~1994). The idle branch never
+    // runs there, so a crane that could not step straight out of the building it had just
+    // finished never noticed it was done and its queue stopped for good. Reading it here
+    // costs one BYTE compare per vehicle per tick and cannot fire early: order_work is set
+    // only by ConstructBuilding, which returns before it if there is no site.
+    // Already owner-gated, so a remote copy still advances nothing.
+    if (GetOwner()->IsLocal()) {
+        if ((m_iOrderState == order_work) && (m_pBldg == NULL)) {
+            m_iOrderState = order_done;
+            ORDER_PROBE("complete", "site tie gone after order_work");
+        }
+        if (m_iOrderState == order_done)
+            OrderComplete();
+    }
 
-	xASSERT_VALID (ASSERT_PRI_ANAL, ASSERT_VEH_MOVE, this);
-
-	if (m_iFrameHit > 0)
-		{
-		m_iFrameHit -= theGame.GetFramesElapsed ();
-		if (m_iFrameHit <= 0)
-			{
-			m_iFrameHit = 0;
-			theApp.m_wndWorld.SetVehHit ();
-			}
-		}
-
-	if ((m_unitFlags & (dying | stopped)) || (GetOwner () == NULL))
-		return;
-
-	// are we destroying?
-	if ( GetOwner()->IsLocal () && ( m_unitFlags & CUnit::destroying ) )
-		{
-		int iNum = (int) theGame.GetOpersElapsed () + m_lOperMod;
-		div_t dtKill = div ( iNum, AVG_SPEED_MUL );
-		m_lOperMod = dtKill.rem;
-		if ( dtKill.quot > 0 )
-			AddDamageThisTurn ( this, dtKill.quot);
-		}
-
-	// first we handle combat stuff
-	HandleCombat ();
+    // first we handle combat stuff
+    HandleCombat();
 
 #ifdef TEST_TRAFFIC
-	if ( m_cOwn )
-		{
-		TRAP (theVehicleHex._GetVehicle (m_ptHead) != this);
-		TRAP (theVehicleHex._GetVehicle (m_ptTail) != this);
-		for (int iInd=0; iInd<NUM_SUBS_OWNED; iInd++)
-			if ( ( SubsOwned[iInd].x != -1 ) &&
-						(SubsOwned[iInd] != m_ptNext) &&
-						(SubsOwned[iInd] != m_ptHead) &&
-						(SubsOwned[iInd] != m_ptTail) )
-			TRAP ();
-		}
+    if ( m_cOwn )
+        {
+        TRAP (theVehicleHex._GetVehicle (m_ptHead) != this);
+        TRAP (theVehicleHex._GetVehicle (m_ptTail) != this);
+        for (int iInd=0; iInd<NUM_SUBS_OWNED; iInd++)
+            if ( ( SubsOwned[iInd].x != -1 ) &&
+                        (SubsOwned[iInd] != m_ptNext) &&
+                        (SubsOwned[iInd] != m_ptHead) &&
+                        (SubsOwned[iInd] != m_ptTail) )
+            TRAP ();
+        }
 #endif
 
-	switch (m_cMode)
-	  {
-		// nothing happening
-		case stop : {
-			if (! GetOwner()->IsLocal ())
-				return;
+    switch (m_cMode) {
+        // nothing happening
+        case stop : {
+            if (!GetOwner()->IsLocal())
+                return;
 
-      if ( TestStuck () )
-        return;
+            if (TestStuck())
+                return;
 
-			xASSERT (ASSERT_PRI_ANAL, ASSERT_VEH_MOVE, (! m_cOwn) || (theBuildingHex.GetBuilding (m_ptHead) == NULL));
-			if (! (m_bFlags & told_ai_stop))
-				{
+            // MERGE NOTE (#38 order queue vs the traffic stop-case LeaveRoad): both belong
+            // here and the ORDER MATTERS. The queue runs first, so a vehicle that has work
+            // waiting starts it and drives off under its own job; only a vehicle with
+            // nothing left to do falls through and gets itself off the roadway. The other
+            // order would park a crane that was about to build anyway, and NextOrder( )
+            // returns out of this tick, so LeaveRoad would not even run on that pass.
+            // #38 ORDER QUEUE. Idle is the only safe place to advance it: every other
+            // mode means a job is running. Already under GetOwner()->IsLocal(), so a
+            // remote copy of this vehicle never dispatches anything.
+            // The COMPLETION half now runs before the switch (see the block above
+            // HandleCombat) so a crane stuck in cant_deploy still sees its site finish.
+            // What is left here is DISPATCH, which genuinely needs an idle vehicle:
+            //   CheckOrderStall -> a dispatched order whose arrival never happened is
+            //                      re-driven, or given up so the queue moves on (#114)
+            //   order_done      -> consume the order the stall watch just gave up on
+            //   order_none      -> start the next one, and stop processing this tick as
+            //                      "idle" - we just stopped being idle
+            CheckOrderStall();
+            if (m_iOrderState == order_done)
+                OrderComplete();
+            if (m_iOrderState == order_none)
+                if (NextOrder())
+                    return;
+            // Also handle units loaded or left stopped on a through-route. The
+            // local method protects explicit Stop, active construction and units
+            // inside buildings, and throttles its own parking search.
+            if (!GetData()->IsBoat() && (GetData()->IsTransport() || GetData()->IsCrane()) && LeaveRoad())
+                return;
+
+            xASSERT (ASSERT_PRI_ANAL, ASSERT_VEH_MOVE, (!m_cOwn) || (theBuildingHex.GetBuilding(m_ptHead) == NULL));
+            if (!(m_bFlags & told_ai_stop)) {
 #ifdef _LOGOUT
-				logPrintf (LOG_PRI_CRITICAL, LOG_VEH_MOVE, "!! backup method - AI told vehicle %d at sub (%d,%d) stopped", GetID (), m_ptHead.x, m_ptHead.y);
+                logPrintf(LOG_PRI_CRITICAL, LOG_VEH_MOVE,
+                          "!! backup method - AI told vehicle %d at sub (%d,%d) stopped", GetID(), m_ptHead.x,
+                          m_ptHead.y);
 #endif
-				PostArrivedOrBlocked ();
-				}
-			ASSERT ((m_bFlags & told_ai_stop) || (m_ptDest == m_ptHead));
+                PostArrivedOrBlocked();
+            }
+            ASSERT ((m_bFlags & told_ai_stop) || (m_ptDest == m_ptHead));
 
-			// handle setup fire here - we just 0 the reload
-			int iSetup = GetData()->GetSetupFire ();
-			if ( (iSetup > 0) && (m_FireSetupMod < iSetup) )
-					{
-					m_FireSetupMod += (int) ((float) theGame.GetOpersElapsed () * m_fDamPerfMult) / AVG_SPEED_MUL;
-					m_dwReloadMod = 0;
-					}
+            // handle setup fire here - we just 0 the reload
+            int iSetup = GetData()->GetSetupFire();
+            if ((iSetup > 0) && (m_FireSetupMod < iSetup)) {
+                m_FireSetupMod += (int) ((float) theGame.GetOpersElapsed() * m_fDamPerfMult) / AVG_SPEED_MUL;
+                m_dwReloadMod = 0;
+            }
 #ifdef TEST_TRAFFIC
-	if ( m_cOwn )
-		{
-		TRAP (theVehicleHex._GetVehicle (m_ptHead) != this);
-		TRAP (theVehicleHex._GetVehicle (m_ptTail) != this);
-		for (int iInd=0; iInd<NUM_SUBS_OWNED; iInd++)
-			if ( ( SubsOwned[iInd].x != -1 ) &&
-						(SubsOwned[iInd] != m_ptNext) &&
-						(SubsOwned[iInd] != m_ptHead) &&
-						(SubsOwned[iInd] != m_ptTail) )
-			TRAP ();
-		}
+            if ( m_cOwn )
+                {
+                TRAP (theVehicleHex._GetVehicle (m_ptHead) != this);
+                TRAP (theVehicleHex._GetVehicle (m_ptTail) != this);
+                for (int iInd=0; iInd<NUM_SUBS_OWNED; iInd++)
+                    if ( ( SubsOwned[iInd].x != -1 ) &&
+                                (SubsOwned[iInd] != m_ptNext) &&
+                                (SubsOwned[iInd] != m_ptHead) &&
+                                (SubsOwned[iInd] != m_ptTail) )
+                    TRAP ();
+                }
 #endif
-			return; }
+            return;
+        }
 
-		case moving :
-			ASSERT (m_cOwn);
-			Move ();
-			m_FireSetupMod = 0;
-			break;
+        case moving :
+#ifdef STRICTER_ASSERTS
+            ASSERT (m_cOwn);
+#endif
+            Move();
+            m_FireSetupMod = 0;
+            break;
 
-		case contention :
-			TRAP ();
-			// BUGBUG - write this
-      if ( TestStuck () )
-        return;
-			return;
+        case contention :
+            TRAP();
+            // BUGBUG - write this
+            if (TestStuck())
+                return;
+            return;
 
-		case traffic : {
-      if ( TestStuck () )
-        return;
+        case traffic : {
+            if (TestStuck())
+                return;
 
-			if (GetOwner()->IsLocal ())
-				{
-				m_dwTimeBlocked += theGame.GetFramesElapsed ();
-				if (m_dwTimeBlocked < 24)
-					return;
-				_SetRouteMode (blocked);
-				m_dwTimeBlocked = 0;
-				m_iNumRetries = m_iBlockCount = 0;
-				return;
-				}
+            if (GetOwner()->IsLocal()) {
+                // if the slot we were holding for has cleared, take that same step
+                // now and stay in lane instead of sitting out the rest of the wait
+                if (ResumeWaitedStep())
+                    return;
 
-			// remote - see if the last know location is avail
-			CVehicle * pVehHead = theVehicleHex._GetVehicle (m_mvlTraffic.m_ptHead);
-			if ((pVehHead == NULL) || (pVehHead == this))
-				{
-				CVehicle * pVehTail = theVehicleHex._GetVehicle (m_mvlTraffic.m_ptTail);
-				if ((pVehTail == NULL) || (pVehTail == this))
-					{
-					// we just assume it's changing hexes
-					if ( DoSpotting () && GetHexOwnership () )
-						{
-						TRAP ();
-						DecrementSpotting ();
-						}
-					ReleaseOwnership ();
+                m_dwTimeBlocked += theGame.GetFramesElapsed();
+                if (m_dwTimeBlocked < m_dwTrafficWait)
+                    return;
 
-					// if next is free we move. Otherwise we just sit here
-					CVehicle * pVehNext = theVehicleHex._GetVehicle (m_mvlTraffic.m_ptNext);
-					if ((pVehNext == NULL) || (pVehNext == this))
-						SetFromMsg (&m_mvlTraffic, FALSE);
-					else
-						{
-						m_mvlTraffic.m_ptNext = m_mvlTraffic.m_ptHead;
-						SetFromMsg (&m_mvlTraffic, FALSE);
-						_SetRouteMode (stop);
-						}
+                // the wait did not pay off - fall through to the existing recovery
+                if (m_subWaitNext.x >= 0 && m_subWaitNext.y >= 0) {
+                    WaitLog("[WAITFAIL] veh %d hex %d,%d gave up on sub %d,%d", GetID(),
+                            GetHexHead().X(), GetHexHead().Y(), m_subWaitNext.x, m_subWaitNext.y);
+                    // The recovery ladder must retry the actual blocked step,
+                    // not the head square used to park the traffic-wait state.
+                    m_ptNext = m_subWaitNext;
+                }
+                m_subWaitNext.x = m_subWaitNext.y = -1;
+                _SetRouteMode(blocked);
+                m_dwTimeBlocked = 0;
+                m_iNumRetries = m_iBlockCount = 0;
+                return;
+            }
 
-					// grab the hexes in the new location
-					if (m_cOwn)
-						{
-						TRAP ((m_ptNext.x > 1280) || (m_ptNext.y > 1280));
-						theVehicleHex.GrabHex (m_ptNext, this);
-						theVehicleHex.GrabHex (m_ptHead, this);
-						theVehicleHex.GrabHex (m_ptTail, this);
+            // remote - see if the last know location is avail
+            CVehicle *pVehHead = theVehicleHex._GetVehicle(m_mvlTraffic.m_ptHead);
+            if ((pVehHead == NULL) || (pVehHead == this)) {
+                CVehicle *pVehTail = theVehicleHex._GetVehicle(m_mvlTraffic.m_ptTail);
+                if ((pVehTail == NULL) || (pVehTail == this)) {
+                    // we just assume it's changing hexes
+                    if (DoSpotting() && GetHexOwnership()) {
+                        TRAP();
+                        DecrementSpotting();
+                    }
+                    ReleaseOwnership();
 
-						if ( DoSpotting () )
-							{
-							TRAP ();
-							DetermineSpotting ();
-							IncrementSpotting ( m_ptHead );
-							}
-						}
-					}
-				}
+                    // if next is free we move. Otherwise we just sit here
+                    CVehicle *pVehNext = theVehicleHex._GetVehicle(m_mvlTraffic.m_ptNext);
+                    if ((pVehNext == NULL) || (pVehNext == this))
+                        SetFromMsg(&m_mvlTraffic, FALSE);
+                    else {
+                        m_mvlTraffic.m_ptNext = m_mvlTraffic.m_ptHead;
+                        SetFromMsg(&m_mvlTraffic, FALSE);
+                        _SetRouteMode(stop);
+                    }
+
+                    // grab the hexes in the new location
+                    if (m_cOwn) {
+                        TRAP((m_ptNext.x > 1280) || (m_ptNext.y > 1280));
+                        theVehicleHex.GrabHex(m_ptNext, this);
+                        theVehicleHex.GrabHex(m_ptHead, this);
+                        theVehicleHex.GrabHex(m_ptTail, this);
+
+                        if (DoSpotting()) {
+                            TRAP();
+                            DetermineSpotting();
+                            IncrementSpotting(m_ptHead);
+                        }
+                    }
+                }
+            }
 #ifdef TEST_TRAFFIC
-	if ( m_cOwn )
-		{
-		TRAP (theVehicleHex._GetVehicle (m_ptHead) != this);
-		TRAP (theVehicleHex._GetVehicle (m_ptTail) != this);
-		for (int iInd=0; iInd<NUM_SUBS_OWNED; iInd++)
-			if ( ( SubsOwned[iInd].x != -1 ) &&
-						(SubsOwned[iInd] != m_ptNext) &&
-						(SubsOwned[iInd] != m_ptHead) &&
-						(SubsOwned[iInd] != m_ptTail) )
-			TRAP ();
-		}
+            if ( m_cOwn )
+                {
+                TRAP (theVehicleHex._GetVehicle (m_ptHead) != this);
+                TRAP (theVehicleHex._GetVehicle (m_ptTail) != this);
+                for (int iInd=0; iInd<NUM_SUBS_OWNED; iInd++)
+                    if ( ( SubsOwned[iInd].x != -1 ) &&
+                                (SubsOwned[iInd] != m_ptNext) &&
+                                (SubsOwned[iInd] != m_ptHead) &&
+                                (SubsOwned[iInd] != m_ptTail) )
+                    TRAP ();
+                }
 #endif
-			return; }
+            return;
+        }
 
-		case blocked :
-      if ( TestStuck () )
-        return;
+        case blocked :
+            if (TestStuck())
+                return;
 
-			if (GetOwner()->IsLocal ())
-				{
-				HandleBlocked ();
+            if (GetOwner()->IsLocal()) {
+                HandleBlocked();
 
 #ifdef _DEBUG
-				if (m_cMode != blocked)
-					{
-					ASSERT_VALID_LOC (this);
-					ASSERT_STRICT (m_ptNext != m_ptHead);
-					ASSERT_STRICT ((abs (CSubHex::Diff (m_ptNext.x - m_ptHead.x)) < 2) && 
-												(abs (CSubHex::Diff (m_ptNext.y - m_ptHead.y)) < 2));
-					}
+                if (m_cMode != blocked)
+                    {
+                    ASSERT_VALID_LOC (this);
+                    ASSERT_STRICT (m_ptNext != m_ptHead);
+                    ASSERT_STRICT ((abs (CSubHex::Diff (m_ptNext.x - m_ptHead.x)) < 2) &&
+                                                (abs (CSubHex::Diff (m_ptNext.y - m_ptHead.y)) < 2));
+                    }
 #endif
-				}
+            }
 #ifdef TEST_TRAFFIC
-	if ( m_cOwn )
-		{
-		TRAP (theVehicleHex._GetVehicle (m_ptHead) != this);
-		TRAP (theVehicleHex._GetVehicle (m_ptTail) != this);
-		for (int iInd=0; iInd<NUM_SUBS_OWNED; iInd++)
-			if ( ( SubsOwned[iInd].x != -1 ) &&
-						(SubsOwned[iInd] != m_ptNext) &&
-						(SubsOwned[iInd] != m_ptHead) &&
-						(SubsOwned[iInd] != m_ptTail) )
-			TRAP ();
-		}
+            if ( m_cOwn )
+                {
+                TRAP (theVehicleHex._GetVehicle (m_ptHead) != this);
+                TRAP (theVehicleHex._GetVehicle (m_ptTail) != this);
+                for (int iInd=0; iInd<NUM_SUBS_OWNED; iInd++)
+                    if ( ( SubsOwned[iInd].x != -1 ) &&
+                                (SubsOwned[iInd] != m_ptNext) &&
+                                (SubsOwned[iInd] != m_ptHead) &&
+                                (SubsOwned[iInd] != m_ptTail) )
+                    TRAP ();
+                }
 #endif
-			return;
+            return;
 
-		// figures out when we can deploy
-		case cant_deploy : {
-			if (! GetOwner()->IsLocal ())
-				return;
+            // figures out when we can deploy
+        case cant_deploy : {
+            // A carried truck cannot deploy itself onto ground squares. The
+            // carrier's unload path clears m_pTransport before placing it.
+            if (!GetOwner()->IsLocal() || GetTransport() != NULL)
+                return;
 
-      if ( TestStuck () )
+            if (TestStuck())
+                return;
+
+            m_FireSetupMod = 0;
+
+            if (m_iDelay > 0) {
+                m_iDelay -= theGame.GetOpersElapsed();
+                return;
+            }
+
+            // if a moving vehicle is blocking us we wait
+            CVehicle *pVehNext = theVehicleHex._GetVehicle(m_ptNext);
+            CVehicle *pVehHead = theVehicleHex._GetVehicle(m_ptHead);
+            CVehicle *pVehTail = theVehicleHex._GetVehicle(m_ptTail);
+            if (((pVehNext != NULL) && (pVehNext->m_cMode == moving)) ||
+                ((pVehHead != NULL) && (pVehHead->m_cMode == moving)) ||
+                ((pVehTail != NULL) && (pVehTail->m_cMode == moving))) {
+                m_dwTimeBlocked = 0;
+                return;
+            }
+
+#ifdef _LOGOUT
+            logPrintf(LOG_PRI_VERBOSE, LOG_VEH_MOVE, "vehicle %d at sub (%d,%d) trying to deploy", GetID(), m_ptHead.x,
+                      m_ptHead.y);
+#endif
+
+            // we don't do anything 1 time out of 4 to avoid deadlocks
+            if ((MyRand() & 0x1100) == 0x1100)
+                return;
+
+            // if it's been over 30 seconds we tell the AI
+            if ((m_dwTimeBlocked > 24 * 30) && (!(m_bFlags & told_ai_stop))) {
+                CheckAroundBuilding();
+#ifdef _LOGOUT
+                logPrintf(LOG_PRI_CRITICAL, LOG_VEH_MOVE,
+                          "!! backup method - AI told vehicle %d at sub (%d,%d) cant_deploy", GetID(), m_ptHead.x,
+                          m_ptHead.y);
+#endif
+                _SetRouteMode(stop);
+                PostArrivedOrBlocked();
+            }
+
+            // time we've been blocked
+            m_dwTimeBlocked += theGame.GetFramesElapsed();
+
+            // if the hexes are taken make sure it's legit
+            if (pVehHead != NULL)
+                theVehicleHex.CheckHex(m_ptHead);
+            else if (pVehTail != NULL)
+                theVehicleHex.CheckHex(m_ptTail);
+            else {
+                // make sure we can stick our nose out
+                BOOL bCanEnter = TRUE;
+                if (!CanEnter(m_ptNext, FALSE)) {
+                    bCanEnter = FALSE;
+                    int iDir, iMax;
+                    if (GetData()->GetVehFlags() & CTransportData::FL1hex) {
+                        iDir = -4;
+                        iMax = 3;
+                    } else {
+                        iDir = -2;
+                        iMax = 2;
+                    }
+                    for (; iDir <= iMax; iDir++) {
+                        CSubHex _next;
+                        if (GetData()->GetVehFlags() & CTransportData::FL1hex)
+                            _next = ::Rotate(iDir, m_ptHead, m_ptHead);
+                        else
+                            _next = Rotate(iDir);
+                        if ((!theBuildingHex._GetBuilding(_next)) && (CanEnter(_next, FALSE))) {
+                            m_ptNext = _next;
+                            bCanEnter = TRUE;
+                            break;
+                        }
+                    }
+                }
+
+                // deploy if available
+                if (!bCanEnter)
+                    theVehicleHex.CheckHex(m_ptNext);
+                else {
+                    TakeOwnership();
+                    ASSERT_VALID_LOC (this);
+                    _SetRouteMode(deploy_it);
+                    ASSERT (m_cOwn);
+                }
+            }
+#ifdef TEST_TRAFFIC
+            if ( m_cOwn )
+                {
+                TRAP (theVehicleHex._GetVehicle (m_ptHead) != this);
+                TRAP (theVehicleHex._GetVehicle (m_ptTail) != this);
+                for (int iInd=0; iInd<NUM_SUBS_OWNED; iInd++)
+                    if ( ( SubsOwned[iInd].x != -1 ) &&
+                                (SubsOwned[iInd] != m_ptNext) &&
+                                (SubsOwned[iInd] != m_ptHead) &&
+                                (SubsOwned[iInd] != m_ptTail) )
+                    TRAP ();
+                }
+#endif
+            return;
+        }
+
+        case deploy_it :
+            if (!GetOwner()->IsLocal())
+                return;
+
+            m_FireSetupMod = 0;
+
+            MaterialChange();
+
+            ASSERT (theGame.IsNetGame() || GetOwner()->IsLocal());  // MP: remote units (Task#14)
+            ASSERT (m_cOwn);
+            ASSERT_VALID_LOC (this);
+#ifdef _LOGOUT
+            logPrintf(LOG_PRI_USEFUL, LOG_VEH_MOVE, "vehicle %d at sub (%d,%d) deploying", GetID(), m_ptHead.x,
+                      m_ptHead.y);
+#endif
+
+            // if we are there we don't need to move (from place_veh)
+            if (m_hexDest.SameHex(m_ptHead)) {
+#ifdef _LOGOUT
+                logPrintf(LOG_PRI_USEFUL, LOG_VEH_MOVE, "vehicle %d at sub (%d,%d) deployed at dest", GetID(),
+                          m_ptHead.x, m_ptHead.y);
+#endif
+                _SetRouteMode(stop);
+                if (theBuildingHex._GetBuilding(m_ptHead) != NULL)
+                    EnterBuilding();
+
+                // tell the AI
+                PostArrivedOrBlocked();
+#ifdef TEST_TRAFFIC
+                if ( m_cOwn )
+                    {
+                    TRAP (theVehicleHex._GetVehicle (m_ptHead) != this);
+                    TRAP (theVehicleHex._GetVehicle (m_ptTail) != this);
+                    for (int iInd=0; iInd<NUM_SUBS_OWNED; iInd++)
+                        if ( ( SubsOwned[iInd].x != -1 ) &&
+                                    (SubsOwned[iInd] != m_ptNext) &&
+                                    (SubsOwned[iInd] != m_ptHead) &&
+                                    (SubsOwned[iInd] != m_ptTail) )
+                        TRAP ();
+                    }
+#endif
+                return;
+            }
+
+            // we already have a path, dest, etc
+            if (HavePathOrNext()) {
+                _SetRouteMode(moving);
+                StartTravel(FALSE);
+                ASSERT (m_cOwn);
+            } else
+
+                // no path yet - this will call GetPath
+            {
+                _SetRouteMode(stop);
+                DeletePath();
+                SetDest(m_hexDest);
+                ASSERT (m_cMode != stop);
+            }
+
+            // if its blocked go back to can't deploy
+            if ((m_cMode == blocked) && (theBuildingHex._GetBuilding(m_ptHead) != NULL)) {
+#ifdef _LOGOUT
+                logPrintf(LOG_PRI_CRITICAL, LOG_VEH_MOVE, "Vehicle %d at sub (%d,%d) failed deploy", GetID(),
+                          m_ptHead.x, m_ptHead.y);
+#endif
+                ReleaseOwnership();
+                _SetRouteMode(cant_deploy);
+                m_dwTimeBlocked = 0;
+                CheckAroundBuilding();
+            }
+
+#ifdef _DEBUG
+            if ((m_cMode != blocked) && (m_cMode != cant_deploy))
+                {
+                ASSERT_VALID_LOC (this);
+                ASSERT (m_ptNext != m_ptHead);
+                ASSERT ((abs (CSubHex::Diff (m_ptNext.x - m_ptHead.x)) < 2) &&
+                                            (abs (CSubHex::Diff (m_ptNext.y - m_ptHead.y)) < 2));
+                }
+#endif
+#ifdef TEST_TRAFFIC
+            if ( m_cOwn )
+                {
+                TRAP (theVehicleHex._GetVehicle (m_ptHead) != this);
+                TRAP (theVehicleHex._GetVehicle (m_ptTail) != this);
+                for (int iInd=0; iInd<NUM_SUBS_OWNED; iInd++)
+                    if ( ( SubsOwned[iInd].x != -1 ) &&
+                                (SubsOwned[iInd] != m_ptNext) &&
+                                (SubsOwned[iInd] != m_ptHead) &&
+                                (SubsOwned[iInd] != m_ptTail) )
+                    TRAP ();
+                }
+#endif
+            return;
+
+        case run :
+            switch (m_iEvent) {
+                case build :
+                    ConstructBuilding();
+                    break;
+                case build_road :
+                    ConstructRoad();
+                    break;
+
+#ifdef _DEBUG
+                    case load :
+                        TRAP (); // BUGBUG - I don't think this ever happens
+                        break;
+#endif
+                default :
+                    // run mode with no build job (e.g. StopConstruction clears
+                    // event+bldg but never the mode): same broken state, same
+                    // resolution
+                    SetEventAndRoute(none, stop);
+                    break;
+            }
+            ASSERT_STRICT_VALID (this);
+#ifdef TEST_TRAFFIC
+            if ( m_cOwn )
+                {
+                TRAP (theVehicleHex._GetVehicle (m_ptHead) != this);
+                TRAP (theVehicleHex._GetVehicle (m_ptTail) != this);
+                for (int iInd=0; iInd<NUM_SUBS_OWNED; iInd++)
+                    if ( ( SubsOwned[iInd].x != -1 ) &&
+                                (SubsOwned[iInd] != m_ptNext) &&
+                                (SubsOwned[iInd] != m_ptHead) &&
+                                (SubsOwned[iInd] != m_ptTail) )
+                    TRAP ();
+                }
+#endif
+            return;
+    }
+
+    ASSERT_VALID (this);
+}
+
+// ---------------------------------------------------------------------------
+// ORDER QUEUE (#38)
+//
+// An ORDER is a job the vehicle does at a hex (build a structure, lay a road,
+// repair) as opposed to a 1996 movement STOP (waypoint/load/unload). Both live on
+// m_route, so the route window, the Shift preview, save/load and the crane's
+// destructor already handle orders for free.
+//
+// One dispatcher, NextOrder(), decides what "start the next one" means. Nothing is
+// reserved or validated when an order is QUEUED - the site is re-checked by the
+// client and then by the server at DISPATCH, exactly as a single placement is.
+// ---------------------------------------------------------------------------
+
+// Append an order at the tail. Queue-time only: no validation, no reservation, no
+// message on the wire.
+void CVehicle::AddOrder(CHexCoord const &hex, int iType, int iBldgType, int iDir,
+                        CHexCoord const *pHexEnd) {
+
+    ASSERT_VALID (this);
+    ASSERT (CRoute::IsOrder(iType));
+
+    CRoute *pR = new CRoute(hex, iType, iBldgType, iDir);
+    if (pHexEnd != NULL)
+        pR->SetEndCoord(*pHexEnd);      // build_road: the far end of the segment
+    m_route.AddTail(pR);
+
+    // An order queue is ONE-SHOT: each order is consumed when its job ends. Set on
+    // every append, not only a fresh list - m_bRouteLoop defaults TRUE (ctor, and
+    // every pre-8 save), and a looping order list would rebuild the same building
+    // for ever instead of moving on.
+    m_bRouteLoop = FALSE;
+
+    if (GetRoutePos() == NULL)
+        SetRoutePos(m_route.GetHeadPosition());
+}
+
+// A plain (no-Shift) command REPLACES the queue, the way a plain move replaces a
+// route. Only the ORDER kinds go: movement stops on the same list belong to the
+// route feature and are left exactly as they are.
+void CVehicle::ClearOrders() {
+
+    ASSERT_VALID (this);
+
+    BOOL bCurGone = FALSE;
+    POSITION pos = m_route.GetHeadPosition();
+    while (pos != NULL) {
+        POSITION cur = pos;
+        CRoute *pR = m_route.GetNext(pos);
+        if ((pR != NULL) && (CRoute::IsOrder(pR->GetRouteType()))) {
+            if (cur == m_pos)
+                bCurGone = TRUE;
+            m_route.RemoveAt(cur);
+            delete pR;
+        }
+    }
+    // never leave the cursor on a freed node - GetHeadPosition is NULL on an empty list
+    if (bCurGone)
+        SetRoutePos(m_route.GetHeadPosition());
+
+    m_iOrderState = order_none;
+    // ...and forget the last dispatch's kind. A plain build's BuildBldg sets order_sent
+    // too, and a stale CRoute::move here made that request look like an idle move order
+    // (ArmedForOrder TRUE): re-driven by CheckOrderStall, parked by LeaveRoad.
+    m_iOrderKind  = CRoute::waypoint;
+    m_iOrderRetry = 0;              // #114: as above
+    m_dwOrderStall = 0;
+}
+
+// Is there still something at this hex for a repair order to work on? The same two
+// things CVehicle::ArrivedDest's repair_bldg case looks for: a building, or a bridge
+// that is not finished. Read at DISPATCH, not at queue time - a target can die while
+// the order waits its turn.
+BOOL CVehicle::RepairTargetLives(CHexCoord const &hex) const {
+
+    if (theBuildingHex._GetBuilding(hex) != NULL)
+        return (TRUE);
+
+    CBridgeUnit *pBu = theBridgeHex.GetBridge(hex);
+    if (pBu != NULL) {
+        CBridge *pBridge = pBu->GetParent();
+        if ((pBridge != NULL) && (!pBridge->IsBuilt()))
+            return (TRUE);
+    }
+    return (FALSE);
+}
+
+// WinAstra finding 3: RE-ESTABLISH THE ACTIVE ORDER'S IDENTITY.
+//
+// m_hexOrder / m_iOrderKind are set in ONE place - NextOrder, at dispatch - and are not
+// serialized (they are runtime state; the save format is 8 and already distributed to the
+// test seats, so nothing here may add a field). A crane SAVED WHILE ALREADY WORKING comes
+// back with its queue, its cursor, its site and its event all restored but with the ctor's
+// identity: m_iOrderKind == CRoute::waypoint, m_hexOrder == (0,0). ConstructBuilding then
+// sets order_work and nothing else, so when the site finishes OrderComplete returns at its
+// IsOrder(m_iOrderKind) guard, the finished entry stays at the head, NextOrder re-dispatches
+// it, and the host rejects it as bldg_or_river - one spurious EVENT_CONST_CANT and one
+// wasted request per loaded mid-build crane, and the same for roads and repairs.
+//
+// Rebuild the identity HERE, where the job is genuinely re-established, from the CRANE'S
+// OWN FACTS rather than from the cursor: the site it is actually attached to (build and
+// repair) or the road run it is actually laying (build_road) must MATCH the entry at the
+// cursor before that entry is labelled. Never label blindly - the cursor is player-editable
+// from the Routes window, and mislabelling would make OrderComplete delete the wrong row.
+//
+// Runs only while the identity is missing (one BYTE compare on a dispatched job), so a job
+// that DID come through NextOrder is never relabelled.
+void CVehicle::ReestablishOrderIdentity() {
+
+    if (CRoute::IsOrder(m_iOrderKind))
+        return;                             // already identified by the dispatcher
+
+    POSITION pos = (m_pos != NULL) ? m_pos : m_route.GetHeadPosition();
+    if (pos == NULL)
+        return;
+    CRoute *pR = m_route.GetAt(pos);
+    if ((pR == NULL) || (!CRoute::IsOrder(pR->GetRouteType())))
+        return;                             // a plain, unqueued job - leave 1996 alone
+
+    switch (pR->GetRouteType()) {
+        case CRoute::build:
+            // The site must BE this crane's site, and be the building the order asked for.
+            // _GetBuilding pins the instance (a multi-hex building answers on any of its
+            // hexes), the type check pins WHAT was asked for.
+            if (m_pBldg == NULL)
+                return;
+            if (theBuildingHex._GetBuilding(pR->GetCoord()) != m_pBldg)
+                return;
+            if (pR->GetBldgType() != (int) m_pBldg->GetData()->GetType())
+                return;
+            break;
+
+        case CRoute::repair:
+            // A repair order names the hex the player clicked, which on a multi-hex
+            // building is not its origin - so match on the INSTANCE, not on the hex.
+            if (m_pBldg == NULL)
+                return;
+            if (theBuildingHex._GetBuilding(pR->GetCoord()) != m_pBldg)
+                return;
+            break;
+
+        case CRoute::build_road:
+            // A road run has no site; its facts are the two ends SetRoad recorded.
+            if ((!(pR->GetCoord() == m_hexStart)) || (!(pR->GetEndCoord() == m_hexEnd)))
+                return;
+            break;
+
+        default:
+            // CRoute::move lands here on purpose: a move has no site and no road run, so
+            // there are no crane facts to match it against. A move that was under way
+            // when the game was saved comes back stopped wherever it stood, with the
+            // entry still on the list, and the idle poll simply dispatches it again.
+            return;
+    }
+
+    m_hexOrder   = pR->GetCoord();
+    m_iOrderKind = (BYTE) pR->GetRouteType();
+    ORDER_PROBE("reidentify", "job re-established without a dispatch (loaded save)");
+}
+
+// Start the order at the cursor, if there is one and this vehicle is free to take
+// it. Returns TRUE if an order was dispatched.
+BOOL CVehicle::NextOrder() {
+
+    ASSERT_VALID (this);
+
+    // OWNER AUTHORITY: a queue is client-local and is only ever dispatched by the
+    // client that owns the unit. Never from a remote node's copy.
+    if ((GetOwner() == NULL) || (!GetOwner()->IsLocal()))
+        return (FALSE);
+
+    // Busy? The queue advances when the current job ENDS, not before. m_iOrderState
+    // covers the window where m_iEvent cannot (request sent, waiting on the server);
+    // the rest is the ordinary "this crane has a job" test.
+    if ((m_iOrderState != order_none) || (m_pBldg != NULL) ||
+        (m_iEvent != none) || (m_cMode != stop)) {
+#if EN_GAMEPLAY_PROBES
+        // Every REFUSED poll, with the busy fields that caused it - throttled per
+        // vehicle, because an idle poll runs every tick, and only while there is
+        // actually something queued to refuse.
+        if (!m_route.IsEmpty()) {
+            DWORD dwNow = theGame.GettimeGetTime();
+            if ((m_dwOrderLog == 0) || (dwNow - m_dwOrderLog >= 5000)) {
+                m_dwOrderLog = dwNow;
+                OrderProbe("refused", "busy test");
+            }
+        }
+#endif
+        return (FALSE);
+    }
+
+    // Loop, so an order that can never run is dropped and the NEXT one starts in this
+    // same call rather than costing a tick each. The list only ever shrinks here.
+    POSITION pos;
+    CRoute  *pR;
+    while (TRUE) {
+        pos = (m_pos != NULL) ? m_pos : m_route.GetHeadPosition();
+        if (pos == NULL)
+            return (FALSE);
+        pR = m_route.GetAt(pos);
+        if (pR == NULL)
+            return (FALSE);
+
+        // A movement STOP at the cursor belongs to ArrivedDest's route machinery. Leaving
+        // it alone is what keeps a stopped waypoint route stopped instead of restarting it.
+        if (!CRoute::IsOrder(pR->GetRouteType()))
+            return (FALSE);
+
+        // A repair order whose target is GONE can never finish and would wedge the queue:
+        // ArrivedDest's repair_bldg case finds neither a building nor an unbuilt bridge,
+        // does nothing, and leaves m_iEvent == repair_bldg - which the busy test above
+        // then refuses on for ever. Check the same two things ArrivedDest checks, here,
+        // before anything is dispatched, and drop the order if neither is there.
+        if ((pR->GetRouteType() == CRoute::repair) && (!RepairTargetLives(pR->GetCoord())))
+        {
+            m_route.RemoveAt(pos);
+            delete pR;
+            SetRoutePos(m_route.GetHeadPosition());
+            if (m_pSdlRoute != NULL)
+                m_pSdlRoute->RefreshRoute();
+            continue;
+        }
+        break;
+    }
+
+    SetRoutePos(pos);
+
+    // The order is under way from here on, whatever kind it is. m_iEvent cannot carry
+    // this: every dispatch below ends with the vehicle clearing its event the moment it
+    // sends the request, and an idle-looking vehicle with a queue would be dispatched
+    // twice.
+    m_iOrderState = order_sent;
+
+    // Remember WHICH order went out. The route window can delete entries or move the
+    // cursor while the job runs, and a rejection can come back a tick or more later,
+    // so completion and failure both match against this rather than trusting the cursor.
+    m_hexOrder   = pR->GetCoord();
+    m_iOrderKind = (BYTE) pR->GetRouteType();
+
+    switch (pR->GetRouteType()) {
+        case CRoute::build: {
+            // exactly what a plain placement does, read back off the order
+            CHexCoord hexDest(pR->GetCoord());
+            BuildBldgDest(this, pR->GetBldgType(), pR->GetBldgDir(), hexDest);
+            ResumeUnit();
+            SetBuilding(pR->GetCoord(), pR->GetBldgType(), pR->GetBldgDir());
+            SetEvent(build);
+            SetDestAndMode(hexDest, full);
+            break;
+        }
+
+        case CRoute::build_road: {
+            // the same commit the road drag makes: drive to the start hex, then lay
+            // toward the far end (SetRoad does the event + dest itself)
+            ResumeUnit();
+            SetRoad(pR->GetCoord(), pR->GetEndCoord());
+            break;
+        }
+
+        case CRoute::repair: {
+            // the same commit the Repair click makes
+            ResumeUnit();
+            SetEvent(repair_bldg);
+            SetDest(pR->GetCoord());
+            break;
+        }
+
+        case CRoute::move: {
+            // exactly what a plain right-click move commits (area.cpp, case lmb_goto:
+            // TempTargetOff / SetEvent(none) / ResumeUnit / SetDestAndSfx), minus the
+            // sound and the selection housekeeping, which belong to the UI and not to a
+            // dispatch. SetDestAndSfx is SetDest, which is SetDestAndMode(.., sub).
+            // ResumeUnit runs FIRST: on an order-only list it arms nothing, but it must
+            // not undo the event this dispatch sets.
+            ResumeUnit();
+            SetEvent(none);
+            SetDestAndMode(pR->GetCoord(), sub);
+            break;
+        }
+
+        default:
+            TRAP();     // an order kind with no dispatch - add it to this switch
+            m_iOrderState = order_none;
+            return (FALSE);
+    }
+
+    ORDER_PROBE("dispatch", NULL);
+    return (TRUE);
+}
+
+// Is m_iEvent still the event THIS dispatch armed? Event `none` on a dispatched order
+// means the request is genuinely in flight - BuildBldg and BuildRoad both clear the event
+// on the line they send from - and that window is what order_sent exists to name, not a
+// failure. FALSE for a plain, unqueued job too: its m_iOrderKind is not an order kind.
+BOOL CVehicle::ArmedForOrder() const {
+
+    switch (m_iOrderKind) {
+        case CRoute::build:      return (m_iEvent == CVehicle::build);
+        case CRoute::build_road: return (m_iEvent == CVehicle::build_road);
+        case CRoute::repair:     return (m_iEvent == CVehicle::repair_bldg);
+
+        // A MOVE order sends nothing on the wire, so `none` is not an in-flight window
+        // here - `none` IS the event a move runs under, the same as a plain right-click
+        // move. What makes it still under way is the MOVEMENT: travelling or in traffic
+        // (IsOnTheMove). Path searches are synchronous on this lane, so there is no
+        // pending-answer state to wait out (the threaded-pathing lane adds a
+        // !PathPending() term here). Idle and not arrived is the genuine give-up the
+        // two watchdogs act on.
+        case CRoute::move:       return ((m_iEvent == CVehicle::none) &&
+                                         (!IsOnTheMove()));
+    }
+    return (FALSE);
+}
+
+// The warning for an order given up short of its site. CGame::Event's EVENT_CONST_CANT
+// text is the BUILDING's name, read through GetBldgType - only a build order has set that
+// (SetBuilding at dispatch), so a road, repair or move order uses the road-halted and
+// stuck events, whose text comes from the vehicle itself.
+int CVehicle::OrderGiveUpEvent() const {
+
+    switch (m_iOrderKind) {
+        case CRoute::build:      return (EVENT_CONST_CANT);
+        case CRoute::build_road: return (EVENT_ROAD_HALTED);
+    }
+    return (EVENT_GOTO_CANT);
+}
+
+// WinAstra finding 4: A GIVE-UP IS A FAILED ARRIVAL, AND IT SAYS SO AT ONCE.
+//
+// FindNextHex has two exits that stop the vehicle SHORT of its destination and report it
+// with PostArrivedOrBlocked - "heading into the last sub-hex" (vehmove.cpp ~990) and "we
+// already tried twice" (~1096). PostArrivedOrBlocked is a NOTIFICATION; its own comment
+// says it "does not perform ArrivedDest, building entry, route advance or load/unload".
+// So the arrival that would have consumed the dispatch - ArrivedDest is the only caller of
+// BuildBldg, BuildRoad and StartConst - is never going to run, and the dispatch is dead
+// the instant those lines execute. Say so here rather than leaving CheckOrderStall's
+// three-second dwell to discover it: the watchdog stays as the backstop for the give-ups
+// that do NOT come through these two exits, but it is no longer the primary path.
+//
+// The budget is the SAME one CheckOrderStall spends, so a run of give-ups on one order
+// cannot loop: within budget the order is re-driven on the next idle tick (a fresh
+// GetPath, which is what a blocked approach actually needs), and once it is spent the
+// order is given up and the queue moves on.
+void CVehicle::OrderArrivalFailed() {
+
+    if (m_iOrderState != order_sent)
+        return;                         // nothing dispatched, or already working
+    if (m_pBldg != NULL)
+        return;                         // the job started after all
+    if (m_bResume || (m_iHoldFrames > 0))
+        return;                         // a traffic detour: ResumeJob owns this vehicle
+    if (!ArmedForOrder())
+        return;                         // request in flight, or a plain unqueued job
+
+    m_dwOrderStall = 0;                 // the watchdog has nothing left to discover
+
+    if (++m_iOrderRetry > ORDER_STALL_TRIES) {
+        ORDER_PROBE("arrival-drop", "gave up short of the site - order given up");
+        m_iOrderRetry = 0;
+        SetEvent(none);                 // mode is already stop at both call sites
+        m_iOrderState = order_done;     // the idle poll's OrderComplete consumes it
+        if (GetOwner()->IsMe())
+            theGame.Event(OrderGiveUpEvent(), EVENT_WARN, this);
+        return;
+    }
+
+    ORDER_PROBE("arrival-redrive", "gave up short of the site - re-driving");
+    SetEvent(none);
+    m_iOrderState = order_none;         // the idle poll's NextOrder re-dispatches it
+}
+
+// BUG #114: A DISPATCHED ORDER WHOSE ARRIVAL NEVER HAPPENS.
+//
+// NextOrder dispatches; the vehicle ARRIVING is what consumes the dispatch, because
+// CVehicle::ArrivedDest is the only caller of BuildBldg (build), BuildRoad (build_road)
+// and StartConst (repair). But arriving is not guaranteed. vehmove.cpp's FindNextHex has
+// two give-up exits - "heading into the last sub-hex and within one of it" (~990) and
+// "we already tried twice" (~1094) - and both stop the vehicle with
+//    _SetRouteMode (stop); PostArrivedOrBlocked ();
+// which NOTIFIES but does NOT perform the arrival. The vehicle is then parked, idle, with
+// the event the dispatch armed still set and m_iOrderState still order_sent, and nothing
+// in the engine clears either one: NextOrder's busy test refuses on both, for ever, and
+// every remaining order on the list is dead. The repair order whose target dies while the
+// crane is travelling reaches the same state from the other side - ArrivedDest's
+// repair_bldg case finds neither a building nor an unbuilt bridge and falls through,
+// leaving m_iEvent == repair_bldg (the residual the review deferred).
+//
+// So watch for IDLE BUT ARMED, and give it a way out:
+//   - a DWELL, because a frame or two of that state is legal while the movement code
+//     re-plans, and because a stall is not urgent;
+//   - never through a TRAFFIC DETOUR: a hold or a pending resume is a job that is still
+//     running, and Operate's hold block / ResumeJob will put us back on the destination;
+//   - then RE-DRIVE the same order - NextOrder re-arms the event, re-picks the closest
+//     footprint hex and asks for a fresh path - up to ORDER_STALL_TRIES times;
+//   - then GIVE IT UP, with the same warning a refused placement gives, so a site that
+//     cannot be reached costs one order instead of the whole queue.
+void CVehicle::CheckOrderStall() {
+
+    ASSERT_VALID (this);
+
+    // Only inside the dispatch window. order_work has a site of its own to watch,
+    // order_road ends at NextRoadHex's terminal branches, and order_none / order_done
+    // are not waiting on anything.
+    // The re-drive BUDGET is not reset here. It belongs to the order at the cursor, and it
+    // is reset where the cursor actually leaves one - OrderComplete, OrderFailed,
+    // ClearOrders. Resetting it on order_none would hand a fresh budget back on every
+    // re-drive, which is an unbounded loop when the site cannot be reached at all: the
+    // lifecycle fixture caught exactly that against OrderArrivalFailed.
+    if (m_iOrderState != order_sent) {
+        m_dwOrderStall = 0;
+        return;
+    }
+
+    // a site attached means the job started after all
+    if (m_pBldg != NULL) {
+        m_dwOrderStall = 0;
+        return;
+    }
+
+    // A traffic detour is a job STILL UNDER WAY. The hold is counted down by Operate and
+    // ResumeJob drives us back to m_subResume - the original destination - so re-driving
+    // through one would cancel the very recovery that is about to deliver us.
+    if (m_bResume || (m_iHoldFrames > 0)) {
+        m_dwOrderStall = 0;
+        return;
+    }
+
+    // The event this dispatch armed. Cleared (none) means the request is genuinely IN
+    // FLIGHT: BuildBldg and BuildRoad both clear m_iEvent on the line they send from, and
+    // that window - one server round trip - is exactly what order_sent exists to name.
+    if (!ArmedForOrder()) {
+        m_dwOrderStall = 0;
+        return;
+    }
+
+    DWORD dwNow = theGame.GettimeGetTime();
+    if (m_dwOrderStall == 0) {
+        m_dwOrderStall = dwNow;         // start the dwell
+        return;
+    }
+    if (dwNow - m_dwOrderStall < ORDER_STALL_MS)
+        return;
+    m_dwOrderStall = 0;
+
+    if (++m_iOrderRetry > ORDER_STALL_TRIES) {
+        ORDER_PROBE("stall-drop", "re-drives exhausted - order given up");
+        m_iOrderRetry = 0;
+        SetEventAndRoute(none, stop);   // drop the stale arming event
+        m_iOrderState = order_done;     // the poll's OrderComplete consumes the order
+        if (GetOwner()->IsMe())
+            theGame.Event(OrderGiveUpEvent(), EVENT_WARN, this);
+        return;
+    }
+
+    ORDER_PROBE("stall-redrive", "idle and armed - the arrival never ran");
+    SetEventAndRoute(none, stop);       // so NextOrder's busy test lets us back in
+    m_iOrderState = order_none;         // the poll's NextOrder re-dispatches this order
+}
+
+// The order the vehicle was running has ENDED - finished, halted or given up on. Used
+// by the road paths, which have their own end conditions and no site to watch: a road
+// run ends inside NextRoadHex / ConstructRoad rather than by detaching from a building.
+// A no-op when nothing was under way, so the plain (unqueued) road commit is unaffected.
+void CVehicle::OrderEnded() {
+
+    if (m_iOrderState != order_none) {
+        m_iOrderState = order_done;
+        ORDER_PROBE("ended", NULL);
+    }
+}
+
+// THIS vehicle's job at the site has ended. Consume the order it was running so the
+// next one can start.
+//
+// WHERE THIS IS DETECTED, and why not inside the completion call itself: there is no
+// per-crane completion callback in the 1996 code. ConstructBuilding hands work to the
+// building and never learns the outcome; the building decides completion and tells
+// every attached crane through the StopConstruction SWEEP, which receives only a
+// CBuilding* and so cannot tell "finished" from "destroyed", "repaired" or "abandoned
+// mine", and runs on every node. Hooking there would advance a queue on a destroyed
+// site and on a remote client. So the crane watches its OWN tie to the site instead -
+// m_pBldg going NULL after the work started - read from its own idle branch, which is
+// already local-owner gated. Site destroyed and site finished both end the order,
+// which is what the design asks for: destruction DROPS the order, it does not retry it.
+void CVehicle::OrderComplete() {
+
+    ASSERT_VALID (this);
+
+    m_iOrderState = order_none;
+    m_iOrderRetry = 0;              // #114: every order gets its own re-drive budget
+    m_dwOrderStall = 0;
+
+    POSITION pos = (m_pos != NULL) ? m_pos : m_route.GetHeadPosition();
+    if (pos == NULL)
+        return;
+    CRoute *pR = m_route.GetAt(pos);
+    if (pR == NULL)
         return;
 
-			m_FireSetupMod = 0;
+    // Only consume the order we actually dispatched. The IsOrder test is what keeps a
+    // plain, unqueued build (which dispatches nothing, so m_iOrderKind is still its
+    // waypoint initialiser) from matching - and deleting - a movement waypoint that
+    // happens to sit at the same hex.
+    if ((!CRoute::IsOrder(m_iOrderKind)) ||
+        (pR->GetRouteType() != m_iOrderKind) || (!(pR->GetCoord() == m_hexOrder)))
+        return;
 
-			if ( m_iDelay > 0 )
-				{
-				m_iDelay -= theGame.GetOpersElapsed ();
-				return;
-				}
+    if (m_bRouteLoop) {
+        // looping list: keep the order, step the cursor on, cycle at the tail
+        POSITION posNext = pos;
+        m_route.GetNext(posNext);
+        SetRoutePos((posNext != NULL) ? posNext : m_route.GetHeadPosition());
+    } else {
+        m_route.RemoveAt(pos);
+        delete pR;
+        SetRoutePos(m_route.GetHeadPosition());
+    }
 
-			// if a moving vehicle is blocking us we wait
-			CVehicle * pVehNext = theVehicleHex._GetVehicle (m_ptNext);
-			CVehicle * pVehHead = theVehicleHex._GetVehicle (m_ptHead);
-			CVehicle * pVehTail = theVehicleHex._GetVehicle (m_ptTail);
-			if ( ( (pVehNext != NULL) && (pVehNext->m_cMode == moving) ) ||
-									( (pVehHead != NULL) && (pVehHead->m_cMode == moving) ) ||
-									( (pVehTail != NULL) && (pVehTail->m_cMode == moving) ) )
-				{
-				m_dwTimeBlocked = 0;
-				return;
-				}
-
-#ifdef _LOGOUT
-			logPrintf (LOG_PRI_VERBOSE, LOG_VEH_MOVE, "vehicle %d at sub (%d,%d) trying to deploy", GetID (), m_ptHead.x, m_ptHead.y);
-#endif
-			
-			// we don't do anything 1 time out of 4 to avoid deadlocks
-			if ((MyRand () & 0x1100) == 0x1100)
-				return;
-
-			// if it's been over 30 seconds we tell the AI
-			if ((m_dwTimeBlocked > 24 * 30) && (! (m_bFlags & told_ai_stop)))
-				{
-				CheckAroundBuilding ();
-#ifdef _LOGOUT
-				logPrintf (LOG_PRI_CRITICAL, LOG_VEH_MOVE, "!! backup method - AI told vehicle %d at sub (%d,%d) cant_deploy", GetID (), m_ptHead.x, m_ptHead.y);
-#endif
-				_SetRouteMode (stop);
-				PostArrivedOrBlocked ();
-				}
-
-			// time we've been blocked
-			m_dwTimeBlocked += theGame.GetFramesElapsed ();
-
-			// if the hexes are taken make sure it's legit
-			if (pVehHead != NULL)
-				theVehicleHex.CheckHex (m_ptHead);
-			else
-				if (pVehTail != NULL)
-					theVehicleHex.CheckHex (m_ptTail);
-				else
-					{
-					// make sure we can stick our nose out
-					BOOL bCanEnter = TRUE;
-					if (! CanEnter (m_ptNext, FALSE))
-						{
-						bCanEnter = FALSE;
-						int iDir, iMax;
-						if (GetData()->GetVehFlags () & CTransportData::FL1hex)
-							{
-							iDir = -4;
-							iMax = 3;
-							}
-						else
-							{
-							iDir = -2;
-							iMax = 2;
-							}
-						for (; iDir<=iMax; iDir++)
-							{
-							CSubHex _next;
-							if (GetData()->GetVehFlags () & CTransportData::FL1hex)
-								_next = ::Rotate (iDir, m_ptHead, m_ptHead);
-							else
-								_next = Rotate (iDir);
-							if ((! theBuildingHex._GetBuilding (_next)) && (CanEnter (_next, FALSE)))
-								{
-								m_ptNext = _next;
-								bCanEnter = TRUE;
-								break;
-								}
-							}
-						}
-
-					// deploy if available
-					if (! bCanEnter)
-						theVehicleHex.CheckHex (m_ptNext);
-					else
-						{
-						TakeOwnership ();
-						ASSERT_VALID_LOC (this);
-						_SetRouteMode (deploy_it);
-						ASSERT (m_cOwn);
-						}
-					}
-#ifdef TEST_TRAFFIC
-	if ( m_cOwn )
-		{
-		TRAP (theVehicleHex._GetVehicle (m_ptHead) != this);
-		TRAP (theVehicleHex._GetVehicle (m_ptTail) != this);
-		for (int iInd=0; iInd<NUM_SUBS_OWNED; iInd++)
-			if ( ( SubsOwned[iInd].x != -1 ) &&
-						(SubsOwned[iInd] != m_ptNext) &&
-						(SubsOwned[iInd] != m_ptHead) &&
-						(SubsOwned[iInd] != m_ptTail) )
-			TRAP ();
-		}
-#endif
-			return; }
-
-		case deploy_it :
-			if (! GetOwner()->IsLocal ())
-				return;
-
-			m_FireSetupMod = 0;
-
-			MaterialChange ();
-
-			ASSERT (GetOwner()->IsLocal ());
-			ASSERT (m_cOwn);
-			ASSERT_VALID_LOC (this);
-#ifdef _LOGOUT
-			logPrintf (LOG_PRI_USEFUL, LOG_VEH_MOVE, "vehicle %d at sub (%d,%d) deploying", GetID (), m_ptHead.x, m_ptHead.y);
-#endif
-
-			// if we are there we don't need to move (from place_veh)
-			if (m_hexDest.SameHex (m_ptHead))
-				{
-#ifdef _LOGOUT
-				logPrintf (LOG_PRI_USEFUL, LOG_VEH_MOVE, "vehicle %d at sub (%d,%d) deployed at dest", GetID (), m_ptHead.x, m_ptHead.y);
-#endif
-				_SetRouteMode (stop);
-				if (theBuildingHex._GetBuilding (m_ptHead) != NULL)
-					EnterBuilding ();
-
-				// tell the AI
-				PostArrivedOrBlocked ();
-#ifdef TEST_TRAFFIC
-	if ( m_cOwn )
-		{
-		TRAP (theVehicleHex._GetVehicle (m_ptHead) != this);
-		TRAP (theVehicleHex._GetVehicle (m_ptTail) != this);
-		for (int iInd=0; iInd<NUM_SUBS_OWNED; iInd++)
-			if ( ( SubsOwned[iInd].x != -1 ) &&
-						(SubsOwned[iInd] != m_ptNext) &&
-						(SubsOwned[iInd] != m_ptHead) &&
-						(SubsOwned[iInd] != m_ptTail) )
-			TRAP ();
-		}
-#endif
-				return;
-				}
-
-			// we already have a path, dest, etc
-			if (HavePathOrNext ())
-				{
-				_SetRouteMode (moving);
-				StartTravel (FALSE);
-				ASSERT (m_cOwn);
-				}
-			else
-
-				// no path yet - this will call GetPath
-			  {
-				_SetRouteMode (stop);
-				DeletePath ();
-				SetDest (m_hexDest);
-				ASSERT (m_cMode != stop);
-			  }
-
-			// if its blocked go back to can't deploy
-			if ((m_cMode == blocked) && (theBuildingHex._GetBuilding (m_ptHead) != NULL))
-				{
-#ifdef _LOGOUT
-				logPrintf (LOG_PRI_CRITICAL, LOG_VEH_MOVE, "Vehicle %d at sub (%d,%d) failed deploy", GetID (), m_ptHead.x, m_ptHead.y);
-#endif
-				ReleaseOwnership ();
-				_SetRouteMode (cant_deploy);
-				m_dwTimeBlocked = 0;
-				CheckAroundBuilding ();
-				}
-
-#ifdef _DEBUG
-			if ((m_cMode != blocked) && (m_cMode != cant_deploy))
-				{
-				ASSERT_VALID_LOC (this);
-				ASSERT (m_ptNext != m_ptHead);
-				ASSERT ((abs (CSubHex::Diff (m_ptNext.x - m_ptHead.x)) < 2) && 
-											(abs (CSubHex::Diff (m_ptNext.y - m_ptHead.y)) < 2));
-				}
-#endif
-#ifdef TEST_TRAFFIC
-	if ( m_cOwn )
-		{
-		TRAP (theVehicleHex._GetVehicle (m_ptHead) != this);
-		TRAP (theVehicleHex._GetVehicle (m_ptTail) != this);
-		for (int iInd=0; iInd<NUM_SUBS_OWNED; iInd++)
-			if ( ( SubsOwned[iInd].x != -1 ) &&
-						(SubsOwned[iInd] != m_ptNext) &&
-						(SubsOwned[iInd] != m_ptHead) &&
-						(SubsOwned[iInd] != m_ptTail) )
-			TRAP ();
-		}
-#endif
-			return;
-
-		case run :
-			switch (m_iEvent)
-			  {
-				case build :
-					ConstructBuilding ();
-					break;
-				case build_road :
-					ConstructRoad ();
-					break;
-
-#ifdef _DEBUG
-				case load :
-					TRAP (); // BUGBUG - I don't think this ever happens
-					break;
-#endif
-			  }
-			ASSERT_STRICT_VALID (this);
-#ifdef TEST_TRAFFIC
-	if ( m_cOwn )
-		{
-		TRAP (theVehicleHex._GetVehicle (m_ptHead) != this);
-		TRAP (theVehicleHex._GetVehicle (m_ptTail) != this);
-		for (int iInd=0; iInd<NUM_SUBS_OWNED; iInd++)
-			if ( ( SubsOwned[iInd].x != -1 ) &&
-						(SubsOwned[iInd] != m_ptNext) &&
-						(SubsOwned[iInd] != m_ptHead) &&
-						(SubsOwned[iInd] != m_ptTail) )
-			TRAP ();
-		}
-#endif
-			return;
-	  }
-
-	ASSERT_VALID (this);
+    if (m_pSdlRoute != NULL)
+        m_pSdlRoute->RefreshRoute();
 }
 
-void CVehicle::BuildBldg ()
-{
+// A build request came back REJECTED. All three failure exits - the client's own
+// pre-send check, the server's foundation check and the server's tech gate - land in
+// ErrBuildBldg, which is where this is called from, after the standard warning.
+//
+// The rejection is matched to the ACTIVE request (the order that was sent, by hex and
+// building type), because it can arrive a tick or more after the send: only the order
+// it is FOR is dropped, and the rest of the queue carries on. A failed site is dropped
+// even on a looping list - looping will not make an unbuildable site buildable.
+void CVehicle::OrderFailed(CHexCoord const &hex, int iBldgType) {
 
-	m_iEvent = none;
-	if (! GetOwner()->IsLocal ())
-		return;
-	ASSERT_STRICT (m_ptHead.SameHex (m_ptTail));
-		
-	CMsgBuildBldg msg (this, m_hexBldg, m_iBuildDir, m_iBldgType);
+    ASSERT_VALID (this);
 
-	// make sure not on water or another city
-	int iWhy;
-	int iRtn = theMap.FoundationCost (m_hexBldg, m_iBldgType, m_iBuildDir, this, NULL, &iWhy);
+    // answered either way: the crane is no longer waiting on the server
+    BOOL bWasSent = (m_iOrderState == order_sent);
+    m_iOrderState = order_none;
+    m_iOrderRetry = 0;              // #114: as above
+    m_dwOrderStall = 0;
+    if (!bWasSent)
+        return;
 
-	if ( theApp.m_pLogFile != NULL )
-		{
-		char sBuf [80];
-		sprintf ( sBuf, "Request building %d at %d,%d = cost: %d, why: %d",
-												m_iBldgType, m_hexBldg.X(), m_hexBldg.Y(), iRtn, iWhy );
-		theApp.Log ( sBuf );
-		}
+    POSITION pos = (m_pos != NULL) ? m_pos : m_route.GetHeadPosition();
+    if (pos == NULL)
+        return;
+    CRoute *pR = m_route.GetAt(pos);
+    if (pR == NULL)
+        return;
+    if ((pR->GetRouteType() != CRoute::build) || (!(pR->GetCoord() == hex)) ||
+        (pR->GetBldgType() != iBldgType))
+        return;       // not the order that was sent (or a plain, unqueued placement)
 
-	msg.m_iWhy = (signed char) iWhy;
-	if (iRtn < 0)
-		{
-		_SetRouteMode (stop);
-		msg.ToErr ();
-		theGame.PostToClient (GetOwner(), &msg, sizeof (msg));
-		return;
-		}
+    m_route.RemoveAt(pos);
+    delete pR;
+    SetRoutePos(m_route.GetHeadPosition());
+    ORDER_PROBE("failed", "server rejected the site");
 
-	// send a message telling it to start building
-	theGame.PostToServer (&msg, sizeof (msg));
+    if (m_pSdlRoute != NULL)
+        m_pSdlRoute->RefreshRoute();
 }
 
-void CVehicle::BuildRoad ()
-{
+void CVehicle::BuildBldg() {
 
-	m_iEvent = none;
-	if (! GetOwner()->IsLocal ())
-		{
-		ASSERT_STRICT (FALSE);
-		return;
-		}
-	ASSERT_STRICT (m_ptHead.SameHex (m_ptTail));
-		
-	// if can't build here go on to the next
-	CHex * pHex = theMap._GetHex (GetHexHead ());
-	if ((pHex->IsWater ()) || (pHex->GetType () == CHex::road) || 
-													(pHex->GetUnits () & (CHex::bridge | CHex::bldg)))
-		if (! NextRoadHex ())
-			return;
+    m_iEvent = none;
+    if (!GetOwner()->IsLocal())
+        return;
 
-	// if no water - just a road
-	CHexCoord _hex (m_ptHead);
-	CHexCoord _hexNext = _NextRoadHex (_hex);
-	if (theMap._GetHex (_hexNext)->CanRoad ())
-		{
-		// send a message telling it to start building
-		CMsgBuildRoad msg (this);
-		theGame.PostToServer (&msg, sizeof (msg));
-		return;
-		}
+    // #38: a build request is now IN FLIGHT. m_iEvent was cleared on the line above
+    // (1996: the build event ends at SEND, not at completion), so this flag is the
+    // only thing that tells "waiting for the server" from "idle with a queue". Set
+    // for EVERY build request, queued or not, so the two paths share one state
+    // machine and a plain build can never be mistaken for an idle crane.
+    m_iOrderState = order_sent;
+    ASSERT_STRICT (m_ptHead.SameHex(m_ptTail));
 
-	if ( ! GetOwner()->CanBridge () )
-		{
-		if (GetOwner ()->IsMe ())
-			theGame.Event (EVENT_CANT_BRIDGE, EVENT_NOTIFY);
-		return;
-		}
+    CMsgBuildBldg msg(this, m_hexBldg, m_iBuildDir, m_iBldgType);
 
-	// done?
-	if ( m_hexEnd == _hex )
-		{
-		TRAP ();
-		return;
-		}
+    // make sure not on water or another city
+    int iWhy;
+    int iRtn = theMap.FoundationCost(m_hexBldg, m_iBldgType, m_iBuildDir, this, NULL, &iWhy);
 
-	// we need to place a bridge
-	//   what direction
-	int x = CHexCoord::Diff (m_hexEnd.X () - _hex.X ());
-	int y = CHexCoord::Diff (m_hexEnd.Y () - _hex.Y ());
-	if (abs (x) >= abs (y))
-		{
-		x = __minmax (-1, 1, x);
-		y = 0;
-		}
-	else
-	  {
-		x = 0;
-		y = __minmax (-1, 1, y);
-	  }
+    if (theApp.m_pLogFile != NULL) {
+        char sBuf[80];
+        sprintf(sBuf, "Request building %d at %d,%d = cost: %d, why: %d",
+                m_iBldgType, m_hexBldg.X(), m_hexBldg.Y(), iRtn, iWhy);
+        theApp.Log(sBuf);
+    }
 
-	CHexCoord _hexEnd (_hexNext);
-	int iLen = 0;
-	while (iLen < MAX_SPAN)
-		{
-		_hexEnd.X () += x;
-		_hexEnd.Y () += y;
-		_hexEnd.Wrap ();
+    msg.m_iWhy = (signed char) iWhy;
+    if (iRtn < 0) {
+        _SetRouteMode(stop);
+        msg.ToErr();
+        theGame.PostToClient(GetOwner(), &msg, sizeof(msg));
+        return;
+    }
 
-		// if we run into a bridge or building we're done
-		CHex * pHexTest = theMap._GetHex (_hexEnd);
-		if (pHexTest->GetUnits () & (CHex::bridge || CHex::bldg))
-			{
-			iLen = MAX_SPAN;
-			break;
-			}
-
-		if ( pHexTest->IsWater () )
-			{
-			iLen++;
-			if (iLen > MAX_SPAN)
-				break;
-			}
-		else
-			{
-			iLen = 0;
-			if ( pHexTest->CanRoad () )
-				break;
-			}
-		}
-
-	// if we failed - end it
-	if (iLen >= MAX_SPAN)
-		{
-		if (GetOwner()->IsMe ())
-			theGame.Event (EVENT_ROAD_HALTED, EVENT_WARN, this);
-		else
-			{
-			CMsgBuildRoad msg (this);
-			msg.ToErr ();
-			theGame.PostToClient ( GetOwner (), &msg, sizeof (msg) );
-			}
-		return;
-		}
-
-	// let's build a bridge
-	CMsgBuildBridge msg (this, _hexEnd);
-	theGame.PostToServer (&msg, sizeof (msg));
+    // send a message telling it to start building
+    theGame.PostToServer(&msg, sizeof(msg));
 }
 
-void CVehicle::Load ()
-{
+void CVehicle::BuildRoad() {
 
-	ASSERT_STRICT (GetOwner()->IsLocal ());	
+    m_iEvent = none;
+    if (!GetOwner()->IsLocal()) {
+        ASSERT_STRICT (FALSE);
+        return;
+    }
+    ASSERT_STRICT (m_ptHead.SameHex(m_ptTail));
 
-	CBuilding * pBldg = theBuildingHex._GetBuilding (m_ptHead);
-	if (pBldg == NULL)
-		{
-		ASSERT_STRICT (FALSE);
-		return;
-		}
-	ASSERT_STRICT_VALID (pBldg);
+    // if can't build here go on to the next
+    CHex *pHex = theMap._GetHex(GetHexHead());
+    if ((pHex->IsWater()) || (pHex->GetType() == CHex::road) ||
+        (pHex->GetUnits() & (CHex::bridge | CHex::bldg)))
+        if (!NextRoadHex())
+            return;
 
-	// see if full
-	int iLeft = GetData()->GetMaxMaterials () - GetTotalStore ();
-	if (iLeft <= 0)
-		return;
+    // if no water - just a road
+    CHexCoord _hex(m_ptHead);
+    CHexCoord _hexNext = _NextRoadHex(_hex);
+    if (theMap._GetHex(_hexNext)->CanRoad()) {
+        // send a message telling it to start building
+        CMsgBuildRoad msg(this);
+        theGame.PostToServer(&msg, sizeof(msg));
+        return;
+    }
 
-	// if under construction we don't take anything
-	if (pBldg->IsConstructing ())
-		return;
-		
-	int iCant [CMaterialTypes::num_types];
-	pBldg->GetInputs (iCant);
+    if (!GetOwner()->CanBridge()) {
+        if (GetOwner()->IsMe())
+            theGame.Event(EVENT_CANT_BRIDGE, EVENT_NOTIFY);
+        OrderEnded();   // #38: no bridging tech - the run stops here, drop the order
+        return;
+    }
 
-	// take a look at where we are going to figure out what to load up
-	// this is generally only a problem if loading at a warehouse
-	POSITION pos = m_pos;
-	CBuilding * pBldgDest = NULL;
-	while ( TRUE )
-		{
-		if (pos == NULL)
-			pos = m_route.GetHeadPosition ();
-		else
-			{
-			m_route.GetNext (pos);
-			if (pos == NULL)
-				pos = m_route.GetHeadPosition ();
-			}
-		if ((pos == m_pos) || (pos == NULL))
-			break;
+    // done?
+    if (m_hexEnd == _hex) {
+        TRAP();
+        OrderEnded();   // #38: nothing left to lay
+        return;
+    }
 
-		// only care about unloads
-		if ( m_route.GetAt (pos)->GetRouteType () == CRoute::unload )
-			{
-			pBldgDest = theBuildingHex._GetBuilding ((m_route.GetAt (pos))->GetCoord ());
-			if ( pBldgDest )
-				break;
-			}
-		}
+    // we need to place a bridge
+    //   what direction
+    int x = CHexCoord::Diff(m_hexEnd.X() - _hex.X());
+    int y = CHexCoord::Diff(m_hexEnd.Y() - _hex.Y());
+    if (abs(x) >= abs(y)) {
+        x = __minmax(-1, 1, x);
+        y = 0;
+    } else {
+        x = 0;
+        y = __minmax(-1, 1, y);
+    }
 
-	// ok, we know where we are going
-	if (pBldgDest != NULL)
-		{
-		if (pBldgDest->IsConstructing ())
-			{
-			int iNeed = 0;
-			for (int iOn=0; iOn<CMaterialTypes::GetNumBuildTypes(); iOn++)
-				if (pBldgDest->GetStore (iOn) < pBldgDest->NeedToBuild (iOn))
-					iNeed += pBldgDest->GetBldgMatReq (iOn, TRUE);
-			if (iNeed > 0)
-				{
-				float fMul = __min (1.0f, (float) (iLeft / iNeed));
-				for (iOn=0; iOn<CMaterialTypes::GetNumBuildTypes(); iOn++)
-					if (pBldgDest->GetStore (iOn) < pBldgDest->NeedToBuild (iOn))
-						{
-						iNeed = (int) ((float) pBldgDest->GetBldgMatReq (iOn, TRUE) * fMul);
-						iNeed = __min (iNeed, pBldg->GetStore (iOn));
-						iNeed = __min (iNeed, pBldgDest->GetBldgMatReq (iOn, TRUE));
-						pBldg->AddToStore (iOn, -iNeed);
-						AddToStore ( iOn, iNeed );
-						iLeft -= iNeed;
-						}
+    CHexCoord _hexEnd(_hexNext);
+    int const iMaxSpan = GetOwner()->GetMaxSpan();   // bridge research tier
+    int iLen = 0;
+    // <= (not <): placement allows a span of exactly iMaxSpan, so the scan must
+    // step across iMaxSpan water hexes to reach the far-bank land hex. Stopping at
+    // iLen<iMaxSpan aborted every max-span bridge one hex short of the far bank
+    // (short bridges, span<iMaxSpan, were unaffected). See bug #37.
+    while (iLen <= iMaxSpan) {
+        _hexEnd.X() += x;
+        _hexEnd.Y() += y;
+        _hexEnd.Wrap();
 
-				// return if full
-				if (iLeft <= 0)
-					{
-					// its an event
-					ASSERT_STRICT (iLeft >= 0);
-					pBldg->EventOff ();
-					pBldg->MaterialChange ();
-					MaterialChange ();
-					return;
-					}
-				}
-			}
+        // if we run into a bridge or building we're done
+        CHex *pHexTest = theMap._GetHex(_hexEnd);
+        if (pHexTest->GetUnits() & (CHex::bridge | CHex::bldg)) {
+            iLen = iMaxSpan;
+            break;
+        }
 
-		// ok, load up with what the dest needs
-		// determine what units the dest building uses that this building doesn't
-		// the GetAccepts stuff is for warehouses
-		int iUse [CMaterialTypes::num_types];
-		pBldgDest->GetInputs (iUse);
-		int iAcpts [CMaterialTypes::num_types];
-		pBldgDest->GetAccepts (iAcpts);
-		for (int iOn=0; iOn<CMaterialTypes::GetNumTypes(); iOn++)
-			iUse[iOn] = __max (iUse[iOn], iAcpts[iOn]);
-		for (iOn=0; iOn<CMaterialTypes::GetNumTypes(); iOn++)
-			if (iCant[iOn] > 0)
-				iUse[iOn] = 0;
+        if (pHexTest->IsWater()) {
+            iLen++;
+            if (iLen > iMaxSpan)
+                break;
+        } else {
+            iLen = 0;
+            if (pHexTest->CanRoad())
+                break;
+        }
+    }
 
-		// figure out how many output units the building can make
-		float fMul [CMaterialTypes::num_types];
-		float fBiggest = 0;
-		for (iOn=0; iOn<CMaterialTypes::GetNumTypes(); iOn++)
-			if (iUse[iOn] <= 0)
-				fMul[iOn] = 0;
-			else
-				if ((fMul[iOn] = (float) pBldgDest->GetStore (iOn) / (float) iUse[iOn]) > fBiggest)
-					fBiggest = fMul[iOn];
+    // if we failed - end it
+    if (iLen >= iMaxSpan) {
+#if EN_GAMEPLAY_PROBES
+        {
+            CHex *pStop = theMap._GetHex(_hexEnd);
+            char szH[200];
+            sprintf(szH, "[HALT-SITE A: client bridge-span scan] veh %lu head %d,%d runend %d,%d "
+                         "scanstop %d,%d type %d units 0x%x iLen %d maxspan %d\n",
+                    (unsigned long)GetID(), m_ptHead.x / 2, m_ptHead.y / 2,
+                    m_hexEnd.X(), m_hexEnd.Y(), _hexEnd.X(), _hexEnd.Y(),
+                    pStop ? (int)pStop->GetType() : -1,
+                    pStop ? (unsigned)pStop->GetUnits() : 0u, iLen, iMaxSpan);
+            EnBridgeDbgLog(szH);
+        }
+#endif
+        if (GetOwner()->IsMe())
+            theGame.Event(EVENT_ROAD_HALTED, EVENT_WARN, this);
+        else {
+            CMsgBuildRoad msg(this);
+            msg.ToErr();
+            theGame.PostToClient(GetOwner(), &msg, sizeof(msg));
+        }
+        return;
+    }
 
-		// if its empty then no point in doing the below
-		if (fBiggest > 0.0)
-			{
-			// set fMul to what is needed to make them all even
-			for (iOn=0; iOn<CMaterialTypes::GetNumTypes(); iOn++)
-				if (iUse[iOn] > 0)
-					fMul[iOn] = fBiggest - fMul[iOn];
-			int iTotal = 0;
-			for (iOn=0; iOn<CMaterialTypes::GetNumTypes(); iOn++)
-				if (fMul[iOn] > 0.0)
-					iTotal += (int) ((float) iUse[iOn] * fMul[iOn]);
-			// reduce the multiplier if not enough room
-			if (iTotal > iLeft)
-				{
-				float fReduce = (float) iLeft / (float) iTotal;
-				for (iOn=0; iOn<CMaterialTypes::GetNumTypes(); iOn++)
-					if (fMul[iOn] > 0.0)
-						fMul[iOn] *= fReduce;
-				}
-			// FINALLY - stock up to make everyone even
-			for (iOn=0; iOn<CMaterialTypes::GetNumTypes(); iOn++)
-				if (fMul[iOn] > 0.0)
-					{
-					int iNum = __min (iLeft, (int) ((float) iUse[iOn] * fMul[iOn]));
-					iNum = __min (iNum, pBldg->GetStore (iOn));
-					pBldg->AddToStore (iOn, -iNum);
-					AddToStore ( iOn, iNum );
-					iLeft -= iNum;
-					}
+    // let's build a bridge
+    CMsgBuildBridge msg(this, _hexEnd);
+    theGame.PostToServer(&msg, sizeof(msg));
+}
 
-			// return if full
-			if (iLeft <= 0)
-				{
-				// its an event
-				ASSERT_STRICT (iLeft >= 0);
-				pBldg->EventOff ();
-				pBldg->MaterialChange ();
-				MaterialChange ();
-				return;
-				}
-			}	// we are brought up even
+// Effective cargo capacity = base (per-type data) scaled by the owner's
+// cargo_handling research (+10% per level, CPlayer::GetCargoPct). Routed through
+// here so auto/route AND hand-loaded trucks share the same teched limit, and the
+// over-capacity TRAP (CUnit::GetTotalStore) checks the correct value.
+int CVehicle::GetMaxMaterials() const {
+    return ( GetData()->GetMaxMaterials() * GetOwner()->GetCargoPct() ) / 100;
+}
 
-		// ok, now fill the rest proportionally
-		int iTotal = 0;
-		for (iOn=0; iOn<CMaterialTypes::GetNumTypes(); iOn++)
-			iTotal += iUse [iOn];
-		if (iTotal > 0)
-			for (iOn=0; iOn<CMaterialTypes::GetNumTypes(); iOn++)
-				if (iUse [iOn] > 0)
-					{
-					int iNeed = (iUse[iOn] * iLeft) / iTotal;
-					iTotal -= iUse[iOn];
-					iNeed = __min (iNeed, iLeft);
-					iNeed = __min (iNeed, pBldg->GetStore (iOn));
-					pBldg->AddToStore (iOn, -iNeed);
-					AddToStore ( iOn, iNeed );
-					iLeft -= iNeed;
-					}
+// Effective unit-hold capacity = base (per-type data GetPeopleCarry) plus the owner's
+// Landing Craft 2/3 research (+1 each), applied ONLY to a landing craft (a boat that
+// carries units — IsBoat && IsCarrier; cargo ships are IsBoat && IsTransport). Routed
+// through here so EVERY capacity gate (auto-load, the net load handler + its assert,
+// and the UI) agrees on the teched limit.
+int CVehicle::GetEffPeopleCarry() {
+    int iBase = GetData()->GetPeopleCarry();
+    if ( GetData()->IsBoat() && GetData()->IsCarrier() && GetOwner() )
+        // Scale by MAX_CARGO: each tech = +1 unit slot (a vehicle costs MAX_CARGO). The raw
+        // +1/+2 left partial room the "enter" click accepted but the load gate rejected.
+        iBase += GetOwner()->GetLandingCraftBonus() * MAX_CARGO;
+    return iBase;
+}
 
-		// return if full
-		ASSERT_STRICT (iLeft >= 0);
-		pBldg->EventOff ();
-		pBldg->MaterialChange ();
-		MaterialChange ();
-		return; 
-		}	// if pBldgDest
+void CVehicle::Load() {
 
-	// ok, if we don't know the dest, we go for equal amounts
-	int iTypesHave = CMaterialTypes::GetNumTypes();
-	for (int iOn=0; iOn<CMaterialTypes::GetNumTypes(); iOn++)
-		if (iCant[iOn] > 0)
-			iTypesHave--;
+    ASSERT_STRICT (GetOwner()->IsLocal());
 
-	int iTypesLeft = iTypesHave;
-	for (int iTry=0; (iTry<iTypesHave)&&(iLeft>0); iTry++)
-		{
-		if (iTypesLeft <= 0)
-			break;
-		int iNeed = __max (1, iLeft / iTypesLeft);
-		iTypesLeft = iTypesHave;
-		for (iOn=0; iOn<CMaterialTypes::GetNumTypes(); iOn++)
-			if (iCant[iOn] == 0)
-				{
-				if (pBldg->GetStore (iOn) == 0)
-					iTypesLeft--;
-				else
-				  {
-					int iNum = __min (iNeed, pBldg->GetStore (iOn));
-					pBldg->AddToStore (iOn, -iNum);
-					AddToStore ( iOn, iNum );
-					iLeft -= iNum;
-					if (iLeft <= 0)
-						break;
-					}
-				}
-		}
+    CBuilding *pBldg = theBuildingHex._GetBuilding(m_ptHead);
+    if (pBldg == NULL) {
+        ASSERT_STRICT (FALSE);
+        return;
+    }
+    ASSERT_STRICT_VALID (pBldg);
 
-	ASSERT_STRICT (iLeft >= 0);
-	pBldg->EventOff ();
-	pBldg->MaterialChange ();
-	MaterialChange ();
+    // see if full
+    int iLeft = GetMaxMaterials() - GetTotalStore();
+    if (iLeft <= 0)
+        return;
+
+    // if under construction we don't take anything
+    if (pBldg->IsConstructing())
+        return;
+
+    int iCant[CMaterialTypes::num_types];
+    pBldg->GetInputs(iCant);
+
+    // take a look at where we are going to figure out what to load up
+    // this is generally only a problem if loading at a warehouse
+    // BUGS #99: this walk is a cycle over the route that stops when it returns to the
+    // cursor it started from - with m_pos NULL the (pos == m_pos) test can never fire
+    // (pos is re-seated to the head every time it runs off the tail), so a NULL cursor
+    // spins forever unless an unload stop happens to be found. #99 makes a saved NULL
+    // cursor load back as NULL, so take the same heal SetEvent(route) uses (unit.cpp,
+    // case route: if (m_pos == NULL) m_pos = m_route.GetHeadPosition()) and treat the
+    // head as the cursor for this walk. posStart == m_pos whenever m_pos is non-NULL,
+    // so the loop below is unchanged in every pre-existing case.
+    POSITION posStart = m_pos;
+    if (posStart == NULL)
+        posStart = m_route.GetHeadPosition();
+    POSITION pos = posStart;
+    CBuilding *pBldgDest = NULL;
+    while (TRUE) {
+        if (pos == NULL)
+            pos = m_route.GetHeadPosition();
+        else {
+            m_route.GetNext(pos);
+            if (pos == NULL)
+                pos = m_route.GetHeadPosition();
+        }
+        if ((pos == posStart) || (pos == NULL))
+            break;
+
+        // only care about unloads
+        if (m_route.GetAt(pos)->GetRouteType() == CRoute::unload) {
+            pBldgDest = theBuildingHex._GetBuilding((m_route.GetAt(pos))->GetCoord());
+            if (pBldgDest)
+                break;
+        }
+    }
+
+    // ok, we know where we are going
+    if (pBldgDest != NULL) {
+        if (pBldgDest->IsConstructing()) {
+            int iNeed = 0;
+            for (int iOn = 0; iOn < CMaterialTypes::GetNumBuildTypes(); iOn++)
+                if (pBldgDest->GetStore(iOn) < pBldgDest->NeedToBuild(iOn))
+                    iNeed += pBldgDest->GetBldgMatReq(iOn, TRUE);
+            if (iNeed > 0) {
+                float fMul = __min (1.0f, (float) (iLeft / iNeed));
+                for (int iOn = 0; iOn < CMaterialTypes::GetNumBuildTypes(); iOn++)
+                    if (pBldgDest->GetStore(iOn) < pBldgDest->NeedToBuild(iOn)) {
+                        iNeed = (int) ((float) pBldgDest->GetBldgMatReq(iOn, TRUE) * fMul);
+                        iNeed = __min (iNeed, pBldg->GetStore(iOn));
+                        iNeed = __min (iNeed, pBldgDest->GetBldgMatReq(iOn, TRUE));
+                        pBldg->AddToStore(iOn, -iNeed);
+                        AddToStore(iOn, iNeed);
+                        iLeft -= iNeed;
+                    }
+
+                // return if full
+                if (iLeft <= 0) {
+                    // its an event
+                    ASSERT_STRICT (iLeft >= 0);
+                    pBldg->EventOff();
+                    pBldg->MaterialChange();
+                    MaterialChange();
+                    return;
+                }
+            }
+        }
+
+        // ok, load up with what the dest needs
+        // determine what units the dest building uses that this building doesn't
+        // the GetAccepts stuff is for warehouses
+        int iUse[CMaterialTypes::num_types];
+        pBldgDest->GetInputs(iUse);
+        int iAcpts[CMaterialTypes::num_types];
+        pBldgDest->GetAccepts(iAcpts);
+        for (int iOn = 0; iOn < CMaterialTypes::GetNumTypes(); iOn++)
+            iUse[iOn] = __max (iUse[iOn], iAcpts[iOn]);
+        for (int iOn = 0; iOn < CMaterialTypes::GetNumTypes(); iOn++)
+            if (iCant[iOn] > 0)
+                iUse[iOn] = 0;
+
+        // figure out how many output units the building can make
+        float fMul[CMaterialTypes::num_types];
+        float fBiggest = 0;
+        for (int iOn = 0; iOn < CMaterialTypes::GetNumTypes(); iOn++)
+            if (iUse[iOn] <= 0)
+                fMul[iOn] = 0;
+            else if ((fMul[iOn] = (float) pBldgDest->GetStore(iOn) / (float) iUse[iOn]) > fBiggest)
+                fBiggest = fMul[iOn];
+
+        // if its empty then no point in doing the below
+        if (fBiggest > 0.0) {
+            // set fMul to what is needed to make them all even
+            for (int iOn = 0; iOn < CMaterialTypes::GetNumTypes(); iOn++)
+                if (iUse[iOn] > 0)
+                    fMul[iOn] = fBiggest - fMul[iOn];
+            int iTotal = 0;
+            for (int iOn = 0; iOn < CMaterialTypes::GetNumTypes(); iOn++)
+                if (fMul[iOn] > 0.0)
+                    iTotal += (int) ((float) iUse[iOn] * fMul[iOn]);
+            // reduce the multiplier if not enough room
+            if (iTotal > iLeft) {
+                float fReduce = (float) iLeft / (float) iTotal;
+                for (int iOn = 0; iOn < CMaterialTypes::GetNumTypes(); iOn++)
+                    if (fMul[iOn] > 0.0)
+                        fMul[iOn] *= fReduce;
+            }
+            // FINALLY - stock up to make everyone even
+            for (int iOn = 0; iOn < CMaterialTypes::GetNumTypes(); iOn++)
+                if (fMul[iOn] > 0.0) {
+                    int iNum = __min (iLeft, (int) ((float) iUse[iOn] * fMul[iOn]));
+                    iNum = __min (iNum, pBldg->GetStore(iOn));
+                    pBldg->AddToStore(iOn, -iNum);
+                    AddToStore(iOn, iNum);
+                    iLeft -= iNum;
+                }
+
+            // return if full
+            if (iLeft <= 0) {
+                // its an event
+                ASSERT_STRICT (iLeft >= 0);
+                pBldg->EventOff();
+                pBldg->MaterialChange();
+                MaterialChange();
+                return;
+            }
+        }    // we are brought up even
+
+        // ok, now fill the rest proportionally
+        int iTotal = 0;
+        for (int iOn = 0; iOn < CMaterialTypes::GetNumTypes(); iOn++)
+            iTotal += iUse[iOn];
+        if (iTotal > 0)
+            for (int iOn = 0; iOn < CMaterialTypes::GetNumTypes(); iOn++)
+                if (iUse[iOn] > 0) {
+                    int iNeed = (iUse[iOn] * iLeft) / iTotal;
+                    iTotal -= iUse[iOn];
+                    iNeed = __min (iNeed, iLeft);
+                    iNeed = __min (iNeed, pBldg->GetStore(iOn));
+                    pBldg->AddToStore(iOn, -iNeed);
+                    AddToStore(iOn, iNeed);
+                    iLeft -= iNeed;
+                }
+
+        // return if full
+        ASSERT_STRICT (iLeft >= 0);
+        pBldg->EventOff();
+        pBldg->MaterialChange();
+        MaterialChange();
+        return;
+    }    // if pBldgDest
+
+    // ok, if we don't know the dest, we go for equal amounts
+    int iTypesHave = CMaterialTypes::GetNumTypes();
+    for (int iOn = 0; iOn < CMaterialTypes::GetNumTypes(); iOn++)
+        if (iCant[iOn] > 0)
+            iTypesHave--;
+
+    int iTypesLeft = iTypesHave;
+    for (int iTry = 0; (iTry < iTypesHave) && (iLeft > 0); iTry++) {
+        if (iTypesLeft <= 0)
+            break;
+        int iNeed = __max (1, iLeft / iTypesLeft);
+        iTypesLeft = iTypesHave;
+        for (int iOn = 0; iOn < CMaterialTypes::GetNumTypes(); iOn++)
+            if (iCant[iOn] == 0) {
+                if (pBldg->GetStore(iOn) == 0)
+                    iTypesLeft--;
+                else {
+                    int iNum = __min (iNeed, pBldg->GetStore(iOn));
+                    pBldg->AddToStore(iOn, -iNum);
+                    AddToStore(iOn, iNum);
+                    iLeft -= iNum;
+                    if (iLeft <= 0)
+                        break;
+                }
+            }
+    }
+
+    ASSERT_STRICT (iLeft >= 0);
+    pBldg->EventOff();
+    pBldg->MaterialChange();
+    MaterialChange();
 }
 
 // give this building all it can hold of everything it uses that this truck has
 //   note: if under construction this is a larger list.
-void CVehicle::Unload ()
-{
+void CVehicle::Unload() {
 
-	ASSERT_STRICT (GetOwner()->IsLocal ());	
-	
-	CBuilding * pBldg = theBuildingHex._GetBuilding (m_ptHead);
-	if (pBldg == NULL)
-		{
-		ASSERT_STRICT (FALSE);
-		return;
-		}
-	ASSERT_STRICT_VALID (pBldg);
+    ASSERT_STRICT (GetOwner()->IsLocal());
 
-	// construction
-	if (pBldg->IsConstructing ())
-		{
-		for (int iOn=0; iOn<CMaterialTypes::GetNumBuildTypes(); iOn++)
-			{
-			int iNum = pBldg->NeedToBuild (iOn);
-			AddToStore ( iOn, - iNum );
-			pBldg->AddToStore (iOn, iNum);
-			}
-		// we drop through for materials the building will need when done
-		}
+    CBuilding *pBldg = theBuildingHex._GetBuilding(m_ptHead);
+    if (pBldg == NULL) {
+        ASSERT_STRICT (FALSE);
+        return;
+    }
+    ASSERT_STRICT_VALID (pBldg);
 
-	// not construction
-	int iAccepts [CMaterialTypes::num_types];
-	pBldg->GetAccepts (iAccepts);
-	for (int iOn=0; iOn<CMaterialTypes::GetNumTypes(); iOn++)
-		if (iAccepts[iOn] >= 0)
-			{
-			pBldg->AddToStore (iOn, GetStore (iOn) );
-			SetStore ( iOn, 0 );
-			if ((theGame.GetScenario () == 7) && (pBldg->GetStore (CMaterialTypes::copper) > 0))
-				theGame.m_iScenarioVar++;
-			}
+    // construction
+    if (pBldg->IsConstructing()) {
+        for (int iOn = 0; iOn < CMaterialTypes::GetNumBuildTypes(); iOn++) {
+            int iNum = pBldg->NeedToBuild(iOn);
+            AddToStore(iOn, -iNum);
+            pBldg->AddToStore(iOn, iNum);
+        }
+        // we drop through for materials the building will need when done
+    }
 
-	// its an event
-	pBldg->EventOff ();
-	pBldg->MaterialChange ();
-	MaterialChange ();
+    // not construction
+    int iAccepts[CMaterialTypes::num_types];
+    pBldg->GetAccepts(iAccepts);
+    for (int iOn = 0; iOn < CMaterialTypes::GetNumTypes(); iOn++)
+        if (iAccepts[iOn] >= 0) {
+            pBldg->AddToStore(iOn, GetStore(iOn));
+            SetStore(iOn, 0);
+            if ((theGame.GetScenario() == 7) && (pBldg->GetStore(CMaterialTypes::copper) > 0))
+                theGame.m_iScenarioVar++;
+        }
+
+    // its an event
+    pBldg->EventOff();
+    pBldg->MaterialChange();
+    MaterialChange();
 }
 
-void CVehicle::ConstructBuilding ()
-{
+void CVehicle::ConstructBuilding() {
 
-	ASSERT_STRICT_VALID (this);
+    ASSERT_STRICT_VALID (this);
 
-	if (m_pBldg == NULL)
-		return;
-	ASSERT_STRICT_VALID (m_pBldg);
+    if (m_pBldg == NULL) {
+        // run+build with no building = broken state (crane reports "working"
+        // forever; every idle check skips it). Resolve where detected: go
+        // genuinely idle so the normal idle->job machinery recovers it.
+        SetEventAndRoute(none, stop);
+        return;
+    }
+    ASSERT_STRICT_VALID (m_pBldg);
 
-	// get change based on everything
-	int iInc = GetProd (GetOwner()->GetConstProd ());
-	if (iInc <= 0)
-		return;
+    // #38: the site exists and this crane is working it, so the request phase is over.
+    // Set unconditionally rather than only out of order_sent, so a crane loaded from a
+    // save mid-build reaches this state too and its queue still advances on completion.
+    // Finding 3: order_work ALONE is not enough for that crane - it also needs the
+    // identity NextOrder would have given it, or OrderComplete cannot consume the entry.
+    ReestablishOrderIdentity();
+    m_iOrderState = order_work;
 
-	m_pBldg->AddConstDone (iInc);
+    // get change based on everything
+    int iInc = GetProd(GetOwner()->GetConstProd());
+    // Edicts v1: "Fortify Border" (civ-wide) speeds construction of FORTS specifically.
+    if (GetOwner()->GetEdictFortBuildMult() != 1.0f
+        && m_pBldg->GetData()->GetBldgType() == CStructureData::fort)
+        iInc = (int)(iInc * GetOwner()->GetEdictFortBuildMult());
 
-	// update the status
-	MaterialChange ();
+#if EN_AI_PROBES_ECON && defined(_WIN32)
+    // welded-crane instrument: is the work tick producing anything at an
+    // abandoned host, and from what inputs?
+    if (GetOwner()->IsAI() && m_pBldg->IsFlag(CUnit::abandoned)) {
+        static DWORD s_dwNextCwLog = 0;
+        if (theGame.GettimeGetTime() >= s_dwNextCwLog) {
+            s_dwNextCwLog = theGame.GettimeGetTime() + 5000;
+            char szCw[144];
+            sprintf(szCw, "[CONSTABAND] crane %lu host %lu iInc %d dampf %.3f constprod %.3f opers %ld\n",
+                    (unsigned long)GetID(), (unsigned long)m_pBldg->GetID(), iInc,
+                    m_fDamPerfMult, GetOwner()->GetConstProd(), (long)theGame.GetOpersElapsed());
+            OutputDebugStringA(szCw);
+        }
+    }
+#endif
+
+    if (iInc <= 0)
+        return;
+
+    m_pBldg->AddConstDone(iInc);
+
+    // update the status
+    MaterialChange();
 }
 
-void CVehicle::ConstructRoad ()
-{
+void CVehicle::ConstructRoad() {
 
-	ASSERT_STRICT_VALID (this);
+    ASSERT_STRICT_VALID (this);
 
-	int iInc = GetProd (GetOwner()->GetConstProd ());
-	if (iInc <= 0)
-		return;
+    // #38: a road run is under way. Its OWN work state, not order_work: a road has no
+    // building to watch, and it goes briefly idle (event none, stopped) between every
+    // hex while the server answers - which under order_work's "no site => done" rule
+    // would end the order on the first hex.
+    // Finding 3: same as ConstructBuilding - a road run restored from a save never went
+    // through NextOrder, so it has no identity for OrderEnded's consume to match on.
+    ReestablishOrderIdentity();
+    m_iOrderState = order_road;
 
-	CHexCoord _hexHead (GetHexHead ());
-	CHex * pHex = theMap._GetHex (_hexHead);
+    int iInc = GetProd(GetOwner()->GetConstProd());
+    if (iInc <= 0)
+        return;
 
-	// if we are starting see if we can find gas to build with
-	if ((m_iBuildDone <= 0) && (GetOwner()->IsLocal ()))
-		{
-		if (! GetOwner ()->BuildRoad ())
-			{
-			if (GetOwner()->IsMe ())
-				theGame.Event (EVENT_ROAD_HALTED, EVENT_WARN, this);
-			else
-				{
-				CMsgBuildRoad msg (this);
-				msg.ToErr ();
-				theGame.PostToClient ( GetOwner (), &msg, sizeof (msg) );
-				}
-			SetEventAndRoute (none, stop);
-			return;
-			}
+    CHexCoord _hexHead(GetHexHead());
+    CHex *pHex = theMap._GetHex(_hexHead);
 
-		// set to under construction
-		pHex->ChangeToRoad ( _hexHead, FALSE, GetOwner()->IsMe () );
+    // if we are starting see if we can find gas to build with
+    if ((m_iBuildDone <= 0) && (GetOwner()->IsLocal())) {
+        if (!GetOwner()->BuildRoad()) {
+#if EN_GAMEPLAY_PROBES
+            {
+                char szG[160];
+                sprintf(szG, "[HALT-SITE B: ConstructRoad gas check] veh %lu at %d,%d gas %d need %d\n",
+                        (unsigned long)GetID(), _hexHead.X(), _hexHead.Y(),
+                        GetOwner()->GetGasHave(), GAS_PER_ROAD);
+                EnBridgeDbgLog(szG);
+            }
+#endif
+            if (GetOwner()->IsMe())
+                theGame.Event(EVENT_ROAD_HALTED, EVENT_WARN, this);
+            else {
+                CMsgBuildRoad msg(this);
+                msg.ToErr();
+                theGame.PostToClient(GetOwner(), &msg, sizeof(msg));
+            }
+            SetEventAndRoute(none, stop);
+            OrderEnded();   // #38: out of gas ends the run - drop it, don't stall the queue
+            return;
+        }
 
-		if ( pHex->GetVisibility () || GetOwner()->IsMe () )
-			{
-			pHex->m_psprite = theTerrain.GetSprite ( CHex::road, CHex::r_path );
-			_hexHead.SetInvalidated ();
-			}
-		}
+        // set to under construction
+        pHex->ChangeToRoad(_hexHead, FALSE, GetOwner()->IsMe());
 
-	m_iBuildDone += iInc;
+        if (pHex->GetVisibility() || GetOwner()->IsMe()) {
+            pHex->m_psprite = theTerrain.GetSprite(CHex::road, CHex::r_path);
+            _hexHead.SetInvalidated();
+        }
+    }
 
-	// see if we are done
-	int iTotal;
-	CBridge * pBridge = NULL;
-	if (pHex->GetUnits () & CHex::bridge)
-		{
-		pBridge = theBridgeHex.GetBridge (_hexHead)->GetParent();
-		iTotal = pBridge->GetConstTotal ();
-		}
-	else
-		iTotal = theTerrain.GetData (pHex->GetType ()).GetBuildMult () * CTerrainData::GetBuildRoadTime ();
+    m_iBuildDone += iInc;
 
-	if (m_iBuildDone >= iTotal)
-		{
-		// if its not ours we need to wait for a message saying its done
-		if (! GetOwner()->IsLocal ())
-			{
-			m_iBuildDone = iTotal - 1;
-			if (m_iLastPer < 99)
-				m_iLastPer = 99;
-			_SetEventAndRoute (none, stop);
-			return;
-			}
+    // see if we are done
+    int iTotal;
+    CBridge *pBridge = NULL;
+    if (pHex->GetUnits() & CHex::bridge) {
+        CBridgeUnit *pBu = theBridgeHex.GetBridge(_hexHead);
+        if (pBu != NULL)
+            pBridge = pBu->GetParent();
+    }
+    if (pBridge != NULL)
+        iTotal = pBridge->GetConstTotal();
+    else
+        iTotal = theTerrain.GetData(pHex->GetType()).GetBuildMult() * CTerrainData::GetBuildRoadTime();
 
-		m_iLastPer = 100;
-		m_iBuildDone = -1;
+    if (m_iBuildDone >= iTotal) {
+        // if its not ours we need to wait for a message saying its done
+        if (!GetOwner()->IsLocal()) {
+            m_iBuildDone = iTotal - 1;
+            if (m_iLastPer < 99)
+                m_iLastPer = 99;
+            _SetEventAndRoute(none, stop);
+            return;
+        }
 
-		// invalidate
-		// 		mark the bridge as completed
-		if (pBridge != NULL)
-			pBridge->BridgeBuilt ();
+        m_iLastPer = 100;
+        m_iBuildDone = -1;
 
-		// tell everyone
-		CMsgRoadDone msg (this);
-		theGame.PostToAll (&msg, sizeof (msg));
+        // invalidate
+        // 		mark the bridge as completed
+        if (pBridge != NULL)
+            pBridge->BridgeBuilt();
 
-		// update the status
-		MaterialChange ();
+        // tell everyone
+        CMsgRoadDone msg(this);
+        theGame.PostToAll(&msg, sizeof(msg));
 
-		// do the next hex
-		NextRoadHex ();
-		return;
-		}
+        // update the status
+        MaterialChange();
 
-	int iPer = (m_iBuildDone * 100) / iTotal;
-	if (iPer == m_iLastPer)
-		return;
-	m_iLastPer = iPer;
+        // do the next hex
+        NextRoadHex();
+        return;
+    }
 
-	// set the bridges
-	if (pBridge != NULL)
-		pBridge->_SetPer (iPer);
+    int iPer = (m_iBuildDone * 100) / iTotal;
+    if (iPer == m_iLastPer)
+        return;
+    m_iLastPer = iPer;
 
-	// update the status
-	MaterialChange ();
+    // set the bridges
+    if (pBridge != NULL)
+        pBridge->_SetPer(iPer);
+
+    // update the status
+    MaterialChange();
 }
 
-CHexCoord CVehicle::_NextRoadHex (CHexCoord const & _hexOn)
-{
+// #38 ROAD GHOST: the pure step rule, extracted verbatim out of what was this
+// function's body so the road-ghost draw (SDL2Terrain.cpp) can walk the SAME chain
+// _NextRoadHex does - see the header comment where this is declared (vehicle.h).
+CHexCoord CVehicle::RoadStepToward(CHexCoord const &hexFrom, CHexCoord const &hexEnd) {
 
-	// if we're there - return it
-	if (_hexOn == m_hexEnd)
-		return (_hexOn);
-		
-	// nope, go to the next hex
-	// move closer on the longest one (so we go diaganol)
-	int x = CHexCoord::Diff (m_hexEnd.X () - _hexOn.X ());
-	int y = CHexCoord::Diff (m_hexEnd.Y () - _hexOn.Y ());
-	CHexCoord hex (_hexOn);
-	if (abs (x) >= abs (y))
-		{
-		if (x > 0)
-			hex.Xinc ();
-		else
-			hex.Xdec ();
-		}
-	else
-	  {
-		if (y > 0)
-			hex.Yinc ();
-		else
-		  hex.Ydec ();
-	  }
+    // if we're there - return it
+    if (hexFrom == hexEnd)
+        return (hexFrom);
 
-	return (hex);
+    // nope, go to the next hex
+    // move closer on the longest one (so we go diaganol)
+    int x = CHexCoord::Diff(hexEnd.X() - hexFrom.X());
+    int y = CHexCoord::Diff(hexEnd.Y() - hexFrom.Y());
+    CHexCoord hex(hexFrom);
+    if (abs(x) >= abs(y)) {
+        if (x > 0)
+            hex.Xinc();
+        else
+            hex.Xdec();
+    } else {
+        if (y > 0)
+            hex.Yinc();
+        else
+            hex.Ydec();
+    }
+
+    return (hex);
 }
 
-BOOL CVehicle::NextRoadHex ()
-{
+CHexCoord CVehicle::_NextRoadHex(CHexCoord const &_hexOn) {
+    return RoadStepToward(_hexOn, m_hexEnd);
+}
 
-	// nope, go to the next hex
-	CHexCoord _hex (m_ptHead);
+BOOL CVehicle::NextRoadHex() {
 
-	// skip by buildings
-	while (TRUE)
-		{
-		// if this was the last, shut us down
-		if (m_ptHead.SameHex (m_hexEnd))
-			{
-			_SetEventAndRoute (none, stop);
-			theGame.Event (EVENT_ROAD_DONE, EVENT_NOTIFY, this);
-			return (FALSE);
-			}
+    // nope, go to the next hex
+    CHexCoord _hex(m_ptHead);
 
-		// if we're on a bridge - cross it AND OFF
-		CBridgeUnit * pBu = theBridgeHex.GetBridge (_hex);
-		if (pBu != NULL)
-			{
-			_hex = pBu->GetParent()->GetHexEnd ();
-			int iExitDir = (pBu->GetParent())->GetUnitEnd ()->GetExit ();
-			_hex.X () += (iExitDir & 1) ? 2 - iExitDir : 0;
-			_hex.Y () += (! (iExitDir & 1)) ? iExitDir - 1 : 0;
-			_hex.Wrap ();
-			}
-		else
-			_hex = _NextRoadHex (_hex);
+    // a bridge crossing can jump PAST m_hexEnd and then bounce between the
+    // bridge ends forever (an end hex covered by a bridge never == _hex) -
+    // bound the walk; no legit walk exceeds the map size
+    CSize sizeMap = theMap.GetSize();
+    int iStepsLeft = sizeMap.cx + sizeMap.cy;
 
-		// done?
-		if ( _hex == m_hexEnd )
-			break;
+    // skip by buildings
+    while (TRUE) {
+        // if this was the last, shut us down
+        if (m_ptHead.SameHex(m_hexEnd) || (--iStepsLeft < 0)) {
+            _SetEventAndRoute(none, stop);
+            theGame.Event(EVENT_ROAD_DONE, EVENT_NOTIFY, this);
+            OrderEnded();   // #38: THIS is a road run's completion point, per vehicle
+            return (FALSE);
+        }
 
-		// skip around buildings & bridges
-		if ( ! ( theMap._GetHex (_hex)->GetUnits () & (CHex::bldg | CHex::bridge) ) )
-			break;
-		}
+        // if we're on a bridge - cross it AND OFF. GOAL-DIRECTED: cross toward
+        // whichever landing is nearer the run's destination, and if we already
+        // stand on that side, don't cross at all. (v1 crossed blindly to the
+        // END landing and redirected off self - a crane commuted back and
+        // forth over a finished span forever; operator eyes-on 07-13 21:30.)
+        CBridgeUnit *pBu = theBridgeHex.GetBridge(_hex);
+        if (pBu != NULL) {
+            CBridge *pBr = pBu->GetParent();
+            CHexCoord landEnd = pBr->GetHexEnd();
+            int iExitDir = pBr->GetUnitEnd()->GetExit();
+            landEnd.X() += (iExitDir & 1) ? 2 - iExitDir : 0;
+            landEnd.Y() += (!(iExitDir & 1)) ? iExitDir - 1 : 0;
+            landEnd.Wrap();
+            CHexCoord landStart = pBr->GetHexStart();
+            iExitDir = pBr->GetUnitStart()->GetExit();
+            landStart.X() += (iExitDir & 1) ? 2 - iExitDir : 0;
+            landStart.Y() += (!(iExitDir & 1)) ? iExitDir - 1 : 0;
+            landStart.Wrap();
 
-	SetDestAndMode (_hex, center);
-	return (TRUE);
+            CHexCoord landTo = (CHexCoord::Dist(landEnd, m_hexEnd) <= CHexCoord::Dist(landStart, m_hexEnd))
+                                   ? landEnd : landStart;
+            // the 1996 jump fabricates the landing with no land check - a
+            // water landTo flowed into SetDestAndMode as an undrivable dest.
+            // Try the other landing; both wet = the run is done (designed exit)
+            if (theMap._GetHex(landTo)->IsWater()) {
+                CHexCoord landOther = (landTo == landEnd) ? landStart : landEnd;
+                if (!theMap._GetHex(landOther)->IsWater())
+                    landTo = landOther;
+                else {
+                    _SetEventAndRoute(none, stop);
+                    theGame.Event(EVENT_ROAD_DONE, EVENT_NOTIFY, this);
+                    return (FALSE);
+                }
+            }
+#if EN_AI_PROBES_ECON && defined(_WIN32)
+            { char szJ[128]; sprintf(szJ, "[BRIDGEPONG] veh %lu at %d,%d jump-> %d,%d (runend %d,%d)\n",
+                    (unsigned long)GetID(), m_ptHead.x / 2, m_ptHead.y / 2, landTo.X(), landTo.Y(),
+                    m_hexEnd.X(), m_hexEnd.Y()); OutputDebugStringA(szJ); }
+#endif
+            if (m_ptHead.SameHex(landTo))
+                // already on the destination side: never re-cross; take the
+                // plain geometric step instead (bounded walk handles the rest)
+                _hex = _NextRoadHex(_hex);
+            else
+                _hex = landTo;
+        } else
+            _hex = _NextRoadHex(_hex);
+
+        // done?
+        if (_hex == m_hexEnd)
+            break;
+
+        // skip around buildings & bridges
+        if (!(theMap._GetHex(_hex)->GetUnits() & (CHex::bldg | CHex::bridge)))
+            break;
+    }
+
+#if EN_AI_PROBES_ECON && defined(_WIN32)
+    // ROADLOOP probe: a next-hex resolving to the crane's own hex re-runs
+    // ConstructRoad on the same spot forever; a water resolve is undrivable
+    {
+        CHex *pHexN = theMap._GetHex(_hex);
+        BOOL bSelf = m_ptHead.SameHex(_hex);
+        BOOL bWater = (pHexN != NULL) && pHexN->IsWater();
+        if (bSelf || bWater) {
+            CBridgeUnit *pBuL = theBridgeHex.GetBridge(_hex);
+            char szL[176];
+            sprintf(szL, "[ROADLOOP] veh %lu head %d,%d next %d,%d end %d,%d self %d water %d nextbridge %d exit %d\n",
+                    (unsigned long)GetID(), m_ptHead.x / 2, m_ptHead.y / 2, _hex.X(), _hex.Y(),
+                    m_hexEnd.X(), m_hexEnd.Y(), (int)bSelf, (int)bWater, (int)(pBuL != NULL),
+                    pBuL ? (pBuL->GetParent())->GetUnitEnd()->GetExit() : -1);
+            OutputDebugStringA(szL);
+        }
+    }
+#endif
+    SetDestAndMode(_hex, center);
+    return (TRUE);
 }
 
 // can't shoot at this guy anymore
-void CVehicle::StopShooting (CUnit * pNewTarget)
-{
+void CVehicle::StopShooting(CUnit *pNewTarget) {
 
-	// if any vehicles are shooting at us - have them hit our owner
-	POSITION pos = theVehicleMap.GetStartPosition ();
-	while (pos != NULL)
-		{
-		DWORD dwID;
-		CVehicle *pVeh;
-		theVehicleMap.GetNextAssoc (pos, dwID, pVeh);
-		ASSERT_STRICT_VALID (pVeh);
-		if (pVeh->GetTarget () == this)
-			{
-			pVeh->_SetTarget (pNewTarget);
-			if (pVeh->GetOwner()->IsAI ())
-				{
-				CMsgOutOfLos msg (pVeh, this);
-				theGame.PostToClient (pVeh->GetOwner(), &msg, sizeof (msg));
-				}
-			}
-		}
+    // if any vehicles are shooting at us - have them hit our owner
+    POSITION pos = theVehicleMap.GetStartPosition();
+    while (pos != NULL) {
+        DWORD dwID;
+        CVehicle *pVeh;
+        theVehicleMap.GetNextAssoc(pos, dwID, pVeh);
+        ASSERT_STRICT_VALID (pVeh);
+        if (pVeh->GetTarget() == this) {
+            pVeh->_SetTarget(pNewTarget);
+            if (pVeh->GetOwner()->IsAI()) {
+                CMsgOutOfLos msg(pVeh, this);
+                theGame.PostToClient(pVeh->GetOwner(), &msg, sizeof(msg));
+            }
+        }
+    }
 
-	// same for buildings
-	pos = theBuildingMap.GetStartPosition ();
-	while (pos != NULL)
-		{
-		DWORD dwID;
-		CBuilding *pBldg;
-		theBuildingMap.GetNextAssoc (pos, dwID, pBldg);
-		ASSERT_STRICT_VALID (pBldg);
-		if (pBldg->GetTarget () == this)
-			{
-			pBldg->_SetTarget (pNewTarget);
-			if (pBldg->GetOwner()->IsAI ())
-				{
-				CMsgOutOfLos msg (pBldg, this);
-				theGame.PostToClient (GetOwner(), &msg, sizeof (msg));
-				}
-			}
-		}
+    // same for buildings
+    pos = theBuildingMap.GetStartPosition();
+    while (pos != NULL) {
+        DWORD dwID;
+        CBuilding *pBldg;
+        theBuildingMap.GetNextAssoc(pos, dwID, pBldg);
+        ASSERT_STRICT_VALID (pBldg);
+        if (pBldg->GetTarget() == this) {
+            pBldg->_SetTarget(pNewTarget);
+            if (pBldg->GetOwner()->IsAI()) {
+                CMsgOutOfLos msg(pBldg, this);
+                // BUGS #104: the out-of-LOS message names the BUILDING as the attacker (ai.cpp gates delivery on attacker-owner agreement),
+                // so it must go to the building's owner, as the vehicle branch above does; it was posted to the victim's owner and always rejected.
+                theGame.PostToClient(pBldg->GetOwner(), &msg, sizeof(msg));
+            }
+        }
+    }
 
 }
 
-BOOL CVehicle::CanShootAt (CUnit * pTarget)
-{
+BOOL CVehicle::CanShootAt(CUnit *pTarget) {
 
-	if (pTarget == NULL)
-		{
-		TRAP ();
-		return (FALSE);
-		}
+    if (pTarget == NULL) {
+        TRAP();
+        return (FALSE);
+    }
 
-	int iDir;
-	if (GetTurret () != NULL)
-		{
-		TRAP ();
-		iDir = GetTurret()->m_iDir;
-		}
-	else
-		iDir = m_iDir;
+    int iDir;
+    if (GetTurret() != NULL) {
+        TRAP();
+        iDir = GetTurret()->m_iDir;
+    } else
+        iDir = m_iDir;
 
-	int iTargetDir = FastATan (CMapLoc::Diff (pTarget->GetWorldPixels().x - m_maploc.x),
-															CMapLoc::Diff (pTarget->GetWorldPixels().y - m_maploc.y));
+    int iTargetDir = FastATan(CMapLoc::Diff(pTarget->GetWorldPixels().x - m_maploc.x),
+                              CMapLoc::Diff(pTarget->GetWorldPixels().y - m_maploc.y));
 
-	int iSwing;
-	// these units can shoot in a 45 degree angle off their front
-	if ( GetData()->GetVehFlags () & CTransportData::FLshoot180 )
-		iSwing = FULL_ROT / 8;
-	else
-		iSwing = FULL_ROT / 32;
+    int iSwing;
+    // these units can shoot in a 45 degree angle off their front
+    if (GetData()->GetVehFlags() & CTransportData::FLshoot180)
+        iSwing = FULL_ROT / 8;
+    else
+        iSwing = FULL_ROT / 32;
 
-	int iRange = ( ( ( iTargetDir - iDir ) + 64 ) & 127 ) - 64;
-	// we must be within 45 degrees (stop next to problems with below)
-	if ( abs (iRange) > FULL_ROT/8 )
-		return (FALSE);
+    int iRange = (((iTargetDir - iDir) + 64) & 127) - 64;
+    // we must be within 45 degrees (stop next to problems with below)
+    if (abs(iRange) > FULL_ROT / 8)
+        return (FALSE);
 
-	iRange = __minmax ( - iSwing, iSwing, iRange );
-	iDir += iRange;
-	iDir = __roll ( 0, FULL_ROT, iDir );
+    iRange = __minmax(-iSwing, iSwing, iRange);
+    iDir += iRange;
+    iDir = __roll(0, FULL_ROT, iDir);
 
-	// why waste time below?
-	if ( iDir == iTargetDir )
-		return (TRUE);
+    // why waste time below?
+    if (iDir == iTargetDir)
+        return (TRUE);
 
-	// find dist to target
-	int xDif = abs ( CMapLoc::Diff ( pTarget->GetWorldPixels().x - m_maploc.x ) );
-	int yDif = abs ( CMapLoc::Diff ( pTarget->GetWorldPixels().y - m_maploc.y ) );
-	int iDif = __max ( xDif, yDif );
-	int xDir;
-	if (iDir < 32)
-		xDir = 64 - iDir;
-	else
-		if (iDir > 96)
-			xDir = 192 - iDir;
-		else
-			xDir = iDir;
-	int yDir = iDir <= 64 ? iDir : 128 - iDir;
+    // find dist to target
+    int xDif = abs(CMapLoc::Diff(pTarget->GetWorldPixels().x - m_maploc.x));
+    int yDif = abs(CMapLoc::Diff(pTarget->GetWorldPixels().y - m_maploc.y));
+    int iDif = __max (xDif, yDif);
+    int xDir;
+    if (iDir < 32)
+        xDir = 64 - iDir;
+    else if (iDir > 96)
+        xDir = 192 - iDir;
+    else
+        xDir = iDir;
+    int yDir = iDir <= 64 ? iDir : 128 - iDir;
 
-	// find hit maploc
-	CMapLoc ml;
-	ml.x = m_maploc.x + ( iDif * ( 64 - xDir ) ) / 32;
-	ml.y = m_maploc.y - ( iDif * ( 32 - yDir ) ) / 32;
-	ml.Wrap ();
+    // find hit maploc
+    CMapLoc ml;
+    ml.x = m_maploc.x + (iDif * (64 - xDir)) / 32;
+    ml.y = m_maploc.y - (iDif * (32 - yDir)) / 32;
+    ml.Wrap();
 
-	// how far away from target - iDif is measure of how far from target
-	//   so a target further away must be a smaller angle off
-	int iShift = 0;
-	iDif >>= 2;
-	while (iDif)
-		{
-		iDif >>= 1;
-		iShift ++;
-		}
-	xDif = abs ( CMapLoc::Diff ( pTarget->GetWorldPixels().x - ml.x ) ) >> iShift;
-	yDif = abs ( CMapLoc::Diff ( pTarget->GetWorldPixels().y - ml.y ) ) >> iShift;
-	iDif = __max ( xDif, yDif );
+    // how far away from target - iDif is measure of how far from target
+    //   so a target further away must be a smaller angle off
+    int iShift = 0;
+    iDif >>= 2;
+    while (iDif) {
+        iDif >>= 1;
+        iShift++;
+    }
+    xDif = abs(CMapLoc::Diff(pTarget->GetWorldPixels().x - ml.x)) >> iShift;
+    yDif = abs(CMapLoc::Diff(pTarget->GetWorldPixels().y - ml.y)) >> iShift;
+    iDif = __max (xDif, yDif);
 
-	// see if it's us
-	if (pTarget->GetUnitType () == CUnit::building)
-		{
-		// if within the furthest possible square...
-		CBuilding * pBldg = (CBuilding *) pTarget;
-		if ( iDif/2 <= __max ( pTarget->GetData()->GetCX (), pTarget->GetData()->GetCY ()) )
-			return (TRUE);
-		return (FALSE);
-		}
+    // see if it's us
+    if (pTarget->GetUnitType() == CUnit::building) {
+        // if within the furthest possible square...
+        CBuilding *pBldg = (CBuilding *) pTarget;
+        if (iDif / 2 <= __max (pTarget->GetData()->GetCX(), pTarget->GetData()->GetCY()))
+            return (TRUE);
+        return (FALSE);
+    }
 
-	// vehicle
-	CVehicle * pVeh = (CVehicle *) pTarget;
-	if (GetData()->GetVehFlags () & CTransportData::FL1hex)
-		return ( iDif <= 1 );
+    // vehicle
+    CVehicle *pVeh = (CVehicle *) pTarget;
+    if (GetData()->GetVehFlags() & CTransportData::FL1hex)
+        return (iDif <= 1);
 
-	return ( iDif <= 2 );
+    return (iDif <= 2);
 }
 
-void CVehicle::DestroyLoadWindow ()
-{
+void CVehicle::ShowLoadDialog() {
 
-	if ( (m_pDlgLoad != NULL) && (m_pDlgLoad->m_hWnd != NULL) )
-		m_pDlgLoad->DestroyWindow ();
-	else
-		delete m_pDlgLoad;
-	m_pDlgLoad = NULL;
+    if (!GetData()->IsTransport()) {
+        TRAP();
+        return;
+    }
+
+    // Non-modal so the game (and, in MP, the network loop) keeps running while it's
+    // open — DoModal froze the simulation. Owned by this vehicle; closed on death via
+    // DestroyAllWindows; onDone clears the pointer and GameWindow deletes the object.
+    if (!theApp.m_gameWindow)
+        return;
+    if (!m_pSdlLoad) {
+        m_pSdlLoad = new SDL2LoadTruckDialog(theApp.m_gameWindow.get(), this);
+        m_pSdlLoad->ShowNonModal([this](int) { m_pSdlLoad = nullptr; });
+    } else {
+        m_pSdlLoad->RaiseAndAlert();   // already open → bring it forward
+    }
 }
 
-CDlgLoadTruck * CVehicle::GetDlgLoad ()
-{
+void CVehicle::SetBridgeHex(CHexCoord const &hexStart, CHexCoord const &hexEnd, DWORD dwID, int iAlt) {
 
-	if (! GetData()->IsTransport ())
-		{
-		TRAP ();
-		return (NULL);
-		}
+    // put bridge buildings there
+    CBridge::Create(hexStart, hexEnd, dwID, iAlt);
 
-	CWndArea * pWndArea = theAreaList.GetTop ();
-	if (m_pDlgLoad == NULL)
-		m_pDlgLoad = new CDlgLoadTruck (pWndArea, this);
-	if (m_pDlgLoad->m_hWnd == NULL)
-		m_pDlgLoad->Create (IDD_TRUCK, pWndArea);
-
-	m_pDlgLoad->ShowWindow (SW_RESTORE);
-	m_pDlgLoad->SetFocus ();
-
-	return (m_pDlgLoad);
+    // set the vehicle to bridge building
+    ASSERT (hexStart.SameHex(m_ptHead));
+    SetEvent(build_road);
 }
 
-void CVehicle::SetBridgeHex (CHexCoord const & hexStart, CHexCoord const & hexEnd, DWORD dwID, int iAlt)
-{
+void CVehicle::SetTransport(CVehicle *pVehCarrier) {
 
-	// put bridge buildings there
-	CBridge::Create (hexStart, hexEnd, dwID, iAlt);
+    // if we're on another vehicle, don't do it
+    if (m_pTransport != NULL)
+        return;
 
-	// set the vehicle to bridge building
-	ASSERT (hexStart.SameHex (m_ptHead));
-	SetEvent (build_road);
+    // can't load on ourself
+    if (pVehCarrier == this) {
+        TRAP();
+        return;
+    }
+
+    // do we have room
+    int iSize;
+    if (GetData()->IsPeople())
+        iSize = 1;
+    else
+        iSize = MAX_CARGO;
+    if (pVehCarrier->m_iCargoSize + iSize > pVehCarrier->GetEffPeopleCarry()) {
+        TRAP();
+        return;
+    }
+
+    _SetEventAndRoute(CVehicle::none, CVehicle::stop);
+    m_pTransport = pVehCarrier;
+
+    m_hexDest = m_ptDest = m_ptHead = pVehCarrier->m_ptHead;
+    if (GetData()->GetVehFlags() & CTransportData::FL1hex)
+        m_ptTail = m_ptHead;
+    else
+        m_ptTail = pVehCarrier->m_ptTail;
+    SetLoc(TRUE);
+    ZeroMoveParams();
+    DeletePath();
+
+    pVehCarrier->m_lstCargo.AddTail(this);
+    pVehCarrier->m_iCargoSize += iSize;
+
+    m_pVehLoadOn = NULL;
 }
 
-void CVehicle::SetTransport ( CVehicle * pVehCarrier )
-{
+void CVehicle::DestroyAllWindows() {
 
-	// if we're on another vehicle, don't do it
-	if (m_pTransport != NULL)
-		return;
+    DestroyRouteWindow();
+    DestroyBuildWindow();
 
-	// can't load on ourself
-	if ( pVehCarrier == this )
-		{
-		TRAP ();
-		return;
-		}
-
-	// do we have room
-	int iSize;
-	if (GetData()->IsPeople ())
-		iSize = 1;
-	else
-		iSize = MAX_CARGO;
-	if ( pVehCarrier->m_iCargoSize + iSize > pVehCarrier->GetData()->GetPeopleCarry () )
-		{
-		TRAP ();
-		return;
-		}
-
-	_SetEventAndRoute (CVehicle::none, CVehicle::stop);
-	m_pTransport = pVehCarrier;
-
-	m_hexDest = m_ptDest = m_ptHead = pVehCarrier->m_ptHead;
-	if (GetData ()->GetVehFlags () & CTransportData::FL1hex)
-		m_ptTail = m_ptHead;
-	else
-		m_ptTail = pVehCarrier->m_ptTail;
-	SetLoc (TRUE);
-	ZeroMoveParams ();
-	DeletePath ();
-
-	pVehCarrier->m_lstCargo.AddTail ( this );
-	pVehCarrier->m_iCargoSize += iSize;
-
-	m_pVehLoadOn = NULL;
-}
-
-void CVehicle::DestroyAllWindows () 
-{ 
-
-	DestroyRouteWindow (); 
-	DestroyBuildWindow (); 
-	DestroyLoadWindow (); 
+    // Close the non-modal load-cargo dialog if open, so it can't outlive this
+    // vehicle (EndDialog destroys its window + triggers GameWindow cleanup; the
+    // onDone lambda nulls m_pSdlLoad).
+    if (m_pSdlLoad)
+        m_pSdlLoad->EndDialog(0);
 }
 
 // dump the contents of this truck in the nearest warehouse and give to auto router
-void CVehicle::DumpContents ()
-{
+void CVehicle::DumpContents() {
 
-	// deselect it
-	CWndArea * pWndArea = theAreaList.GetTop ();
-	if (pWndArea)
-		pWndArea->SubSelectUnit ( this );
+    // deselect it
+    CWndArea *pWndArea = theAreaList.GetTop();
+    if (pWndArea)
+        pWndArea->SubSelectUnit(this);
 
-	// if no materials - turn it over
-	if (GetTotalStore () == 0)
-		{
-		m_bFlags &= ~ ( hp_controls | dump_contents );
-		theGame.m_pHpRtr->MsgGiveVeh ( this );
-		theGame.m_pHpRtr->MsgArrived ( this );
-		return;
-		}
+    // if no materials - turn it over
+    if (GetTotalStore() == 0) {
+        m_bFlags &= ~(hp_controls | dump_contents);
+        theGame.m_pHpRtr->MsgGiveVeh(this);
+        theGame.m_pHpRtr->MsgArrived(this);
+        return;
+    }
 
-	// if we are in any building - dump here
-	CBuilding * pBldg = theBuildingHex.GetBuilding (m_ptHead);
-	if (pBldg != NULL)
-		{
-		// unload it
-		for (int iOn=0; iOn<CMaterialTypes::GetNumTypes(); iOn++)
-			{
-			pBldg->AddToStore (iOn, GetStore (iOn) );
-			SetStore ( iOn, 0 );
-			if ((theGame.GetScenario () == 7) && (pBldg->GetStore (CMaterialTypes::copper) > 0))
-				theGame.m_iScenarioVar++;
-			}
+    // if we are in any building - dump here
+    CBuilding *pBldg = theBuildingHex.GetBuilding(m_ptHead);
+    if (pBldg != NULL) {
+        // unload it
+        for (int iOn = 0; iOn < CMaterialTypes::GetNumTypes(); iOn++) {
+            pBldg->AddToStore(iOn, GetStore(iOn));
+            SetStore(iOn, 0);
+            if ((theGame.GetScenario() == 7) && (pBldg->GetStore(CMaterialTypes::copper) > 0))
+                theGame.m_iScenarioVar++;
+        }
 
-		pBldg->EventOff ();
-		m_bFlags &= ~ ( hp_controls | dump_contents );
-		theGame.m_pHpRtr->MsgGiveVeh ( this );
-		theGame.m_pHpRtr->MsgArrived ( this );
-		return;
-		}
+        pBldg->EventOff();
+        m_bFlags &= ~(hp_controls | dump_contents);
+        theGame.m_pHpRtr->MsgGiveVeh(this);
+        theGame.m_pHpRtr->MsgArrived(this);
+        return;
+    }
 
-	// find the closest warehouse
-	int iDist = 200000;
-	CBuilding * pDest = NULL;
-	POSITION pos = theBuildingMap.GetStartPosition ();
-	CHexCoord _hexTruck ( m_ptHead );
-	while (pos != NULL)
-		{
-		DWORD dwID;
-		CBuilding *pBldg;
-		theBuildingMap.GetNextAssoc (pos, dwID, pBldg);
-		ASSERT_STRICT_VALID (pBldg);
-		if ((pBldg->GetOwner()->IsMe ()) && ( (pBldg->GetData()->GetType () == CStructureData::rocket) ||
-																					(pBldg->GetData()->GetType () == CStructureData::warehouse) ) )
-			{
-			int _iDist = CHexCoord::Dist ( _hexTruck, pBldg->GetHex () );
-			if ( (pDest == NULL) || (_iDist < iDist) )
-				{
-				iDist = _iDist;
-				pDest = pBldg;
-				}
-			}
-		}
+    // find the closest warehouse
+    int iDist = 200000;
+    CBuilding *pDest = NULL;
+    POSITION pos = theBuildingMap.GetStartPosition();
+    CHexCoord _hexTruck(m_ptHead);
+    while (pos != NULL) {
+        DWORD dwID;
+        CBuilding *pBldg;
+        theBuildingMap.GetNextAssoc(pos, dwID, pBldg);
+        ASSERT_STRICT_VALID (pBldg);
+        if ((pBldg->GetOwner()->IsMe()) && ((pBldg->GetData()->GetType() == CStructureData::rocket) ||
+                                            (pBldg->GetData()->GetType() == CStructureData::warehouse))) {
+            int _iDist = CHexCoord::Dist(_hexTruck, pBldg->GetHex());
+            if ((pDest == NULL) || (_iDist < iDist)) {
+                iDist = _iDist;
+                pDest = pBldg;
+            }
+        }
+    }
 
-	// if didn't find - hand it off
-	if ( pDest == NULL )
-		{
-		TRAP ();
-		m_bFlags &= ~ ( hp_controls | dump_contents );
-		theGame.m_pHpRtr->MsgGiveVeh ( this );
-		theGame.m_pHpRtr->MsgArrived ( this );
-		return;
-		}
+    // if didn't find - hand it off. 1996 TRAP assumed "me" always owns a
+    // rocket/warehouse; an OBSERVER player (never landed) owns nothing, so a
+    // gifted loaded truck hits this legitimately - recovery is right below
+    if (pDest == NULL) {
+        EN_TRAP_REMOVED("DumpContents: me owns no rocket/warehouse (observer) - handing veh to router");
+        m_bFlags &= ~(hp_controls | dump_contents);
+        theGame.m_pHpRtr->MsgGiveVeh(this);
+        theGame.m_pHpRtr->MsgArrived(this);
+        return;
+    }
 
-	// send it there
-	m_bFlags |= dump_contents;
-	SetDest ( pDest->GetHex () );
+    // send it there
+    m_bFlags |= dump_contents;
+    SetDest(pDest->GetHex());
 }
 
-void CVehicle::AddSubOwned ( int x, int y )
-{
+void CVehicle::AddSubOwned(int x, int y) {
 
-	TRAP ( ! m_cOwn );
-	TRAP ( (theVehicleHex.GetVehicle (x,y) != NULL) && (theVehicleHex.GetVehicle (x,y) != this) );
+    TRAP(!m_cOwn);
+    TRAP((theVehicleHex.GetVehicle(x, y) != NULL) && (theVehicleHex.GetVehicle(x, y) != this));
 
-	// already have it?
-	for (int iInd=0; iInd<NUM_SUBS_OWNED; iInd++)
-		if ( (SubsOwned[iInd].x == x) && (SubsOwned[iInd].y == y) )
-			return;
+    // already have it?
+    for (int iInd = 0; iInd < NUM_SUBS_OWNED; iInd++)
+        if ((SubsOwned[iInd].x == x) && (SubsOwned[iInd].y == y))
+            return;
 
-	// find a sub to use
-	for (iInd=0; iInd<NUM_SUBS_OWNED; iInd++)
-		if ( SubsOwned[iInd].x == -1 )
-			{
-			SubsOwned [iInd].x = x;
-			SubsOwned [iInd].y = y;
-			return;
-			}
+    // find a sub to use
+    for (int iInd = 0; iInd < NUM_SUBS_OWNED; iInd++)
+        if (SubsOwned[iInd].x == -1) {
+            SubsOwned[iInd].x = x;
+            SubsOwned[iInd].y = y;
+            return;
+        }
 
-	// any dups
-	TRAP ();
-	for (iInd=0; iInd<NUM_SUBS_OWNED-1; iInd++)
-		for (int iChk=iInd+1; iChk<NUM_SUBS_OWNED; iChk++)
-			if ( SubsOwned[iInd] == SubsOwned[iChk] )
-				{
-				TRAP ();
-				SubsOwned [iInd].x = x;
-				SubsOwned [iInd].y = y;
-				return;
-				}
+    // any dups
+    // WAS TRAP() — fired 99,424x in ONE 15-player Full-Military session
+    // (spawn-clump churn: blocked units re-claiming hexes every veh_goto until
+    // the clump disperses). The condition is fully HANDLED by the dup-scan and
+    // slot-steal recovery below; as a TRAP it (a) instantly killed any
+    // undebugged _DEBUG run (the operator's repeated "crashes") and (b) cost
+    // ~100k debugger round-trips per start under dbgcatch (minutes of fake lag).
+    EN_TRAP_REMOVED( "AddSubOwned: claim table full (spawn-clump churn) - recovered below" );
+    for (int iInd = 0; iInd < NUM_SUBS_OWNED - 1; iInd++)
+        for (int iChk = iInd + 1; iChk < NUM_SUBS_OWNED; iChk++)
+            if (SubsOwned[iInd] == SubsOwned[iChk]) {
+                EN_TRAP_REMOVED( "AddSubOwned: duplicate claim slot - reusing it" );
+                SubsOwned[iInd].x = x;
+                SubsOwned[iInd].y = y;
+                return;
+            }
 
-	// oh-oh no free subs - we now see who should be free
-	for (iInd=0; iInd<NUM_SUBS_OWNED; iInd++)
-		if ( (SubsOwned[iInd] != m_ptNext) && (SubsOwned[iInd] != m_ptHead) && (SubsOwned[iInd] != m_ptTail) )
-			{
-			// if we still own it - free it
-			if ( theVehicleHex.GetVehicle ( SubsOwned [iInd] ) == this )
-				theVehicleHex.ReleaseHex ( SubsOwned [iInd], this );
-			SubsOwned [iInd].x = x;
-			SubsOwned [iInd].y = y;
-			return;
-			}
+    // oh-oh no free subs - we now see who should be free
+    for (int iInd = 0; iInd < NUM_SUBS_OWNED; iInd++)
+        if ((SubsOwned[iInd] != m_ptNext) && (SubsOwned[iInd] != m_ptHead) && (SubsOwned[iInd] != m_ptTail)) {
+            // if we still own it - free it
+            if (theVehicleHex.GetVehicle(SubsOwned[iInd]) == this)
+                theVehicleHex.ReleaseHex(SubsOwned[iInd], this);
+            SubsOwned[iInd].x = x;
+            SubsOwned[iInd].y = y;
+            return;
+        }
 
-	// should be impossible
-	TRAP ();
+    // should be impossible
+    TRAP();
 }
 
-void CVehicle::RemoveSubOwned ( int x, int y )
-{
+void CVehicle::RemoveSubOwned(int x, int y) {
 
 #ifdef _TRAP
-	TRAP ( ! m_cOwn );
-	TRAP ( theVehicleHex.GetVehicle (x,y) != this );
-	BOOL bOk = FALSE;
+    TRAP ( ! m_cOwn );
+    TRAP ( theVehicleHex.GetVehicle (x,y) != this );
+    BOOL bOk = FALSE;
 #endif
 
-	// remove from the list
-	for (int iInd=0; iInd<NUM_SUBS_OWNED; iInd++)
-		if ( ( SubsOwned[iInd].x == x ) && ( SubsOwned[iInd].y == y ) )
-			{
-			SubsOwned [iInd].x = -1;
+    // remove from the list
+    for (int iInd = 0; iInd < NUM_SUBS_OWNED; iInd++)
+        if ((SubsOwned[iInd].x == x) && (SubsOwned[iInd].y == y)) {
+            SubsOwned[iInd].x = -1;
 
 #ifdef _TRAP
-			bOk = TRUE;
+            bOk = TRUE;
 #endif
-			}
+        }
 
-	// shouldn't happen
+    // shouldn't happen
 #ifdef _TRAP
-	TRAP ( ! bOk );
+    TRAP ( ! bOk );
 #endif
 }

@@ -10,8 +10,8 @@
 ////////////////////////////////////////////////////////////////////////////
 
 #include "stdafx.h"
-#include "CAIQueue.hpp"
-#include "CAIMsg.hpp"
+#include "caiqueue.hpp"
+#include "caimsg.hpp"
 
 IMPLEMENT_SERIAL( CAIQueue, CObList, 0 );
 

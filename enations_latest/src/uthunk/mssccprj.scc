@@ -1,0 +1,5 @@
+SCC = This is a Source Code Control file
+
+[doswin16.mak]
+SCC_Aux_Path = "\\jasmine\vss\tools"
+SCC_Project_Name = "$/lastplnt/src/uthunk", GBAAAAAA

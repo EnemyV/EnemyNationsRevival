@@ -14,31 +14,38 @@
 #include "racedata.h"
 #include "research.h"
 #include "vpxfer.h"
+#include "mem_pool.h"
+#include <vector>
 
 class CNetCmd;
 class CUnit;
-class CDlgFile;
+// CDlgFile removed (Phase 2d).
 class CConquerApp;
 class CHPRouter;
 class CStructureData;
 
 
 const int RELATIONS_ALLIANCE = 0;
-const int RELATIONS_PEACE = 1;
-const int RELATIONS_NEUTRAL = 2;
-const int RELATIONS_WAR = 3;
+const int RELATIONS_PEACE    = 1;
+const int RELATIONS_NEUTRAL  = 2;
+const int RELATIONS_WAR      = 3;
 
-const int MSG_POOL_SIZE = ( sizeof (CMsgBldgStat) + 3 ) & ~3;
-
-typedef struct tagAI_INIT {
-		DWORD			dwHdl;
-		CHexCoord	hex;
-		} AI_INIT;
+// Moved to mem_pool.h
+//const int MSG_POOL_SIZE = ( sizeof( CMsgBldgStat ) + 3 ) & ~3;
 
 
-#ifdef _DEBUG
-extern BOOL TestEverything ();
-#endif
+typedef struct tagAI_INIT
+{
+    DWORD_PTR dwHdl;          // holds a CAIMgr* — must be pointer-width on x64
+    CHexCoord hex;
+} AI_INIT;
+
+
+// TestEverything() is referenced from ASSERT( TestEverything() ) call-sites.
+// The SDL2/x64 port's ASSERT (en_assert.h) evaluates its argument in every
+// build (non-fatal but logged), so this must be visible in Release too — not
+// just under _DEBUG.
+extern BOOL TestEverything( );
 
 
 /////////////////////////////////////////////////////////////////////////////
@@ -46,295 +53,1096 @@ extern BOOL TestEverything ();
 
 class CCitCon
 {
-public:
-		CCitCon (int iBldg, CHexCoord const & hex, int iDir);
+  public:
+    CCitCon( int iBldg, CHexCoord const& hex, int iDir );
 
-		int					m_iBldg;				// bldg to build
-		CStructureData const *		m_pData;				// bldg to build
-		CHexCoord		m_hex;					// hex on
-		int					m_iDir;					// direction going
-		int					m_iTryLeft;			// tries left
-		int					m_iStraight;		// hexes we have gone straight
-		int					m_iLeft;				// hexes since a left turn
-		int					m_iRight;				// hexes since a right turn
-		int					m_iNumRoads;		// how many roads made
-		int					m_iBldgDir;			// direction to place bldg in
-		BOOL				m_bTurn;				// if we have created a turn
+    int                   m_iBldg;      // bldg to build
+    CStructureData const* m_pData;      // bldg to build
+    CHexCoord             m_hex;        // hex on
+    int                   m_iDir;       // direction going
+    int                   m_iTryLeft;   // tries left
+    int                   m_iStraight;  // hexes we have gone straight
+    int                   m_iLeft;      // hexes since a left turn
+    int                   m_iRight;     // hexes since a right turn
+    int                   m_iNumRoads;  // how many roads made
+    int                   m_iBldgDir;   // direction to place bldg in
+    BOOL                  m_bTurn;      // if we have created a turn
 };
 
 
 /////////////////////////////////////////////////////////////////////////////
 // CPlayer - a player in the game
 
-class CPlayer	: public CObject
+class CPlayer : public CObject
 {
-friend class CGame;
-public:
-			CPlayer () { _ctor (); }
-			CPlayer (char const *pName, int iNetNum);
-			~CPlayer ();
+    friend class CGame;
 
-			void					Init (char const *pName, int iNet);
-			void					Close ();
+  public:
+    CPlayer( ) { _ctor( ); }
+    CPlayer( char const* pName, int iNetNum );
+    ~CPlayer( );
 
-			BOOL					IsAI () const { ASSERT_STRICT_VALID (this); return ((BOOL) m_bAI); }
-			BOOL					IsLocal () const { ASSERT_STRICT_VALID (this); return ((BOOL) m_bLocal); }
-			BOOL					IsMe () const { ASSERT_STRICT_VALID (this); return ((BOOL) m_bMe); }
-			void					SetAI (BYTE bAI);
-			void					SetLocal (BYTE bLocal);
+    void Init( char const* pName, int iNet );
+    void Close( );
 
-			DWORD					GetPalColor () const { return (m_clrPlyr); }
-			COLORREF			GetRGBColor () const { return (m_rgbPlyr); }
-			void					SetColor (COLORREF clr);
+    BOOL IsAI( ) const
+    {
+        ASSERT_STRICT_VALID( this );
+        return ( (BOOL)m_bAI );
+    }
+    BOOL IsLocal( ) const
+    {
+        ASSERT_STRICT_VALID( this );
+        return ( (BOOL)m_bLocal );
+    }
+    BOOL IsMe( ) const
+    {
+        ASSERT_STRICT_VALID( this );
+        return ( (BOOL)m_bMe );
+    }
+    void SetAI( BYTE bAI );
+    void SetLocal( BYTE bLocal );
 
-			BYTE					GetState () const { ASSERT_STRICT_VALID (this); return (m_bState); }
-			void					SetState (BYTE bState) { ASSERT_STRICT_VALID (this); m_bState = bState; }
-								enum { created, ready, wait, replace, load_file, load_pick, dead };
+    DWORD    GetPalColor( ) const { return ( m_clrPlyr ); }
+    COLORREF GetRGBColor( ) const { return ( m_rgbPlyr ); }
+    void     SetColor( COLORREF clr );
 
-			void					SetAiHdl (DWORD dwHdl);
-			DWORD					GetAiHdl () const { ASSERT_STRICT_VALID (this); return (m_dwAiHdl); }
-			void					SetName (char const *pStr) { ASSERT_STRICT_VALID (this); m_sName = pStr; }
-			char const *	GetName () const { ASSERT_STRICT_VALID (this); return (m_sName); }
-			void					SetNetNum (VPPLAYERID iNum) { ASSERT_STRICT_VALID (this); m_iNetNum = iNum; }
-			VPPLAYERID		GetNetNum () const { ASSERT_STRICT_VALID (this); return (m_iNetNum); }
-			void					SetPlyrNum (int iNum);
-			int						GetPlyrNum () const { ASSERT_STRICT_VALID (this); return (m_iPlyrNum); }
+    // shared 64-entry team palette (minimap + flags)
+    static COLORREF GetTeamColor( int iPlyrNum );
+    static int      GetNumTeamColors( );
 
-			void					StartGame ();
-			void					StartLoop ();
-			void					PeopleAndFood (int iNumSec);
-			void					Research (int iNumSec);
+    BYTE GetState( ) const
+    {
+        ASSERT_STRICT_VALID( this );
+        return ( m_bState );
+    }
+    void SetState( BYTE bState )
+    {
+        ASSERT_STRICT_VALID( this );
+        m_bState = bState;
+    }
+    enum
+    {
+        created,
+        ready,
+        wait,
+        replace,
+        load_file,
+        load_pick,
+        dead
+    };
 
-			void					UpdateRacialAttributes ( int iRsrch );
+    void      SetAiHdl( DWORD_PTR dwHdl );
+    DWORD_PTR GetAiHdl( ) const
+    {
+        ASSERT_STRICT_VALID( this );
+        return ( m_dwAiHdl );
+    }
+    void SetName( char const* pStr )
+    {
+        ASSERT_STRICT_VALID( this );
+        m_sName = pStr;
+    }
+    char const* GetName( ) const
+    {
+        ASSERT_STRICT_VALID( this );
+        return ( m_sName.c_str() );
+    }
+    void SetNetNum( VPPLAYERID iNum )
+    {
+        ASSERT_STRICT_VALID( this );
+        m_iNetNum = iNum;
+    }
+    VPPLAYERID GetNetNum( ) const
+    {
+        ASSERT_STRICT_VALID( this );
+        return ( m_iNetNum );
+    }
+    void SetPlyrNum( int iNum );
+    int  GetPlyrNum( ) const
+    {
+        ASSERT_STRICT_VALID( this );
+        return ( m_iPlyrNum );
+    }
 
-			// used during initialization only
-			CInitData			m_InitData;
+    void StartGame( );
+    void StartLoop( );
+    // Surplus-scaled edicts: one per-player pass, run at the END of StartLoop (after the
+    // need/have counters are snapshotted and cleared) so every such edict reads the SAME
+    // "as if we were not running" spare and none of them depends on building iteration
+    // order. See the long comment on the definition in player.cpp.
+    void ApplySurplusEdicts( );
+    void PeopleAndFood( int iNumSec );
+    void Research( int iNumSec );
+    // Resonance Sweep edict: recharge, ping, and age out the lit ring using active real
+    // milliseconds from the unscaled frame clock in mainloop.cpp.
+    void ResonanceSweep( int iElapsedMillis );
+    void SweepLight( CBuilding* pRocket );   // light the ring around a pinged rocket
+    void SweepUnlight( );                    // release it (safe to call when nothing is lit)
+    void CPlayer::CitizenConstruction( );
 
-			void					SetAttrib (int iInd, int iVal);
-			int						GetAttrib (int iInd) const;
+    void UpdateRacialAttributes( int iRsrch );
 
-			void					UpdateRemote ( CNetSaveInfo * pMsg );
+#ifdef _CHEAT
+    // DEV cheat (SP): mark every research topic discovered + apply its effect, so the
+    // research-gated tail (AltOutput toggles, fort/seaport/shipyard, edicts) is reachable
+    // instantly without the multi-hour grind. Mirrors the init KnowItAll loop + the
+    // per-topic UpdateRacialAttributes + ResearchDiscovered that Research() runs on
+    // completion. _CHEAT-gated (Debug/Sanitize only — NOT Release); callers also check the
+    // [Cheat] opt-in flag + guard to single-player (MP would desync on a local mutation).
+    void DebugDiscoverAllResearch( );
+#endif
 
-			// productivity stuff
-			int					GetPwrNeed () const { ASSERT_STRICT_VALID (this); return (m_iPwrNeed); }
-			int					GetPwrHave () const { ASSERT_STRICT_VALID (this); return (m_iPwrHave); }
+    // used during initialization only
+    CInitData m_InitData;
 
-			// people are divided into those in vehicles (always fully staffed) and those
-			// in buildings (can be partially staffed). Excess people go into the building
-			// count and when a vehicle is built people are pulled from the building count
-			// to staff the vehicle. We do insure that there is always at least 1 building
-			// person to avoid divide overflows.
-			int					GetPplNeedBldg () const { ASSERT_STRICT_VALID (this); return (m_iPplNeedBldg); }
-			int					GetPplBldg () const { ASSERT_STRICT_VALID (this); return (m_iPplBldg); }
-			int					GetPplVeh () const { ASSERT_STRICT_VALID (this); return (m_iPplVeh); }
-			int					GetPplTotal () const { ASSERT_STRICT_VALID (this); return (m_iPplBldg + m_iPplVeh); }
-			void				AddPplNeedBldg (int iAdd) { ASSERT_STRICT_VALID (this); m_iPplNeedBldg += iAdd; }
-			void				AddPplBldg (int iAdd) { ASSERT_STRICT_VALID (this); m_iPplBldg += iAdd; }
-			void				AddPplVeh (int iAdd) { ASSERT_STRICT_VALID (this); m_iPplVeh += iAdd; }
-			void				PplBldgToVeh (int iAdd) { ASSERT_STRICT_VALID (this); m_iPplBldg -= iAdd; m_iPplBldg = __max (1, m_iPplBldg); m_iPplVeh += iAdd; }
-			void				_SetPplBldg (int iNum) { ASSERT_STRICT_VALID (this); m_iPplBldg = iNum; }
+    void SetAttrib( int iInd, int iVal );
+    int  GetAttrib( int iInd ) const;
 
-			int					GetFood () const { ASSERT_STRICT_VALID (this); return (m_iFood); }
-			void				AddFood (int iNum);
-			void				AddFoodProd (int iNum) { ASSERT_STRICT_VALID (this); m_iFoodProd += iNum; }
-			int					GetFoodProd () const { ASSERT_STRICT_VALID (this); return (m_iFoodProd); }
-			int					GetFoodNeed () const { ASSERT_STRICT_VALID (this); return (m_iFoodNeed); }
+    void UpdateRemote( CNetSaveInfo* pMsg );
 
-			int					GetGasHave () const { ASSERT_STRICT_VALID (this); return (m_iGas); }
-			int					GetGasNeed () const { ASSERT_STRICT_VALID (this); return (m_iGasNeed); }
-			void				AddGas (int iNum);
-			void				AddPwrNeed (int iAdd) { ASSERT_STRICT_VALID (this); m_iPwrNeed += iAdd; }
-			void				AddPwrHave (int iAdd) { ASSERT_STRICT_VALID (this); m_iPwrHave += iAdd; }
-			void				FuelVehicle () { ASSERT_STRICT_VALID (this); m_iGasUsed++; }
-			BOOL				BuildRoad ();
-			float				GetPplMult () const { ASSERT_STRICT_VALID (this); return (m_fPplMult); }
-			float				GetPwrMult () const { ASSERT_STRICT_VALID (this); return (m_fPwrMult); }
-			float				GetConstProd () const { ASSERT_STRICT_VALID (this); return (m_fConstProd); }
-			float				GetMtrlsProd () const { ASSERT_STRICT_VALID (this); return (m_fMtrlsProd); }
-			float				GetManfProd () const { ASSERT_STRICT_VALID (this); return (m_fManfProd); }
-			float				GetMineProd () const { ASSERT_STRICT_VALID (this); return (m_fMineProd); }
-			float				GetFarmProd () const { ASSERT_STRICT_VALID (this); return (m_fFarmProd); }
-			float				GetPopGrowth () const { ASSERT_STRICT_VALID (this); return (m_fPopGrowth); }
-			float				GetPopDeath () const { ASSERT_STRICT_VALID (this); return (m_fPopDeath); }
-			float				GetEatingRate () const { ASSERT_STRICT_VALID (this); return (m_fEatingRate); }
-			float				GetRsrchMult () const { ASSERT_STRICT_VALID (this); return (m_fRsrchProd); }
-			float				GetAttackMult () const { ASSERT_STRICT_VALID (this); return (m_fAttack); }
-			float				GetDefenseMult () const { ASSERT_STRICT_VALID (this); return (m_fDefense); }
+    // productivity stuff
+    int GetPwrNeed( ) const
+    {
+        ASSERT_STRICT_VALID( this );
+        // Civ-wide edict energy upkeep (Edicts v1): fold the recurring +pct into the
+        // REPORTED need so toolbar/building-info "Energy Need" reflects an active edict's
+        // cost (e.g. Mining Subsidy +25% power). StartLoop applies the same pct to the raw
+        // member transiently for the m_fPwrMult drag, but resets it before render — so
+        // without this the displayed need never moved. See player.cpp StartLoop.
+        // The flat edict draw is ABSOLUTE, so it is added outside the pct scaling above --
+        // scaling it by the base need would make one emitter cost more in a big colony.
+        return ( m_iPwrNeed + (int)( m_iPwrNeed * m_fEdictEnergyUpkeepPct ) + GetEdictFlatPwrNeed( ) );
+    }
+    int GetPwrHave( ) const
+    {
+        ASSERT_STRICT_VALID( this );
+        return ( m_iPwrHave );
+    }
 
-			// first two my relations with them. Second two their relations with me
-			int					GetRelations () const { return (m_iRelations); }
-			void				SetRelations (int iVal);
-			int					GetTheirRelations () const { return m_iTheirRelations; }
-			void				SetTheirRelations (int iVal);
+    // people are divided into those in vehicles (always fully staffed) and those
+    // in buildings (can be partially staffed). Excess people go into the building
+    // count and when a vehicle is built people are pulled from the building count
+    // to staff the vehicle. We do insure that there is always at least 1 building
+    // person to avoid divide overflows.
+    int GetPplNeedBldg( ) const
+    {
+        ASSERT_STRICT_VALID( this );
+        // Civ-wide edict workforce upkeep (Edicts v1): fold into the reported need so
+        // "Workforce Need" reflects an active edict (Austerity / Research Subsidy +15%
+        // staffing). Mirror of GetPwrNeed — StartLoop's transient mutation drives the
+        // m_fPplMult drag but is reset before render, so the display needs this too.
+        return ( m_iPplNeedBldg + (int)( m_iPplNeedBldg * m_fEdictWorkforceUpkeepPct ) );
+    }
+    int GetPplBldg( ) const
+    {
+        ASSERT_STRICT_VALID( this );
+        return ( m_iPplBldg );
+    }
+    int GetPplVeh( ) const
+    {
+        ASSERT_STRICT_VALID( this );
+        return ( m_iPplVeh );
+    }
+    int GetPplTotal( ) const
+    {
+        ASSERT_STRICT_VALID( this );
+        return ( m_iPplBldg + m_iPplVeh );
+    }
+    void AddPplNeedBldg( int iAdd )
+    {
+        ASSERT_STRICT_VALID( this );
+        m_iPplNeedBldg += iAdd;
+    }
+    // Desperate Measures: the worker draft for THIS pump. Computed once per pump per player by
+    // ApplySurplusEdicts (called at the end of StartLoop) and cached — the rocket's Operate and
+    // the rocket info window both read this same number, so the sim and the readout cannot
+    // disagree, and the draft does not depend on where the rocket falls in the building
+    // iteration order. See CPlayer::ApplySurplusEdicts for why it must be computed there.
+    int  GetDesperateDraft( ) const
+    {
+        ASSERT_STRICT_VALID( this );
+        return ( m_iDespDraft );
+    }
+    void AddPplBldg( int iAdd )
+    {
+        ASSERT_STRICT_VALID( this );
+        m_iPplBldg = __max( 1, m_iPplBldg + iAdd );   // always at least 1, as PplBldgToVeh
+    }
+    void AddPplVeh( int iAdd )
+    {
+        ASSERT_STRICT_VALID( this );
+        m_iPplVeh += iAdd;
+    }
+    void PplBldgToVeh( int iAdd )
+    {
+        ASSERT_STRICT_VALID( this );
+        m_iPplBldg -= iAdd;
+        m_iPplBldg = __max( 1, m_iPplBldg );
+        m_iPplVeh += iAdd;
+    }
+    // The Draft edict: burn extra population out of the labor pool (conscription overhead)
+    // when a drafted infantry is built. Clamped ≥1 so it can never underflow; does NOT touch
+    // m_iPplVeh (crew accounting stays symmetric with the normal unit-death release).
+    void BurnPpl( int iBurn )
+    {
+        ASSERT_STRICT_VALID( this );
+        if ( iBurn <= 0 )
+            return;
+        m_iPplBldg = __max( 1, m_iPplBldg - iBurn );
+    }
+    void _SetPplBldg( int iNum )
+    {
+        ASSERT_STRICT_VALID( this );
+        m_iPplBldg = iNum;
+    }
 
-			int					GetBldgsBuilt () const { return m_iBldgsBuilt; }
-			void				IncBldgsBuilt () { m_iBldgsBuilt++; }
-			int					GetVehsBuilt () const { return m_iVehsBuilt; }
-			void				IncVehsBuilt () { m_iVehsBuilt++; }
-			void				_DecVehsBuilt () { m_iVehsBuilt--; }	// used in startup for vehicles on rocket
-			int					GetMaterialMade (int iInd) const 
-																	{ ASSERT ((0 <= iInd) && (iInd < CMaterialTypes::num_types)); 
-																		return m_aiMade[iInd]; }
-			void				IncMaterialMade (int iInd, int iAmt) 
-																	{ ASSERT ((0 <= iInd) && (iInd < CMaterialTypes::num_types)); 
-																		ASSERT (iAmt >= 0);
-																		ASSERT (m_aiMade[iInd] < INT_MAX - iAmt - 16);
-																		m_aiMade[iInd] += iAmt; }
-			int					GetMaterialHave (int iInd) const 
-																	{ ASSERT ((0 <= iInd) && (iInd < CMaterialTypes::num_types)); 
-																		return m_aiHave[iInd]; }
-			void				IncMaterialHave (int iInd, int iAmt) 
-																	{ ASSERT ((0 <= iInd) && (iInd < CMaterialTypes::num_types)); 
-																		ASSERT (((iAmt > 0) && (m_aiMade[iInd] < INT_MAX - iAmt - 16)) ||
-																						((iAmt <= 0) && (m_aiHave[iInd]-iAmt >= 0)));
-																		m_aiHave[iInd] += iAmt; }
-			int					GetBldgsDest () const { return m_iBldgsDest; }
-			void				IncBldgsDest () { m_iBldgsDest++; }
-			int					GetVehsDest () const { return m_iVehsDest; }
-			void				IncVehsDest () { m_iVehsDest++; }
+    int GetFood( ) const
+    {
+        ASSERT_STRICT_VALID( this );
+        return ( m_iFood );
+    }
+    void AddFood( int iNum );
+    void AddFoodProd( int iNum )
+    {
+        ASSERT_STRICT_VALID( this );
+        m_iFoodProd += iNum;
+    }
+    int GetFoodProd( ) const
+    {
+        ASSERT_STRICT_VALID( this );
+        return ( m_iFoodProd );
+    }
+    int GetFoodNeed( ) const
+    {
+        ASSERT_STRICT_VALID( this );
+        return ( m_iFoodNeed );
+    }
 
-			int					GetBldgsHave () const { return m_iBldgsHave; }
-			void				AddBldgsHave (int iNum) { m_iBldgsHave += iNum; }
-			int					GetVehsHave () const { return m_iVehsHave; }
-			void				AddVehsHave (int iNum) { m_iVehsHave += iNum; }
+    int GetGasHave( ) const
+    {
+        ASSERT_STRICT_VALID( this );
+        return ( m_iGas );
+    }
+    int GetGasNeed( ) const
+    {
+        ASSERT_STRICT_VALID( this );
+        return ( m_iGasNeed );
+    }
+    void AddGas( int iNum );
+    void AddPwrNeed( int iAdd )
+    {
+        ASSERT_STRICT_VALID( this );
+        m_iPwrNeed += iAdd;
+    }
+    void AddPwrHave( int iAdd )
+    {
+        ASSERT_STRICT_VALID( this );
+        m_iPwrHave += iAdd;
+    }
+    void FuelVehicle( )
+    {
+        ASSERT_STRICT_VALID( this );
+        m_iGasUsed++;
+        // Turbochargers edict: fuel-consuming units burn extra gas. Called only for
+        // non-walk units (vehmove.cpp guard), so the surcharge lands on the right units.
+        // m_iGasUsed is an integer accumulator, so carry the fractional +pct across calls.
+        if ( m_fEdictFuelMult > 1.0f )
+        {
+            m_fEdictFuelCarry += ( m_fEdictFuelMult - 1.0f );
+            if ( m_fEdictFuelCarry >= 1.0f )
+            {
+                m_iGasUsed++;
+                m_fEdictFuelCarry -= 1.0f;
+            }
+        }
+    }
+    BOOL  BuildRoad( );
+    float GetPplMult( ) const
+    {
+        ASSERT_STRICT_VALID( this );
+        return ( m_fPplMult );
+    }
+    float GetPwrMult( ) const
+    {
+        ASSERT_STRICT_VALID( this );
+        return ( m_fPwrMult );
+    }
+    float GetConstProd( ) const
+    {
+        ASSERT_STRICT_VALID( this );
+        // civ-wide edict bonuses: per-category (Const) + surplus-scaled (Public Works) +
+        // global (Overclocked Grid).
+        return ( m_fConstProd * m_fEdictConstMult * m_fSurplusConstMult * m_fEdictGlobalProdMult );
+    }
+    float GetMtrlsProd( ) const
+    {
+        ASSERT_STRICT_VALID( this );
+        return ( m_fMtrlsProd * m_fEdictGlobalProdMult );   // Overclocked Grid (Edicts v1)
+    }
+    float GetManfProd( ) const
+    {
+        ASSERT_STRICT_VALID( this );
+        return ( m_fManfProd * m_fEdictGlobalProdMult );   // Overclocked Grid (Edicts v1)
+    }
+    float GetMineProd( ) const
+    {
+        ASSERT_STRICT_VALID( this );
+        return ( m_fMineProd * m_fEdictMineMult * m_fEdictGlobalProdMult );   // Mining Subsidy + Overclocked Grid
+    }
+    float GetFarmProd( ) const
+    {
+        ASSERT_STRICT_VALID( this );
+        return ( m_fFarmProd * m_fEdictFarmMult * m_fEdictGlobalProdMult );   // Agricultural Subsidy + Overclocked Grid
+    }
+    float GetPopGrowth( ) const
+    {
+        ASSERT_STRICT_VALID( this );
+        return ( m_fPopGrowth * m_fEdictPopGrowthMult );   // civ-wide edict bonus (Edicts v1)
+    }
+    float GetPopDeath( ) const
+    {
+        ASSERT_STRICT_VALID( this );
+        return ( m_fPopDeath );
+    }
+    float GetEatingRate( ) const
+    {
+        ASSERT_STRICT_VALID( this );
+        return ( m_fEatingRate );
+    }
+    float GetRsrchMult( ) const
+    {
+        ASSERT_STRICT_VALID( this );
+        // Research Subsidy's static half * its surplus half (seconded idle workers) * Overclocked Grid (RG-1)
+        return ( m_fRsrchProd * m_fEdictRsrchMult * m_fSurplusRsrchMult * m_fEdictGlobalProdMult );
+    }
+    // --- Edicts v1 (civ-wide policy toggles; see edicts.h / RecomputeEdictMults) ---
+    bool  IsEdictActive( int edictId ) const { return ( m_dwEdicts & ( 1u << edictId ) ) != 0; }
+    DWORD GetEdicts( ) const { return ( m_dwEdicts ); }
+    // Fortify Border * Civil Defence (the surplus half is recomputed each pump).
+    float GetEdictFortBuildMult( ) const { return ( m_fEdictFortBuildMult * m_fSurplusFortMult ); }
+    float GetEdictFarmWorkerMult( ) const { return ( m_fEdictFarmWorkerMult ); } // BuildFarm worker-need scale
+    float GetEdictMineEnergyMult( ) const { return ( m_fEdictMineEnergyMult ); }  // BuildMine power-need scale
+    float GetEdictMineWorkerMult( ) const { return ( m_fEdictMineWorkerMult ); }  // BuildMine worker-need scale
+    float GetEdictBldgDmgMult( ) const;  // Meat Shield * Civil Defence: building damage-taken (projbase.cpp)
+    void  ReportBldgDmgMult( );                       // remote owner -> server: Civil Defence value
+    void  SetRemoteBldgDmgPermille( int iPermille );  // server: store what the remote owner reported
+    float GetEdictMoveMult( ) const { return ( m_fEdictMoveMult ); }       // Turbochargers (vehmove.cpp, != walk)
+    float GetEdictVisionMult( ) const { return ( m_fEdictVisionMult ); }   // Total Surveillance (AssignData spotting)
+    float GetEdictInfBuildMult( ) const { return ( m_fEdictInfBuildMult * m_fSurplusInfBuildMult ); } // The Draft * War Footing (infantry build speed)
+    // --- surplus-scaled edicts: this pump's cached numbers (UI readout + harness `pstats`) ---
+    int         GetSurplusSparePpl( ) const { return ( (int)m_iSurplusSparePpl ); }
+    int         GetSurplusSparePwr( ) const { return ( (int)m_iSurplusSparePwr ); }
+    int         GetEdictDraftPpl( int edictId ) const;   // workers this edict drafted this pump
+    int         GetEdictDraftPwr( int edictId ) const;   // power it drew/cost this pump
+    float       GetEdictScale( int edictId ) const;      // its effect scale (0..1; Desperate: draft/RATE_PER)
+    std::string GetEdictEffectText( int edictId ) const; // live effect clause for the (i) tooltip ("" = nothing to say)
+    float GetEdictInfPopMult( ) const { return ( m_fEdictInfPopMult ); }   // The Draft (infantry population cost)
+    void  ToggleEdict( int edictId, bool bOn );   // flips the bit, then RecomputeEdictMults (local only)
+    void  ToggleEdictNet( int edictId, bool bOn );// user-initiated toggle: local + broadcast (MP sync)
+    void  RecomputeEdictMults( );                 // fold active edicts (g_aEdicts) into cached mults
+    void  EdictHostLost( CStructureData const* pSd ); // a building died: revoke civ edicts whose LAST host is gone (§29)
+    float GetAttackMult( ) const
+    {
+        ASSERT_STRICT_VALID( this );
+        return ( m_fAttack );
+    }
+    float GetDefenseMult( ) const
+    {
+        ASSERT_STRICT_VALID( this );
+        return ( m_fDefense );
+    }
 
-			int					GetRsrchHave () const { return (m_iRsrchHave); }
-			int					GetRsrchItem () const { return (m_iRsrchItem); }
-			void				AddRsrch (int iNum) { m_iRsrchHave += iNum; }
-			void				SetRsrchItem (int iItem) { m_iRsrchItem = iItem; }
-			int					GetExists (int iIndex) const { return m_piBldgExists[iIndex]; }
-			void				AddExists (int iIndex, int iNum) { m_piBldgExists [iIndex] += iNum; }
-			CRsrchStatus & GetRsrch (int iInd) { return (m_aRsrch.ElementAt (iInd)); }
-			BOOL				CanRsrch (int iIndex);
+    // first two my relations with them. Second two their relations with me
+    int  GetRelations( ) const { return ( m_iRelations ); }
+    void SetRelations( int iVal );
+    int  GetTheirRelations( ) const { return m_iTheirRelations; }
+    void SetTheirRelations( int iVal );
 
-			BOOL				CanBridge () { return (GetRsrch (CRsrchArray::bridge).m_bDiscovered); }
-			BOOL				CanMultiArea () { return (GetRsrch (CRsrchArray::radio).m_bDiscovered); }
-			BOOL				CanDelayMail () { return (GetRsrch (CRsrchArray::mail).m_bDiscovered); }
-			BOOL				CanEMail () { return (GetRsrch (CRsrchArray::email).m_bDiscovered); }
-			BOOL				CanChat () { return (GetRsrch (CRsrchArray::telephone).m_bDiscovered); }
-			BOOL				CanCopper () { return (GetRsrch (CRsrchArray::copper).m_bDiscovered); }
+    int  GetBldgsBuilt( ) const { return m_iBldgsBuilt; }
+    void IncBldgsBuilt( ) { m_iBldgsBuilt++; }
+    int  GetVehsBuilt( ) const { return m_iVehsBuilt; }
+    void IncVehsBuilt( ) { m_iVehsBuilt++; }
+    void _DecVehsBuilt( ) { m_iVehsBuilt--; }  // used in startup for vehicles on rocket
+    int  GetMaterialMade( int iInd ) const
+    {
+        ASSERT( ( 0 <= iInd ) && ( iInd < CMaterialTypes::num_types ) );
+        return m_aiMade[iInd];
+    }
+    void IncMaterialMade( int iInd, int iAmt )
+    {
+        ASSERT( ( 0 <= iInd ) && ( iInd < CMaterialTypes::num_types ) );
+        ASSERT( iAmt >= 0 );
+        ASSERT( m_aiMade[iInd] < INT_MAX - iAmt - 16 );
+        m_aiMade[iInd] += iAmt;
+    }
+    int GetMaterialHave( int iInd ) const
+    {
+        ASSERT( ( 0 <= iInd ) && ( iInd < CMaterialTypes::num_types ) );
+        return m_aiHave[iInd];
+    }
+    void IncMaterialHave( int iInd, int iAmt )
+    {
+        ASSERT( ( 0 <= iInd ) && ( iInd < CMaterialTypes::num_types ) );
 
-			int					GetSpottingLevel () const { return (m_bSpotting); }
-			int					GetRangeLevel () const { return (m_bRange); }
-			int					GetAttackLevel () const { return (m_bAttack); }
-			int					GetDefenseLevel () const { return (m_bDefense); }
-			int					GetAccuracyLevel () const { return (m_bAccuracy); }
+        // why cant it be 0? why cant it be negative? You can totally go negative in resources, right??
+        // and starting a game you generate bascially 0
+        /* ASSERT( ( ( iAmt > 0 ) && ( m_aiMade[iInd] < INT_MAX - iAmt - 16 ) ) ||
+                ( ( iAmt <= 0 ) && ( m_aiHave[iInd] - iAmt >= 0 ) ) ); */
+        // ASSERT( m_aiMade[iInd] < (INT_MAX - iAmt - 16) );
+        m_aiHave[iInd] += iAmt;
+    }
+    int  GetBldgsDest( ) const { return m_iBldgsDest; }
+    void IncBldgsDest( ) { m_iBldgsDest++; }
+    int  GetVehsDest( ) const { return m_iVehsDest; }
+    void IncVehsDest( ) { m_iVehsDest++; }
 
-			void 				Serialize(CArchive& ar);
+    int  GetBldgsHave( ) const { return m_iBldgsHave; }
+    void AddBldgsHave( int iNum ) { m_iBldgsHave += iNum; }
+    int  GetVehsHave( ) const { return m_iVehsHave; }
+    void AddVehsHave( int iNum ) { m_iVehsHave += iNum; }
 
-			AI_INIT 		ai;						// this is here cause we don't know when the AI
-																// stops using it and for its size - big deal
-			CHexCoord		m_hexMapStart;// used during initialization only
+    int           GetRsrchHave( ) const { return ( m_iRsrchHave ); }
+    int           GetRsrchItem( ) const { return ( m_iRsrchItem ); }
+    void          AddRsrch( int iNum ) { m_iRsrchHave += iNum; }
+    void          SetRsrchItem( int iItem ) { m_iRsrchItem = iItem; }
+    // Most recently discovered topic — drives the research window's "Discovery"
+    // button and persists across save/load (serialized in save release 3+).
+    int           GetLastDiscovered( ) const { return ( m_iLastDiscovered ); }
+    void          SetLastDiscovered( int iItem ) { m_iLastDiscovered = iItem; }
+    int           GetExists( int iIndex ) const { return m_piBldgExists[iIndex]; }
+    void          AddExists( int iIndex, int iNum ) { m_piBldgExists[iIndex] += iNum; }
+    CRsrchStatus& GetRsrch( int iInd ) { return ( m_aRsrch.ElementAt( iInd ) ); }
 
-			int					m_iPerInit;		// percentage inited for startup
+    // Bounds-checked "have we researched this?". GetRsrch above is an unchecked ElementAt, and
+    // m_aRsrch is NOT guaranteed to be num_types long for every player -- a net game saved
+    // early leaves some players short until the load path resizes them (see Serialize, and the
+    // GetRsrchSize guard in netapi.cpp's research_disc). Every high-index reader in this header
+    // hand-rolls the same size test; this is that test, once, for callers that index the TAIL
+    // of the enum where the in-code topics live.
+    BOOL HasRsrch( int iInd ) const
+    {
+        return ( ( iInd >= 0 ) && ( iInd < (int)m_aRsrch.GetSize( ) ) &&
+                 ( m_aRsrch.GetAt( iInd ).m_bDiscovered != 0 ) );
+    }
 
-			int					GetHousingCap ( int iVal ) const { return ( m_bAI ? iVal * 10 : iVal ); }
-			LONG				m_iAptCap;			// built apartment capacity
-			LONG				m_iOfcCap;			// built office capacity
-			LONG				m_iNumCranes;		// number of cranes we have
-			LONG				m_iNumTrucks;		// number of trucks we have
+    // --- Drive-Core Resonance / Resonance Sweep (see edicts.h) ---
+    // Highest tier researched, 0 (none) .. 6. The six topics are contiguous at the enum tail and
+    // form a strict chain, so this stops at the first gap.
+    int GetResonanceTier( ) const
+    {
+        int iTier = 0;
+        for ( int iOn = 0; iOn < 6; iOn++ )
+        {
+            if ( !HasRsrch( (int)CRsrchArray::drive_core_resonance + iOn ) )
+                break;
+            iTier = iOn + 1;
+        }
+        return ( iTier );
+    }
+    // Hexes of ground lit around a pinged rocket: none at tier 1 (the ship only), then one more
+    // per tier to 5 at tier 6.
+    int GetSweepRings( ) const
+    {
+        int iTier = GetResonanceTier( );
+        return ( ( iTier >= 2 ) ? ( iTier - 1 ) : 0 );
+    }
+    // Game-seconds to recharge a ping. Scales INVERSELY with how much of our power demand is
+    // actually being met: full power is the base, half power doubles it, and so on, capped so a
+    // blackout stalls the sweep instead of dividing by zero.
+    int GetSweepReloadSecs( ) const;
+    // Flat (absolute, non-pct) power drawn by the active civ-wide edicts. Computed live rather
+    // than cached, because the Resonance Sweep's draw grows with the tier researched and a
+    // cached copy would go stale the moment a tier completed with the edict already on.
+    int GetEdictFlatPwrNeed( ) const;
+    int           GetRsrchSize( ) const { return ( (int)m_aRsrch.GetSize( ) ); }
+    BOOL          CanRsrch( int iIndex );
 
-			DWORD				m_dwIDRocket;		// our rocket
+    // Bridge building is unlocked by EITHER the full Bridges tech or the early
+    // Pontoon Bridges tech (which only reaches half the span; see GetMaxSpan).
+    BOOL CanBridge( )
+    {
+        if ( GetRsrch( CRsrchArray::bridge ).m_bDiscovered )
+            return ( TRUE );
+        if ( ( m_aRsrch.GetSize( ) > CRsrchArray::bridge_short ) &&
+             GetRsrch( CRsrchArray::bridge_short ).m_bDiscovered )
+            return ( TRUE );
+        return ( FALSE );
+    }
 
-			int					m_iGameSpeed;		// speed this net player wants
-			int					m_iNumDiscovered;
+    // Max bridge span for this player. Full Bridges tech: base MAX_SPAN plus 25% of
+    // the base per Bridges 2-5 tier discovered (7 -> 8 -> 10 -> 12 -> 14 hexes). With
+    // only the early Pontoon Bridges tech: half the base span (short bridges).
+    int GetMaxSpan( )
+    {
+        if ( GetRsrch( CRsrchArray::bridge ).m_bDiscovered )
+        {
+            int iTiers = 0;
+            if ( m_aRsrch.GetSize( ) > CRsrchArray::bridge_5 )
+                for ( int iOn = CRsrchArray::bridge_2; iOn <= CRsrchArray::bridge_5; iOn++ )
+                    if ( GetRsrch( iOn ).m_bDiscovered )
+                        iTiers++;
+            return ( ( MAX_SPAN * ( 100 + 25 * iTiers ) ) / 100 );
+        }
+        if ( ( m_aRsrch.GetSize( ) > CRsrchArray::bridge_short ) &&
+             GetRsrch( CRsrchArray::bridge_short ).m_bDiscovered )
+            return ( ( MAX_SPAN + 1 ) / 2 );   // half span, rounded up
+        return ( 0 );
+    }
 
-			int					m_iNumAiGpfs;		// how many times this AI player has GPFed
+    // Truck cargo capacity as a percent of base: +10% per cargo_handling level
+    // discovered (base cargo_handling + Cargo Handling 2-4 tiers). 100% (none) to
+    // 140% (all four). Used by CVehicle::GetMaxMaterials so it applies to every
+    // truck — auto/route AND hand-loaded.
+    int GetCargoPct( )
+    {
+        int iLevels = 0;
+        if ( GetRsrch( CRsrchArray::cargo_handling ).m_bDiscovered )
+            iLevels++;
+        if ( m_aRsrch.GetSize( ) > CRsrchArray::cargo_handling_4 )
+            for ( int iOn = CRsrchArray::cargo_handling_2; iOn <= CRsrchArray::cargo_handling_4; iOn++ )
+                if ( GetRsrch( iOn ).m_bDiscovered )
+                    iLevels++;
+        return ( 100 + 10 * iLevels );
+    }
 
-			CVPTransfer *	m_pXferToClient;	// from server to this player
+    // Landing Craft 2/3 techs discovered: 0/1/2. GetEffPeopleCarry scales this by MAX_CARGO
+    // (each tech = one full unit slot). Landing craft only; guarded for pre-tier saves.
+    int GetLandingCraftBonus( )
+    {
+        int iBonus = 0;
+        if ( m_aRsrch.GetSize( ) > CRsrchArray::landing_craft_3 )
+        {
+            if ( GetRsrch( CRsrchArray::landing_craft_2 ).m_bDiscovered ) iBonus++;
+            if ( GetRsrch( CRsrchArray::landing_craft_3 ).m_bDiscovered ) iBonus++;
+        }
+        return ( iBonus );
+    }
 
-			BOOL				m_bPauseMsgs;
+    // Blast Shielding (bldg_armor, bldg_armor_2, bldg_armor_3): damage taken by our
+    // BUILDINGS as a fraction of base -- 80 / 78 / 76 percent by tier, i.e. a 20 / 22 / 24
+    // percent reduction, or 1.25x / 1.28x / 1.32x effective building hit points. Tier 1 is
+    // the entry grant; tiers 2-3 add a flat 2 points each, matching the attack line's floor.
+    // These are TOTALS -- the tier is a single lookup, not a stack. Read straight off the
+    // research flags and applied at damage time in
+    // CUnit::DecDamagePoints (projbase.cpp), alongside the Meat Shield edict, so it protects
+    // buildings that ALREADY EXIST -- unlike the range/attack techs, which bake into a unit
+    // once in CUnit::AssignData. Tier 1 sits far from tiers 2-3 in the enum (they were
+    // appended in different batches), so each needs its OWN size guard: an old save whose
+    // research array predates tiers 2-3 must still read tier 1 correctly.
+    float GetBldgArmorMult( )
+    {
+        int iTier = 0;
+        if ( ( m_aRsrch.GetSize( ) > CRsrchArray::bldg_armor ) &&
+             GetRsrch( CRsrchArray::bldg_armor ).m_bDiscovered )
+            iTier = 1;
+        if ( m_aRsrch.GetSize( ) > CRsrchArray::bldg_armor_3 )
+        {
+            if ( GetRsrch( CRsrchArray::bldg_armor_2 ).m_bDiscovered )
+                iTier = 2;
+            if ( GetRsrch( CRsrchArray::bldg_armor_3 ).m_bDiscovered )
+                iTier = 3;
+        }
+        static const float afArmor[4] = { 1.00f, 0.80f, 0.78f, 0.76f };
+        if ( iTier < 0 ) iTier = 0;
+        if ( iTier > 3 ) iTier = 3;
+        return ( afArmor[iTier] );
+    }
 
-			BOOL				m_bMsgDead;			// displayed message it is dead
+    // Nuclear Uprate (nuke_power_1..5): output of this player's NUCLEAR power plants
+    // (CStructureData::power_3) as a percent of base -- +10 per level, 100 at none to 150 at
+    // level 5. Consumed in CPowerBuilding::BuildPower. Coal plants, oil plants and the rocket
+    // generate exactly as before. The five levels are contiguous at the enum end, so one
+    // size guard covers the whole line for pre-line saves.
+    int GetNukePowerPct( )
+    {
+        int iLevels = 0;
+        if ( m_aRsrch.GetSize( ) > CRsrchArray::nuke_power_5 )
+            for ( int iOn = CRsrchArray::nuke_power_1; iOn <= CRsrchArray::nuke_power_5; iOn++ )
+                if ( GetRsrch( iOn ).m_bDiscovered )
+                    iLevels++;
+        static const int aiNukePct[6] = { 100, 110, 120, 130, 140, 150 };
+        if ( iLevels < 0 ) iLevels = 0;
+        if ( iLevels > 5 ) iLevels = 5;
+        return ( aiNukePct[iLevels] );
+    }
 
-			int					m_iBuiltBldgsHave;
-			BOOL				m_bPlacedRocket;
+    // Research points earned as a percent of base by highest Research Speed level
+    // researched: +10% per level, 100% at none to 150% at level 5. Consumed in
+    // CPlayer::Research (the single points-accrual site). The five levels are
+    // contiguous at the enum end; the GetSize guard keeps pre-line saves safe.
+    int GetRsrchSpeedPct( )
+    {
+        int iLevels = 0;
+        if ( m_aRsrch.GetSize( ) > CRsrchArray::rsrch_speed_5 )
+            for ( int iOn = CRsrchArray::rsrch_speed_1; iOn <= CRsrchArray::rsrch_speed_5; iOn++ )
+                if ( GetRsrch( iOn ).m_bDiscovered )
+                    iLevels++;
+        static const int aiRsrchPct[6] = { 100, 110, 120, 130, 140, 150 };
+        if ( iLevels < 0 ) iLevels = 0;
+        if ( iLevels > 5 ) iLevels = 5;
+        return ( aiRsrchPct[iLevels] );
+    }
 
-protected:
-			BOOL				BuildCcBldg (int iBldg);
-			BOOL				InitialRoad ();
-			BOOL				TryRoad (CCitCon * pCc);
-			BOOL				BuildIt (CHexCoord const & hexTry, CCitCon * pCc);
-			BOOL				CanBuild (CHexCoord const & hexTry, CCitCon * pCc);
+    // Gas consumption as a percent of base by highest Fuel Efficiency level researched.
+    // Diminishing to 70% (30% saving) at level 10, then +1% per level to 62% (38%) at 18,
+    // then +2% per level to 52% (48%) at 23. Unlocked after gas_turbine; see CPlayer::Operate.
+    // Levels 1-10 contiguous; 11-12, 13-16, 17-18 and 19-23 were appended at the enum end for
+    // save parity, so they're counted separately.
+    int GetFuelPct( )
+    {
+        int iLevels = 0;
+        if ( m_aRsrch.GetSize( ) > CRsrchArray::fuel_efficiency_10 )
+            for ( int iOn = CRsrchArray::fuel_efficiency_1; iOn <= CRsrchArray::fuel_efficiency_10; iOn++ )
+                if ( GetRsrch( iOn ).m_bDiscovered )
+                    iLevels++;
+        if ( m_aRsrch.GetSize( ) > CRsrchArray::fuel_efficiency_11 && GetRsrch( CRsrchArray::fuel_efficiency_11 ).m_bDiscovered )
+            iLevels++;
+        if ( m_aRsrch.GetSize( ) > CRsrchArray::fuel_efficiency_12 && GetRsrch( CRsrchArray::fuel_efficiency_12 ).m_bDiscovered )
+            iLevels++;
+        if ( m_aRsrch.GetSize( ) > CRsrchArray::fuel_efficiency_16 )
+            for ( int iOn = CRsrchArray::fuel_efficiency_13; iOn <= CRsrchArray::fuel_efficiency_16; iOn++ )
+                if ( GetRsrch( iOn ).m_bDiscovered )
+                    iLevels++;
+        if ( m_aRsrch.GetSize( ) > CRsrchArray::fuel_efficiency_17 && GetRsrch( CRsrchArray::fuel_efficiency_17 ).m_bDiscovered )
+            iLevels++;
+        if ( m_aRsrch.GetSize( ) > CRsrchArray::fuel_efficiency_18 && GetRsrch( CRsrchArray::fuel_efficiency_18 ).m_bDiscovered )
+            iLevels++;
+        if ( m_aRsrch.GetSize( ) > CRsrchArray::fuel_efficiency_23 )
+            for ( int iOn = CRsrchArray::fuel_efficiency_19; iOn <= CRsrchArray::fuel_efficiency_23; iOn++ )
+                if ( GetRsrch( iOn ).m_bDiscovered )
+                    iLevels++;
+        // Cumulative gas% by level (5/4/4/3/3/3/2/2/2/2 to level 10, then +1 each to 18,
+        // then +2 each to 23).
+        static const int aiGasPct[24] = { 100, 95, 91, 87, 84, 81, 78, 76, 74, 72, 70, 69, 68, 67, 66, 65, 64, 63, 62,
+                                          60, 58, 56, 54, 52 };
+        if ( iLevels < 0 )  iLevels = 0;
+        if ( iLevels > 23 ) iLevels = 23;
+        return ( aiGasPct[iLevels] );
+    }
 
-			COLORREF		m_rgbPlyr;		// color to show this guy as
-			DWORD				m_clrPlyr;		// bitmap value (BYTE - DWORD, uses low bits)
+    // Vehicle movement speed as a percent of base. Base line vehicle_speed_1..10 gives
+    // +2% per level (up to +20%); the extended tiers vehicle_speed_11..12 give +1% per
+    // level (up to another +2%), so a fully-researched player caps at 122%. Applied to
+    // the base move rate in CVehicle::Move, so it speeds up every vehicle this player owns.
+    // Levels 1-10 are contiguous; 11-12 were appended at the END of the research enum for
+    // save parity, so they're counted separately. Guarded for older saves.
+    int GetSpeedPct( )
+    {
+        int iLevels = 0;   // tiers 1-10, +2% each
+        if ( m_aRsrch.GetSize( ) > CRsrchArray::vehicle_speed_10 )
+            for ( int iOn = CRsrchArray::vehicle_speed_1; iOn <= CRsrchArray::vehicle_speed_10; iOn++ )
+                if ( GetRsrch( iOn ).m_bDiscovered )
+                    iLevels++;
+        int iLevels2 = 0;  // tiers 11-12, +1% each
+        if ( m_aRsrch.GetSize( ) > CRsrchArray::vehicle_speed_12 )
+            for ( int iOn = CRsrchArray::vehicle_speed_11; iOn <= CRsrchArray::vehicle_speed_12; iOn++ )
+                if ( GetRsrch( iOn ).m_bDiscovered )
+                    iLevels2++;
+        return ( 100 + 2 * iLevels + iLevels2 );
+    }
 
-			// tracking power & people (this is global per player)
-			LONG				m_iPwrNeed;		// power needed by all buildings
-			LONG				m_iPwrHave;		// power presently generated
-			LONG				m_iPplNeedBldg;		// people needed by all buildings
-			LONG				m_iPplBldg;		// people presently have EXCEPT in vehicles
-			LONG				m_iPplVeh;		// people in vehicles (Have+Veh == Total)
-			LONG				m_iFood;			// food on hand
-			LONG				m_iFoodProd;	// food produced in 1 minute
-			LONG				m_iFoodNeed;	// food eaten in 1 minute
-			LONG				m_iGas;				// gas on hand
-			LONG				m_iGasUsed;		// gas being burnt by travelling vehicles
-			LONG				m_iGasNeed;		// gas needed for the next minute
-			LONG				m_iGasTurn;		// turns to use some gas
-			float				m_fPplMult;		// __min (1.0, need/have)
-			float				m_fPwrMult;
+    // Flat oil/minute an EXHAUSTED oil well trickles when its Fracking toggle is ON, by
+    // the highest Fracking tier researched: 0 / 5 / 7 / 9 / 11 / 13 / 15 (tier 6 added; base
+    // halved + flatter tier gains vs the old 10/15/20/25/30 per operator). Consumed in the
+    // mine production hook (exhausted wells only; at +50% that well's energy). Guarded for
+    // older saves whose m_aRsrch predates these in-code tiers. See Fracking (#23).
+    int GetFrackOilPerMin( )
+    {
+        int iTier = 0;
+        // Tiers 1-5 are CONTIGUOUS; tier 6 sits at the enum end (unrelated topics in between),
+        // so scan the 1-5 block then test tier 6 on its own -- never walk the gap. Clamp the
+        // block scan to what the array actually holds (ElementAt is unchecked; old/short saves)
+        // so a player with just fracking_1 still gets the tier-1 trickle, not a silent 0.
+        int iTop = CRsrchArray::fracking_5;
+        if ( m_aRsrch.GetSize( ) <= iTop )
+            iTop = m_aRsrch.GetSize( ) - 1;
+        for ( int iOn = CRsrchArray::fracking_1; iOn <= iTop; iOn++ )
+            if ( GetRsrch( iOn ).m_bDiscovered )
+                iTier = iOn - CRsrchArray::fracking_1 + 1;   // highest discovered (tiers chain)
+        if ( m_aRsrch.GetSize( ) > CRsrchArray::fracking_6 && GetRsrch( CRsrchArray::fracking_6 ).m_bDiscovered )
+            iTier = 6;   // tier 6 sits at the enum end (unrelated topics between fracking_5 and it)
+        if ( m_aRsrch.GetSize( ) > CRsrchArray::fracking_7 && GetRsrch( CRsrchArray::fracking_7 ).m_bDiscovered )
+            iTier = 7;   // tier 7 likewise appended separately -- test it on its own too
+        static const int aiOil[8] = { 0, 5, 7, 9, 11, 13, 15, 17 };
+        return ( aiOil[iTier] );
+    }
 
-			LONG				m_iRsrchHave;	// people working on R&D (reduced by damage)
-			LONG				m_iRsrchItem;	// item we are researching
-			CArray <CRsrchStatus, CRsrchStatus *>	m_aRsrch;
-			LONG *			m_piBldgExists;// bldg presently exists
+    // Bio Oil output as a percent of a farm's food output when its BioFuel toggle is ON,
+    // by the highest BioFuel tier researched: 0 / 10 / 12 / 14 / 16 / 18 / 20. Additional
+    // oil (does not reduce food). Consumed in the farm production hook. Guarded for older
+    // saves. See BioFuel (#33).
+    int GetBioOilPct( )
+    {
+        int iTier = 0;
+        if ( m_aRsrch.GetSize( ) > CRsrchArray::biofuel_6 )
+            for ( int iOn = CRsrchArray::biofuel_1; iOn <= CRsrchArray::biofuel_6; iOn++ )
+                if ( GetRsrch( iOn ).m_bDiscovered )
+                    iTier = iOn - CRsrchArray::biofuel_1 + 1;   // highest discovered (tiers chain)
+        static const int aiPct[7] = { 0, 10, 12, 14, 16, 18, 20 };
+        return ( aiPct[iTier] );
+    }
 
-			// attributes that I need as floats
-			float				m_fConstProd;	// construction productivity
-			float				m_fMtrlsProd;	// create materials productivity
-			float				m_fManfProd;	// create vehicles productivity
-			float				m_fMineProd;	// mining productivity
-			float				m_fFarmProd;	// farming productivity
-			float				m_fPopGrowth;	// population growth rate per second
-			float				m_fPopDeath;	// population death rate from overpop & no food
-			float				m_fEatingRate;// rate eats food at
-			float				m_fPopMod;		// for handling remainder on pop growth
-			float				m_fFoodMod;		// for handling remainder on food consumption
-			float				m_fRsrchProd;	// research productivity
-			float				m_fAttack;		// attack multiplier
-			float				m_fDefense;		// defense multiplier
+    // T1 researched? Gates whether the per-building Fracking / BioFuel toggle button shows.
+    BOOL CanFrack( )   { return ( m_aRsrch.GetSize( ) > CRsrchArray::fracking_1 && GetRsrch( CRsrchArray::fracking_1 ).m_bDiscovered ); }
+    BOOL CanBioFuel( ) { return ( m_aRsrch.GetSize( ) > CRsrchArray::biofuel_1 && GetRsrch( CRsrchArray::biofuel_1 ).m_bDiscovered ); }
+    // Coal Liquefaction researched? Gates the coal power-plant alt-output toggle.
+    BOOL CanCoalLiq( ) { return ( m_aRsrch.GetSize( ) > CRsrchArray::coal_liquefaction && GetRsrch( CRsrchArray::coal_liquefaction ).m_bDiscovered ); }
 
-			// relations the human player on this machine has with this player
-			LONG				m_iRelations;
-			int					m_iTheirRelations;	// their relations with us
+    // Coal per 1 oil for the coal-liquefaction recipe by highest tier: 3 (tier 1) or 2
+    // (tier 2, Catalytic Coal Cracking). Read per-tick by AltOutput::Convert via the
+    // coal-liq def's m_pfnRatioIn. Guarded for older/short save research arrays.
+    int GetCoalLiqRatio( )
+    {
+        if ( m_aRsrch.GetSize( ) > CRsrchArray::coal_liquefaction_2 && GetRsrch( CRsrchArray::coal_liquefaction_2 ).m_bDiscovered )
+            return ( 2 );
+        return ( 3 );
+    }
 
-			// this tracks the players productivity for when the game ends
-			LONG				m_iBldgsBuilt;
-			LONG				m_iVehsBuilt;
-			LONG				m_aiMade [CMaterialTypes::num_types];	// materials made
-			LONG				m_aiHave [CMaterialTypes::num_types];	// materials on hand
-			LONG				m_iBldgsDest;	// destroyed
-			LONG				m_iVehsDest;
+    // Charcoal kiln researched? Gates whether the per-building Charcoal alt-output toggle
+    // shows on a COAL POWER PLANT and whether its kiln runs. See Charcoal (#44).
+    BOOL CanCharcoal( ) { return ( m_aRsrch.GetSize( ) > CRsrchArray::charcoal_1 && GetRsrch( CRsrchArray::charcoal_1 ).m_bDiscovered ); }
 
-			// you're dead when you have no buildings (start at 1 & don't inc for rocket)
-			LONG				m_iBldgsHave;
-			LONG				m_iVehsHave;
+    // Slash and Burn researched? Gates whether the per-building Slash and Burn alt-output toggle
+    // shows on a lumber mill (the sawmill) and whether its 250% harvest applies. Mirrors
+    // CanCharcoal exactly, size guard included (old/short save research arrays).
+    BOOL CanSlashBurn( ) { return ( m_aRsrch.GetSize( ) > CRsrchArray::slash_and_burn && GetRsrch( CRsrchArray::slash_and_burn ).m_bDiscovered ); }
 
-			void				ctor ();			// reset (close)
-			void				_ctor ();			// init everything
+    // Moho Mining: gates the per-building toggle on an EXHAUSTED iron mine (Fracking-style
+    // iron trickle). The BASE capability is still granted by the DAT mine_2 topic at 10
+    // iron/min -- conceptually tier 1, unchanged, so existing saves keep what they had.
+    // moho_2..moho_6 are the paid upgrade line: +1 iron/min each, to 15 at the top.
+    BOOL CanMoho( )          { return ( m_aRsrch.GetSize( ) > CRsrchArray::mine_2 && GetRsrch( CRsrchArray::mine_2 ).m_bDiscovered ); }
+    int  GetMohoIronPerMin( )
+    {
+        if ( !CanMoho( ) )
+            return ( 0 );
+        int iTier = 1;   // mine_2 on its own = the base tier (10 iron/min)
+        // The five upgrades are contiguous at the enum end, so the highest discovered one
+        // wins by simple subtraction. Guarded on GetSize so pre-line saves stay at tier 1.
+        if ( m_aRsrch.GetSize( ) > CRsrchArray::moho_6 )
+            for ( int iOn = CRsrchArray::moho_2; iOn <= CRsrchArray::moho_6; iOn++ )
+                if ( GetRsrch( iOn ).m_bDiscovered )
+                    iTier = iOn - CRsrchArray::moho_2 + 2;
+        static const int aiIron[7] = { 0, 10, 11, 12, 13, 14, 15 };
+        if ( iTier < 1 ) iTier = 1;
+        if ( iTier > 6 ) iTier = 6;
+        return ( aiIron[iTier] );
+    }
 
-			CString			m_sName;			// name of player
-			DWORD				m_dwAiHdl;		// AI internal handle
-			VPPLAYERID	m_iNetNum;		// net connection to that player
-			LONG				m_iPlyrNum;		// player number (0 == self, 1 == server)
+    // Charcoal kiln input ratio: LUMBER consumed per 1 coal, by the owner's highest Charcoal
+    // tier. The kiln lives on the COAL POWER PLANT and is fed TRUCKED lumber, so the tier ladder
+    // scales the recipe itself -- the old GetCharcoalPct scaled a slice of a lumber-mill HARVEST,
+    // and there is no harvest at a power plant. Top tier is 2:1 (one plant absorbs two fertility-8
+    // mills); tier 1 needs four. Wired into the Charcoal def's m_pfnRatioIn. Guarded for
+    // older/short save research arrays. See Charcoal (#44).
+    int GetCharcoalRatio( )
+    {
+        int iTier = 0;
+        // Tiers 1-4 are CONTIGUOUS; tier 5 sits at the enum end (unrelated topics in between),
+        // so scan the 1-4 block then test tier 5 on its own -- never walk the gap. Clamp the
+        // block scan to what the array actually holds (ElementAt is unchecked; old/short saves)
+        // so a player with just charcoal_1 still gets the tier-1 ratio, not a silent 0.
+        int iTop = CRsrchArray::charcoal_4;
+        if ( m_aRsrch.GetSize( ) <= iTop )
+            iTop = m_aRsrch.GetSize( ) - 1;
+        for ( int iOn = CRsrchArray::charcoal_1; iOn <= iTop; iOn++ )
+            if ( GetRsrch( iOn ).m_bDiscovered )
+                iTier = iOn - CRsrchArray::charcoal_1 + 1;   // highest discovered (tiers chain)
+        if ( m_aRsrch.GetSize( ) > CRsrchArray::charcoal_5 && GetRsrch( CRsrchArray::charcoal_5 ).m_bDiscovered )
+            iTier = 5;   // tier 5 sits at the enum end (unrelated topics between charcoal_4 and it)
+        static const int aiRatio[6] = { 0, 4, 3, 3, 2, 2 };   // lumber per 1 coal by tier (0 = untechhed)
+        return ( aiRatio[iTier] );
+    }
 
-			BYTE				m_bState;			// ready to play (used by create)
+    BOOL CanMultiArea( ) { return ( GetRsrch( CRsrchArray::radio ).m_bDiscovered ); }
+    BOOL CanDelayMail( ) { return ( GetRsrch( CRsrchArray::mail ).m_bDiscovered ); }
+    BOOL CanEMail( ) { return ( GetRsrch( CRsrchArray::email ).m_bDiscovered ); }
+    BOOL CanChat( ) { return ( GetRsrch( CRsrchArray::telephone ).m_bDiscovered ); }
+    BOOL CanCopper( ) { return ( GetRsrch( CRsrchArray::copper ).m_bDiscovered ); }
 
-			BYTE				m_bAI;				// is an AI player
-			BYTE				m_bLocal;			// is on this machine
-			BYTE				m_bMe;				// is human on this machine
+    int GetSpottingLevel( ) const { return ( m_bSpotting ); }
+    int GetRangeLevel( ) const { return ( m_bRange ); }
+    int GetAttackLevel( ) const { return ( m_bAttack ); }
+    int GetDefenseLevel( ) const { return ( m_bDefense ); }
+    int GetAccuracyLevel( ) const { return ( m_bAccuracy ); }
 
-			BYTE				m_bSpotting;	// spotting ability
-			BYTE				m_bRange;			// range ability
-			BYTE				m_bAttack;		// attack ability
-			BYTE				m_bDefense;		// defense ability
-			BYTE				m_bAccuracy;	// accuracy ability
+    void Serialize( CArchive& ar );
+
+    AI_INIT ai;               // this is here cause we don't know when the AI
+                              // stops using it and for its size - big deal
+    CHexCoord m_hexMapStart;  // used during initialization only
+
+    int m_iPerInit;  // percentage inited for startup
+
+    int  GetHousingCap( int iVal ) const { return ( m_bAI ? iVal * 10 : iVal ); }
+    LONG m_iAptCap;     // built apartment capacity
+    LONG m_iOfcCap;     // built office capacity
+    LONG m_iNumCranes;  // number of cranes we have
+    LONG m_iNumTrucks;  // number of trucks we have
+
+    DWORD m_dwIDRocket;  // our rocket
+
+    int m_iGameSpeed;  // speed this net player wants
+    int m_iNumDiscovered;
+
+    int m_iNumAiGpfs;  // how many times this AI player has GPFed
+
+    CVPTransfer* m_pXferToClient;  // from server to this player
+
+    BOOL m_bMsgDead;  // displayed message it is dead
+
+    int  m_iBuiltBldgsHave;
+    BOOL m_bPlacedRocket;
+
+    // Observer: declined the rocket (End during placement) so this player is
+    // not a contender for the last-player-standing win. NOT yet synced or
+    // serialized - only the local player's flag is set today (the End key is
+    // local + cheat-build). MP spectators and save/reload need the broadcast +
+    // Serialize + VER_RELEASE bump; the win predicate already reads it per
+    // player so that lands without touching CountContenders.
+    BOOL m_bSpectator;
+
+    // --- Colony stat history (for the building-info windows' graphs) ----------
+    // A ring buffer of periodic samples taken in StartLoop (~once per game-minute);
+    // serialized when the save release is >= 4. GetHist*() returns sample i where
+    // i==0 is the OLDEST kept sample and i==GetHistCount()-1 is the newest.
+    static const int HIST_LEN = 120;
+    void SampleHistory( );                          // append one sample (StartLoop)
+    int  GetHistCount( ) const { return ( m_iHistCount ); }
+    LONG GetHistPwrHave( int i )  const { return ( HistAt( m_aHistPwrHave,  i ) ); }
+    LONG GetHistPwrNeed( int i )  const { return ( HistAt( m_aHistPwrNeed,  i ) ); }
+    LONG GetHistPplTotal( int i ) const { return ( HistAt( m_aHistPplTotal, i ) ); }
+    LONG GetHistPplBldg( int i )  const { return ( HistAt( m_aHistPplBldg,  i ) ); }
+    LONG GetHistAptCap( int i )   const { return ( HistAt( m_aHistAptCap,   i ) ); }
+    LONG GetHistOfcCap( int i )   const { return ( HistAt( m_aHistOfcCap,   i ) ); }
+    LONG GetHistPplNeed( int i )  const { return ( HistAt( m_aHistPplNeed,  i ) ); }
+
+    LONG m_aHistPwrHave[HIST_LEN];
+    LONG m_aHistPwrNeed[HIST_LEN];
+    LONG m_aHistPplTotal[HIST_LEN];
+    LONG m_aHistPplBldg[HIST_LEN];
+    LONG m_aHistAptCap[HIST_LEN];
+    LONG m_aHistOfcCap[HIST_LEN];
+    // Workforce NEED (m_iPplNeedBldg) — RUNTIME-ONLY, deliberately NOT serialized:
+    // the save format's history block (release 4) is frozen for old-save testing.
+    // Sampled in lock-step with the six saved series (shares head/count); on load
+    // it's backfilled with the just-deserialized live need so the graph shows a
+    // flat-at-current line for pre-load history instead of misleading zeros.
+    LONG m_aHistPplNeed[HIST_LEN];
+    int  m_iHistHead;    // index of the next slot to write
+    int  m_iHistCount;   // number of valid samples (<= HIST_LEN)
+
+    // --- Multi-resolution history — feeds the graph 10m/30m/5h ranges (the 10s/1m
+    // ranges read the per-minute buffer above). 3 rings sampled at 5/15/150
+    // game-minutes from SampleHistory => 120-sample spans of 10m/30m/5h REAL time
+    // (~1 game-min/sec).
+    // Series index 0..6 = PwrHave,PwrNeed,PplTotal,PplBldg,AptCap,OfcCap,PplNeed.
+    // Serialized in FULL at save release 6+ (CPlayer::Serialize) so the ENTIRE
+    // 10m/30m/5h history survives a save/load. Older saves (<6) predate that and
+    // fall back to SeedHRFromHist(), which rebuilds the rings by decimating the
+    // short per-minute buffer — that only covers the fine buffer's span, so it
+    // truncated the restored history (the pre-release-6 "only ~10 min after load").
+    static const int HR_RINGS  = 3;
+    static const int HR_SERIES = 7;
+    LONG m_aHR[HR_RINGS][HR_SERIES][HIST_LEN];   // [ring][series][slot]
+    int  m_iHRHead[HR_RINGS];
+    int  m_iHRCount[HR_RINGS];
+    int  m_iHRTick[HR_RINGS];            // game-minutes elapsed since this ring last sampled
+    int  GetHRCount( int ring ) const { return ( ( ring >= 0 && ring < HR_RINGS ) ? m_iHRCount[ring] : 0 ); }
+    LONG GetHR( int ring, int series, int i ) const
+    {
+        if ( ring < 0 || ring >= HR_RINGS || series < 0 || series >= HR_SERIES ) return ( 0 );
+        if ( i < 0 || i >= m_iHRCount[ring] ) return ( 0 );
+        int idx = ( m_iHRHead[ring] - m_iHRCount[ring] + i + 2 * HIST_LEN ) % HIST_LEN;
+        return ( m_aHR[ring][series][idx] );
+    }
+
+  protected:
+    void SeedHRFromHist( );   // rebuild the runtime rings from the loaded per-minute buffer
+
+    // Ring-buffer read: map logical sample i (0 = oldest) to the physical slot.
+    LONG HistAt( const LONG* a, int i ) const
+    {
+        if ( ( i < 0 ) || ( i >= m_iHistCount ) ) return ( 0 );
+        int idx = ( m_iHistHead - m_iHistCount + i + 2 * HIST_LEN ) % HIST_LEN;
+        return ( a[idx] );
+    }
+
+    BOOL BuildCcBldg( int iBldg );
+    BOOL InitialRoad( );
+    BOOL TryRoad( CCitCon* pCc );
+    BOOL BuildIt( CHexCoord const& hexTry, CCitCon* pCc );
+    BOOL CanBuild( CHexCoord const& hexTry, CCitCon* pCc );
+
+    COLORREF m_rgbPlyr;  // color to show this guy as
+    DWORD    m_clrPlyr;  // bitmap value (BYTE - DWORD, uses low bits)
+
+    // tracking power & people (this is global per player)
+    LONG  m_iPwrNeed;      // power needed by all buildings
+    LONG  m_iPwrHave;      // power presently generated
+    LONG  m_iPplNeedBldg;  // people needed by all buildings
+    // A surplus-scaled edict needs to know the SPARE workforce, which the live m_iPplNeedBldg
+    // above cannot answer: mid-tick it is a partial sum (its value depends on where a building
+    // falls in the iteration order), and it already contains the edicts' own drafts, so a
+    // percentage of it would feed back on itself. All runtime-only, snapshotted in StartLoop
+    // where the tick's total is final; -1 = no finished total yet (fresh game / just-loaded
+    // save), which ApplySurplusEdicts reads as "no spare".
+    LONG  m_iPplNeedLast;    // last tick's FINISHED m_iPplNeedBldg (-1 = none yet)
+    LONG  m_iSurplusPplLast; // workers ALL surplus edicts drafted last tick (added back as spare)
+    LONG  m_iSurplusPplTick; // same, accumulating for this tick (ApplySurplusEdicts)
+    // The power half of the same machinery. m_iPwrNeedLast == -1 is the same "no finished pump
+    // yet" sentinel. Only SURPLUS draws are summed into m_iSurplusPwrTick: War Footing's power,
+    // for one, is a flat cost, not a cut of the surplus, so adding it back would inflate the spare.
+    LONG  m_iPwrHaveLast;    // last tick's FINISHED m_iPwrHave
+    LONG  m_iPwrNeedLast;    // last tick's FINISHED m_iPwrNeed (-1 = none yet)
+    LONG  m_iSurplusPwrLast; // surplus power ALL surplus edicts drew last tick (added back)
+    LONG  m_iSurplusPwrTick; // same, accumulating for this tick (ApplySurplusEdicts)
+    // Per-edict results for THIS pump -- what the sim charged and what the UI/harness quote, so
+    // the two cannot disagree. All 0 when the edict is inactive.
+    LONG  m_iDespDraft;      // Desperate Measures draft (GetDesperateDraft)
+    LONG  m_iPubWorksDraft;  // Public Works draft
+    LONG  m_iCivDefDraft;    // Civil Defence draft / power draw
+    LONG  m_iCivDefPower;
+    LONG  m_iWarFootDraft;   // War Footing draft / power draw
+    LONG  m_iWarFootPower;
+    LONG  m_iRsrchSubDraft;  // Research Subsidy's seconded idle workers (its surplus half)
+    LONG  m_iSurplusSparePpl;  // the spare this pump was cut from (harness `pplspare`)
+    LONG  m_iSurplusSparePwr;  // ditto for power (harness `pwrspare`)
+    LONG  m_iPplBldg;      // people presently have EXCEPT in vehicles
+    LONG  m_iPplVeh;       // people in vehicles (Have+Veh == Total)
+    LONG  m_iFood;         // food on hand
+    LONG  m_iFoodProd;     // food produced in 1 minute
+    LONG  m_iFoodNeed;     // food eaten in 1 minute
+    LONG  m_iGas;          // gas on hand
+    LONG  m_iGasUsed;      // gas being burnt by travelling vehicles
+    LONG  m_iGasNeed;      // gas needed for the next minute
+    LONG  m_iGasTurn;      // turns to use some gas
+    float m_fPplMult;      // __min (1.0, need/have)
+    float m_fPwrMult;
+
+    LONG                                m_iRsrchHave;  // people working on R&D (reduced by damage)
+    LONG                                m_iRsrchItem;  // item we are researching
+    LONG                                m_iLastDiscovered;  // most recent discovery (Discovery button; serialized)
+    CArray<CRsrchStatus, CRsrchStatus*> m_aRsrch;
+    LONG*                               m_piBldgExists;  // bldg presently exists
+
+    // attributes that I need as floats
+    float m_fConstProd;   // construction productivity
+    float m_fMtrlsProd;   // create materials productivity
+    float m_fManfProd;    // create vehicles productivity
+    float m_fMineProd;    // mining productivity
+    float m_fFarmProd;    // farming productivity
+    float m_fPopGrowth;   // population growth rate per second
+    float m_fPopDeath;    // population death rate from overpop & no food
+    float m_fEatingRate;  // rate eats food at
+    float m_fPopMod;      // for handling remainder on pop growth
+    float m_fFoodMod;     // for handling remainder on food consumption
+    float m_fRsrchProd;   // research productivity
+    float m_fAttack;      // attack multiplier
+    float m_fDefense;     // defense multiplier
+
+    // --- Edicts v1 (civ-wide policy toggles; see edicts.h) ---
+    // m_dwEdicts: bitmask of active CIV-WIDE edicts (bit i == EdictId i). Building-scoped
+    // edicts use the AltOutput family instead (operator: "building edicts ARE AltOutput").
+    // The cached mults are recomputed from g_aEdicts whenever m_dwEdicts changes
+    // (RecomputeEdictMults), then folded into the Get*Prod() accessors above. Default 1.0
+    // (no edict → no change). The bitmask IS serialized (save release 5+, see Serialize);
+    // the derived mults/upkeeps are not — they're rebuilt on load via RecomputeEdictMults.
+    DWORD m_dwEdicts;
+    float m_fEdictConstMult;       // → GetConstProd
+    float m_fEdictMineMult;        // → GetMineProd
+    float m_fEdictRsrchMult;       // → GetRsrchMult
+    float m_fEdictPopGrowthMult;   // → GetPopGrowth
+    float m_fEdictFarmMult;        // → GetFarmProd
+    float m_fEdictGlobalProdMult;  // → every Get*Prod (Overclocked Grid)
+    float m_fEdictMoveMult;        // fuel-consuming unit move speed (vehmove.cpp)
+    float m_fEdictVisionMult;      // unit spotting range (new_unit.cpp AssignData)
+    float m_fEdictInfBuildMult;    // infantry build speed (mainloop.cpp BuildVehicle)
+    float m_fEdictFortBuildMult;   // fort-only construction (vehicle.cpp ConstructBuilding)
+    float m_fEdictFarmWorkerMult;  // farm-only worker need (mainloop.cpp BuildFarm)
+    float m_fEdictFuelMult;        // fuel-consuming unit gas burn (FuelVehicle)
+    float m_fEdictInfPopMult;      // infantry population cost at build (new_unit.cpp Create)
+    float m_fEdictMineEnergyMult;  // mine-only power need (mainloop.cpp BuildMine)
+    float m_fEdictMineWorkerMult;  // mine-only worker need (mainloop.cpp BuildMine)
+    float m_fEdictBldgDmgMult;     // building damage-taken (Meat Shield; projbase.cpp)
+    // Surplus-edict multipliers — DYNAMIC, recomputed from scratch every pump by
+    // ApplySurplusEdicts (they scale with the draft, so they are not derivable from g_aEdicts
+    // the way the m_fEdict* fields above are). Neutral 1.0 when no surplus edict is active.
+    // Each is folded into the SAME accessor as its static twin, so every existing consumer
+    // picks it up with no call-site change.
+    float m_fSurplusConstMult;     // Public Works   → GetConstProd
+    float m_fSurplusFortMult;      // Civil Defence  → GetEdictFortBuildMult
+    float m_fSurplusBldgDmgMult;   // Civil Defence  → GetEdictBldgDmgMult
+    // Civil Defence replication (CNetBldgDmgMult), all runtime-only (not serialized, reset by ctor):
+    int   m_iRemoteBldgDmgPermille;  // server: a REMOTE owner's reported m_fSurplusBldgDmgMult (1000 = none)
+    int   m_iSentBldgDmgPermille;    // owner client: last value sent to the server (-1 = none yet)
+    DWORD m_dwSentBldgDmgTime;       // owner client: timeGetTime( ) of that send
+    float m_fSurplusInfBuildMult;  // War Footing    → GetEdictInfBuildMult
+    float m_fSurplusRsrchMult;     // Research Subsidy (surplus half) → GetRsrchMult
+    float m_fEdictFuelCarry;       // runtime-only: fractional gas-surcharge carry (not serialized)
+    BOOL  m_bAutoRsrchPending;     // runtime-only: AutoResearch edict posted a set_rsrch, awaiting it (not serialized)
+    // Resonance Sweep edict state. Both runtime-only and deliberately NOT serialized: they carry
+    // nothing but the phase of a real-time recharge timer and the position of a private RNG, so a reload
+    // simply restarts the cycle. Nothing the sweep produces lives here -- what it reveals is
+    // recorded in the buildings' own visibility, which already persists.
+    int   m_iSweepMillis;            // active real milliseconds banked toward the next ping
+    unsigned int m_uSweepRand;     // private LCG state -- never MyRand (see ResonanceSweep)
+    // The lit ring. Store the exact coordinates incremented (some rocket footprints are skipped)
+    // so release remains balanced even if the building map changes before the ring expires.
+    // Hex visibility is NOT serialized (CHex::Serialize writes type/alt/unit/sprite only; it is
+    // rebuilt from our own units on load), so a save taken mid-ping cannot leak one.
+    BOOL      m_bSweepLit;         // a ring is currently up
+    int       m_iSweepLitMillis;     // active real milliseconds left before it is released
+    CHexCoord m_hexSweepLit;       // origin of the lit rect
+    int       m_iSweepLitCX;       // its extent
+    int       m_iSweepLitCY;
+    std::vector<CHexCoord> m_aSweepLitHexes; // exact hexes whose visibility count this ring raised
+    // Upkeep — recurring cost (sum of active edicts' pct), applied as extra per-loop demand:
+    float m_fEdictEnergyUpkeepPct;     // added to m_iPwrNeed in StartLoop (pre-throttle)
+
+    float m_fEdictWorkforceUpkeepPct;  // added to m_iPplNeedBldg in StartLoop (pre-throttle)
+    float m_fEdictFoodUpkeepPct;       // added to m_iFoodNeed in PeopleAndFood
+
+    // relations the human player on this machine has with this player
+    LONG m_iRelations;
+    int  m_iTheirRelations;  // their relations with us
+
+    // this tracks the players productivity for when the game ends
+    LONG m_iBldgsBuilt;
+    LONG m_iVehsBuilt;
+    LONG m_aiMade[CMaterialTypes::num_types];  // materials made
+    LONG m_aiHave[CMaterialTypes::num_types];  // materials on hand
+    LONG m_iBldgsDest;                         // destroyed
+    LONG m_iVehsDest;
+
+    // you're dead when you have no buildings (start at 1 & don't inc for rocket)
+    LONG m_iBldgsHave;
+    LONG m_iVehsHave;
+
+    void ctor( );   // reset (close)
+    void _ctor( );  // init everything
+
+    std::string m_sName;    // name of player
+    DWORD_PTR  m_dwAiHdl;   // AI internal handle (holds a CAIMgr* — pointer-width)
+    VPPLAYERID m_iNetNum;   // net connection to that player
+    LONG       m_iPlyrNum;  // player number (0 == self, 1 == server)
+
+    BYTE m_bState;  // ready to play (used by create)
+
+    BYTE m_bAI;     // is an AI player
+    BYTE m_bLocal;  // is on this machine
+    BYTE m_bMe;     // is human on this machine
+
+    BYTE m_bSpotting;  // spotting ability
+    BYTE m_bRange;     // range ability
+    BYTE m_bAttack;    // attack ability
+    BYTE m_bDefense;   // defense ability
+    BYTE m_bAccuracy;  // accuracy ability
 
 #ifdef _DEBUG
-public:
-	virtual void AssertValid() const;
+  public:
+    virtual void AssertValid( ) const;
 #endif
 };
 
@@ -344,293 +1152,429 @@ public:
 
 class CGame : public CObject
 {
-friend CDlgFile;
-friend class CConquerApp;
+    // friend CDlgFile removed (Phase 2d).
+    friend class CConquerApp;
 #ifdef _DEBUG
-friend class CPlayer;
-friend class CMsgVehGoto;
+    friend class CPlayer;
+    friend class CMsgVehGoto;
 #endif
-public:
-			CGame () { _ctor (); }
-			~CGame () { Close (); }
-			void				ctor ();
+  public:
+    CGame( ) { _ctor( ); }
+    ~CGame( ) { Close( ); }
+    void ctor( );
 
-			void				Open (BOOL bLocal);
-			void				Close ();
-			CPlayer *		_GetPlayer (int iNetNum) const;
-			CPlayer *		GetPlayer (int iNetNum) const;
-			CPlayer *		_GetPlayerByPlyr (int iPlyrNum) const;
-			CPlayer *		GetPlayerByPlyr (int iPlyrNum) const;
-			BOOL				IsAllReady () const;
+    void     Open( BOOL bLocal );
+    void     Close( );
+    CPlayer* _GetPlayer( int iNetNum ) const;
+    CPlayer* GetPlayer( int iNetNum ) const;
+    CPlayer* _GetPlayerByPlyr( int iPlyrNum ) const;
+    CPlayer* GetPlayerByPlyr( int iPlyrNum ) const;
+    BOOL     IsAllReady( ) const;
 
-			void				AddPlayer (CPlayer *pPlr);
-			void				AddAiPlayer (CPlayer *pPlr);
-			void				AiTakeOverPlayer (CPlayer *pPlr, BOOL bStartThread, BOOL bShowDlg = TRUE);
-			void				AiReleasePlayer (CPlayer *pPlr, int iNetNum, const char * pName, BOOL bLocal, BOOL bPlaying);
-			void				DeletePlayer (CPlayer *pPlr);
-			void				DeleteAll ();
-			void				RemovePlayer (CPlayer * pPlr);
-			void				AiPlayerIsDead (CPlayer *pPlr);
+    void AddPlayer( CPlayer* pPlr );
+    void AddAiPlayer( CPlayer* pPlr );
+    void AiTakeOverPlayer( CPlayer* pPlr, BOOL bStartThread, BOOL bShowDlg = TRUE );
+    void AiReleasePlayer( CPlayer* pPlr, int iNetNum, const char* pName, BOOL bLocal, BOOL bPlaying );
+    void DeletePlayer( CPlayer* pPlr );
+    void DeleteAll( );
+    void RemovePlayer( CPlayer* pPlr );
+    void AiPlayerIsDead( CPlayer* pPlr );
 
-			// starting the game
-			void				StartAllPlayers () const;
-			void				StartNewWorld (unsigned uRand, int iSide, int iSideSize);
-			void				LoadToPlyr ( CPlayer * pPlrLoad, CPlayer * pPlrAll );
+    // starting the game
+    void StartAllPlayers( ) const;
+    void StartNewWorld( unsigned uRand, int iSide, int iSideSize );
+    void LoadToPlyr( CPlayer* pPlrLoad, CPlayer* pPlrAll );
 
-			// running the game
-			void				SetGameMul (int iSpeed);
-			int					GetGameMul () const;
-			void				SetSeed (unsigned uSeed) { m_uSeed = uSeed; }
+    // running the game
+    void SetGameMul( int iSpeed );
+    int  GetGameMul( ) const;
+    void SetSeed( unsigned uSeed ) { m_uSeed = uSeed; }
+    DWORD GetSeed(  ) { return m_uSeed; }
 
-			// sending messages
-			VPPLAYERID	GetMyNetNum () const 
-													{ if (m_pMe != NULL) return (m_pMe->GetNetNum ());
-														if (m_bServer) return (VP_SESSIONSERVER);
-														ASSERT (FALSE);
-														return (VP_LOCALMACHINE); }
-			VPPLAYERID	GetServerNetNum () const 
-													{ if (m_pServer != NULL) return (m_pServer->GetNetNum ());
-														return (VP_SESSIONSERVER); }
-			void				AddToQueue (CNetCmd const * pCmd, int iLen);
-			void				FreeQueueElem ( CNetCmd * pCmd );
-			void				EmptyQueue ();
-			void				ProcessMsg (CNetCmd * pCmd);
-			void				SendToServer (CNetCmd const * pMsg, int iLen);
-			void				PostToServer (CNetCmd const * pMsg, int iLen);
-			void				PostToAll (CNetCmd const * pMsg, int iLen, BOOL bAI = TRUE);
-			void				PostToAllClients (CNetCmd const * pMsg, int iLen, BOOL bAI = TRUE);
-			void				PostToAllAi (CNetCmd const * pMsg, int iLen);
-			void				PostToClient ( CPlayer * pPlr, CNetCmd const * pMsg, int iLen);
-			void				PostToClient ( int iPlyr, CNetCmd const * pMsg, int iLen);
-			void				PostToClientByNet ( int iPlyr, CNetCmd const * pMsg, int iLen);
-			void				PostClientToClient ( CPlayer * pPlr, CNetCmd const * pMsg, int iLen);
-			void				ProcessAllMessages ();
+    // sending messages
+    VPPLAYERID GetMyNetNum( ) const
+    {
+        if ( m_pMe != NULL )
+            return ( m_pMe->GetNetNum( ) );
+        if ( m_bServer )
+            return ( VP_SESSIONSERVER );
+        ASSERT( FALSE );
+        return ( VP_LOCALMACHINE );
+    }
+    VPPLAYERID GetServerNetNum( ) const
+    {
+        if ( m_pServer != NULL )
+            return ( m_pServer->GetNetNum( ) );
+        return ( VP_SESSIONSERVER );
+    }
 
-			// events
-			void				Event (int ID, int iTyp, CUnit *pUnit);
-			void				Event (int ID, int iTyp, CPlayer * pPlayer);
-			void				Event (int ID, int iTyp, int iVal);
-			void				Event (int ID, int iTyp);
-			void				_Event (int ID, int iTyp, char const * pText, int iVoice);
-			void				MulEvent (int ID, CUnit * pUnit);
+    void AddToQueue( CNetCmd const* pCmd, int iLen );
+    void FreeQueueElement(CNetCmd* pCmd );
+    void EmptyQueue( );
+    void ProcessMessage(CNetCmd* pCmd );
+    void SendToServer( CNetCmd const* pMsg, int iLen );
+    void PostToServer( CNetCmd const* pMsg, int iLen );
+    void PostToAll( CNetCmd const* pMsg, int iLen, BOOL bAI = TRUE );
+    void PostToAllClients( CNetCmd const* pMsg, int iLen, BOOL bAI = TRUE );
+    void PostToAllAi( CNetCmd const* pMsg, int iLen );
+    void PostToClient( CPlayer* pPlr, CNetCmd const* pMsg, int iLen );
+    void PostToClient( int iPlyr, CNetCmd const* pMsg, int iLen );
+    void PostToClientByNet( int iPlyr, CNetCmd const* pMsg, int iLen );
+    void PostClientToClient( CPlayer* pPlr, CNetCmd const* pMsg, int iLen );
+    void ProcessAllMessages( );
 
-			int					GetSideSize () const { return (m_iSideSize); }
-			void				SetSideSize (int iSideSize) { m_iSideSize = iSideSize; }
-			int					GetScenario () const { return (m_iScenarioNum); }
-			void				IncScenario () { m_iScenarioNum++; }
-			void				SetScenario (int iNum) { m_iScenarioNum = iNum; }
-			int					GetMaxPlyrNum () const { return (m_iNextPlyrNum); }
-			void				_SetMaxPlyrNum ( int iNum ) { m_iNextPlyrNum = iNum; }
+    // events
+    void Event( int ID, int iTyp, CUnit* pUnit );
+    void Event( int ID, int iTyp, CPlayer* pPlayer );
+    void Event( int ID, int iTyp, int iVal );
+    void Event( int ID, int iTyp );
+    void _Event( int ID, int iTyp, char const* pText, int iVoice );
+    void MulEvent( int ID, CUnit* pUnit );
 
-			BOOL				IsNetGame () const { return m_bIsNetGame; }
-			BOOL				AmServer () const { ASSERT_STRICT_VALID (this); return (m_bServer); }
-			void				SetServer (BOOL bSrvr) { ASSERT_STRICT_VALID (this); m_bServer = bSrvr; }
-			void				_SetIsNetGame ( BOOL bIsNet ) { m_bIsNetGame = bIsNet; }
-			BOOL				HaveHP () const { ASSERT_STRICT_VALID (this); return (m_bHP); }
-			void				SetHP (BOOL bSrvr) { ASSERT_STRICT_VALID (this); m_bHP = bSrvr; }
-			BOOL				HaveAI () const { ASSERT_STRICT_VALID (this); return (m_bAI); }
-			void				SetAI (BOOL bSrvr) { ASSERT_STRICT_VALID (this); m_bAI = bSrvr; }
+    int  GetSideSize( ) const { return ( m_iSideSize ); }
+    void SetSideSize( int iSideSize ) { m_iSideSize = iSideSize; }
+    int  GetScenario( ) const { return ( m_iScenarioNum ); }
+    void IncScenario( ) { m_iScenarioNum++; }
+    void SetScenario( int iNum ) { m_iScenarioNum = iNum; }
+    int  GetMaxPlyrNum( ) const { return ( m_iNextPlyrNum ); }
+    void _SetMaxPlyrNum( int iNum ) { m_iNextPlyrNum = iNum; }
 
-			BOOL				AreMsgsPaused () const { return m_bPauseMsgs; }
-			BOOL				CheckAreMsgsPaused () { if ( ! m_bPauseMsgs ) return FALSE;
-																					if ( ! m_bUnPauseMe) return TRUE;
-																					m_bPauseMsgs = FALSE;
-																					return FALSE; }
-			void				SetMsgsPaused ( BOOL bPause );
-			void				PauseTimerFired () { m_uTimer = 0; }
+    BOOL IsNetGame( ) const { return m_bIsNetGame; }
+    BOOL AmServer( ) const
+    {
+        ASSERT_STRICT_VALID( this );
+        return ( m_bServer );
+    }
+    void SetServer( BOOL bSrvr )
+    {
+        ASSERT_STRICT_VALID( this );
+        m_bServer = bSrvr;
+    }
+    void _SetIsNetGame( BOOL bIsNet ) { m_bIsNetGame = bIsNet; }
+    BOOL HaveHP( ) const
+    {
+        ASSERT_STRICT_VALID( this );
+        return ( m_bHP );
+    }
+    void SetHP( BOOL bSrvr )
+    {
+        ASSERT_STRICT_VALID( this );
+        m_bHP = bSrvr;
+    }
+    BOOL HaveAI( ) const
+    {
+        ASSERT_STRICT_VALID( this );
+        return ( m_bAI );
+    }
+    void SetAI( BOOL bSrvr )
+    {
+        ASSERT_STRICT_VALID( this );
+        m_bAI = bSrvr;
+    }
 
-			BOOL				IsToldPause () const { return m_bToldPause; }
-			void				SetToldPause () { m_bToldPause = TRUE; }
-			void				ClrToldPause () { m_bToldPause = FALSE; }
-			BOOL				IsNetPause () const { return m_bNetPause; }
-			void				SetNetPause () { m_bNetPause = TRUE; }
-			void				ClrNetPause () { m_bNetPause = FALSE; }
+    BOOL AreMessagesPaused( ) const { return m_bPauseMsgs; }
+    BOOL CheckAreMessagesPaused( )
+    {
+        if ( !m_bPauseMsgs )
+            return FALSE;
+        if ( !m_bUnPauseMe )
+            return TRUE;
+        m_bPauseMsgs = FALSE;
+        return FALSE;
+    }
+    void SetMessagesPaused( BOOL bPause );
+    void ResetPauseTimer( ) { m_uTimer = 0; }
 
-			BOOL				DoMsgs () const { ASSERT_STRICT_VALID (this); return (m_bMessages); }
-			void				SetMsgs (BOOL bMsgs) { ASSERT_STRICT_VALID (this); m_bMessages = bMsgs; }
+    // Host: remote connections that asked us to stop high-volume sends
+    // (pause_messages). Keyed by the sender's vdmplay net id, which is fixed for
+    // the life of its connection; its plyr num is not (a Load Network Game joiner
+    // goes lobby number -> claimed saved player between a pause and its unpause).
+    void NetPauseRequest( VPPLAYERID idNet, BOOL bPause );
+    void NetPauseDrop( VPPLAYERID idNet );   // that connection is gone
+    void NetPauseClearAll( ) { m_aPausedNet.clear( ); }
 
-			BOOL				DoAnim () const { ASSERT_STRICT_VALID (this); return (m_bAnimate); }
-			BOOL				DoOper () const { ASSERT_STRICT_VALID (this); return (m_bOperate); }
-			void				SetAnim (BOOL bAnimate) 
-																{ ASSERT_STRICT_VALID (this); 
-																	if ( ! m_bHP )
-																		return;
-																	if ((bAnimate) && (! m_bAnimate))
-																		m_dwFrameTimeLast = timeGetTime ();
-																	m_bAnimate = bAnimate; }
-			void				SetOper (BOOL bOperate)
-																{ ASSERT_STRICT_VALID (this); 
-																	if ((bOperate) && (! m_bOperate))
-																		m_dwOperTimeLast = timeGetTime ();
-																	m_bOperate = bOperate; }
+    BOOL ShouldPause( ) const { return m_bShouldPause; }
+    void SetShouldPause( ) { m_bShouldPause = TRUE; }
+    void ClearShouldPause( ) { m_bShouldPause = FALSE; }
+    BOOL ShouldNetPause( ) const { return m_bShouldNetPause; }
+    void SetNetPause( ) { m_bShouldNetPause = TRUE; }
+    void ClearNetPause( ) { m_bShouldNetPause = FALSE; }
 
-			DWORD				GetFramesElapsed () const { return (m_dwFramesElapsed); }
-			DWORD				GetOpersElapsed () const { return (m_dwOpersElapsed); }
-			DWORD				GetOperSecElapsed () const { return (m_dwOperSecElapsed); }
-			DWORD				GettimeGetTime () const { return m_dwtimeGetTime; }
-			void				_SettimeGetTime () { m_dwtimeGetTime = timeGetTime (); }
+    BOOL ShouldProcessMessages( ) const
+    {
+        ASSERT_STRICT_VALID( this );
+        return ( m_bMessages );
+    }
+    void SetShouldProcessMessages(BOOL bMessages )
+    {
+        ASSERT_STRICT_VALID( this );
+        m_bMessages = bMessages;
+    }
 
-			DWORD				GetElapsedSeconds () const { return ( ( m_dwElapsedTime >> 4 ) / 24 ); }
-			void				SetElapsedSeconds ( int iSec ) { m_dwElapsedTime = ( iSec << 4 ) * 24; }
-			DWORD				GetFrame () const { return (m_dwFrame); }
+    BOOL ShouldAnimate( ) const
+    {
+        ASSERT_STRICT_VALID( this );
+        return ( m_bAnimate );
+    }
+    BOOL ShouldOperate( ) const
+    {
+        ASSERT_STRICT_VALID( this );
+        return ( m_bOperate );
+    }
+    void SetShouldAnimate( BOOL bAnimate )
+    {
+        ASSERT_STRICT_VALID( this );
+        if ( !m_bHP )
+            return;
+        if ( ( bAnimate ) && ( !m_bAnimate ) )
+            m_dwFrameTimeLast = timeGetTime( );
+        m_bAnimate = bAnimate;
+    }
+    void SetShouldOperate( BOOL bOperate )
+    {
+        ASSERT_STRICT_VALID( this );
+        if ( ( bOperate ) && ( !m_bOperate ) )
+            m_dwOperTimeLast = timeGetTime( );
+        m_bOperate = bOperate;
+    }
 
-			void				CheckAlliances ();
-			BOOL				AnyAlliances () const { return m_bHaveAlliances; }
+    DWORD GetFramesElapsed( ) const { return ( m_dwFramesElapsed ); }
+    DWORD GetOpersElapsed( ) const { return ( m_dwOpersElapsed ); }
+    DWORD GetOperSecElapsed( ) const { return ( m_dwOperSecElapsed ); }
+    DWORD GettimeGetTime( ) const { return m_dwtimeGetTime; }
+    void  _SettimeGetTime( ) { m_dwtimeGetTime = timeGetTime( ); }
 
-			int					GetState () const { return (m_iState); }
-			void				SetState (int iState) { m_iState = iState; }
-							enum { main, open, wait_start, init, wait_AI, init_AI, AI_done, play, close, save, error, other };
-			void				SetNetJoin (int iVal) { m_iNetJoin = iVal; }
-			int					GetNetJoin () const { return (m_iNetJoin); }
-							enum { create = 0, approve = 1, any = 2 };
-			void				IncTry () { m_iTryCount++; }
-			void				DecTry () { m_iTryCount--; }
-			int					GetTry () const { return (m_iTryCount); }
+    DWORD GetElapsedSeconds( ) const { return ( ( m_dwElapsedTime >> 4 ) / 24 ); }
+    void  SetElapsedSeconds( int iSec ) { m_dwElapsedTime = ( iSec << 4 ) * 24; }
+    DWORD GetFrame( ) const { return ( m_dwFrame ); }
 
-			DWORD				GetID () { return (m_dwNextUnitID++); }
+    void CheckAlliances( );
+    BOOL AnyAlliances( ) const { return m_bHaveAlliances; }
 
-			// players
-			CPlayer *		GetMe () { ASSERT_STRICT_VALID (this); ASSERT (m_pMe != NULL); return (m_pMe); }
-			CPlayer *		_GetMe () { ASSERT_STRICT_VALID (this); return (m_pMe); }
-			CPlayer *		GetServer () { ASSERT (! m_bServer); ASSERT_STRICT_VALID (this); ASSERT (m_pServer != NULL); return (m_pServer); }
-			void				_SetMe (CPlayer * pPlyr) { m_pMe = pPlyr; }
-			void				_SetServer (CPlayer * pPlyr) { m_pServer = pPlyr; }
+    int  GetState( ) const { return ( m_iState ); }
+    void SetState( int iState ) { m_iState = iState; }
+    enum
+    {
+        main,
+        open,
+        wait_start,
+        init,
+        wait_AI,
+        init_AI,
+        AI_done,
+        play,
+        close,
+        save,
+        error,
+        other
+    };
+    void SetNetJoin( int iVal ) { m_iNetJoin = iVal; }
+    int  GetNetJoin( ) const { return ( m_iNetJoin ); }
+    enum
+    {
+        create  = 0,
+        approve = 1,
+        any     = 2
+    };
+    void IncTry( ) { m_iTryCount++; }
+    void DecTry( ) { m_iTryCount--; }
+    int  GetTry( ) const { return ( m_iTryCount ); }
 
-			CList <CPlayer *, CPlayer *> & GetAi () { ASSERT_STRICT_VALID (this); return (m_lstAi); }
-			CList <CPlayer *, CPlayer *> & GetAll () { ASSERT_STRICT_VALID (this); return (m_lstAll); }
+    // atomic: 13 AI init threads draw concurrently; the bare ++ handed the same
+    // id to two players (confirmed live: collisions at every player boundary)
+    DWORD GetID( ) { return ( (DWORD)InterlockedIncrement( (LONG volatile*)&m_dwNextUnitID ) - 1 ); }
 
-			CList <CPlayer *, CPlayer *> m_lstDead;		// dead players
+    // players
+    CPlayer* GetMe( )
+    {
+        ASSERT_STRICT_VALID( this );
+        ASSERT( m_pMe != NULL );
+        return ( m_pMe );
+    }
+    CPlayer* _GetMe( )
+    {
+        ASSERT_STRICT_VALID( this );
+        return ( m_pMe );
+    }
+    CPlayer* GetServer( )
+    {
+        ASSERT( !m_bServer );
+        ASSERT_STRICT_VALID( this );
+        // NB: m_pServer is legitimately NULL after a host-drop / SessionClose, and
+        // every caller null-checks this return (netcmd.cpp:46, netapi.cpp:472/505,
+        // player.cpp:1445/1948). The old ASSERT(m_pServer!=NULL) here fired on a
+        // normal disconnect (debugger's non-fatal #43 host-drop assert) — null IS
+        // the contract on teardown, so don't assert it. (Release was unaffected.)
+        return ( m_pServer );
+    }
+    void _SetMe( CPlayer* pPlyr ) { m_pMe = pPlyr; }
+    void _SetServer( CPlayer* pPlyr ) { m_pServer = pPlyr; }
 
-			CList <CPlayer *, CPlayer *> m_lstLoad;		// loading a multi-player game
-			int					m_iSavedPlyrNum;	// player we saved as (for spotting)
+    CList<CPlayer*, CPlayer*>& GetAi( )
+    {
+        ASSERT_STRICT_VALID( this );
+        return ( m_lstAi );
+    }
+    CList<CPlayer*, CPlayer*>& GetAll( )
+    {
+        ASSERT_STRICT_VALID( this );
+        return ( m_lstAll );
+    }
+
+    CList<CPlayer*, CPlayer*> m_lstDead;  // dead players
+
+    CList<CPlayer*, CPlayer*> m_lstLoad;        // loading a multi-player game
+    int                       m_iSavedPlyrNum;  // player we saved as (for spotting)
 
 #ifdef _DEBUG
-			DWORD				GetNextID () { return (m_dwNextUnitID); }
+    DWORD GetNextID( ) { return ( m_dwNextUnitID ); }
 #endif
 
-			void 				Serialize(CArchive& ar);
-			int					LoadGame (CWnd * pPar, BOOL bReplace);
-			int					StartGame (BOOL bReplace);
-			int					SaveGame (CWnd * pPar);
+
+    void Serialize( CArchive& ar );
+    int  LoadGame( CWnd* pPar, BOOL bReplace );
+    int  StartGame( BOOL bReplace );
+    int  SaveGame( CWnd* pPar );
+    int  LoadGame( CWndStub* pPar, BOOL bReplace ) { return LoadGame( CWnd::FromHandle( pPar ? pPar->m_hWnd : NULL ), bReplace ); }
+    int  SaveGame( CWndStub* pPar )                { return SaveGame( CWnd::FromHandle( pPar ? pPar->m_hWnd : NULL ) ); }
 
 
-			CPtrList		m_lstMsgs;			// posted messages
-			MEM_POOL		m_memPoolLarge;
-			MEM_POOL		m_memPoolSmall;
+    CPtrList m_messagePointerList;  // posted messages
+    mempool_large m_memPoolLarge;
+    mempool_small m_memPoolSmall;
 
-			CString			m_sFileName;		// file name of the game (if loaded or saved)
-			DWORD				m_dwFinalRand;	// final seed at end of init
+    std::string m_sFileName;    // file name of the game (if loaded or saved)
+    DWORD   m_dwFinalRand;  // final seed at end of init
 
-			// what the game was started at (for loading descriptions)
-			LONG					m_iAi;				// AI intelligence
-			LONG					m_iSize;			// world size
-			LONG					m_iPos;				// initial position
-			CString				m_sGameName;					// for create_net
-			CString				m_sGameDesc;
+    // MP world-gen parity: the AUTHORITATIVE player count world-gen must use, frozen
+    // from the host's CNetStart (m_iNumHp + m_iNumAi) instead of the LIVE
+    // GetAll().GetCount(). The live list count can differ host-vs-client while the
+    // roster is still settling (auto-start / late AI), and several world-gen sites
+    // draw RNG proportional to it -> the stream shifts -> m_dwFinalRand mismatch ->
+    // every client kicked uniformly at CmdPlay. Host/SP sets this in StartNewWorld;
+    // the client sets it in CmdStart before CreateNewWorld. See the investigation
+    // doc mp-lobby-roster-replication-and-worldgen-count.md (Bug 2).
+    int     m_iWorldGenCount;
 
-			CHPRouter *		m_pHpRtr;
+    // what the game was started at (for loading descriptions)
+    LONG    m_iAi;        // AI intelligence
+    LONG    m_iSize;      // world size
+    LONG    m_iPos;       // initial position
+    LONG    m_iWorldType; // world generation preset (EWorldType) - synced via CNetStart
+    LONG    m_iRivers;    // river density slider 0-100 (60 = baseline) - synced via CNetStart
+    LONG    m_iOcean;     // ocean size slider 0-100 (50 = baseline ~= current avg) - synced via CNetStart
+    std::string m_sGameName;  // for create_net
+    std::string m_sGameDesc;
 
-			LONG					m_iScenarioVar;				// used for scenarios
-			DWORD					m_adwScenarioUnits[5];
+    CHPRouter* m_pHpRtr;
 
-			// windpow positions of the human player on this system
-			CHexCoord					m_hexAreaCenter;
-			WINDOWPLACEMENT		m_wpArea;
-			WINDOWPLACEMENT		m_wpWorld;
-			WINDOWPLACEMENT		m_wpChat;
-			WINDOWPLACEMENT		m_wpBldgs;
-			WINDOWPLACEMENT		m_wpVehicles;
-			WINDOWPLACEMENT		m_wpRelations;
-			WINDOWPLACEMENT		m_wpFile;
-			WINDOWPLACEMENT		m_wpRsrch;
+    LONG  m_iScenarioVar;  // used for scenarios
+    DWORD m_adwScenarioUnits[5];
 
-			#ifdef _DEBUG
-			BOOL	m_bUpdateFlag;
-			#endif
-
-			DWORD 				m_dwMaj;
-			DWORD 				m_dwMin;
-			DWORD 				m_dwVer;
-			WORD 					m_wDbg;
-			WORD 					m_wCht;
-
-			// for joining a game (load/in progress)
-			CVPTransfer *	m_pXferFromServer;	// from server to me
-			void				* m_pGameFile;				// game file we are sending/receiving
-			int						m_iGameBufLen;			// how big it is
-			int						m_iNumSends;				// how many we are sending to
-
-			CString				m_sPwJoin;					// password for joining a game
-
-			CMsgShoot			m_msgShoot;					// batch up shoot commands
-
-protected:
-			void				_ctor ();
-			void				CloseAll ();
-			void				ReadWP ( CArchive & ar, WINDOWPLACEMENT & wp, int iMode );
-
-			CPlayer *		m_pMe;
-			CPlayer *		m_pServer;
-			CList <CPlayer *, CPlayer *> m_lstAi;				// the AI players (only on server)
-			CList <CPlayer *, CPlayer *> m_lstAll;			// includes me too
-
-			LONG				m_iNextPlyrNum;	// PlyrNum for next player
-			LONG				m_iNextAINum;
-			DWORD				m_dwNextUnitID;	// unique ID for each unit
-
-			BOOL				m_bIsNetGame;		// TRUE if a net game
-			BOOL				m_bServer;			// TRUE if I'm the server
-			BOOL				m_bHP;					// TRUE if have a Human Player (on server only)
-			BOOL				m_bAI;					// TRUE if have AI players (on server only)
-
-			BOOL				m_bPauseMsgs;		// don't post high volume messages
-			BOOL				m_bToldPause;		// told others to not post high-volume to me
-			BOOL				m_bNetPause;		// net told me to stop posting
-			BOOL				m_bUnPauseMe;		// unpause me next oppo
-			UINT				m_uTimer;
-
-			BOOL				m_bMessages;		// process messages
-			BOOL				m_bAnimate;			// animate the screen
-			DWORD				m_dwFrameTimeLast;		// timeGetTime of last render loop
-			DWORD				m_dwFramesElapsed;// frames (1/24) elapsed since last loop
-
-			BOOL				m_bOperate;			// operate the economy/games
-			DWORD				m_dwOperTimeLast;		// timeGetTime of last oper loop
-			DWORD				m_dwOpersElapsed;// operations elapsed since last loop
-			DWORD				m_dwOperSecElapsed;	// seconds elapsed since last loop
-			DWORD				m_dwOperSecFrames;	// frames towards next 1 sec loop
-
-			DWORD				m_dwElapsedTime;	// time playing in 24ths of a sec (stops when paused)
-			DWORD				m_dwFrame;			// GG: frames since game start,
-														//     for calculating ambient frames, animating building cursor, etc.
-			DWORD				m_dwtimeGetTime;	// call timeGetTime once a frame
-
-			int					m_iState;				// game state
-			int					m_iNetJoin;			// when can join game
-			int					m_iTryCount;		// how many try's deep
-
-			BOOL				m_bHaveAlliances;		// TRUE if have alliances with anyone
-
-			LONG				m_iSideSize;		// number of hexes along 1 side of a map block
-			LONG				m_iScenarioNum;	// -1 if not a scenario
-			LONG				m_iSpeedMul;
-
-			DWORD				m_uSeed;				// rand seed
-
-			CMapLoc			m_maploc;				// area window for save/restore
-			int					m_iDir;
-			int					m_iZoom;
-
-			LONG				m_xScreen;			// screen resolution saved at
-			LONG				m_yScreen;
+    // windpow positions of the human player on this system
+    CHexCoord       m_hexAreaCenter;
+    WINDOWPLACEMENT m_wpArea;
+    WINDOWPLACEMENT m_wpWorld;
+    WINDOWPLACEMENT m_wpChat;
+    WINDOWPLACEMENT m_wpBldgs;
+    WINDOWPLACEMENT m_wpVehicles;
+    WINDOWPLACEMENT m_wpRelations;
+    WINDOWPLACEMENT m_wpFile;
+    WINDOWPLACEMENT m_wpRsrch;
 
 #ifdef _DEBUG
-public:
-	virtual void AssertValid() const;
+    BOOL m_bUpdateFlag;
+#endif
+
+    DWORD m_dwMaj;
+    DWORD m_dwMin;
+    DWORD m_dwVer;
+    WORD  m_wDbg;
+    WORD  m_wCht;
+
+    //  The gameplay data hash (015 phase 3, datahash.h). A RUNTIME value:
+    //  computed once at startup, carried in the join and publish messages, and
+    //  never serialised - the save format does not change for it.
+    DWORD m_dwDataHash;
+
+    // for joining a game (load/in progress)
+    CVPTransfer* m_pXferFromServer;  // from server to me
+    void*        m_pGameFile;        // game file we are sending/receiving
+    int          m_iGameBufLen;      // how big it is
+    int          m_iNumSends;        // how many we are sending to
+
+    std::string m_sPwJoin;  // password for joining a game
+
+    CMsgShoot m_msgShoot;  // batch up shoot commands
+
+  protected:
+    void _ctor( );
+    void CloseAll( );
+    void ReadWP( CArchive& ar, WINDOWPLACEMENT& wp, int iMode );
+
+    CPlayer*                  m_pMe;
+    CPlayer*                  m_pServer;
+    CList<CPlayer*, CPlayer*> m_lstAi;   // the AI players (only on server)
+    CList<CPlayer*, CPlayer*> m_lstAll;  // includes me too
+
+    LONG  m_iNextPlyrNum;  // PlyrNum for next player
+    LONG  m_iNextAINum;
+    DWORD m_dwNextUnitID;  // unique ID for each unit
+
+    BOOL m_bIsNetGame;  // TRUE if a net game
+    BOOL m_bServer;     // TRUE if I'm the server
+    BOOL m_bHP;         // TRUE if have a Human Player (on server only)
+    BOOL m_bAI;         // TRUE if have AI players (on server only)
+
+    BOOL m_bPauseMsgs;  // don't post high volume messages
+    BOOL m_bShouldPause;  // told others to not post high-volume to me
+    BOOL m_bShouldNetPause;   // net told me to stop posting
+    BOOL m_bUnPauseMe;  // unpause me next oppo
+    UINT m_uTimer;
+    std::vector<VPPLAYERID> m_aPausedNet;  // host: net ids with a pause outstanding
+
+    BOOL  m_bMessages;        // process messages
+    BOOL  m_bAnimate;         // animate the screen
+    DWORD m_dwFrameTimeLast;  // timeGetTime of last render loop
+    DWORD m_dwFramesElapsed;  // frames (1/24) elapsed since last loop
+
+    BOOL  m_bOperate;          // operate the economy/games
+    DWORD m_dwOperTimeLast;    // timeGetTime of last oper loop
+    DWORD m_dwOpersElapsed;    // operations elapsed since last loop
+    DWORD m_dwOperSecElapsed;  // seconds elapsed since last loop
+    DWORD m_dwOperSecFrames;   // frames towards next 1 sec loop
+
+    DWORD m_dwElapsedTime;  // time playing in 24ths of a sec (stops when paused)
+    DWORD m_dwFrame;        // GG: frames since game start,
+                            //     for calculating ambient frames, animating building cursor, etc.
+    DWORD m_dwtimeGetTime;  // call timeGetTime once a frame
+
+    int m_iState;     // game state
+    int m_iNetJoin;   // when can join game
+    int m_iTryCount;  // how many try's deep
+
+    BOOL m_bHaveAlliances;  // TRUE if have alliances with anyone
+
+    LONG m_iSideSize;     // number of hexes along 1 side of a map block
+    LONG m_iScenarioNum;  // -1 if not a scenario
+    LONG m_iSpeedMul;
+
+    DWORD m_uSeed;  // rand seed
+
+    CMapLoc m_maploc;  // area window for save/restore
+    int     m_iDir;
+    int     m_iZoom;
+
+    LONG m_xScreen;  // screen resolution saved at
+    LONG m_yScreen;
+
+#ifdef _DEBUG
+  public:
+    virtual void AssertValid( ) const;
 #endif
 };
 
-extern void SerializeElements (CArchive & ar, CPlayer * * pPlyr, int nCount);
+extern void SerializeElements( CArchive& ar, CPlayer** pPlyr, int nCount );
 
 extern CGame theGame;
 

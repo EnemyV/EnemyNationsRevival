@@ -17,76 +17,65 @@
 
 #if _LOGGING
 
-CAILog::CAILog()
-{
+CAILog::CAILog() {
     m_sFile = "tlpai.log";
     m_pFile = NULL;
 
-	InitializeCriticalSection(&m_cs);
+    InitializeCriticalSection( &m_cs );
 }
 
-CAILog::~CAILog()
-{
-	DeleteCriticalSection(&m_cs);
+CAILog::~CAILog() {
+    DeleteCriticalSection( &m_cs );
 
-    if( m_pFile != NULL )
-    {
+    if ( m_pFile != NULL ) {
         m_pFile->Close();
         delete m_pFile;
         m_pFile = NULL;
     }
 }
 
-BOOL CAILog::Open( void )
-{
+BOOL CAILog::Open( void ) {
     // open the file of data
-    CStdioFile *pFile = new CStdioFile;
+    CStdioFile* pFile = new CStdioFile;
 
     CFileStatus status;
     UINT nAccess = CFile::modeWrite;
 
     // GetStatus will return TRUE if file exists,
     // or FALSE if it doesn't exist
-    if( !CFile::GetStatus( m_sFile, status ) )
+    if ( !CFile::GetStatus( m_sFile, status ) )
         nAccess |= CFile::modeCreate;
     else
         CFile::Remove( m_sFile );
-    
-    if( !pFile->Open( m_sFile, 
-        CFile::modeCreate | CFile::modeWrite | CFile::typeText ) )
-    {
+
+    if ( !pFile->Open( m_sFile,
+                       CFile::modeCreate | CFile::modeWrite | CFile::typeText ) ) {
         delete pFile;
         return FALSE;
     }
     m_pFile = pFile;
-	return TRUE;
+    return TRUE;
 }
 
-void CAILog::Write( const char *pLine )
-{
-	EnterCriticalSection(&m_cs);
+void CAILog::Write( const char* pLine ) {
+    EnterCriticalSection( &m_cs );
 
-	try
-    {
+    try {
         m_pFile->WriteString( pLine );
-    }
-    catch( CFileException theException )
-    {
-      	m_pFile->Close();
-       	delete m_pFile;
-       	m_pFile = NULL;
+    } catch ( CFileException theException ) {
+        m_pFile->Close();
+        delete m_pFile;
+        m_pFile = NULL;
 
-		LeaveCriticalSection(&m_cs);
+        LeaveCriticalSection( &m_cs );
 
-		throw(ERR_CAI_BAD_FILE);
+        throw( ERR_CAI_BAD_FILE );
     }
-	LeaveCriticalSection(&m_cs);
+    LeaveCriticalSection( &m_cs );
 }
 
-void CAILog::Close( void )
-{
-    if( m_pFile != NULL )
-    {
+void CAILog::Close( void ) {
+    if ( m_pFile != NULL ) {
         m_pFile->Close();
         delete m_pFile;
         m_pFile = NULL;

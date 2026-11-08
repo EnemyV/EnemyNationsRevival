@@ -8,8 +8,10 @@
 //
 ////////////////////////////////////////////////////////////////////////////
 
-#include "CAIUnit.hpp"
-#include "CAIHex.hpp"
+#include "caiunit.hpp"
+#include "caihex.hpp"
+
+#include <map>
 
 #ifndef __CAIMAPUT_HPP__
 #define __CAIMAPUT_HPP__
@@ -17,6 +19,8 @@
 //
 // this class provides utilities for CAIMap
 //
+class CPathMap;   // per-AI path search instance (see m_pPathMap)
+
 class CAIMapUtil
 {
 	WORD *m_pMap;		// map for whom this utility serves
@@ -78,6 +82,12 @@ public:
 
 	CAIUnitList *m_plUnits;	// list of units of this AI player
 
+	// Per-AI path search instance. AI pathing used to funnel through the single
+	// global thePathMap, serializing every AI thread on its m_cs. Each AI now
+	// owns its own CPathMap so they path in parallel with no cross-AI contention.
+	// Created + Init'd in the ctor; its scratch is touched only by this AI's thread.
+	CPathMap *m_pPathMap;
+
 	CAIMapUtil( WORD *pMap, CAIUnitList *plUnits,
 		int iBaseX, int iBaseY,
 		WORD wBaseCol, WORD wBaseRow, WORD wCols, WORD wRows, 
@@ -100,9 +110,23 @@ public:
 		int iWidthX, int iWidthY, CHexCoord& hexFound );
 	void FindSpecialHex( int iBldg, 
 		int iWidthX, int iWidthY, CHexCoord& hexFound );
-	void FindHexInCity( int iBldg, 
+	void FindHexInCity( int iBldg,
 		int iWidthX, int iWidthY, CHexCoord& hexFound );
 	BOOL IsHexInCity( CHexCoord& hexTest );
+
+	// Runtime "don't try to build here again" memory. When a crane reaches a
+	// selected site and the build is rejected, we remember (building-type, hex)
+	// so site selection stops handing cranes back to the same doomed spot.
+	// AddFailedSite = permanent (terrain-level: ground re-leveled by an adjacent
+	// build, or a rotated footprint overlaps water). AddFailedSiteTemp = timed:
+	// a *mobile unit* is parked on the footprint -- it will likely move, so we
+	// only shelve the spot for dwMs and then retry rather than abandon the
+	// deposit. Runtime-only / per-player, deliberately NOT serialized -- a reload
+	// re-learns, which self-heals.
+	void AddFailedSite( int iBldg, const CHexCoord& hex );
+	void AddFailedSiteTemp( int iBldg, const CHexCoord& hex, DWORD dwMs );
+	void ClearFailedSiteTemps( void );	// bridge completed: reachability changed
+	BOOL IsFailedSite( int iBldg, const CHexCoord& hex );
 
 	void GetExploreHex( CAIUnit *pUnit, CHexCoord& hexFound,
 		/*int& iDirectionFromBase, */CHexCoord& hcNow );
@@ -121,9 +145,9 @@ public:
 		int iWidth, int iHeight );
 	void FlagStagingArea( BOOL bFlag,
 		int iSX, int iSY, int iEX, int iEY );
-	void FindStagingHex( int iSX, int iSY, 
-		int iEX, int iEY, CHexCoord& hexDest, int iVehType, 
-		BOOL bFindPath=FALSE );
+	void FindStagingHex( int iSX, int iSY,
+		int iEX, int iEY, CHexCoord& hexDest, int iVehType,
+		BOOL bFindPath=FALSE, CHexCoord* phexRocket=NULL );
 	void FindStagingHex( CHexCoord& hexNearBy, 
 		int iWidth, int iHeight, int iVehType, 
 		CHexCoord& hexDest, BOOL bExclude=TRUE );
@@ -137,9 +161,9 @@ public:
 		CAIUnit *pAttacker, CHexCoord& hexAttacking );
 	void FindApproachHex( CHexCoord& hexTarget, 
 		CAIUnit *pUnit, CHexCoord& hexDest );
-	void FindDefenseHex( CHexCoord& hexAttacking, 
-		CHexCoord& hexDefending, int iWidth, int iHeight, 
-		CTransportData const *pVehData );
+	void FindDefenseHex( CHexCoord& hexAttacking,
+		CHexCoord& hexDefending, int iWidth, int iHeight,
+		CTransportData const *pVehData, BOOL bAdvanceIfNoCover = FALSE );
 	CAIHex *FindWaterPatrol( int iGoal );
 	CAIHex *FindWaterPatrol( CHexCoord& hexAt, CTransportData const *ptdShip );
 
@@ -177,7 +201,7 @@ public:
 	int GetEnterableHexes( CHexCoord hexStart, CHexCoord hexEnd );
 	BOOL GetClosestWaterHex( CHexCoord& hcFrom, CHexCoord& hcTo );
 	BOOL GetPathRating( CHexCoord& hexFrom, CHexCoord& hexTo,
-		int iVehType = CTransportData::construction );
+		int iVehType = CTransportData::construction, BOOL bWarPlanning = FALSE );
 	BOOL InBufferSizeRange( CAIHex *paiHex );
 	int GetClosestRocket( CHexCoord& hexNear );
 	int GetRocketRating( CHexCoord& hex, BOOL bIsCloser=FALSE );
@@ -198,7 +222,13 @@ public:
 
 	void FindAssaultHex( CHexCoord& hexTarget, int iTerrain );
 	void FindBridgeHex( CHexCoord& hexSite, CAIUnit *pUnit );
-	BOOL IsBridgeSpan( CHexCoord& hexRiverRoad, CAIUnit *pUnit );
+	// bImpromptu: candidate comes from the impromptu store (no plan flags) -
+	// relaxed bank anchoring + span hexes need no MSW_PLANNED_ROAD marks
+	BOOL IsBridgeSpan( CHexCoord& hexRiverRoad, CAIUnit *pUnit, BOOL bImpromptu = FALSE );
+	// bRequirePlan: TRUE = span hexes must carry road-plan marks (legacy on-plan
+	// validation); FALSE = raw water allowed (PlanBridgeToward lays its marks
+	// AFTER success, so requiring them made the fallback unable to succeed)
+	BOOL TryBridgeWalk( CHexCoord const& hexStart, int iDir, int iMaxSpan, CHexCoord& hexEnd, BOOL bRequirePlan = TRUE );
 	void GetStartSpan( CHexCoord& hexStart, CHexCoord& hexBridge );
 
 	void FindRoadHex( CHexCoord& hexFound );
@@ -219,8 +249,8 @@ public:
 	WORD GetStatus( int iAt );
 	WORD ConvertStatus( CAIHex *pHex, WORD wOldStatus );
 
-	void Save( CFile *pFile );
-	void Load( CFile *pFile, WORD *pMap, CAIUnitList *plUnits );
+	void Save( CArchive& ar );
+    void Load( CArchive& ar, WORD* pMap, CAIUnitList* plUnits );
 
 #ifdef _LOGOUT
 	void ReportPavedRoads( void );
@@ -228,6 +258,101 @@ public:
 	void ReportGroupHex( int iBldg, int iWidthX,
 		int iWidthY, CHexCoord& hex );
 #endif
+  private:
+    // Memoization cache for path results
+    struct PathCacheEntry
+    {
+        uint64_t compositeKey;  // Packed:  hexFrom, hexTo, iVehType
+        BOOL     bResult;
+        DWORD    dwTimestamp;
+        DWORD    dwFirstFailTime;  // When failures started (for ban timing)
+        int      iFailureCount;
+
+        PathCacheEntry( )
+            : compositeKey( 0 ), bResult( FALSE ), dwTimestamp( 0 ), dwFirstFailTime( 0 ), iFailureCount( 0 )
+        {
+        }
+
+        bool IsEmpty( ) const { return compositeKey == 0; }
+
+        void Clear( )
+        {
+            compositeKey    = 0;
+            bResult         = FALSE;
+            dwTimestamp     = 0;
+            dwFirstFailTime = 0;
+            iFailureCount   = 0;
+        }
+
+        // NOTE: no field decoders. compositeKey is a scrambled hash
+        // (MakeCompositeKey), not a positional bit-pack - the old GetVehType()
+        // decoder read garbage bits and vetoed nearly every true match, which
+        // is why this cache never hit from 2026-01 (f0d6493a) until now.
+    };
+
+	static const int   MAX_PROBE_COUNT   = 4;  // Max probes for hash collisions
+    static const DWORD CACHE_EXPIRE_MS   = 35000;  // Clear the cache because the map changes
+    static const int   MAX_FAILURE_COUNT = 2;      // Max failures before temporary ban
+    static const DWORD FAILURE_BAN_MS    = 55000;  // just tempban it after repeated failures
+    
+    // In class header
+    static constexpr int HASH_TABLE_SIZE = 2048;         // Power of 2 for fast modulo
+    static const int     CACHE_MASK      = HASH_TABLE_SIZE - 1;
+    int                  m_hashTable[HASH_TABLE_SIZE];  // Index into m_pathCache, -1 = empty
+
+    PathCacheEntry m_pathCache[HASH_TABLE_SIZE];
+    DWORD          m_dwLastCacheClear;
+
+    // Methods for cache management
+  //  int  HashCacheKey( const CHexCoord& hexFrom, const CHexCoord& hexTo, int iVehType ) const;
+
+// void InvalidatePathCache( );
+
+    int  FindCacheEntry( const CHexCoord& hexFrom, const CHexCoord& hexTo, int iVehType, BOOL bWar );
+    void AddCacheEntry( const CHexCoord& hexFrom, const CHexCoord& hexTo, int iVehType, BOOL bWar, BOOL bResult );
+    void ClearExpiredCache( );
+    BOOL IsPathBanned( const CHexCoord& hexFrom, const CHexCoord& hexTo, int iVehType, BOOL bWar = FALSE );
+    BOOL IsPathBanned(int iIndex );
+    void InvalidatePathCache( );
+
+    // 64-bit composite key with vehType + war bit mixed in (war mode treats
+    // rivers as bridgeable, so its verdicts must never collide with economy's)
+    static inline uint64_t MakeCompositeKey( const CHexCoord& hexFrom, const CHexCoord& hexTo, int iVehType, BOOL bWar )
+    {
+        uint64_t f = static_cast<uint64_t>( static_cast<unsigned long>( hexFrom ) );
+        uint64_t t = static_cast<uint64_t>( static_cast<unsigned long>( hexTo ) );
+        uint64_t v = static_cast<uint32_t>( iVehType ) | ( bWar ? 0x100u : 0u );
+
+        uint64_t key = ( f << 32 ) | t;
+        key ^= ( v * 0x9E3779B185EBCA87ull );
+        key = ( key << 13 ) | ( key >> 51 );
+        key ^= ( v << 17 ) ^ ( v >> 11 );
+
+        return key;
+    }
+
+    // Compute hash index from composite key
+    static inline int ComputeHashIndex( uint64_t key )
+    {
+        // Additional mixing for better distribution
+        key ^= key >> 33;
+        key *= 0xff51afd7ed558ccdULL;
+        key ^= key >> 33;
+        return static_cast<int>( key & CACHE_MASK );
+    }
+
+    // Runtime blacklist of build sites that were rejected this game (see
+    // AddFailedSite/IsFailedSite). Value is the expiry deadline in
+    // theGame.GettimeGetTime() ms; 0 means permanent. Touched only by this AI
+    // player's own thread, so no lock is needed (same as the path cache above).
+    // Lookups are by key, so it stays deterministic across nodes.
+    std::map<uint64_t, DWORD> m_failedBuildSites;
+
+    static inline uint64_t MakeSiteKey( int iBldg, const CHexCoord& hex )
+    {
+        return ( static_cast<uint64_t>( iBldg & 0xFFFF ) << 32 ) |
+               static_cast<uint64_t>( static_cast<unsigned long>( hex ) );
+    }
 };
 
 #endif // __CAIMAPUT_HPP__

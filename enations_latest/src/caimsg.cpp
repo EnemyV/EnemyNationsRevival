@@ -10,8 +10,8 @@
 ////////////////////////////////////////////////////////////////////////////
 
 #include "stdafx.h"
-#include "CAIMsg.hpp"
-#include "CAIData.hpp"
+#include "caimsg.hpp"
+#include "caidata.hpp"
 
 IMPLEMENT_SERIAL( CAIMsg, CObject, 0 );
 
@@ -200,6 +200,24 @@ public:
 			m_iY = pBrdgNewMsg->m_hexStart.Y();
 			m_ieX = pBrdgNewMsg->m_hexEnd.X();
 			m_ieY = pBrdgNewMsg->m_hexEnd.Y(); 
+			m_idata1 = pBrdgNewMsg->m_iMode;
+			m_idata2 = 0;
+			m_idata3 = pBrdgNewMsg->m_iPlyrNum;
+			m_dwID2 = pBrdgNewMsg->m_dwIDVeh;
+			break;
+
+		case CNetCmd::err_build_bridge:
+			// server refused a span - same _CMsgBridge layout as bridge_new;
+			// without this case the reject repacked with EMPTY fields and the
+			// AI deny handler starved (rejected span redispatched forever)
+			pBrdgNewMsg = (CMsgBridgeNew *)pMsg;
+			m_uFlags = 0;
+			m_iPriority = 70;
+			m_dwID = pBrdgNewMsg->m_dwIDBrdg;
+			m_iX = pBrdgNewMsg->m_hexStart.X();
+			m_iY = pBrdgNewMsg->m_hexStart.Y();
+			m_ieX = pBrdgNewMsg->m_hexEnd.X();
+			m_ieY = pBrdgNewMsg->m_hexEnd.Y();
 			m_idata1 = pBrdgNewMsg->m_iMode;
 			m_idata2 = 0;
 			m_idata3 = pBrdgNewMsg->m_iPlyrNum;

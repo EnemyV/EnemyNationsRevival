@@ -9,8 +9,8 @@
 //
 ////////////////////////////////////////////////////////////////////////////
 
-#include "CAITask.hpp"
-#include "CAIGoalM.hpp"
+#include "caitask.hpp"
+#include "caigoalm.hpp"
 
 #ifndef __CAITASKMGR_HPP__
 #define __CAITASKMGR_HPP__

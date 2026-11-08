@@ -1,0 +1,157 @@
+Microsoft (R) COFF/PE Dumper Version 14.29.30140.0
+Copyright (C) Microsoft Corporation.  All rights reserved.
+
+
+Dump of file wing32.lib
+
+File Type: LIBRARY
+
+COFF SYMBOL TABLE
+000 00000000 SECT1  notype       External     | WING32_IMPORT_DESCRIPTOR
+001 00000048 SECT1  notype       Section      | .idata$2
+002 00000000 SECT2  notype       Static       | .idata$6
+003 00000048 UNDEF  notype       Section      | .idata$4
+004 00000048 UNDEF  notype       Section      | .idata$5
+005 00000000 UNDEF  notype       External     | NULL_IMPORT_DESCRIPTOR
+006 00000000 UNDEF  notype       External     | WING32_NULL_THUNK_DATA
+
+String Table Size = 0x4C bytes
+
+COFF SYMBOL TABLE
+000 00000000 SECT1  notype       External     | NULL_IMPORT_DESCRIPTOR
+
+String Table Size = 0x1B bytes
+
+COFF SYMBOL TABLE
+000 00000000 SECT1  notype       External     | WING32_NULL_THUNK_DATA
+
+String Table Size = 0x1C bytes
+
+COFF SYMBOL TABLE
+000 00000000 SECT1  notype       Static       | .edata
+001 00000000 SECT1  notype       External     | WING32_EXPORTS
+002 00000000 UNDEF  notype       External     | _WinGBitBlt@32
+003 00000000 UNDEF  notype       External     | _WinGCreateBitmap@12
+004 00000000 UNDEF  notype       External     | _WinGCreateDC@0
+005 00000000 UNDEF  notype       External     | _WinGCreateHalftoneBrush@12
+006 00000000 UNDEF  notype       External     | _WinGCreateHalftonePalette@0
+007 00000000 UNDEF  notype       External     | _WinGGetDIBColorTable@16
+008 00000000 UNDEF  notype       External     | _WinGGetDIBPointer@8
+009 00000000 UNDEF  notype       External     | _WinGRecommendDIBFormat@4
+00A 00000000 UNDEF  notype       External     | _WinGSetDIBColorTable@16
+00B 00000000 UNDEF  notype       External     | _WinGStretchBlt@40
+
+String Table Size = 0x316 bytes
+
+COFF SYMBOL TABLE
+000 00000000 SECT1  notype       Static       | .text
+    Section length    6, #relocs    1, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+002 00000000 SECT1  notype       External     | _WinGBitBlt@32
+003 00000000 SECT2  notype       Static       | .idata$6
+004 00000000 UNDEF  notype       External     | WING32_IMPORT_DESCRIPTOR
+005 00000000 SECT3  notype       External     | __imp__WinGBitBlt@32
+
+String Table Size = 0x41 bytes
+
+COFF SYMBOL TABLE
+000 00000000 SECT1  notype       Static       | .text
+    Section length    6, #relocs    1, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+002 00000000 SECT1  notype       External     | _WinGCreateBitmap@12
+003 00000000 SECT2  notype       Static       | .idata$6
+004 00000000 UNDEF  notype       External     | WING32_IMPORT_DESCRIPTOR
+005 00000000 SECT3  notype       External     | __imp__WinGCreateBitmap@12
+
+String Table Size = 0x4D bytes
+
+COFF SYMBOL TABLE
+000 00000000 SECT1  notype       Static       | .text
+    Section length    6, #relocs    1, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+002 00000000 SECT1  notype       External     | _WinGCreateDC@0
+003 00000000 SECT2  notype       Static       | .idata$6
+004 00000000 UNDEF  notype       External     | WING32_IMPORT_DESCRIPTOR
+005 00000000 SECT3  notype       External     | __imp__WinGCreateDC@0
+
+String Table Size = 0x43 bytes
+
+COFF SYMBOL TABLE
+000 00000000 SECT1  notype       Static       | .text
+    Section length    6, #relocs    1, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+002 00000000 SECT1  notype       External     | _WinGCreateHalftoneBrush@12
+003 00000000 SECT2  notype       Static       | .idata$6
+004 00000000 UNDEF  notype       External     | WING32_IMPORT_DESCRIPTOR
+005 00000000 SECT3  notype       External     | __imp__WinGCreateHalftoneBrush@12
+
+String Table Size = 0x5B bytes
+
+COFF SYMBOL TABLE
+000 00000000 SECT1  notype       Static       | .text
+    Section length    6, #relocs    1, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+002 00000000 SECT1  notype       External     | _WinGCreateHalftonePalette@0
+003 00000000 SECT2  notype       Static       | .idata$6
+004 00000000 UNDEF  notype       External     | WING32_IMPORT_DESCRIPTOR
+005 00000000 SECT3  notype       External     | __imp__WinGCreateHalftonePalette@0
+
+String Table Size = 0x5D bytes
+
+COFF SYMBOL TABLE
+000 00000000 SECT1  notype       Static       | .text
+    Section length    6, #relocs    1, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+002 00000000 SECT1  notype       External     | _WinGGetDIBColorTable@16
+003 00000000 SECT2  notype       Static       | .idata$6
+004 00000000 UNDEF  notype       External     | WING32_IMPORT_DESCRIPTOR
+005 00000000 SECT3  notype       External     | __imp__WinGGetDIBColorTable@16
+
+String Table Size = 0x55 bytes
+
+COFF SYMBOL TABLE
+000 00000000 SECT1  notype       Static       | .text
+    Section length    6, #relocs    1, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+002 00000000 SECT1  notype       External     | _WinGGetDIBPointer@8
+003 00000000 SECT2  notype       Static       | .idata$6
+004 00000000 UNDEF  notype       External     | WING32_IMPORT_DESCRIPTOR
+005 00000000 SECT3  notype       External     | __imp__WinGGetDIBPointer@8
+
+String Table Size = 0x4D bytes
+
+COFF SYMBOL TABLE
+000 00000000 SECT1  notype       Static       | .text
+    Section length    6, #relocs    1, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+002 00000000 SECT1  notype       External     | _WinGRecommendDIBFormat@4
+003 00000000 SECT2  notype       Static       | .idata$6
+004 00000000 UNDEF  notype       External     | WING32_IMPORT_DESCRIPTOR
+005 00000000 SECT3  notype       External     | __imp__WinGRecommendDIBFormat@4
+
+String Table Size = 0x57 bytes
+
+COFF SYMBOL TABLE
+000 00000000 SECT1  notype       Static       | .text
+    Section length    6, #relocs    1, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+002 00000000 SECT1  notype       External     | _WinGSetDIBColorTable@16
+003 00000000 SECT2  notype       Static       | .idata$6
+004 00000000 UNDEF  notype       External     | WING32_IMPORT_DESCRIPTOR
+005 00000000 SECT3  notype       External     | __imp__WinGSetDIBColorTable@16
+
+String Table Size = 0x55 bytes
+
+COFF SYMBOL TABLE
+000 00000000 SECT1  notype       Static       | .text
+    Section length    6, #relocs    1, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+002 00000000 SECT1  notype       External     | _WinGStretchBlt@40
+003 00000000 SECT2  notype       Static       | .idata$6
+004 00000000 UNDEF  notype       External     | WING32_IMPORT_DESCRIPTOR
+005 00000000 SECT3  notype       External     | __imp__WinGStretchBlt@40
+
+String Table Size = 0x49 bytes
+
+  Summary
+
+         207 .debug$S
+          3C .drectve
+         154 .edata
+          14 .idata$2
+          14 .idata$3
+          2C .idata$4
+          2C .idata$5
+          E4 .idata$6
+          29 .rdata
+          3C .text

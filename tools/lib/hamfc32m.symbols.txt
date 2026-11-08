@@ -1,0 +1,175 @@
+Microsoft (R) COFF/PE Dumper Version 14.29.30140.0
+Copyright (C) Microsoft Corporation.  All rights reserved.
+
+
+Dump of file hamfc32m.lib
+
+File Type: LIBRARY
+
+COFF SYMBOL TABLE
+000 00000000 DEBUG  notype       Filename     | .file
+    shnew.cpp
+002 00000000 SECT1  notype       Static       | .drectve
+    Section length   D8, #relocs    0, #linenums    0, checksum        0
+004 00000000 SECT2  notype       Static       | .CRT$XCU
+    Section length    4, #relocs    1, #linenums    0, checksum        0
+006 00000000 SECT2  notype       Static       | _$$2600$S22924
+007 00000000 SECT3  notype       Static       | .data
+    Section length   14, #relocs    0, #linenums    0, checksum        0
+009 00000010 SECT3  notype       Static       | __shi_mfcOldStopHook$S22842
+00A 0000000C SECT3  notype       Static       | __shi_mfcStopAllocNum$S22841
+00B 00000008 SECT3  notype       Static       | __shi_mfcAllocHookFn$S22829
+00C 00000004 SECT3  notype       External     | _SmartHeap_new
+00D 00000000 SECT3  notype       External     | ?_new_handler@@3P6AXXZA (void (__cdecl* _new_handler)(void))
+00E 00000000 SECT4  notype       Static       | .text
+    Section length   88, #relocs    A, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+010 00000000 SECT4  notype ()    External     | ?shi_New@@YAPAXKPBDHIPAU_SHI_Pool@@@Z (void * __cdecl shi_New(unsigned long,char const *,int,unsigned int,struct _SHI_Pool *))
+011 00000000 UNDEF  notype ()    External     | ?AfxThrowMemoryException@@YGXXZ (void __stdcall AfxThrowMemoryException(void))
+012 00000000 UNDEF  notype       External     | _MemDefaultPool
+013 00000000 UNDEF  notype ()    External     | _shi_call_new_handler_msc
+014 00000000 UNDEF  notype ()    External     | __dbgMemAllocPtr1@24
+015 00000000 UNDEF  notype ()    External     | _MemInitDefaultPool@0
+016 00000000 UNDEF  notype       External     | _MemDefaultPoolFlags
+017 00000000 SECT5  notype       Static       | .text
+    Section length   1D, #relocs    1, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+019 00000000 SECT5  notype ()    External     | ?shi_New@@YAPAXKIPAU_SHI_Pool@@@Z (void * __cdecl shi_New(unsigned long,unsigned int,struct _SHI_Pool *))
+01A 00000000 SECT6  notype       Static       | .text
+    Section length   15, #relocs    1, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+01C 00000000 SECT6  notype ()    External     | ??2CObject@@SAPAXI@Z (public: static void * __cdecl CObject::operator new(unsigned int))
+01D 00000000 SECT7  notype       Static       | .text
+    Section length   11, #relocs    1, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+01F 00000000 SECT7  notype ()    External     | ??3CObject@@SAXPAX@Z (public: static void __cdecl CObject::operator delete(void *))
+020 00000000 UNDEF  notype ()    External     | ??3@YAXPAX@Z (void __cdecl operator delete(void *))
+021 00000000 SECT8  notype       Static       | .text
+    Section length    B, #relocs    2, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+023 00000000 SECT8  notype ()    Static       | _$$0600
+024 00000000 SECT9  notype       Static       | .bss
+    Section length    4, #relocs    0, #linenums    0, checksum        0
+026 00000000 SECT9  notype       Static       | __shi_afxMemDF$S22804
+027 00000000 UNDEF  notype       External     | ?afxMemDF@@3HA (int afxMemDF)
+028 00000000 SECTA  notype       Static       | .text
+    Section length   57, #relocs    9, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+02A 00000000 SECTA  notype ()    Static       | ?_shi_updateAfxMemDF@@YAXXZ (void __cdecl _shi_updateAfxMemDF(void))
+02B 00000000 SECTB  notype       Static       | .data
+    Section length    A, #relocs    0, #linenums    0, checksum        0, selection    5 (pick associative Section 0xA)
+02D 00000000 SECTB  notype       Static       | $SG22811
+02E 00000000 UNDEF  notype ()    External     | __dbgMemPoolDeferFreeing@16
+02F 00000000 UNDEF  notype ()    External     | _dbgMemSetSafetyLevel@4
+030 00000000 SECTC  notype       Static       | .text
+    Section length   26, #relocs    3, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+032 00000000 SECTC  notype ()    External     | ?AfxCheckMemory@@YGHXZ (int __stdcall AfxCheckMemory(void))
+033 00000000 SECTD  notype       Static       | .data
+    Section length    A, #relocs    0, #linenums    0, checksum        0, selection    5 (pick associative Section 0xC)
+035 00000000 SECTD  notype       Static       | $SG22814
+036 00000000 UNDEF  notype ()    External     | __dbgMemPoolCheck@12
+037 00000000 SECTE  notype       Static       | .text
+    Section length   60, #relocs    4, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+039 00000000 SECTE  notype ()    External     | ?AfxIsMemoryBlock@@YGHPBXIPAJ@Z (int __stdcall AfxIsMemoryBlock(void const *,unsigned int,long *))
+03A 00000000 SECTF  notype       Static       | .data
+    Section length   16, #relocs    0, #linenums    0, checksum        0, selection    5 (pick associative Section 0xE)
+03C 0000000C SECTF  notype       Static       | $SG22826
+03D 00000000 SECTF  notype       Static       | $SG22823
+03E 00000000 UNDEF  notype ()    External     | __dbg_MemCheckPtr@20
+03F 00000000 UNDEF  notype ()    External     | __dbgMemPtrInfo@16
+040 00000000 SECT10 notype       Static       | .text
+    Section length    8, #relocs    0, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+042 00000000 SECT10 notype ()    External     | ?AfxEnableMemoryTracking@@YGHH@Z (int __stdcall AfxEnableMemoryTracking(int))
+043 00000000 SECT11 notype       Static       | .text
+    Section length   2A, #relocs    2, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+045 00000000 SECT11 notype ()    Static       | ?_shi_mfcAllocHook@@YGXPAU_MEM_ERROR_INFO@@K@Z (void __stdcall _shi_mfcAllocHook(struct _MEM_ERROR_INFO *,unsigned long))
+046 00000000 SECT12 notype       Static       | .text
+    Section length   24, #relocs    4, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+048 00000000 SECT12 notype ()    External     | ?AfxSetAllocHook@@YGP6GHIHJ@ZP6GHIHJ@Z@Z (int (__stdcall*__stdcall AfxSetAllocHook(int (__stdcall*)(unsigned int,int,long)))(unsigned int,int,long))
+049 00000000 UNDEF  notype ()    External     | _dbgMemSetEntryHandler@4
+04A 00000000 SECT13 notype       Static       | .text
+    Section length   30, #relocs    4, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+04C 00000000 SECT13 notype ()    External     | ?_shi_mfcAllocStop@@YGHIHJ@Z (int __stdcall _shi_mfcAllocStop(unsigned int,int,long))
+04D 00000000 SECT14 notype       Static       | .data
+    Section length    A, #relocs    0, #linenums    0, checksum        0, selection    5 (pick associative Section 0x13)
+04F 00000000 SECT14 notype       Static       | $SG22849
+050 00000000 UNDEF  notype ()    External     | __dbgMemBreakpoint@8
+051 00000000 SECT15 notype       Static       | .text
+    Section length   27, #relocs    5, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+053 00000000 SECT15 notype ()    External     | ?AfxSetAllocStop@@YGXJ@Z (void __stdcall AfxSetAllocStop(long))
+054 00000000 SECT16 notype       Static       | .text
+    Section length   40, #relocs    4, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+056 00000000 SECT16 notype ()    Static       | ?_shi_mfcNotImplemented@@YAXPBD0@Z (void __cdecl _shi_mfcNotImplemented(char const *,char const *))
+057 00000000 SECT17 notype       Static       | .data
+    Section length   5E, #relocs    0, #linenums    0, checksum        0, selection    5 (pick associative Section 0x16)
+059 0000004C SECT17 notype       Static       | $SG22859
+05A 00000000 SECT17 notype       Static       | $SG22858
+05B 00000000 UNDEF  notype ()    External     | __imp__MessageBoxA@16
+05C 00000000 UNDEF  notype ()    External     | _sprintf
+05D 00000000 SECT18 notype       Static       | .text
+    Section length    3, #relocs    0, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+05F 00000000 SECT18 notype ()    External     | ??0CMemoryState@@QAE@XZ (public: __thiscall CMemoryState::CMemoryState(void))
+060 00000000 SECT19 notype       Static       | .text
+    Section length   17, #relocs    3, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+062 00000000 SECT19 notype ()    External     | ?Difference@CMemoryState@@QAEHABU1@0@Z (public: int __thiscall CMemoryState::Difference(struct CMemoryState const &,struct CMemoryState const &))
+063 00000000 SECT1A notype       Static       | .data
+    Section length   55, #relocs    0, #linenums    0, checksum        0, selection    5 (pick associative Section 0x19)
+065 0000003C SECT1A notype       Static       | $SG22868
+066 00000000 SECT1A notype       Static       | $SG22867
+067 00000000 SECT1B notype       Static       | .text
+    Section length   13, #relocs    3, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+069 00000000 SECT1B notype ()    External     | ?DumpStatistics@CMemoryState@@QBEXXZ (public: void __thiscall CMemoryState::DumpStatistics(void)const )
+06A 00000000 SECT1C notype       Static       | .data
+    Section length   41, #relocs    0, #linenums    0, checksum        0, selection    5 (pick associative Section 0x1B)
+06C 00000024 SECT1C notype       Static       | $SG22873
+06D 00000000 SECT1C notype       Static       | $SG22872
+06E 00000000 SECT1D notype       Static       | .text
+    Section length   13, #relocs    3, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+070 00000000 SECT1D notype ()    External     | ?Checkpoint@CMemoryState@@QAEXXZ (public: void __thiscall CMemoryState::Checkpoint(void))
+071 00000000 SECT1E notype       Static       | .data
+    Section length   2D, #relocs    0, #linenums    0, checksum        0, selection    5 (pick associative Section 0x1D)
+073 00000014 SECT1E notype       Static       | $SG22878
+074 00000000 SECT1E notype       Static       | $SG22877
+075 00000000 SECT1F notype       Static       | .text
+    Section length   13, #relocs    3, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+077 00000000 SECT1F notype ()    External     | ?DumpAllObjectsSince@CMemoryState@@QBEXXZ (public: void __thiscall CMemoryState::DumpAllObjectsSince(void)const )
+078 00000000 SECT20 notype       Static       | .data
+    Section length   46, #relocs    0, #linenums    0, checksum        0, selection    5 (pick associative Section 0x1F)
+07A 00000024 SECT20 notype       Static       | $SG22883
+07B 00000000 SECT20 notype       Static       | $SG22882
+07C 00000000 SECT21 notype       Static       | .text
+    Section length   15, #relocs    3, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+07E 00000000 SECT21 notype ()    External     | ?AfxDoForAllObjects@@YGXP6AXPAVCObject@@PAX@Z1@Z (void __stdcall AfxDoForAllObjects(void (__cdecl*)(class CObject *,void *),void *))
+07F 00000000 SECT22 notype       Static       | .data
+    Section length   1F, #relocs    0, #linenums    0, checksum        0, selection    5 (pick associative Section 0x21)
+081 0000000C SECT22 notype       Static       | $SG22890
+082 00000000 SECT22 notype       Static       | $SG22889
+083 00000000 SECT23 notype       Static       | .text
+    Section length   1D, #relocs    1, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+085 00000000 SECT23 notype ()    External     | ?AfxAllocMemoryDebug@@YAPAXIHPBDH@Z (void * __cdecl AfxAllocMemoryDebug(unsigned int,int,char const *,int))
+086 00000000 SECT24 notype       Static       | .text
+    Section length   11, #relocs    1, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+088 00000000 SECT24 notype ()    External     | ?AfxFreeMemoryDebug@@YAXPAXH@Z (void __cdecl AfxFreeMemoryDebug(void *,int))
+089 00000000 SECT25 notype       Static       | .text
+    Section length   16, #relocs    2, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+08B 00000000 SECT25 notype ()    External     | ?AfxDumpMemoryLeaks@@YGHXZ (int __stdcall AfxDumpMemoryLeaks(void))
+08C 00000000 SECT26 notype       Static       | .data
+    Section length    A, #relocs    0, #linenums    0, checksum        0, selection    5 (pick associative Section 0x25)
+08E 00000000 SECT26 notype       Static       | $SG22902
+08F 00000000 UNDEF  notype ()    External     | __dbgMemReportLeakage@20
+090 00000000 SECT27 notype       Static       | .text
+    Section length   10, #relocs    2, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+092 00000000 SECT27 notype ()    External     | ?AfxStop@@YGXXZ (void __stdcall AfxStop(void))
+093 00000000 SECT28 notype       Static       | .data
+    Section length    A, #relocs    0, #linenums    0, checksum        0, selection    5 (pick associative Section 0x27)
+095 00000000 SECT28 notype       Static       | $SG22906
+096 00000000 SECT29 notype       Static       | .text
+    Section length   1D, #relocs    1, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+098 00000000 SECT29 notype ()    External     | ??2@YAPAXIHPBDH@Z (void * __cdecl operator new(unsigned int,int,char const *,int))
+099 00000000 SECT2A notype       Static       | .text
+    Section length    5, #relocs    1, #linenums    0, checksum        0, selection    1 (pick no duplicates)
+09B 00000000 SECT2A notype ()    Static       | _$$1600
+
+String Table Size = 0x510 bytes
+
+  Summary
+
+           4 .CRT$XCU
+           4 .bss
+         1E2 .data
+          D8 .drectve
+         37E .text

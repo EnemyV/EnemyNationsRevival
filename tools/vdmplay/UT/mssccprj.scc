@@ -1,0 +1,10 @@
+SCC = This is a Source Code Control file
+
+[VDMPL3~1.MAK]
+SCC_Project_Name = "$/vdmplay/src/ut", FDCAAAAA
+
+[vdmpl32.mak]
+SCC_Project_Name = "$/vdmplay/src/ut", VKBAAAAA
+
+[vdmpl16.mak]
+SCC_Project_Name = "$/vdmplay/src/ut", PKBAAAAA

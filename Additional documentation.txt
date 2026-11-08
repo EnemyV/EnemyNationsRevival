@@ -1,0 +1,9 @@
+https://mskb.pkisolutions.com/kb/99456
+Win32 Equivalents for C Run-Time Functions
+
+
+https://social.msdn.microsoft.com/Forums/vstudio/en-US/1f860a7e-0a0d-45b8-8480-b9fff7e13180/vtable-layout-and-binary-compatibility?forum=vcgeneral
+
+> In reality, MSVC++ groups all functions by name, i.e. all overloaded functions will occupy adjacent entries in the vtable. The ordering inside
+> each group is the reverse of their relative order in the source. The ordering between the groups is the relative order of the first (any)
+> function from each group in the source.

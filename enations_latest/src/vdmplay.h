@@ -1,6 +1,8 @@
 #ifndef __VDMPLAY_H__
 #define __VDMPLAY_H__
 
+#include "stdafx.h"
+
 #ifndef CONST
 #define CONST const
 #endif
@@ -23,9 +25,9 @@
 
 #ifdef WIN32
 #ifndef VPSYSTEM
-#define VPAPI __declspec(dllimport)
+#define VPAPI __declspec( dllimport )
 #else
-#define VPAPI __declspec(dllexport)
+#define VPAPI __declspec( dllexport )
 #endif
 #else
 #ifndef VPSYSTEM
@@ -34,16 +36,16 @@
 #define VPAPI APIENTRY
 #endif
 
-typedef const void FAR *LPCVOID;
+typedef const void FAR* LPCVOID;
 #endif
 
 // set this to one to use timestamp logging
 #define VP_TIMESTAMP 0
 
 
-#define WM_VPNOTIFY (WM_USER+1000)
-#define WM_VPFLOWOFF (WM_USER+1001)
-#define WM_VPFLOWON (WM_USER+1002)
+#define WM_VPNOTIFY ( WM_USER + 1000 )
+#define WM_VPFLOWOFF ( WM_USER + 1001 )
+#define WM_VPFLOWON ( WM_USER + 1002 )
 
 
 #define VP_PSEUDOSIZE 2
@@ -51,462 +53,465 @@ typedef const void FAR *LPCVOID;
 #define VDMPLAY_INIFILE "VDMPLAY.INI"
 
 
-#define VPAPIVERSION_MAJOR  0x00
-#define VPAPIVERSION_MINOR  0x02
+#define VPAPIVERSION_MAJOR 0x00
+#define VPAPIVERSION_MINOR 0x02
 
-#define VPAPI_VERSION ((VPAPIVERSION_MAJOR << 8) | VPAPIVERSION_MINOR)
+#define VPAPI_VERSION ( ( VPAPIVERSION_MAJOR << 8 ) | VPAPIVERSION_MINOR )
 
-#pragma pack(8)
+#pragma pack( 8 )
 
 enum VPNOTIFICATION
 {
-	VP_SESSIONENUM,
-	VP_PLAYERENUM,
-	VP_JOIN,
-	VP_LEAVE,
-	VP_READDATA,
-	VP_SENDDATA,
-	VP_SESSIONCLOSE,
-	VP_SERVERDOWN,
-	VP_FTREQ,
-	VP_NETDOWN
+    VP_SESSIONENUM,
+    VP_PLAYERENUM,
+    VP_JOIN,
+    VP_LEAVE,
+    VP_READDATA,
+    VP_SENDDATA,
+    VP_SESSIONCLOSE,
+    VP_SERVERDOWN,
+    VP_FTREQ,
+    VP_NETDOWN
 };
 
 enum VPTRANSPORT
 {
-	VPT_TCP,
-	VPT_IPX,
-	VPT_NETBIOS,
-	VPT_COMM,
-	VPT_MODEM,
-	VPT_TAPI,
-	VPT_DP
+    VPT_TCP,
+    VPT_IPX,
+    VPT_NETBIOS,
+    VPT_COMM,
+    VPT_MODEM,
+    VPT_TAPI,
+    VPT_DP
 };
 
 enum VPERRORS
 {
-	VP_ERR_OK = 0,
-	VP_ERR_NOMEM,
-	VP_ERR_BAD_PROTOCOL,
-	VP_ERR_NET_ERROR,
-	VP_ERR_REMOTE_SESSION,
-	VP_ERR_REMOTE_PLAYER,
-	VP_ERR_LOCAL_PLAYER,
-	VP_ERR_SESSION_NOT_FOUND,
-	VP_ERR_BAD_PLAYER_ID,
-	VP_ERR_LOST_PLAYER,
-	VP_ERR_BUSY,
-	VP_ERR_ADD_PLAYER_REFUSED,
-	VP_ERR_BAD_CONFIG,
-	VP_ERR_NET_DOWN
+    VP_ERR_OK = 0,
+    VP_ERR_NOMEM,
+    VP_ERR_BAD_PROTOCOL,
+    VP_ERR_NET_ERROR,
+    VP_ERR_REMOTE_SESSION,
+    VP_ERR_REMOTE_PLAYER,
+    VP_ERR_LOCAL_PLAYER,
+    VP_ERR_SESSION_NOT_FOUND,
+    VP_ERR_BAD_PLAYER_ID,
+    VP_ERR_LOST_PLAYER,
+    VP_ERR_BUSY,
+    VP_ERR_ADD_PLAYER_REFUSED,
+    VP_ERR_BAD_CONFIG,
+    VP_ERR_NET_DOWN
 };
-		
-   
-#define VPGETNOTIFICATION(wParam) LOBYTE(wParam)
-#define VPGETERRORCODE(wParam) HIBYTE(wParam)
+
+
+#define VPGETNOTIFICATION( wParam ) LOBYTE( wParam )
+#define VPGETERRORCODE( wParam ) HIBYTE( wParam )
 
 #ifndef MAKEWPARAM
-#define MAKEWPARAM(h, l) (((h)<<8) | ((l)))
+#define MAKEWPARAM( h, l ) ( ( ( h ) << 8 ) | ( ( l ) ) )
 #endif
 
-typedef void FAR* VPHANDLE;
-typedef VPHANDLE VPSESSIONHANDLE;
+typedef void*     VPHANDLE;
+typedef VPHANDLE  VPSESSIONHANDLE;
 
-typedef WORD    VPPLAYERID;
-typedef VPPLAYERID FAR* LPVPPLAYERID;
+typedef WORD        VPPLAYERID;
+typedef VPPLAYERID* LPVPPLAYERID;
 
 // Predefined player Id's
-const VPPLAYERID  VP_LOCALMACHINE = 0;  // Local VDMPLAY Manager 
-const VPPLAYERID  VP_SESSIONSERVER = 1; 
-const VPPLAYERID  VP_FIRSTPLAYER = 2;
-const VPPLAYERID  VP_ALLPLAYERS = (VPPLAYERID) 0xFFFF;
+const VPPLAYERID VP_LOCALMACHINE  = 0;  // Local VDMPLAY Manager
+const VPPLAYERID VP_SESSIONSERVER = 1;
+const VPPLAYERID VP_FIRSTPLAYER   = 2;
+const VPPLAYERID VP_ALLPLAYERS    = (VPPLAYERID)0xFFFF;
 
 typedef struct VPMsgHdr
 {
-	WORD         msgSize;
-	BYTE		 msgKind;
-	BYTE         msgFlags;
-	VPPLAYERID   msgFrom;
-	VPPLAYERID   msgTo;
-	WORD         msgId;
+    WORD       msgSize;
+    BYTE       msgKind;
+    BYTE       msgFlags;
+    VPPLAYERID msgFrom;
+    VPPLAYERID msgTo;
+    WORD       msgId;
 #if VP_TIMESTAMP
-	DWORD		 msgTime;
+    DWORD msgTime;
 #endif
-} VPMSGHDR,  FAR* LPVPMSGHDR;
+} VPMSGHDR, * LPVPMSGHDR;
 
-typedef CONST VPMSGHDR FAR *  LPCVPMSGHDR;
+typedef const VPMSGHDR* LPCVPMSGHDR;
 
 
 typedef struct VPNetAddress
 {
-	char   machineAddress[28];
-} VPNETADDRESS, FAR* LPVPNETADDRESS;
+    char machineAddress[28];
+} VPNETADDRESS, * LPVPNETADDRESS;
 
-typedef CONST VPNETADDRESS FAR * LPCVPNETADDRESS;
+typedef const VPNETADDRESS* LPCVPNETADDRESS;
 
 typedef struct VPGUID
 {
-	char buf[32];
-} VPGUID, FAR* LPVPGUID;
+    char buf[32];
+} VPGUID, * LPVPGUID;
 
-typedef CONST VPGUID  FAR * LPCVPGUID;
+typedef const VPGUID* LPCVPGUID;
 
-typedef VPNETADDRESS VPSESSIONID, FAR *LPVPSESSIONID;
-typedef CONST VPSESSIONID FAR* LPCVPSESSIONID;
+typedef VPNETADDRESS VPSESSIONID, * LPVPSESSIONID;
+typedef const VPSESSIONID* LPCVPSESSIONID;
 
 typedef struct VPSessionInfo
 {
-	VPGUID         gameId;          
-	VPSESSIONID    sessionId;
-	DWORD          version;
-	DWORD          playerCount;
-	DWORD          sessionFlags;  // From enum VPSESSIONFLAGS
-	DWORD          playerDataSize; 
-    DWORD          dataSize;
-	char           sessionName[VP_PSEUDOSIZE];
-	// char           sessionData[dataSize]; 
-} VPSESSIONINFO, FAR* LPVPSESSIONINFO;
+    VPGUID      gameId;
+    VPSESSIONID sessionId;
+    DWORD       version;
+    DWORD       playerCount;
+    DWORD       sessionFlags;  // From enum VPSESSIONFLAGS
+    DWORD       playerDataSize;
+    DWORD       dataSize;
+    char        sessionName[VP_PSEUDOSIZE];
+    // char           sessionData[dataSize];
+} VPSESSIONINFO, * LPVPSESSIONINFO;
 
-typedef  CONST VPSESSIONINFO FAR* LPCVPSESSIONINFO; 
+typedef const VPSESSIONINFO* LPCVPSESSIONINFO;
 
 typedef struct VPPlayerInfo
 {
-	VPNETADDRESS   playerAddress;
-	VPPLAYERID     playerId;
-	DWORD          playerFlags;  // From enum VPPLAYERFLAGS
-	DWORD          dataSize;
-	char           playerName[VP_PSEUDOSIZE];
-	// char           playerData[dataSize]; 
-} VPPLAYERINFO, FAR* LPVPPLAYERINFO;
+    VPNETADDRESS playerAddress;
+    VPPLAYERID   playerId;
+    DWORD        playerFlags;  // From enum VPPLAYERFLAGS
+    DWORD        dataSize;
+    char         playerName[VP_PSEUDOSIZE];
+    // char           playerData[dataSize];
+} VPPLAYERINFO, * LPVPPLAYERINFO;
 
-typedef CONST VPPLAYERINFO FAR* LPCVPPLAYERINFO;
+typedef const VPPLAYERINFO* LPCVPPLAYERINFO;
 
 
 // Player enumertaion Info
 typedef struct VPPlayerEnumInfo
 {
-	WORD        	playerIndex;    // the message with Index == Count means last message
-	WORD        	playerCount;
-	VPPLAYERINFO 	playerInfo;
+    WORD         playerIndex;  // the message with Index == Count means last message
+    WORD         playerCount;
+    VPPLAYERINFO playerInfo;
 
-} VPPENUMINFO, FAR* LPVPENUMINFO;
+} VPPENUMINFO, * LPVPENUMINFO;
 
 
-typedef CONST VPPENUMINFO FAR* LPCVPPENUMINFO;
+typedef const VPPENUMINFO* LPCVPPENUMINFO;
 
 typedef struct VPFTInfo
 {
-	enum { FTREQSENT=1, FTREQRECVD, FTACKSEND, FTACKRECVD, FTSEND, FTRECEIVE, FTDONE };
-	
-	DWORD	ftTotalSize;  // Total transfer size
-	DWORD   ftXferCount;  // How much already transferred
-	DWORD	ftLastCount;  // size of last transfered block
-	VPPLAYERID ftFromId;  // sender player
-	VPPLAYERID ftToId;	  // receiver player
-	DWORD	   ftState;	  // transfer state
-	DWORD	   ftErr;	  // error code
-	DWORD	   ftTpData;  // transport specific data
-	LPVOID	   ftContext; // internal use
-	DWORD	   ftStatus2;	  // internal use
+    enum
+    {
+        FTREQSENT = 1,
+        FTREQRECVD,
+        FTACKSEND,
+        FTACKRECVD,
+        FTSEND,
+        FTRECEIVE,
+        FTDONE
+    };
 
-} VPFTINFO, FAR *LPVPFTINFO;
+    DWORD      ftTotalSize;  // Total transfer size
+    DWORD      ftXferCount;  // How much already transferred
+    DWORD      ftLastCount;  // size of last transfered block
+    VPPLAYERID ftFromId;     // sender player
+    VPPLAYERID ftToId;       // receiver player
+    DWORD      ftState;      // transfer state
+    DWORD      ftErr;        // error code
+    DWORD      ftTpData;     // transport specific data
+    LPVOID     ftContext;    // internal use
+    DWORD      ftStatus2;    // internal use
 
-typedef CONST VPFTINFO FAR* LPCVPFTINFO;
- 
+} VPFTINFO, * LPVPFTINFO;
+
+typedef const VPFTINFO* LPCVPFTINFO;
 
 
 typedef struct VPMessage
 {
-	DWORD       notificationCode;
-	VPSESSIONHANDLE  session;
-	LPVOID     userData;
-	VPPLAYERID senderId;
-	VPPLAYERID toId;
-	DWORD      dataLen;
-	DWORD      itemCount;   // so we can pass multiple items of the same type
-					        // in on message
-	union
-	{
-		 LPCVPSESSIONINFO  sessionInfo; // VP_SESSIONENUM
-		 LPCVPPLAYERINFO   playerInfo;  // VP_JOIN,VP_LEAVE
-		 LPCVPPENUMINFO    playerEnumInfo; // VP_PLAYERENUM
-		 LPCVPFTINFO	   ftInfo;		   // VP_FTREQUEST
-		 LPVOID            data;        // VP_READDATA
+    DWORD           notificationCode;
+    VPSESSIONHANDLE session;
+    LPVOID          userData;
+    VPPLAYERID      senderId;
+    VPPLAYERID      toId;
+    DWORD           dataLen;
+    DWORD           itemCount;  // so we can pass multiple items of the same type
+                                // in on message
+    union {
+        LPCVPSESSIONINFO sessionInfo;     // VP_SESSIONENUM
+        LPCVPPLAYERINFO  playerInfo;      // VP_JOIN,VP_LEAVE
+        LPCVPPENUMINFO   playerEnumInfo;  // VP_PLAYERENUM
+        LPCVPFTINFO      ftInfo;          // VP_FTREQUEST
+        LPVOID           data;            // VP_READDATA
     } u;
 
-	DWORD	creationTime;	// When this notification was created
-	DWORD	recTime;		// When this notification was received
-	DWORD	postTime;		// When this notification was posted
-	DWORD   createMsTime;	// When this notification was created in 
-							// timeGetTime units
+    DWORD creationTime;  // When this notification was created
+    DWORD recTime;       // When this notification was received
+    DWORD postTime;      // When this notification was posted
+    DWORD createMsTime;  // When this notification was created in
+                         // timeGetTime units
 
-} VPMESSAGE, FAR* LPVPMESSAGE;
+} VPMESSAGE, * LPVPMESSAGE;
 
-typedef CONST VPMESSAGE FAR* LPCVPMESSAGE;
+typedef const VPMESSAGE* LPCVPMESSAGE;
 
 typedef struct VPTcpData
 {
-	DWORD   serverAddress;
-	USHORT  wellKnownPort;
-} VPTCPDATA, FAR* LPVPTCPDATA;
+    DWORD  serverAddress;
+    USHORT wellKnownPort;
+} VPTCPDATA, * LPVPTCPDATA;
 
-typedef CONST VPTCPDATA FAR* LPCVPTCPDATA;
+typedef const VPTCPDATA* LPCVPTCPDATA;
 
 typedef struct VPIpxData
 {
-	char    netNum[4];
-	char    nodeNum[6];
-	USHORT  wellKnownPort;
-} VPIPXDATA, FAR* LPVPIPXDATA;
+    char   netNum[4];
+    char   nodeNum[6];
+    USHORT wellKnownPort;
+} VPIPXDATA, * LPVPIPXDATA;
 
-typedef CONST VPIPXDATA FAR* LPCVPIPXDATA;
+typedef const VPIPXDATA* LPCVPIPXDATA;
 
 
 typedef struct VPNetbiosData
 {
-	WORD		lana;
-	char	 	stationName[16+1];
-} VPNETBIOSDATA, FAR* LPVPNETBIOSDATA;
+    WORD lana;
+    char stationName[16 + 1];
+} VPNETBIOSDATA, * LPVPNETBIOSDATA;
 
-typedef CONST VPNETBIOSDATA FAR* LPCVPNETBIOSDATA;
+typedef const VPNETBIOSDATA* LPCVPNETBIOSDATA;
 
 typedef struct VPCommData
 {
-	char deviceName[128];
-	char listenInit[128];
-	char callInit[128];
-	char callNumber[64];
-	char dialPrefix[32];
-	char dialSuffix[32];
-} VPCOMMDATA, FAR* LPVPCOMMDATA;
+    char deviceName[128];
+    char listenInit[128];
+    char callInit[128];
+    char callNumber[64];
+    char dialPrefix[32];
+    char dialSuffix[32];
+} VPCOMMDATA, * LPVPCOMMDATA;
 
-typedef CONST  VPCOMMDATA FAR* LPCVPCOMMDATA;
+typedef const VPCOMMDATA* LPCVPCOMMDATA;
 
-const DWORD VP_MAXPLAYERDATA = 256;
-const DWORD VP_MAXSESSIONDATA = 256;
-const DWORD VP_MAXSENDDATA  = 500;
+const DWORD VP_MAXPLAYERDATA  = 512;
+const DWORD VP_MAXSESSIONDATA = 512;
+// SenumREP wire size = dataSize + 90 bytes (10 hdr + 80 VPSESSIONINFO fields).
+// VP_MAXSENDDATA must exceed VP_MAXSESSIONDATA + 90 to avoid false disconnect.
+const DWORD VP_MAXSENDDATA    = 700;
 
-enum VP_SESSIONFLAGS 
-{ 
-	VP_NOAUTOJOIN=1    // Require the APP to confirm player join requests
-}; 
+enum VP_SESSIONFLAGS
+{
+    VP_NOAUTOJOIN = 1  // Require the APP to confirm player join requests
+};
 
-enum VPPLAYERFLAGS { VP_AIPLAYER=1, VP_IGNOREBROADCAST=2 }; 
+enum VPPLAYERFLAGS
+{
+    VP_AIPLAYER        = 1,
+    VP_IGNOREBROADCAST = 2
+};
 
-enum VPSENDFLAGS { VP_BROADCAST=1, VP_MUSTDELIVER=2 };
+enum VPSENDFLAGS
+{
+    VP_BROADCAST   = 1,
+    VP_MUSTDELIVER = 2
+};
 
-#pragma pack()
+#pragma pack( )
 
 extern "C"
 {
 
-DWORD    VPAPI vpGetVersion();     // Get the DLL version (VER_MAJOR) << 8 | VER_MINOR)
+    DWORD VPAPI vpGetVersion( );  // Get the DLL version (VER_MAJOR) << 8 | VER_MINOR)
 
-// Get the transports supported as a bit mask.
-// Usage:  if (vpSupportedTransports() && (1 << VPT_TCP)) .... 
-DWORD    VPAPI vpSupportedTransports(); 
+    // Get the transports supported as a bit mask.
+    // Usage:  if (vpSupportedTransports() && (1 << VPT_TCP)) ....
+    DWORD VPAPI vpSupportedTransports( );
 
-VPHANDLE VPAPI vpStartup(
-		IN DWORD version, // Game Version
-		IN LPCVPGUID guid,      // Game Identifications
-		IN DWORD sessionDataSize, // size of the session specific data
-		IN DWORD playerDataSize,  // size of the player specific data
-		IN UINT protocol,          // protocol to use
-		IN LPCVOID protocolData   //
-		);
-			   
-BOOL VPAPI vpCleanup(
-		IN VPHANDLE pHdl  // Handle returned by the vpStartup
-		);
+    VPHANDLE VPAPI vpStartup( IN DWORD     version,          // Game Version
+                              IN LPCVPGUID guid,             // Game Identifications
+                              IN DWORD     sessionDataSize,  // size of the session specific data
+                              IN DWORD     playerDataSize,   // size of the player specific data
+                              IN UINT      protocol,         // protocol to use
+                              IN LPCVOID   protocolData      //
+    );
+
+    BOOL VPAPI vpCleanup( IN VPHANDLE pHdl  // Handle returned by the vpStartup
+    );
 
 
-BOOL VPAPI vpEnumSessions(
-		IN VPHANDLE pHdl,    // Handle returned by the vpStartup
-        IN HWND hWnd,        // Window to receive the notifcation messages
-		IN BOOL dontAutoStop, // if FALSE will AutoStop enum
-		IN LPCVOID userData    // user data associated with the notifcations
-		);
-				
-// Must be called if dontAutoStop was specified in the eEnumSessions call
-BOOL VPAPI vpStopEnumSessions(
-		IN VPHANDLE pHdl  // Handle returned by the vpStartup
-	);
+    BOOL VPAPI vpEnumSessions( IN VPHANDLE pHdl,          // Handle returned by the vpStartup
+                               IN HWND     hWnd,          // Window to receive the notifcation messages
+                               IN BOOL     dontAutoStop,  // if FALSE will AutoStop enum
+                               IN LPCVOID  userData       // user data associated with the notifcations
+    );
+
+    // Must be called if dontAutoStop was specified in the eEnumSessions call
+    BOOL VPAPI vpStopEnumSessions( IN VPHANDLE pHdl  // Handle returned by the vpStartup
+    );
 
 
-BOOL VPAPI vpStartRegistrationServer(IN VPHANDLE pHdl, 
-                    IN HWND hWnd,
-					IN LPCVOID userData);
-
-				
-
-BOOL VPAPI vpStopRegistrationServer(IN VPHANDLE pHdl);
+    BOOL VPAPI vpStartRegistrationServer( IN VPHANDLE pHdl, IN HWND hWnd, IN LPCVOID userData );
 
 
-
-BOOL VPAPI vpEnumPlayers(
-		   IN VPHANDLE pHdl, // Handle returned by the vpStartup
-		   IN HWND hWnd,     // Window to receive the notifcation messages
-           IN LPCVPSESSIONID sessionId,  // Session id to enumerate players
-		   IN LPCVOID userData  // user data associated with the notifcations
-		);
-			   
-VPSESSIONHANDLE VPAPI vpCreateSession(
-			IN VPHANDLE pHdl, // Handle returned by the vpStartup
-			IN HWND hWnd, // Window to receive the notifcation messages
-            IN LPCSTR sessionData,  // session private data
-			IN DWORD sessionFlags,
-			IN LPCVOID userData  // user data associated with the notifcations
-		);
+    BOOL VPAPI vpStopRegistrationServer( IN VPHANDLE pHdl );
 
 
-BOOL VPAPI vpSetSessionVisibility(
-		IN VPSESSIONHANDLE pSesHdl,  // Handle returned by vpCreateSession
-		IN BOOL visibility   //  If set to FALSE the server stops responding to to server enumeration requests
-		);
-		 
+    BOOL VPAPI vpEnumPlayers( IN VPHANDLE       pHdl,       // Handle returned by the vpStartup
+                              IN HWND           hWnd,       // Window to receive the notifcation messages
+                              IN LPCVPSESSIONID sessionId,  // Session id to enumerate players
+                              IN LPCVOID        userData    // user data associated with the notifcations
+    );
 
-							
-// Use it to get info on the session created/joined	 by you					
-BOOL VPAPI vpGetSessionInfo(
-		IN VPSESSIONHANDLE pSesHdl,   // Handle returned by vpCreate or vpJoin
-		OUT LPVPSESSIONINFO pInfo     // Where to store returned data
-	);
-
-// Use it to get an info about a session that is not joined/created by you
-BOOL VPAPI vpGetSessionInfoById(
-		IN VPHANDLE pHdl, // Handle returned by the vpStartup
-	    IN HWND hWnd,     // Window to receive the notifcation messages
-        IN LPCVPSESSIONID sessionId,  // Session ID to query about
-	    LPCVOID userData   // user data to associated with the notification
-		);
+    VPSESSIONHANDLE VPAPI vpCreateSession( IN VPHANDLE pHdl,         // Handle returned by the vpStartup
+                                           IN HWND     hWnd,         // Window to receive the notifcation messages
+                                           IN LPCSTR   sessionData,  // session private data
+                                           IN DWORD    sessionFlags,
+                                           IN LPCVOID  userData  // user data associated with the notifcations
+    );
 
 
-// This will work only for the session created by the caller
-BOOL VPAPI vpUpdateSessionData(
-			IN VPSESSIONHANDLE pSesHdl,   // handle returned by vpCreateSession
-			IN LPCVOID sessionData        // private session data
-		);
-					  
-VPSESSIONHANDLE VPAPI vpJoinSession(
-		IN VPHANDLE pHdl, // Handle returned by the vpStartup
-		IN HWND hWnd,     // Window to receive the notifcation messages
-		IN LPCVPSESSIONID sessionId, // Session ID to join
-		IN LPCSTR playerData,   // Player private data (name + ...) 
-		IN DWORD  playerFlags,
-		IN LPCVOID userData     // user data to associate with notification
-		);
+    BOOL VPAPI vpSetSessionVisibility(
+        IN VPSESSIONHANDLE pSesHdl,    // Handle returned by vpCreateSession
+        IN BOOL            visibility  //  If set to FALSE the server stops responding to to server enumeration requests
+    );
 
 
+    // Use it to get info on the session created/joined	 by you
+    BOOL VPAPI vpGetSessionInfo( IN VPSESSIONHANDLE  pSesHdl,  // Handle returned by vpCreate or vpJoin
+                                 OUT LPVPSESSIONINFO pInfo     // Where to store returned data
+    );
 
-// Add a player to the session, this will work only for 
-// the session created on this machine
-BOOL VPAPI vpAddPlayer(
-		IN VPSESSIONHANDLE pHdl,  // session handle returned by vpCreateSession
-		IN LPCSTR playerData,     // private player data
-		IN DWORD  playerFlags,    
-		IN LPCVOID userData,       // userdata associated with the notifications
-		OUT LPVPPLAYERID playerId // returned player id
-		);
-						  
-// Send inter-player data						  
-BOOL VPAPI vpSendData(
-		IN VPSESSIONHANDLE pSesHdl,   // session handle
-        IN VPPLAYERID toPlayerId,     // destination player
-		IN VPPLAYERID fromPlayerId,   // source player
-        IN LPCVOID data,               // data (must acoomodate VPMSGHDR)
-		IN DWORD dataLen,			  // size of data
-		IN DWORD sendFlags,			  // these are from enum VPSENDFLAGS
-        LPCVOID userData				  // user data associated with notification
-		);
-
-// Close the joined or created session
-BOOL VPAPI vpCloseSession(
-		IN VPSESSIONHANDLE pSesHdl,   // session handle to close
-		IN LPCVOID userData			  // user data associated with notification
-		);
-
-// Return a printable form of a given network address. Return the actual
-// length of the string. 
-DWORD VPAPI vpGetAddressString(
-		IN VPHANDLE pHdl,		   // Handle returned by vpStartup
-		IN LPCVPNETADDRESS addr,   // address in question
-		LPSTR buf,				   // where to store the printable form
-		DWORD bufSize			   // size of the above buffer
-	);
-
-// Return the address of the network interface
-BOOL VPAPI vpGetAddress(
-		IN VPHANDLE pHdl,				// Handle returned by vpStartup
-		OUT LPVPNETADDRESS addr		    // Where to store the addreess
-	);
-
-// Start File Transfer
-BOOL VPAPI vpStartFT(IN VPSESSIONHANDLE pSesHdl, // session handle 
-					  INOUT LPVPFTINFO ftInfo     // file transfer info
-					  );
-
-// Accept incoming file transfer request
-BOOL vpAcceptFT(IN VPSESSIONHANDLE pSesHdl,	// session handle
-				  INOUT LPVPFTINFO ftInfo		// file transfer info
-				  );    
-	 
-
-// Send a file  data block
-BOOL VPAPI vpSendBlock(IN VPSESSIONHANDLE pSesHdl, // session handle 
-					   IN LPVPFTINFO ftInfo,  // file transfer info
-					   IN LPCVOID buf, 
-					   IN DWORD bufSize
-					   );
-
-// Receive	a file data block
-BOOL VPAPI vpGetBlock(IN VPSESSIONHANDLE pSesHdl,  // session handle 
-					   INOUT LPVPFTINFO ftInfo, 	  // file transfer info
-					   OUT LPVOID buf, 
-					   IN  DWORD bufSize
-					   );
-
-// Terminate a File Transfer
-BOOL VPAPI vpStopFT(IN VPSESSIONHANDLE pSesHdl, // session handle 
-						 INOUT LPVPFTINFO ftInfo	// file transfer info
-						 );
-
-// this should be called after processing the WM_VPNOTIFY message 
-BOOL VPAPI vpAcknowledge(IN VPHANDLE pHdl, LPCVPMESSAGE pMsg);
-
-// One of these MUST be called in responce to VP_JOIN 
-// for NOAUTOJOIN sessions
-BOOL VPAPI vpInvitePlayer(IN VPSESSIONHANDLE pSesHdl, VPPLAYERID playrId);
-BOOL VPAPI vpRejectPlayer(IN VPSESSIONHANDLE pSesHdl, VPPLAYERID playrId);
-BOOL VPAPI vpKillPlayer(IN VPSESSIONHANDLE pSesHdl, VPPLAYERID playrId);
-
-void VPAPI vpAdvDialog (HWND hWnd, int iProtocol, BOOL bServer);
-
-void VPAPI vpAbortWait(VPHANDLE pHdl);
-
-BOOL VPAPI vpGetServerAddress(
-		IN VPHANDLE pHdl,				// Handle returned by vpStartup
-		OUT LPVPNETADDRESS addr		    // Where to store the addreess
-	);
+    // Use it to get an info about a session that is not joined/created by you
+    BOOL VPAPI vpGetSessionInfoById( IN VPHANDLE       pHdl,       // Handle returned by the vpStartup
+                                     IN HWND           hWnd,       // Window to receive the notifcation messages
+                                     IN LPCVPSESSIONID sessionId,  // Session ID to query about
+                                     LPCVOID           userData    // user data to associated with the notification
+    );
 
 
-#if  !defined(__VDMPLUI_H__) && !defined(VPSYSTEM)
+    // This will work only for the session created by the caller
+    BOOL VPAPI vpUpdateSessionData( IN VPSESSIONHANDLE pSesHdl,     // handle returned by vpCreateSession
+                                    IN LPCVOID         sessionData  // private session data
+    );
 
-BOOL VPAPI vpAdvancedSetup(int protocol);
+    VPSESSIONHANDLE VPAPI vpJoinSession( IN VPHANDLE       pHdl,        // Handle returned by the vpStartup
+                                         IN HWND           hWnd,        // Window to receive the notifcation messages
+                                         IN LPCVPSESSIONID sessionId,   // Session ID to join
+                                         IN LPCSTR         playerData,  // Player private data (name + ...)
+                                         IN DWORD          playerFlags,
+                                         IN LPCVOID        userData  // user data to associate with notification
+    );
+
+
+    // Add a player to the session, this will work only for
+    // the session created on this machine
+    BOOL VPAPI vpAddPlayer( IN VPSESSIONHANDLE pHdl,        // session handle returned by vpCreateSession
+                            IN LPCSTR          playerData,  // private player data
+                            IN DWORD           playerFlags,
+                            IN LPCVOID         userData,  // userdata associated with the notifications
+                            OUT LPVPPLAYERID   playerId   // returned player id
+    );
+
+    // Send inter-player data
+    BOOL VPAPI vpSendData( IN VPSESSIONHANDLE pSesHdl,       // session handle
+                           IN VPPLAYERID      toPlayerId,    // destination player
+                           IN VPPLAYERID      fromPlayerId,  // source player
+                           IN LPCVOID         data,          // data (must acoomodate VPMSGHDR)
+                           IN DWORD           dataLen,       // size of data
+                           IN DWORD           sendFlags,     // these are from enum VPSENDFLAGS
+                           LPCVOID            userData       // user data associated with notification
+    );
+
+    // Close the joined or created session
+    BOOL VPAPI vpCloseSession( IN VPSESSIONHANDLE pSesHdl,  // session handle to close
+                               IN LPCVOID         userData  // user data associated with notification
+    );
+
+    // Return a printable form of a given network address. Return the actual
+    // length of the string.
+    DWORD VPAPI vpGetAddressString( IN VPHANDLE        pHdl,    // Handle returned by vpStartup
+                                    IN LPCVPNETADDRESS addr,    // address in question
+                                    LPSTR              buf,     // where to store the printable form
+                                    DWORD              bufSize  // size of the above buffer
+    );
+
+    // Return the address of the network interface
+    BOOL VPAPI vpGetAddress( IN VPHANDLE        pHdl,  // Handle returned by vpStartup
+                             OUT LPVPNETADDRESS addr   // Where to store the addreess
+    );
+
+    // Start File Transfer
+    BOOL VPAPI vpStartFT( IN VPSESSIONHANDLE pSesHdl,  // session handle
+                          INOUT LPVPFTINFO   ftInfo    // file transfer info
+    );
+
+    // Accept incoming file transfer request
+    BOOL vpAcceptFT( IN VPSESSIONHANDLE pSesHdl,  // session handle
+                     INOUT LPVPFTINFO   ftInfo    // file transfer info
+    );
+
+
+    // Send a file  data block
+    BOOL VPAPI vpSendBlock( IN VPSESSIONHANDLE pSesHdl,  // session handle
+                            IN LPVPFTINFO      ftInfo,   // file transfer info
+                            IN LPCVOID buf, IN DWORD bufSize );
+
+    // Receive	a file data block
+    BOOL VPAPI vpGetBlock( IN VPSESSIONHANDLE pSesHdl,  // session handle
+                           INOUT LPVPFTINFO   ftInfo,   // file transfer info
+                           OUT LPVOID buf, IN DWORD bufSize );
+
+    // Terminate a File Transfer
+    BOOL VPAPI vpStopFT( IN VPSESSIONHANDLE pSesHdl,  // session handle
+                         INOUT LPVPFTINFO   ftInfo    // file transfer info
+    );
+
+    // this should be called after processing the WM_VPNOTIFY message
+    BOOL VPAPI vpAcknowledge( IN VPHANDLE pHdl, LPCVPMESSAGE pMsg );
+
+    // One of these MUST be called in responce to VP_JOIN
+    // for NOAUTOJOIN sessions
+    BOOL VPAPI vpInvitePlayer( IN VPSESSIONHANDLE pSesHdl, VPPLAYERID playrId );
+    BOOL VPAPI vpRejectPlayer( IN VPSESSIONHANDLE pSesHdl, VPPLAYERID playrId );
+    BOOL VPAPI vpKillPlayer( IN VPSESSIONHANDLE pSesHdl, VPPLAYERID playrId );
+
+    void VPAPI vpAdvDialog( HWND hWnd, int iProtocol, BOOL bServer );
+
+    void VPAPI vpAbortWait( VPHANDLE pHdl );
+
+    BOOL VPAPI vpGetServerAddress( IN VPHANDLE        pHdl,  // Handle returned by vpStartup
+                                   OUT LPVPNETADDRESS addr   // Where to store the addreess
+    );
+
+    // Host relay (docs/plans/host-relay-spec.md 8). Read-only: TRUE when our
+    // link to that player rides the host instead of a direct p2p link.
+    BOOL VPAPI vpPeerIsRelayed( IN VPSESSIONHANDLE pSesHdl, IN VPPLAYERID playerId );
+
+    // Kick the one-shot direct dial to a peer (lobby probe). No-op unless the
+    // relay gate is on; sends no payload.
+    BOOL VPAPI vpProbePeerLink( IN VPSESSIONHANDLE pSesHdl, IN VPPLAYERID playerId );
+
+    // Parse-only check of a "host[:streamport[,dgport]]" address string (no
+    // session/handle needed) — TRUE iff the transport would accept it. Lets a
+    // caller reject a bad address BEFORE persisting it (e.g. to vdmplay.ini),
+    // instead of finding out only when a later OpenClient/connect attempt fails.
+    BOOL VPAPI vpValidateAddressString( IN LPCSTR addrString );
+
+
+#if !defined( __VDMPLUI_H__ ) && !defined( VPSYSTEM )
+
+    BOOL VPAPI vpAdvancedSetup( int protocol );
 
 #endif
-
 }
 
-inline size_t vpPlayerInfoSize(LPCVPPLAYERINFO pInfo) 
+inline size_t vpPlayerInfoSize( LPCVPPLAYERINFO pInfo )
 {
-	return sizeof(*pInfo) + (size_t) pInfo->dataSize - sizeof(pInfo->playerName);
+    return sizeof( *pInfo ) + (size_t)pInfo->dataSize - sizeof( pInfo->playerName );
 }
 
-inline size_t vpSessionInfoSize(LPCVPSESSIONINFO sInfo) 
-{						      
-	return sizeof(*sInfo) + (size_t) sInfo->dataSize - sizeof(sInfo->sessionName);
+inline size_t vpSessionInfoSize( LPCVPSESSIONINFO sInfo )
+{
+    return sizeof( *sInfo ) + (size_t)sInfo->dataSize - sizeof( sInfo->sessionName );
 }
 
 
-
-#endif 
+#endif

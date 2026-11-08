@@ -85,7 +85,7 @@ public:
 	CString m_sMessage;		// body of message
 	CWnd *m_pOpenWnd;		// pointer to open window for this type
 
-	CEMsg() {};
+	CEMsg( ): m_iID( ), m_iFrom( ), m_iTo( ), m_iCC( ), m_wStatus( ), m_pOpenWnd( ) {};
 	~CEMsg();
 
 	CEMsg( int iID, int iFrom, int iTo, 
@@ -99,9 +99,9 @@ class CEMsgList : public CObList
 	DECLARE_SERIAL( CEMsgList );
 
 public:
-	int m_iLastID;	// last id used
+    int m_iLastID;  // last id used
 
-	CEMsgList() {};
+	CEMsgList( ): m_iLastID( ) {};
 	~CEMsgList();
 
 	CEMsg *GetNextPrevMsg( int iID, int iCmd );

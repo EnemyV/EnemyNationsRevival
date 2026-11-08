@@ -1,0 +1,9 @@
+SCC = This is a Source Code Control file
+
+[enations.mak]
+SCC_Aux_Path = "\\jasmine\vss\tools"
+SCC_Project_Name = "$/lastplnt/src", EAAAAAAA
+
+[lastplnt.mak]
+SCC_Aux_Path = "\\jasmine\vss\tools"
+SCC_Project_Name = "$/lastplnt/src", EAAAAAAA

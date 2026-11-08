@@ -1,0 +1,459 @@
+Microsoft (R) COFF/PE Dumper Version 14.29.30140.0
+Copyright (C) Microsoft Corporation.  All rights reserved.
+
+
+Dump of file daved.lib
+
+File Type: LIBRARY
+
+COFF SYMBOL TABLE
+000 00000000 DEBUG  notype       Filename     | .file
+    E:\thielen\MSG_BOX.CPP
+003 00000000 SECT1  notype       Static       | .drectve
+    Section length   FF, #relocs    0, #linenums    0, checksum        0
+005 00000000 SECT2  notype       Static       | .debug$S
+    Section length 268C, #relocs   48, #linenums    0, checksum        0
+007 00000000 SECT3  notype       Static       | .rdata
+    Section length   F0, #relocs    5, #linenums    0, checksum        0
+009 00000088 SECT3  notype       Static       | _sApplProp$S26058
+00A 00000078 SECT3  notype       Static       | _sEnableProp$S26057
+00B 00000068 SECT3  notype       Static       | _sHelp$S26056
+00C 00000058 SECT3  notype       Static       | _sRC$S26055
+00D 00000040 SECT3  notype       Static       | _sYNC$S26054
+00E 00000030 SECT3  notype       Static       | _sYN$S26053
+00F 00000018 SECT3  notype       Static       | _sARI$S26052
+010 00000008 SECT3  notype       Static       | _sOC$S26051
+011 00000000 SECT3  notype       Static       | _sOk$S26050
+012 00000000 SECT4  notype       Static       | .data
+    Section length   E4, #relocs    0, #linenums    0, checksum        0
+014 00000000 SECT4  notype       Static       | _hDlgBox$S26019
+015 00000000 SECT5  notype       Static       | .text
+    Section length 1629, #relocs   DF, #linenums  13C, checksum        0
+017 00000000 SECT5  notype ()    External     | ?EnableProc@@YGHPAUHWND__@@J@Z (int __stdcall EnableProc(struct HWND__ *,long))
+    tag index 00000021 size 00000190 lines 00004C44 next function 00000026
+019 0000001C SECT4  notype       Static       | $SG26091
+01A 00000004 SECT4  notype       Static       | $SG26079
+01B 00000000 UNDEF  notype ()    External     | __imp__RemovePropA@8
+01C 00000000 UNDEF  notype ()    External     | __imp__EnableWindow@8
+01D 00000000 UNDEF  notype ()    External     | __imp__SetPropA@12
+01E 00000000 UNDEF  notype ()    External     | ?AfxAssertFailedLine@@YGHPBDH@Z (int __stdcall AfxAssertFailedLine(char const *,int))
+01F 00000000 UNDEF  notype ()    External     | __imp__GetPropA@8
+020 00000000 UNDEF  notype ()    External     | __imp__IsWindowEnabled@4
+021 00000000 SECT5  notype       BeginFunction | .bf
+    line# 003f end 0000002A
+023 00000019 SECT5  notype       .bf or.ef    | .lf
+024 00000190 SECT5  notype       EndFunction  | .ef
+    line# 0064
+026 00000190 SECT5  notype ()    External     | ?EnableAllWindows@@YAXPAUHWND__@@H@Z (void __cdecl EnableAllWindows(struct HWND__ *,int))
+    tag index 0000002A size 00000039 lines 00004CDA next function 0000002F
+028 00000000 UNDEF  notype ()    External     | __imp__EnumThreadWindows@12
+029 00000000 UNDEF  notype ()    External     | __imp__GetCurrentThreadId@0
+02A 00000190 SECT5  notype       BeginFunction | .bf
+    line# 0068 end 00000036
+02C 00000003 SECT5  notype       .bf or.ef    | .lf
+02D 000001C9 SECT5  notype       EndFunction  | .ef
+    line# 006b
+02F 000001C9 SECT5  notype ()    External     | ?ExtMsgBox@@YGHPBDIJ0P6GHXZ@Z (int __stdcall ExtMsgBox(char const *,unsigned int,long,char const *,int (__stdcall*)(void)))
+    tag index 00000036 size 00000090 lines 00004CEC next function 0000003B
+031 00000034 SECT4  notype       Static       | $SG26118
+032 00000000 UNDEF  notype ()    External     | ?AfxGetAppName@@YGPBDXZ (char const * __stdcall AfxGetAppName(void))
+033 00000000 UNDEF  notype ()    External     | __imp__GetWindowThreadProcessId@8
+034 00000000 UNDEF  notype ()    External     | __imp__GetActiveWindow@0
+035 00000000 UNDEF  notype ()    External     | ?AfxGetApp@@YGPAVCWinApp@@XZ (class CWinApp * __stdcall AfxGetApp(void))
+036 000001C9 SECT5  notype       BeginFunction | .bf
+    line# 006f end 00000047
+038 00000008 SECT5  notype       .bf or.ef    | .lf
+039 00000259 SECT5  notype       EndFunction  | .ef
+    line# 007a
+03B 00000259 SECT5  notype ()    External     | ?ExtMsgBox@@YGHPAVCWnd@@PBDHIJ1P6GHXZ@Z (int __stdcall ExtMsgBox(class CWnd *,char const *,int,unsigned int,long,char const *,int (__stdcall*)(void)))
+    tag index 00000047 size 0000009D lines 00004D1C next function 0000004C
+03D 000000B8 SECT3  notype       Static       | $T26557
+03E 00000098 SECT3  notype       Static       | $T26555
+03F 00000000 UNDEF  notype       External     | __except_list
+040 00000000 UNDEF  notype ()    External     | ___CxxFrameHandler
+041 000002DB SECT5  notype       Label        | $L26551
+042 00000000 UNDEF  notype ()    External     | ??1CString@@QAE@XZ (public: __thiscall CString::~CString(void))
+043 000002D2 SECT5  notype       Label        | $L26552
+044 00000000 UNDEF  notype ()    External     | ??BCString@@QBEPBDXZ (public: __thiscall CString::operator char const *(void)const )
+045 00000000 UNDEF  notype ()    External     | ?LoadStringA@CString@@QAEHI@Z (public: int __thiscall CString::LoadStringA(unsigned int))
+046 00000000 UNDEF  notype ()    External     | ??0CString@@QAE@XZ (public: __thiscall CString::CString(void))
+047 00000259 SECT5  notype       BeginFunction | .bf
+    line# 007d end 00000089
+049 00000005 SECT5  notype       .bf or.ef    | .lf
+04A 000002F6 SECT5  notype       EndFunction  | .ef
+    line# 0082
+04C 000002F6 SECT5  notype ()    External     | ?ExtMsgBox@@YGHPAUHWND__@@PBD1IJ1P6GHXZ@Z (int __stdcall ExtMsgBox(struct HWND__ *,char const *,char const *,unsigned int,long,char const *,int (__stdcall*)(void)))
+    tag index 00000089 size 00000EB0 lines 00004D3A next function 0000008E
+04E 000000E0 SECT3  notype       Static       | $T26576
+04F 000000C0 SECT3  notype       Static       | $T26574
+050 000000B0 SECT4  notype       Static       | $SG26301
+051 000000A8 SECT4  notype       Static       | $SG26290
+052 000000A0 SECT4  notype       Static       | $SG26287
+053 00000098 SECT4  notype       Static       | $SG26284
+054 00000094 SECT4  notype       Static       | $SG26281
+055 0000008C SECT4  notype       Static       | $SG26278
+056 00000084 SECT4  notype       Static       | $SG26275
+057 00000080 SECT4  notype       Static       | $SG26272
+058 00000068 SECT4  notype       Static       | $SG26192
+059 00000064 SECT4  notype       Static       | $SG26162
+05A 0000004C SECT4  notype       Static       | $SG26146
+05B 0000118B SECT5  notype       Label        | $L26566
+05C 0000117F SECT5  notype       Label        | $L26567
+05D 00000000 UNDEF  notype ()    External     | ??1CGlobal@@QAE@XZ (public: __thiscall CGlobal::~CGlobal(void))
+05E 00001176 SECT5  notype       Label        | $L26570
+05F 00000000 UNDEF  notype ()    External     | __imp__DestroyWindow@4
+060 00000000 UNDEF  notype ()    External     | __imp__GetParent@4
+061 00000000 UNDEF  notype ()    External     | __imp__DispatchMessageA@4
+062 00000000 UNDEF  notype ()    External     | __imp__TranslateMessage@4
+063 00000000 UNDEF  notype ()    External     | __imp__IsDialogMessageA@8
+064 00000000 UNDEF  notype ()    External     | __imp__PeekMessageA@20
+065 00000000 UNDEF  notype ()    External     | __imp__InvalidateRect@12
+066 00000000 UNDEF  notype ()    External     | ??0CRect@@QAE@HHHH@Z (public: __thiscall CRect::CRect(int,int,int,int))
+067 00000000 UNDEF  notype ()    External     | __imp__GetSystemMetrics@4
+068 00000000 UNDEF  notype ()    External     | __imp__SetForegroundWindow@4
+069 00000000 UNDEF  notype ()    External     | __imp__ShowWindow@8
+06A 00000000 UNDEF  notype ()    External     | ?Free@CGlobal@@QAEXXZ (public: void __thiscall CGlobal::Free(void))
+06B 00000000 UNDEF  notype ()    External     | __imp__SetWindowLongA@12
+06C 00000000 UNDEF  notype ()    External     | __imp__MessageBoxA@16
+06D 00000000 UNDEF  notype ()    External     | __imp__CreateDialogIndirectParamA@20
+06E 00000000 UNDEF  notype ()    External     | ?AfxGetInstanceHandle@@YGPAUHINSTANCE__@@XZ (struct HINSTANCE__ * __stdcall AfxGetInstanceHandle(void))
+06F 00000000 UNDEF  notype ()    External     | ?Ptr@CGlobal@@QBEPAXK@Z (public: void * __thiscall CGlobal::Ptr(unsigned long)const )
+070 00000000 UNDEF  notype ()    External     | _memset
+071 00000000 UNDEF  notype ()    External     | ?ReAlloc@CGlobal@@QAEPAXKI@Z (public: void * __thiscall CGlobal::ReAlloc(unsigned long,unsigned int))
+072 00000000 UNDEF  notype ()    External     | ?Size@CGlobal@@QBEKXZ (public: unsigned long __thiscall CGlobal::Size(void)const )
+073 00000000 UNDEF  notype ()    External     | __imp__stricmp
+074 00000000 UNDEF  notype ()    External     | _memcpy
+075 00000000 UNDEF  notype ()    External     | _strlen
+076 00000000 UNDEF  notype ()    External     | __imp__strchr
+077 00000000 UNDEF  notype ()    External     | ?Width@CRect@@QBEHXZ (public: int __thiscall CRect::Width(void)const )
+078 00000000 UNDEF  notype ()    External     | ?GetBuffer@CString@@QAEPADH@Z (public: char * __thiscall CString::GetBuffer(int))
+079 00000000 UNDEF  notype ()    External     | __imp__LoadIconA@8
+07A 00000000 UNDEF  notype ()    External     | _strcpy
+07B 00000000 UNDEF  notype ()    External     | ?Height@CRect@@QBEHXZ (public: int __thiscall CRect::Height(void)const )
+07C 00000000 UNDEF  notype ()    External     | ??YCRect@@QAEXUtagPOINT@@@Z (public: void __thiscall CRect::operator+=(struct tagPOINT))
+07D 00000000 UNDEF  notype ()    External     | ??0CPoint@@QAE@HH@Z (public: __thiscall CPoint::CPoint(int,int))
+07E 00000000 UNDEF  notype ()    External     | ??0CGlobal@@QAE@KI@Z (public: __thiscall CGlobal::CGlobal(unsigned long,unsigned int))
+07F 00000000 UNDEF  notype ()    External     | __imp__ReleaseDC@8
+080 00000000 UNDEF  notype ()    External     | __imp__DrawTextA@20
+081 00000000 UNDEF  notype ()    External     | __imp__GetTextMetricsA@8
+082 00000000 UNDEF  notype ()    External     | __imp__SelectObject@8
+083 00000000 UNDEF  notype ()    External     | __imp__GetStockObject@4
+084 00000000 UNDEF  notype ()    External     | __imp__GetDC@4
+085 00000000 UNDEF  notype ()    External     | ?ReleaseBuffer@CString@@QAEXH@Z (public: void __thiscall CString::ReleaseBuffer(int))
+086 00000000 UNDEF  notype ()    External     | ?GetLength@CString@@QBEHXZ (public: int __thiscall CString::GetLength(void)const )
+087 00000000 UNDEF  notype ()    External     | ??ACString@@QBEDH@Z (public: char __thiscall CString::operator[](int)const )
+088 00000000 UNDEF  notype ()    External     | ??YCString@@QAEABV0@PBD@Z (public: class CString const & __thiscall CString::operator+=(char const *))
+089 000002F6 SECT5  notype       BeginFunction | .bf
+    line# 0085 end 0000009E
+08B 000000D7 SECT5  notype       .bf or.ef    | .lf
+08C 000011A6 SECT5  notype       EndFunction  | .ef
+    line# 01c1
+08E 000011A6 SECT5  notype ()    External     | ?MsgBoxDlgProc@@YGHPAUHWND__@@IIJ@Z (int __stdcall MsgBoxDlgProc(struct HWND__ *,unsigned int,unsigned int,long))
+    tag index 0000009E size 00000483 lines 00005244 next function 00000000
+090 000000E0 SECT4  notype       Static       | $SG26390
+091 000000C8 SECT4  notype       Static       | $SG26350
+092 00000000 UNDEF  notype ()    External     | __imp__WinHelpA@16
+093 00000000 UNDEF  notype ()    External     | _strcat
+094 00000000 UNDEF  notype ()    External     | __imp__GetModuleFileNameA@12
+095 00000000 UNDEF  notype ()    External     | __imp__GetWindowLongA@8
+096 00000000 UNDEF  notype ()    External     | __imp__EndPaint@8
+097 00000000 UNDEF  notype ()    External     | __imp__DrawIcon@16
+098 00000000 UNDEF  notype ()    External     | __imp__BeginPaint@8
+099 00000000 UNDEF  notype ()    External     | __imp__SetWindowPos@28
+09A 00000000 UNDEF  notype ()    External     | ??ZCRect@@QAEXUtagPOINT@@@Z (public: void __thiscall CRect::operator-=(struct tagPOINT))
+09B 00000000 UNDEF  notype ()    External     | __imp__GetWindowRect@8
+09C 00000000 UNDEF  notype ()    External     | ??0CRect@@QAE@XZ (public: __thiscall CRect::CRect(void))
+09D 00000000 UNDEF  notype ()    External     | __imp__GetClientRect@8
+09E 000011A6 SECT5  notype       BeginFunction | .bf
+    line# 01c4 end 00000000
+0A0 0000003C SECT5  notype       .bf or.ef    | .lf
+0A1 00001629 SECT5  notype       EndFunction  | .ef
+    line# 021f
+0A3 00000000 SECT6  notype       Static       | .debug$T
+    Section length   30, #relocs    0, #linenums    0, checksum        0
+
+String Table Size = 0x7A8 bytes
+
+COFF SYMBOL TABLE
+000 00000000 DEBUG  notype       Filename     | .file
+    E:\thielen\STREXT.CPP
+003 00000000 SECT1  notype       Static       | .drectve
+    Section length   FF, #relocs    0, #linenums    0, checksum        0
+005 00000000 SECT2  notype       Static       | .debug$S
+    Section length 2354, #relocs   2C, #linenums    0, checksum        0
+007 00000000 SECT3  notype       Static       | .data
+    Section length   16, #relocs    0, #linenums    0, checksum        0
+009 00000000 SECT3  notype       Static       | _THIS_FILE$S26014
+00A 00000000 SECT4  notype       Static       | .text
+    Section length  5EC, #relocs   51, #linenums   48, checksum        0
+00C 00000000 SECT4  notype ()    External     | ?CStringDelete@@YAXAAVCString@@HH@Z (void __cdecl CStringDelete(class CString &,int,int))
+    tag index 00000013 size 000000EB lines 0000303B next function 00000018
+00E 00000000 UNDEF  notype ()    External     | ?ReleaseBuffer@CString@@QAEXH@Z (public: void __thiscall CString::ReleaseBuffer(int))
+00F 00000000 UNDEF  notype ()    External     | ?GetLength@CString@@QBEHXZ (public: int __thiscall CString::GetLength(void)const )
+010 00000000 UNDEF  notype ()    External     | __imp__memmove
+011 00000000 UNDEF  notype ()    External     | ?GetBuffer@CString@@QAEPADH@Z (public: char * __thiscall CString::GetBuffer(int))
+012 00000000 UNDEF  notype ()    External     | ?AfxAssertFailedLine@@YGHPBDH@Z (int __stdcall AfxAssertFailedLine(char const *,int))
+013 00000000 SECT4  notype       BeginFunction | .bf
+    line# 0011 end 0000002B
+015 0000000B SECT4  notype       .bf or.ef    | .lf
+016 000000EB SECT4  notype       EndFunction  | .ef
+    line# 0024
+018 000000EB SECT4  notype ()    External     | ?CStringInsert@@YAXAAVCString@@HPBD@Z (void __cdecl CStringInsert(class CString &,int,char const *))
+    tag index 0000002B size 0000010E lines 0000307D next function 00000030
+01A 00000000 SECT5  notype       Static       | .rdata
+    Section length   B8, #relocs    E, #linenums    0, checksum        0
+01C 00000020 SECT5  notype       Static       | $T26264
+01D 00000000 SECT5  notype       Static       | $T26262
+01E 00000000 UNDEF  notype       External     | __except_list
+01F 00000000 UNDEF  notype ()    External     | ___CxxFrameHandler
+020 000001E1 SECT4  notype       Label        | $L26255
+021 00000000 UNDEF  notype ()    External     | ??1CString@@QAE@XZ (public: __thiscall CString::~CString(void))
+022 000001D8 SECT4  notype       Label        | $L26256
+023 000001CF SECT4  notype       Label        | $L26257
+024 000001C6 SECT4  notype       Label        | $L26258
+025 000001BD SECT4  notype       Label        | $L26259
+026 00000000 UNDEF  notype ()    External     | ??4CString@@QAEABV0@ABV0@@Z (public: class CString const & __thiscall CString::operator=(class CString const &))
+027 00000000 UNDEF  notype ()    External     | ??H@YG?AVCString@@ABV0@0@Z (class CString __stdcall operator+(class CString const &,class CString const &))
+028 00000000 UNDEF  notype ()    External     | ??H@YG?AVCString@@ABV0@PBD@Z (class CString __stdcall operator+(class CString const &,char const *))
+029 00000000 UNDEF  notype ()    External     | ?Left@CString@@QBE?AV1@H@Z (public: class CString __thiscall CString::Left(int)const )
+02A 00000000 UNDEF  notype ()    External     | ?Mid@CString@@QBE?AV1@H@Z (public: class CString __thiscall CString::Mid(int)const )
+02B 000000EB SECT4  notype       BeginFunction | .bf
+    line# 0027 end 00000038
+02D 00000005 SECT4  notype       .bf or.ef    | .lf
+02E 000001F9 SECT4  notype       EndFunction  | .ef
+    line# 0043
+030 000001F9 SECT4  notype ()    External     | ?csPrintf@@YAXPAVCString@@ZZ (void __cdecl csPrintf(class CString *,...))
+    tag index 00000038 size 00000134 lines 0000309B next function 0000003D
+032 00000000 UNDEF  notype ()    External     | __imp____p__pctype
+033 00000000 UNDEF  notype ()    External     | __imp___isctype
+034 00000000 UNDEF  notype ()    External     | __imp____p___mb_cur_max
+035 00000000 UNDEF  notype ()    External     | __imp__atoi
+036 00000000 UNDEF  notype ()    External     | __imp__strchr
+037 00000000 UNDEF  notype ()    External     | ??BCString@@QBEPBDXZ (public: __thiscall CString::operator char const *(void)const )
+038 000001F9 SECT4  notype       BeginFunction | .bf
+    line# 0047 end 00000040
+03A 00000016 SECT4  notype       .bf or.ef    | .lf
+03B 0000032D SECT4  notype       EndFunction  | .ef
+    line# 0068
+03D 0000032D SECT4  notype ()    Static       | ?InsComma@@YAXPAD@Z (void __cdecl InsComma(char *))
+    tag index 00000040 size 00000069 lines 0000311F next function 00000045
+03F 00000000 UNDEF  notype ()    External     | _strlen
+040 0000032D SECT4  notype       BeginFunction | .bf
+    line# 006b end 0000004F
+042 0000000C SECT4  notype       .bf or.ef    | .lf
+043 00000396 SECT4  notype       EndFunction  | .ef
+    line# 007a
+045 00000396 SECT4  notype ()    External     | ?LongToCString@@YA?AVCString@@JHH@Z (class CString __cdecl LongToCString(long,int,int))
+    tag index 0000004F size 000000B9 lines 00003167 next function 00000054
+047 00000078 SECT5  notype       Static       | $T26274
+048 00000058 SECT5  notype       Static       | $T26273
+049 00000436 SECT4  notype       Label        | $L26267
+04A 0000042D SECT4  notype       Label        | $L26268
+04B 0000041A SECT4  notype       Label        | $L26271
+04C 00000000 UNDEF  notype ()    External     | ??0CString@@QAE@ABV0@@Z (public: __thiscall CString::CString(class CString const &))
+04D 00000000 UNDEF  notype ()    External     | ??0CString@@QAE@PBD@Z (public: __thiscall CString::CString(char const *))
+04E 00000000 UNDEF  notype ()    External     | __imp___ltoa
+04F 00000396 SECT4  notype       BeginFunction | .bf
+    line# 007d end 0000005C
+051 00000007 SECT4  notype       .bf or.ef    | .lf
+052 0000044F SECT4  notype       EndFunction  | .ef
+    line# 0087
+054 0000044F SECT4  notype ()    External     | ?IntToCString@@YA?AVCString@@HHH@Z (class CString __cdecl IntToCString(int,int,int))
+    tag index 0000005C size 000000B9 lines 00003191 next function 00000061
+056 000000A8 SECT5  notype       Static       | $T26282
+057 00000088 SECT5  notype       Static       | $T26281
+058 000004EF SECT4  notype       Label        | $L26275
+059 000004E6 SECT4  notype       Label        | $L26276
+05A 000004D3 SECT4  notype       Label        | $L26279
+05B 00000000 UNDEF  notype ()    External     | __imp___itoa
+05C 0000044F SECT4  notype       BeginFunction | .bf
+    line# 008a end 00000065
+05E 00000007 SECT4  notype       .bf or.ef    | .lf
+05F 00000508 SECT4  notype       EndFunction  | .ef
+    line# 0094
+061 00000508 SECT4  notype ()    External     | ?AssertString@@YAXPBVCString@@@Z (void __cdecl AssertString(class CString const *))
+    tag index 00000065 size 000000E4 lines 000031BB next function 00000000
+063 00000000 UNDEF  notype ()    External     | ?GetAllocLength@CString@@QBEHXZ (public: int __thiscall CString::GetAllocLength(void)const )
+064 00000000 UNDEF  notype ()    External     | ?AfxIsValidAddress@@YGHPBXIH@Z (int __stdcall AfxIsValidAddress(void const *,unsigned int,int))
+065 00000508 SECT4  notype       BeginFunction | .bf
+    line# 0098 end 00000000
+067 00000008 SECT4  notype       .bf or.ef    | .lf
+068 000005EC SECT4  notype       EndFunction  | .ef
+    line# 00a1
+06A 00000000 SECT6  notype       Static       | .debug$T
+    Section length   30, #relocs    0, #linenums    0, checksum        0
+
+String Table Size = 0x32F bytes
+
+COFF SYMBOL TABLE
+000 00000009 DEBUG  notype       Filename     | .file
+    E:\thielen\DAVIDINL.CPP
+003 00000000 SECT1  notype       Static       | .drectve
+    Section length   FF, #relocs    0, #linenums    0, checksum        0
+005 00000000 SECT2  notype       Static       | .debug$S
+    Section length 20BE, #relocs    C, #linenums    0, checksum        0
+007 00000000 SECT3  notype       Static       | .text
+    Section length   D0, #relocs    2, #linenums    6, checksum        0
+009 00000000 DEBUG  notype       Filename     | .file
+    d:\tools\include\thielen.inl
+00C 00000000 SECT3  notype ()    External     | ?Handle@CGlobal@@QBEPAXXZ (public: void * __thiscall CGlobal::Handle(void)const )
+    tag index 0000000E size 0000001B lines 000023CD next function 00000013
+00E 00000000 SECT3  notype       BeginFunction | .bf
+    line# 002d end 00000015
+010 00000001 SECT3  notype       .bf or.ef    | .lf
+011 0000001B SECT3  notype       EndFunction  | .ef
+    line# 002d
+013 0000001B SECT3  notype ()    External     | ?Ptr@CGlobal@@QBEPAXK@Z (public: void * __thiscall CGlobal::Ptr(unsigned long)const )
+    tag index 00000015 size 00000021 lines 000023D3 next function 0000001A
+015 0000001B SECT3  notype       BeginFunction | .bf
+    line# 002f end 0000001C
+017 00000001 SECT3  notype       .bf or.ef    | .lf
+018 0000003C SECT3  notype       EndFunction  | .ef
+    line# 002f
+01A 0000003C SECT3  notype ()    External     | ?Size@CGlobal@@QBEKXZ (public: unsigned long __thiscall CGlobal::Size(void)const )
+    tag index 0000001C size 0000001C lines 000023D9 next function 00000021
+01C 0000003C SECT3  notype       BeginFunction | .bf
+    line# 0031 end 00000024
+01E 00000001 SECT3  notype       .bf or.ef    | .lf
+01F 00000058 SECT3  notype       EndFunction  | .ef
+    line# 0031
+021 00000058 SECT3  notype ()    External     | ??0CResource@@QAE@XZ (public: __thiscall CResource::CResource(void))
+    tag index 00000024 size 00000021 lines 000023DF next function 00000029
+023 00000000 UNDEF  notype ()    External     | ?ctor@CResource@@AAEXXZ (private: void __thiscall CResource::ctor(void))
+024 00000058 SECT3  notype       BeginFunction | .bf
+    line# 0034 end 0000002C
+026 00000001 SECT3  notype       .bf or.ef    | .lf
+027 00000079 SECT3  notype       EndFunction  | .ef
+    line# 0034
+029 00000079 SECT3  notype ()    External     | ?Load@CResource@@QAEPAXPAUHINSTANCE__@@HH@Z (public: void * __thiscall CResource::Load(struct HINSTANCE__ *,int,int))
+    tag index 0000002C size 00000036 lines 000023E5 next function 00000031
+02B 00000000 UNDEF  notype ()    External     | ?Load@CResource@@QAEPAXPAUHINSTANCE__@@PBD1@Z (public: void * __thiscall CResource::Load(struct HINSTANCE__ *,char const *,char const *))
+02C 00000079 SECT3  notype       BeginFunction | .bf
+    line# 0036 end 00000033
+02E 00000001 SECT3  notype       .bf or.ef    | .lf
+02F 000000AF SECT3  notype       EndFunction  | .ef
+    line# 0036
+031 000000AF SECT3  notype ()    External     | ?Ptr@CResource@@QBEPAXK@Z (public: void * __thiscall CResource::Ptr(unsigned long)const )
+    tag index 00000033 size 00000021 lines 000023EB next function 00000000
+033 000000AF SECT3  notype       BeginFunction | .bf
+    line# 0038 end 00000000
+035 00000001 SECT3  notype       .bf or.ef    | .lf
+036 000000D0 SECT3  notype       EndFunction  | .ef
+    line# 0038
+038 00000000 SECT4  notype       Static       | .debug$T
+    Section length   30, #relocs    0, #linenums    0, checksum        0
+
+String Table Size = 0xED bytes
+
+COFF SYMBOL TABLE
+000 00000000 DEBUG  notype       Filename     | .file
+    E:\thielen\GLOBAL.CPP
+003 00000000 SECT1  notype       Static       | .drectve
+    Section length   FF, #relocs    0, #linenums    0, checksum        0
+005 00000000 SECT2  notype       Static       | .debug$S
+    Section length 22F1, #relocs   18, #linenums    0, checksum        0
+007 00000000 SECT3  notype       Static       | .data
+    Section length   16, #relocs    0, #linenums    0, checksum        0
+009 00000000 SECT3  notype       Static       | _THIS_FILE$S26014
+00A 00000000 SECT4  notype       Static       | .text
+    Section length  38A, #relocs   18, #linenums   3F, checksum        0
+00C 00000000 SECT4  notype ()    External     | ?ctor@CGlobal@@AAEXXZ (private: void __thiscall CGlobal::ctor(void))
+    tag index 0000000E size 00000033 lines 00002A4C next function 00000013
+00E 00000000 SECT4  notype       BeginFunction | .bf
+    line# 000f end 00000015
+010 00000005 SECT4  notype       .bf or.ef    | .lf
+011 00000033 SECT4  notype       EndFunction  | .ef
+    line# 0014
+013 00000033 SECT4  notype ()    External     | ??0CGlobal@@QAE@KI@Z (public: __thiscall CGlobal::CGlobal(unsigned long,unsigned int))
+    tag index 00000015 size 00000033 lines 00002A6A next function 0000001A
+015 00000033 SECT4  notype       BeginFunction | .bf
+    line# 0017 end 0000001C
+017 00000004 SECT4  notype       .bf or.ef    | .lf
+018 00000066 SECT4  notype       EndFunction  | .ef
+    line# 001b
+01A 00000066 SECT4  notype ()    External     | ??1CGlobal@@QAE@XZ (public: __thiscall CGlobal::~CGlobal(void))
+    tag index 0000001C size 0000001E lines 00002A82 next function 00000021
+01C 00000066 SECT4  notype       BeginFunction | .bf
+    line# 001e end 00000026
+01E 00000003 SECT4  notype       .bf or.ef    | .lf
+01F 00000084 SECT4  notype       EndFunction  | .ef
+    line# 0021
+021 00000084 SECT4  notype ()    External     | ?Alloc@CGlobal@@QAEPAXKI@Z (public: void * __thiscall CGlobal::Alloc(unsigned long,unsigned int))
+    tag index 00000026 size 00000095 lines 00002A94 next function 0000002B
+023 00000000 UNDEF  notype ()    External     | __imp__GlobalLock@4
+024 00000000 UNDEF  notype ()    External     | __imp__GlobalAlloc@8
+025 00000000 UNDEF  notype ()    External     | ?AfxAssertFailedLine@@YGHPBDH@Z (int __stdcall AfxAssertFailedLine(char const *,int))
+026 00000084 SECT4  notype       BeginFunction | .bf
+    line# 0024 end 0000002F
+028 00000007 SECT4  notype       .bf or.ef    | .lf
+029 00000119 SECT4  notype       EndFunction  | .ef
+    line# 002e
+02B 00000119 SECT4  notype ()    External     | ?Free@CGlobal@@QAEXXZ (public: void __thiscall CGlobal::Free(void))
+    tag index 0000002F size 0000004F lines 00002ABE next function 00000034
+02D 00000000 UNDEF  notype ()    External     | __imp__GlobalFree@4
+02E 00000000 UNDEF  notype ()    External     | __imp__GlobalUnlock@4
+02F 00000119 SECT4  notype       BeginFunction | .bf
+    line# 0031 end 00000037
+031 00000007 SECT4  notype       .bf or.ef    | .lf
+032 00000168 SECT4  notype       EndFunction  | .ef
+    line# 0039
+034 00000168 SECT4  notype ()    External     | ?ReAlloc@CGlobal@@QAEPAXKI@Z (public: void * __thiscall CGlobal::ReAlloc(unsigned long,unsigned int))
+    tag index 00000037 size 000000C5 lines 00002AE8 next function 0000003C
+036 00000000 UNDEF  notype ()    External     | __imp__GlobalReAlloc@12
+037 00000168 SECT4  notype       BeginFunction | .bf
+    line# 003c end 0000003E
+039 0000000C SECT4  notype       .bf or.ef    | .lf
+03A 0000022D SECT4  notype       EndFunction  | .ef
+    line# 004e
+03C 0000022D SECT4  notype ()    External     | ?ctor@CResource@@AAEXXZ (private: void __thiscall CResource::ctor(void))
+    tag index 0000003E size 00000029 lines 00002B30 next function 00000043
+03E 0000022D SECT4  notype       BeginFunction | .bf
+    line# 0051 end 00000045
+040 00000004 SECT4  notype       .bf or.ef    | .lf
+041 00000256 SECT4  notype       EndFunction  | .ef
+    line# 0055
+043 00000256 SECT4  notype ()    External     | ??0CResource@@QAE@PAUHINSTANCE__@@PBD1@Z (public: __thiscall CResource::CResource(struct HINSTANCE__ *,char const *,char const *))
+    tag index 00000045 size 00000037 lines 00002B48 next function 0000004A
+045 00000256 SECT4  notype       BeginFunction | .bf
+    line# 0058 end 0000004C
+047 00000004 SECT4  notype       .bf or.ef    | .lf
+048 0000028D SECT4  notype       EndFunction  | .ef
+    line# 005c
+04A 0000028D SECT4  notype ()    External     | ??1CResource@@QAE@XZ (public: __thiscall CResource::~CResource(void))
+    tag index 0000004C size 0000001E lines 00002B60 next function 00000051
+04C 0000028D SECT4  notype       BeginFunction | .bf
+    line# 005f end 00000056
+04E 00000003 SECT4  notype       .bf or.ef    | .lf
+04F 000002AB SECT4  notype       EndFunction  | .ef
+    line# 0062
+051 000002AB SECT4  notype ()    External     | ?Load@CResource@@QAEPAXPAUHINSTANCE__@@PBD1@Z (public: void * __thiscall CResource::Load(struct HINSTANCE__ *,char const *,char const *))
+    tag index 00000056 size 0000009C lines 00002B72 next function 0000005B
+053 00000000 UNDEF  notype ()    External     | __imp__LockResource@4
+054 00000000 UNDEF  notype ()    External     | __imp__LoadResource@8
+055 00000000 UNDEF  notype ()    External     | ?AfxFindResource@@YGPAUHRSRC__@@PAUHINSTANCE__@@PBD1@Z (struct HRSRC__ * __stdcall AfxFindResource(struct HINSTANCE__ *,char const *,char const *))
+056 000002AB SECT4  notype       BeginFunction | .bf
+    line# 0065 end 0000005E
+058 00000008 SECT4  notype       .bf or.ef    | .lf
+059 00000347 SECT4  notype       EndFunction  | .ef
+    line# 0071
+05B 00000347 SECT4  notype ()    External     | ?Free@CResource@@QAEXXZ (public: void __thiscall CResource::Free(void))
+    tag index 0000005E size 00000043 lines 00002BA2 next function 00000000
+05D 00000000 UNDEF  notype ()    External     | __imp__FreeResource@4
+05E 00000347 SECT4  notype       BeginFunction | .bf
+    line# 0074 end 00000000
+060 00000006 SECT4  notype       .bf or.ef    | .lf
+061 0000038A SECT4  notype       EndFunction  | .ef
+    line# 007c
+063 00000000 SECT5  notype       Static       | .debug$T
+    Section length   30, #relocs    0, #linenums    0, checksum        0
+
+String Table Size = 0x242 bytes
+
+  Summary
+
+         110 .data
+        8D8F .debug$S
+          C0 .debug$T
+         3FC .drectve
+         1A8 .rdata
+        206F .text

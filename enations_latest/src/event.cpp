@@ -14,6 +14,11 @@
 #include "lastplnt.h"
 #include "player.h"
 #include "sfx.h"
+#include "enprobes.h"
+
+#if EN_GAMEPLAY_PROBES
+extern void EnBridgeDbgLog( const char* pszMsg );   // vehicle.cpp — file sink, not DBWIN
+#endif
 
 #include "unit.inl"
 #include "building.inl"
@@ -94,7 +99,8 @@ const int aiRes [] = {
 
 		IDS_EVENT_ROCKET_CANT_LAND,
 
-		0, 0, 0 };	// these are in case I didn't do enough
+		IDS_EVENT_BRIDGE_HALTED,	// EVENT_BRIDGE_HALTED (former EVENT_EMPT1)
+		0, 0 };	// these are in case I didn't do enough
 
 const int aiSfx [] = {
 		VOICES::tem_where_build,
@@ -168,25 +174,25 @@ void CGame::Event (int ID, int iTyp, CUnit *pUnit)
 	switch (ID)
 	  {
 		case EVENT_CONST_CANT :
-			psText = theStructures.GetData (((CVehicle *)pUnit)->GetBldgType ())->GetDesc ();
+			psText = theStructures.GetData (((CVehicle *)pUnit)->GetBldgType ())->GetDesc ().c_str();
 			break;
 
 		case EVENT_BUILD_HALTED :
 		case EVENT_BUILD_DONE :
-			psText = theTransports.GetData (((CVehicleBuilding*)pUnit)->GetBldUnt()->GetVehType ())->GetDesc ();
+			psText = theTransports.GetData (((CVehicleBuilding*)pUnit)->GetBldUnt()->GetVehType ())->GetDesc ().c_str();
 			break;
 
 		case EVENT_ATK_TARGET :
 		case EVENT_ATK_DESTROYED : {
 			CUnit * pTarget = pUnit->GetTarget ();
 			if ((pTarget != NULL) && (pTarget->GetUnitType () == CUnit::building))
-				psText = theStructures.GetData (((CBuilding *)pTarget)->GetData()->GetType ())->GetDesc ();
+				psText = theStructures.GetData (((CBuilding *)pTarget)->GetData()->GetType ())->GetDesc ().c_str();
 			else
 				psText = NULL;
 			break; }
-	
+
 		default:
-			psText = pUnit->GetData()->GetDesc ();
+			psText = pUnit->GetData()->GetDesc ().c_str();
 			break;
 	  }
 
@@ -217,10 +223,10 @@ void CGame::Event (int ID, int iTyp, int iVal)
 		case EVENT_HPR_NOACCESS :
 		case EVENT_HPR_NOPICKUP : {
 			int iTyp = __minmax ( 0, CMaterialTypes::GetNumTypes (), iVal );
-			psText = CMaterialTypes::GetDesc ( iTyp );
+			psText = CMaterialTypes::GetDesc ( iTyp ).c_str ();
 			break; }
 		case EVENT_CONST_CANT :
-			psText = theStructures.GetData (iVal)->GetDesc ();
+			psText = theStructures.GetData (iVal)->GetDesc ().c_str();
 			break;
 		default:
 			psText = NULL;
@@ -294,16 +300,17 @@ const DWORD dwTimeBetween [] = {
 
 		30,
 		0,
-		
+
 		0,
-		
-		0, 0, 0 };	// these are in case I didn't do enough
+
+		10,			// EVENT_BRIDGE_HALTED - the crane retries the refused span every
+					// tick (20+ identical rejects seen in one attempt), so throttle it
+		0, 0 };	// these are in case I didn't do enough
 
 DWORD dwLastTime [NUM_EVENTS];
 
 void CGame::_Event (int ID, int iTyp, char const * psText, int iVoice)
 {
-
 	ASSERT ((sizeof (aiRes) / sizeof (int)) == NUM_EVENTS);
 	ASSERT ((sizeof (aiSfx) / sizeof (int)) == NUM_EVENTS);
 
@@ -313,12 +320,24 @@ void CGame::_Event (int ID, int iTyp, char const * psText, int iVoice)
 		return;
 		}
 
+#if EN_GAMEPLAY_PROBES
+	// Every player-visible event funnels through here. Logged so a reported message
+	// ("construction has halted") can be tied to its EVENT id with certainty instead
+	// of assumed — the assumption cost two wrong diagnoses. File sink, not DBWIN.
+	{
+		char szE[192];
+		sprintf (szE, "[EVENT] id %d typ %d text '%s'\n", ID, iTyp,
+		         psText != NULL ? psText : "");
+		EnBridgeDbgLog (szE);
+	}
+#endif
+
 	// if no HP then no events
 	if ( ! theGame.HaveHP () )
 		return;
 
 	// not during cut scenes
-	if ( ! theGame.DoOper () )
+	if ( !theGame.ShouldOperate() )
 		return;
 
 	// don't repeat ourselves too often
@@ -344,17 +363,31 @@ void CGame::_Event (int ID, int iTyp, char const * psText, int iVoice)
 	TRAP (ID == EVENT_VEH_UNDER_ATK);
 	TRAP (ID == EVENT_PLAYER_LEFT);
 	TRAP (ID == EVENT_PLAYER_JOINED);
-	TRAP (ID == EVENT_HPR_SEAPORTS);
-	TRAP (ID == EVENT_HPR_CARGOSHIP);
-	TRAP (ID == EVENT_HPR_NOREACH);
+
+	// EVENT_HPR_SEAPORTS / CARGOSHIP / NOREACH used to TRAP here too. They are raised by
+	// live 1996 router code - CHPRouter::ConsiderLandWater (chproute.cpp:2460/2477/2643) and
+	// the ship-assignment path (chproute.cpp:3026) - whenever the human's cargo router cannot
+	// get a truck to a seaport. All three have resource strings (IDS_EVENT_HPR_*) and are shown
+	// as a normal status message in Release, so the traps guarded nothing: they were stale
+	// "not implemented yet" markers. In Debug they turned a legitimate "no reachable seaport"
+	// into a crash - operator play session 2026-09-19, dump enations_full_20260919_182034
+	// (iBest == 0xFFFE, bCanGetThere == 0, a cargo ship and >= 2 seaports present).
+	// Keep the condition visible in Debug without breaking.
+#ifdef _DEBUG
+	if ( (ID == EVENT_HPR_SEAPORTS) || (ID == EVENT_HPR_CARGOSHIP) || (ID == EVENT_HPR_NOREACH) )
+		{
+		char szHpr[128];
+		sprintf (szHpr, "[TRAP-REMOVED] [EVENT] HP router event %d raised (was a 1996 TRAP)\n", ID);
+		OutputDebugStringA (szHpr);
+		}
+#endif
 
 	int iRes = aiRes [ID];
 	int iSfx = aiSfx [ID];
 
-	CString sMsg;
-	sMsg.LoadString (iRes);
+	std::string sMsg = EnLoadStdString(iRes);
 	if (psText != NULL)
-		csPrintf (&sMsg, psText);
+		sMsg = strPrintf(sMsg.c_str(), psText);
 
 	CStatInst::IMPORTANCE iImp;
 	int iShow;
@@ -378,7 +411,7 @@ void CGame::_Event (int ID, int iTyp, char const * psText, int iVoice)
 	  }
 
 	iLastEvent = ID;
-	theApp.m_wndBar.SetStatusText (0, sMsg, iImp);
+	theApp.m_wndBar.SetStatusText (0, sMsg.c_str(), iImp);
 
 	// we kill the message after iShow seconds
 	if (hTimer != NULL)

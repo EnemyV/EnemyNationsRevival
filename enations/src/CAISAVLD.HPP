@@ -31,22 +31,22 @@ public:
     void Save( void );
     void DumpData( CFile *pFile, UINT uWhich );
 
-	void SaveBinary( void );
-	void DumpBinaryData( CFile *pFile );
+ void SaveBinary( void );
+ void DumpBinaryData( CFile *pFile );
 
     void Load( void );
     void LoadData( CFile *pFile, UINT uWhich );
 
-	void LoadBinaryData( CFile *pFile );
-	void LoadBinary( void );
+ void LoadBinaryData( CFile *pFile );
+ void LoadBinary( void );
 
     CWordArray *LoadRCIP( int iSmart );
-	CWordArray *LoadIG( int iSmart );
-	CWordArray *LoadArrays( int iSmart, CString& sHead );
+ CWordArray *LoadIG( int iSmart );
+ CWordArray *LoadArrays( int iSmart, CString& sHead );
     CWordArray *LoadData( CFile *pFile );
     void SaveRCIP( int iSmart, CWordArray *pwaData );
-	void SaveIG( int iSmart, CWordArray *pwaData );
-	void SaveArrays( int iSmart, CWordArray *pwaData, CString& sHead );
+ void SaveIG( int iSmart, CWordArray *pwaData );
+ void SaveArrays( int iSmart, CWordArray *pwaData, CString& sHead );
     void DumpData( CFile *pFile, CWordArray *pwaData );
     
     CFile* OpenForLoad( const CString& rFileName );
@@ -58,20 +58,20 @@ public:
 
 //  CAIGoal( WORD wID, BYTE cType, CWordArray *pwaTasks );
 typedef struct goal_buffer {
-	int iID;
-	int iType;
-	int iTasks[NUM_INITIAL_GOALS];
+ int iID;
+ int iType;
+ int iTasks[NUM_INITIAL_GOALS];
 } GoalBuff;
 
-//	CAITask( WORD wID, BYTE cType, BYTE cPriority, 
-//		WORD wOrderID, CWordArray *pwaParams );
+// CAITask( WORD wID, BYTE cType, BYTE cPriority, 
+//  WORD wOrderID, CWordArray *pwaParams );
 
 typedef struct task_buffer {
-	int iID;
-	int iType;
-	int iPriority;
-	int iOrderID;
-	int iParams[MAX_TASKPARAMS];
+ int iID;
+ int iType;
+ int iPriority;
+ int iOrderID;
+ int iParams[MAX_TASKPARAMS];
 } TaskBuff;
 */
 

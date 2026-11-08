@@ -2,7 +2,7 @@
 #define __DAVENET_H__
 
 
-#define DAVENETAPI __declspec (dllexport)
+#define DAVENETAPI
 
 const int WM_NET_COMPLETE = 0x7000;
 
@@ -37,7 +37,9 @@ const int NET_ERR_MAX_NUM = 5;
 
 // mod 4 + 2 & <= shortest name amoung net protocols
 // NOTE - nb_lock uses hard-coded numbers that depends on sizes and layout here
-const int NAME_MAX = 14;
+// NB: not "NAME_MAX" — that's a POSIX system macro (<limits.h> = 255), so the old
+// name expanded to `const int 255 = 14;` on Linux/macOS. Renamed for the cross-platform build.
+const int NET_NAME_MAX = 14;
 
 typedef struct tagNETMSG {
 		BYTE				bInUse;				// true if in use
@@ -47,7 +49,7 @@ typedef struct tagNETMSG {
 		void * 			pUser;				// user defined data
 		void *			pData;				// the data returned
 		short int		iLen;					// length of the data
-		char				sName[NAME_MAX];	// name of src node for receive datagram
+		char				sName[NET_NAME_MAX];	// name of src node for receive datagram
 } NETMSG;
 
 extern "C" {

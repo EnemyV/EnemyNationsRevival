@@ -9,7 +9,8 @@
 #ifndef __BITMAPS_H__
 #define __BITMAPS_H__
 
-
+#include "icons.h"
+#include "bmbutton.h"   // CBmBtnData, CTextBtnData
 
 extern CBmBtnData theBmBtnData;
 extern CTextBtnData theTextBtnData, theLargeTextBtnData, theCutTextBtnData;

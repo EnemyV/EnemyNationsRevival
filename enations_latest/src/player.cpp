@@ -9,28 +9,40 @@
 // player.cpp
 //
 
-#include "stdafx.h"
-#include "event.h"
-#include "lastplnt.h"
+#include <algorithm> // for the memory pool
+#include <cstdio>    // fprintf(stderr) for the EN_SAVE_DIAG history save/load diagnostic
 #include "player.h"
-#include "netapi.h"
-#include "minerals.h"
-#include "relation.h"
-#include "research.h"
-#include "cpathmgr.h"
+#include "edicts.h"   // Edicts v1: g_aEdicts catalog for RecomputeEdictMults
+
 #include "ai.h"
-#include "help.h"
-#include "error.h"
-#include "chproute.hpp"
+#include "Perf.h"  // ai.msg.skip counter (fan-out filter)
 #include "area.h"
 #include "bridge.h"
+#include "GameWindow.h"
+#include "SDL2MFCPanel.h"
+#include "SDL2FileBrowser.h"
+#include "building.inl"
+#include "CdLoc.h"
+#include "chproute.hpp"
 #include "codec.h"
-#include "plyrlist.h"
-#include "cdloc.h"
-
+#include "cpathmgr.h"
+#include "pathworld.h"
+#include "pathservice.h"
+#include "error.h"
+#include "event.h"
+#include "help.h"
+#include "lastplnt.h"
+#include "minerals.h"
+#include "netapi.h"
+#include "relation.h"
+#include "research.h"
+#include "SaveCompat.h"
+#include "SDL2CreateStatus.h"
+#include "stdafx.h"
+#include "en_logpath.h"   // EnLogPath - logs to the launch dir, not the exe dir
+#include "enprobes.h"   // EN_SAVE_PROBES
 #include "terrain.inl"
 #include "unit.inl"
-#include "building.inl"
 #include "vehicle.inl"
 
 
@@ -44,888 +56,2217 @@ extern CRITICAL_SECTION cs;
 
 CGame theGame;
 
-void ShowBuilding (int iInd, CBuilding * pBldg);
+void ShowBuilding( int iInd, CBuilding* pBldg );
 
 
 /////////////////////////////////////////////////////////////////////////////
 // CPlayer - a player in the game
 
-void CPlayer::_ctor ()
+void CPlayer::_ctor( )
 {
 
-	ctor ();
+    ctor( );
 
-	m_bAI = FALSE;
-	m_bLocal = FALSE;
-	m_bMe = FALSE;
-	m_piBldgExists = NULL;
+    m_bAI          = FALSE;
+    m_bLocal       = FALSE;
+    m_bMe          = FALSE;
+    m_piBldgExists = NULL;
 
-	ai.dwHdl = 0;
-	ai.hex = m_hexMapStart = CHexCoord (8, 8);
-	m_iPerInit = -1;
+    ai.dwHdl = 0;
+    ai.hex = m_hexMapStart = CHexCoord( 8, 8 );
+    m_iPerInit             = -1;
 }
 
-void CPlayer::ctor ()
+void CPlayer::ctor( )
 {
 
-	m_iPerInit = -1;
-	m_bState = created;
+    m_iPerInit = -1;
+    m_bState   = created;
 
-	m_rgbPlyr = RGB (0, 0, 0);
+    m_rgbPlyr = RGB( 0, 0, 0 );
 
-	m_iNetNum = VP_LOCALMACHINE;
-	m_iPlyrNum = 0;
-	m_iFood = 0;
-	m_iFoodNeed = 0;
-	m_iGas = 0;
-	m_iGasUsed = 0;
-	m_iGasNeed = 0;
-	m_iGasTurn = 0;
-	m_iPwrNeed = 1;
-	m_iPwrHave = 0;
-	m_iPplNeedBldg = 1;
-	m_iPplBldg = 0;
-	m_iPplVeh = 0;
-	m_fPplMult = 1.0;
-	m_fPwrMult = 1.0;
-	m_fConstProd = 1.0;
-	m_fMtrlsProd = 1.0;
-	m_fManfProd = 1.0;
-	m_fMineProd = 1.0;
-	m_fFarmProd = 1.0;
-	m_fRsrchProd = 1.0;
-	m_fPopGrowth = 0.001;
-	m_fPopDeath =  0.0005;
-	m_fEatingRate = 0.01;
-	m_fAttack = 1.0;
-	m_fDefense = 1.0;
-	m_fPopMod = 0.0;
-	m_fFoodMod = 0.0;
-	m_dwAiHdl = 0;
-	m_iTheirRelations = m_iRelations = RELATIONS_NEUTRAL;
-	m_iRsrchHave = 0;
-	m_iRsrchItem = 0;
+    m_iNetNum         = VP_LOCALMACHINE;
+    m_iPlyrNum        = 0;
+    m_iFood           = 0;
+    m_iFoodNeed       = 0;
+    m_iGas            = 0;
+    m_iGasUsed        = 0;
+    m_iGasNeed        = 0;
+    m_iGasTurn        = 0;
+    m_iPwrNeed        = 1;
+    m_iPwrHave        = 0;
+    m_iPplNeedBldg    = 1;
+    m_iPplNeedLast    = -1;   // no finished tick yet -- Desperate Measures drafts the flat base
+    m_iSurplusPplLast = 0;
+    m_iSurplusPplTick = 0;
+    m_iPwrHaveLast    = 0;
+    m_iPwrNeedLast    = -1;   // ditto for the power half of the surplus machinery
+    m_iSurplusPwrLast = 0;
+    m_iSurplusPwrTick = 0;
+    m_iDespDraft      = 0;
+    m_iPubWorksDraft  = 0;
+    m_iCivDefDraft    = 0;
+    m_iCivDefPower    = 0;
+    m_iWarFootDraft   = 0;
+    m_iWarFootPower   = 0;
+    m_iRsrchSubDraft  = 0;
+    m_iSurplusSparePpl = 0;
+    m_iSurplusSparePwr = 0;
+    m_iPplBldg        = 0;
+    m_iPplVeh         = 0;
+    m_fPplMult        = 1.0;
+    m_fPwrMult        = 1.0;
+    m_fConstProd      = 1.0;
+    m_fMtrlsProd      = 1.0;
+    m_fManfProd       = 1.0;
+    m_fMineProd       = 1.0;
+    m_fFarmProd       = 1.0;
+    m_fRsrchProd      = 1.0;
+    m_fPopGrowth      = 0.001;
+    m_fPopDeath       = 0.0005;
+    m_fEatingRate     = 0.01;
+    // Edicts v1 (civ-wide): no edicts active, all mults neutral (see RecomputeEdictMults).
+    m_dwEdicts            = 0;
+    m_fEdictFuelCarry     = 0.0f;   // runtime-only fractional gas-surcharge carry (not reset per recompute)
+    m_bAutoRsrchPending   = FALSE;  // runtime-only AutoResearch set_rsrch-in-flight guard
+    m_iSweepMillis          = 0;      // runtime-only Resonance Sweep timer phase
+    m_uSweepRand          = 1;      // runtime-only Resonance Sweep private RNG (1 == the CRT seed)
+    m_bSweepLit           = FALSE;  // runtime-only: no lit ring outstanding
+    m_iSweepLitMillis       = 0;
+    m_aSweepLitHexes.clear( );
+    m_iSweepLitCX         = 0;
+    m_iSweepLitCY         = 0;
+    m_fEdictConstMult     = 1.0f;
+    m_fEdictMineMult      = 1.0f;
+    m_fEdictRsrchMult     = 1.0f;
+    m_fEdictPopGrowthMult = 1.0f;
+    m_fEdictFarmMult      = 1.0f;
+    m_fEdictGlobalProdMult = 1.0f;
+    m_fEdictMoveMult      = 1.0f;
+    m_fEdictVisionMult    = 1.0f;
+    m_fEdictInfBuildMult  = 1.0f;
+    m_fEdictFortBuildMult = 1.0f;
+    m_fEdictFarmWorkerMult = 1.0f;
+    m_fEdictFuelMult      = 1.0f;
+    m_fEdictInfPopMult    = 1.0f;
+    m_fEdictMineEnergyMult = 1.0f;
+    m_fEdictMineWorkerMult = 1.0f;
+    m_fEdictBldgDmgMult    = 1.0f;
+    m_fEdictEnergyUpkeepPct    = 0.0f;
+    m_fEdictWorkforceUpkeepPct = 0.0f;
+    m_fEdictFoodUpkeepPct      = 0.0f;
+    m_fSurplusConstMult    = 1.0f;   // dynamic, rebuilt every pump by ApplySurplusEdicts
+    m_fSurplusFortMult     = 1.0f;
+    m_fSurplusBldgDmgMult  = 1.0f;
+    m_fSurplusInfBuildMult = 1.0f;
+    m_fSurplusRsrchMult    = 1.0f;
+    m_iRemoteBldgDmgPermille = 1000;   // runtime-only Civil Defence replication (CNetBldgDmgMult)
+    m_iSentBldgDmgPermille   = -1;     // -1: the first pump of a game (new or loaded) always reports
+    m_dwSentBldgDmgTime      = 0;
+    m_fAttack         = 1.0;
+    m_fDefense        = 1.0;
+    m_fPopMod         = 0.0;
+    m_fFoodMod        = 0.0;
+    m_dwAiHdl         = 0;
+    m_iTheirRelations = m_iRelations = RELATIONS_NEUTRAL;
+    m_iRsrchHave                     = 0;
+    m_iRsrchItem                     = 0;
+    m_iLastDiscovered                = 0;
 
-	m_iBldgsBuilt = 0;
-	m_iVehsBuilt = 0;
-	for (int iInd=0; iInd<CMaterialTypes::num_types; iInd++)
-		m_aiMade [iInd] = m_aiHave[iInd] = 0;
-	m_iBldgsDest = 0;
-	m_iVehsDest = 0;
+    m_iBldgsBuilt = 0;
+    m_iVehsBuilt  = 0;
+    for ( int iInd = 0; iInd < CMaterialTypes::num_types; iInd++ ) m_aiMade[iInd] = m_aiHave[iInd] = 0;
+    m_iBldgsDest = 0;
+    m_iVehsDest  = 0;
 
-	m_iBldgsHave = 1;
-	m_iVehsHave = 0;
+    m_iBldgsHave = 1;
+    m_iVehsHave  = 0;
 
-	m_bSpotting = 0;
-	m_bRange = 0;
-	m_bAttack = 0;
-	m_bDefense = 0;
-	m_bAccuracy = 0;
+    m_bSpotting = 0;
+    m_bRange    = 0;
+    m_bAttack   = 0;
+    m_bDefense  = 0;
+    m_bAccuracy = 0;
 
-	m_aRsrch.RemoveAll ();
+    m_aRsrch.RemoveAll( );
 
-	m_iAptCap = m_iOfcCap = 0;
-	m_iNumTrucks = m_iNumCranes = 0;
-	m_dwIDRocket = 0;
+    m_iAptCap = m_iOfcCap = 0;
+    m_iNumTrucks = m_iNumCranes = 0;
+    m_dwIDRocket                = 0;
 
-	m_iGameSpeed = NUM_SPEEDS / 2;
-	m_iNumDiscovered = 0;
+    // colony stat history (graphs) starts empty
+    m_iHistHead = m_iHistCount = 0;
+    memset( m_aHistPwrHave,  0, sizeof( m_aHistPwrHave ) );
+    memset( m_aHistPwrNeed,  0, sizeof( m_aHistPwrNeed ) );
+    memset( m_aHistPplTotal, 0, sizeof( m_aHistPplTotal ) );
+    memset( m_aHistPplBldg,  0, sizeof( m_aHistPplBldg ) );
+    memset( m_aHistAptCap,   0, sizeof( m_aHistAptCap ) );
+    memset( m_aHistOfcCap,   0, sizeof( m_aHistOfcCap ) );
+    memset( m_aHistPplNeed,  0, sizeof( m_aHistPplNeed ) );
 
-	m_pXferToClient = NULL;
+    // multi-resolution graph rings (runtime-only). Prime each ring's tick so the
+    // very first SampleHistory pushes a sample to every ring (graphs aren't empty).
+    // Cadences (game-min per sample) x 120 slots = the ranges the graph buttons
+    // advertise: 5x120=10m, 15x120=30m, 150x120=5h REAL time (~1 game-min/sec).
+    {
+        static const int _hrCad[HR_RINGS] = { 5, 30, 300 };   // 10m / 1h / 10h graph ranges (x120 samples)
+        memset( m_aHR, 0, sizeof( m_aHR ) );
+        for ( int r = 0; r < HR_RINGS; r++ ) {
+            m_iHRHead[r] = m_iHRCount[r] = 0;
+            m_iHRTick[r] = _hrCad[r] - 1;
+        }
+    }
 
-	m_bPauseMsgs = FALSE;
+    m_iGameSpeed     = NUM_SPEEDS / 2;
+    m_iNumDiscovered = 0;
 
-	m_iBuiltBldgsHave = 1;
-	m_bPlacedRocket = FALSE;
+    m_pXferToClient = NULL;
 
-	m_iNumAiGpfs = 0;
-	m_bMsgDead = FALSE;
+    m_iBuiltBldgsHave = 1;
+    m_bPlacedRocket   = FALSE;
+    m_bSpectator      = FALSE;
 
-	ASSERT_VALID (this);
+    m_iNumAiGpfs = 0;
+    m_bMsgDead   = FALSE;
+
+    ASSERT_VALID( this );
 }
 
-CPlayer::CPlayer (char const *pName, int iNetNum) : m_sName (pName)
+CPlayer::CPlayer( char const* pName, int iNetNum ): m_sName( pName )
 {
 
-	_ctor ();
-	m_iNetNum = iNetNum;
-	ASSERT_VALID (this);
+    _ctor( );
+    m_iNetNum = iNetNum;
+    ASSERT_VALID( this );
 }
 
-CPlayer::~CPlayer () 
+CPlayer::~CPlayer( )
 {
 
-	if (theApp.m_pCreateGame != NULL)
-		theApp.m_pCreateGame->RemovePlayer (this);
-	delete [] m_piBldgExists;
+    if ( theApp.m_pCreateGame != NULL )
+        theApp.m_pCreateGame->RemovePlayer( this );
+    delete[] m_piBldgExists;
 
-	// make sure we are out of all lists
-	POSITION pos = theGame.GetAi ().Find ( this, NULL );
-	if ( pos != NULL )
-		 theGame.GetAi ().RemoveAt ( pos );
-	pos =  theGame.GetAll ().Find ( this, NULL );
-	if ( pos != NULL )
-		 theGame.GetAll ().RemoveAt ( pos );
-	pos =  theGame.m_lstDead.Find ( this, NULL );
-	if ( pos != NULL )
-		 theGame.m_lstDead.RemoveAt ( pos );
-	pos =  theGame.m_lstLoad.Find ( this, NULL );
-	if ( pos != NULL )
-		 theGame.m_lstLoad.RemoveAt ( pos );
+    // make sure we are out of all lists
+    if ( &theGame != NULL )
+    {
+        POSITION pos = theGame.GetAi( ).Find( this, NULL );
+        if ( pos != NULL )
+            theGame.GetAi( ).RemoveAt( pos );
+        pos = theGame.GetAll( ).Find( this, NULL );
+        if ( pos != NULL )
+            theGame.GetAll( ).RemoveAt( pos );
+        pos = theGame.m_lstDead.Find( this, NULL );
+        if ( pos != NULL )
+            theGame.m_lstDead.RemoveAt( pos );
+        pos = theGame.m_lstLoad.Find( this, NULL );
+        if ( pos != NULL )
+            theGame.m_lstLoad.RemoveAt( pos );
+    }
 }
 
-void CPlayer::Close () 
-{ 
+//---------------------------------------------------------------------------
+// Edicts v1 — civ-wide policy multipliers. RecomputeEdictMults folds the active
+// CIV-WIDE edicts (g_aEdicts) into the cached mult floats, which the Get*Prod()
+// accessors then apply. Call on toggle (and after load once persistence lands).
+// Building-scoped edicts use the AltOutput family, so only EDICT_CIVWIDE entries
+// contribute here. Mults reset to 1.0 (neutral) each recompute.
+//---------------------------------------------------------------------------
+void CPlayer::RecomputeEdictMults( )
+{
+    m_fEdictConstMult     = 1.0f;
+    m_fEdictMineMult      = 1.0f;
+    m_fEdictRsrchMult     = 1.0f;
+    m_fEdictPopGrowthMult = 1.0f;
+    m_fEdictFarmMult      = 1.0f;
+    m_fEdictGlobalProdMult = 1.0f;
+    m_fEdictMoveMult      = 1.0f;
+    m_fEdictVisionMult    = 1.0f;
+    m_fEdictInfBuildMult  = 1.0f;
+    m_fEdictFortBuildMult = 1.0f;
+    m_fEdictFarmWorkerMult = 1.0f;
+    m_fEdictFuelMult      = 1.0f;
+    m_fEdictInfPopMult    = 1.0f;
+    m_fEdictMineEnergyMult = 1.0f;
+    m_fEdictMineWorkerMult = 1.0f;
+    m_fEdictBldgDmgMult    = 1.0f;
+    m_fEdictEnergyUpkeepPct    = 0.0f;
+    m_fEdictWorkforceUpkeepPct = 0.0f;
+    m_fEdictFoodUpkeepPct      = 0.0f;
+    // The surplus edicts' mults come from ApplySurplusEdicts, not from g_aEdicts (they scale
+    // with the live draft), so there is nothing to fold in below. Neutralise them anyway: this
+    // runs on every toggle and on load, and it makes a just-revoked edict's bonus vanish on the
+    // spot instead of lingering for the remainder of the pump.
+    m_fSurplusConstMult    = 1.0f;
+    m_fSurplusFortMult     = 1.0f;
+    m_fSurplusBldgDmgMult  = 1.0f;
+    m_fSurplusInfBuildMult = 1.0f;
+    m_fSurplusRsrchMult    = 1.0f;
 
-	delete [] m_piBldgExists;
-	m_piBldgExists = NULL;
-	delete m_pXferToClient;
-	m_pXferToClient = NULL;
-	ctor (); 
+    for ( int id = 0; id < EDICT_COUNT; ++id )
+    {
+        if ( ( m_dwEdicts & ( 1u << id ) ) == 0 )
+            continue;
+        if ( g_aEdicts[id].scope != EDICT_CIVWIDE )
+            continue;   // building-scoped edicts live in AltOutput, not the player bitmask
+        const EdictDef& e = g_aEdicts[id];
+        m_fEdictConstMult     *= e.fConstMult;
+        m_fEdictMineMult      *= e.fMineMult;
+        m_fEdictRsrchMult     *= e.fRsrchMult;
+        m_fEdictPopGrowthMult *= e.fPopGrowthMult;
+        m_fEdictFarmMult      *= e.fFarmMult;
+        m_fEdictGlobalProdMult *= e.fGlobalProdMult;
+        m_fEdictMoveMult      *= e.fMoveMult;
+        m_fEdictVisionMult    *= e.fVisionMult;
+        m_fEdictInfBuildMult  *= e.fInfBuildMult;
+        m_fEdictFortBuildMult *= e.fFortConstMult;
+        m_fEdictFarmWorkerMult *= e.fFarmWorkerMult;
+        m_fEdictFuelMult      *= e.fFuelMult;
+        m_fEdictInfPopMult    *= e.fInfPopMult;
+        m_fEdictMineEnergyMult *= e.fMineEnergyMult;
+        m_fEdictMineWorkerMult *= e.fMineWorkerMult;
+        m_fEdictBldgDmgMult    *= e.fBldgDmgMult;
+        // Upkeep is additive across active edicts (a pct of the relevant per-loop demand).
+        m_fEdictEnergyUpkeepPct    += e.fEnergyUpkeepPct;
+        m_fEdictWorkforceUpkeepPct += e.fWorkforceUpkeepPct;
+        m_fEdictFoodUpkeepPct      += e.fFoodUpkeepPct;
+    }
 }
 
-void CPlayer::SetAI (BYTE bAI) 
-{ 
-
-	ASSERT_VALID (this); 
-	m_bAI = bAI; 
-
-	if ((! m_bAI) && (m_bLocal))
-		m_bMe = TRUE;
-	else
-		m_bMe = FALSE;
+void CPlayer::ToggleEdict( int edictId, bool bOn )
+{
+    if ( edictId < 0 || edictId >= EDICT_COUNT )
+        return;
+    DWORD bit = ( 1u << edictId );
+    if ( bOn ) m_dwEdicts |= bit;
+    else       m_dwEdicts &= ~bit;
+    RecomputeEdictMults( );
 }
 
-void CPlayer::SetLocal (BYTE bLocal) 
-{ 
-
-	ASSERT_VALID (this); 
-	m_bLocal = bLocal; 
-
-	if ((! m_bAI) && (m_bLocal))
-		m_bMe = TRUE;
-	else
-		m_bMe = FALSE;
+// User-initiated edict toggle (from the building info window): apply locally now, and in a
+// net game broadcast so every other client applies the same change for this player (the
+// edict_toggle dispatch in netapi.cpp). Keeps a single deterministic mutation per client.
+void CPlayer::ToggleEdictNet( int edictId, bool bOn )
+{
+    ToggleEdict( edictId, bOn );
+    if ( theGame.IsNetGame( ) )
+    {
+        CNetEdictToggle msg( this, edictId, bOn );
+        theNet.Broadcast( &msg, sizeof( msg ), TRUE );
+    }
 }
 
-void CPlayer::SetAiHdl (DWORD dwHdl) 
-{ 
+// Edicts v1 §29: a civ-wide edict is administered from its HOST building type (Austerity at
+// the rocket, Fortify Border at the command center, ...). When the owner loses the LAST
+// standing host of an active edict the policy is revoked — both the promised behavior
+// ("Lost if rocket destroyed") and the only way out of a stuck edict: with no host left
+// there is no info window to toggle it off, so its upkeep would drain the colony forever.
+// Called from CBuilding::RemoveUnit / ~CBuilding (after the m_piBldgExists decrement) with
+// the dead building's CStructureData. Runs on EVERY client — building removal is already
+// replicated — so all clients revoke the same bit deterministically without a net message.
+void CPlayer::EdictHostLost( CStructureData const* pSd )
+{
+    if ( ( m_dwEdicts == 0 ) || ( pSd == NULL ) )
+        return;
 
-	ASSERT_STRICT_VALID (this); 
-	ai.dwHdl = m_dwAiHdl = dwHdl; 
+    CStructureData::BLDG_TYPE bt = pSd->GetBldgType( );
+    CStructureData::BLDG_TYPE gt = pSd->GetType( );
+    DWORD dwOld = m_dwEdicts;
+
+    for ( int id = 0; id < EDICT_COUNT; ++id )
+    {
+        if ( ( m_dwEdicts & ( 1u << id ) ) == 0 )
+            continue;
+        const EdictDef& e = g_aEdicts[id];
+        if ( e.scope != EDICT_CIVWIDE )
+            continue;
+        // Was the dead building a host for this edict? Match by GetBldgType (normalised:
+        // apartment/office/fort families) OR GetType (unique: rocket/command_center) —
+        // the same dual match nCivEdictsFor uses in SDL2BuildingWindow.
+        if ( ( e.hostBuilding != bt ) && ( e.hostBuilding != gt ) )
+            continue;
+
+        // Any host of that type still standing? Sum the exists counts across every
+        // concrete structure type that normalises to the host (apartment_*, office_*, ...).
+        LONG iHave = 0;
+        for ( int iOn = 0; iOn < theStructures.GetNumBuildings( ); iOn++ )
+        {
+            CStructureData const* pData = theStructures.GetData( iOn );
+            if ( pData == NULL )
+                continue;
+            if ( ( pData->GetBldgType( ) == e.hostBuilding ) || ( pData->GetType( ) == e.hostBuilding ) )
+                iHave += GetExists( iOn );
+        }
+        if ( iHave <= 0 )
+            m_dwEdicts &= ~( 1u << id );
+    }
+
+    if ( m_dwEdicts != dwOld )
+        RecomputeEdictMults( );
 }
 
-void CPlayer::SetColor (COLORREF clr) 
-{ 
-
-	m_rgbPlyr = clr | 0x02000000; 
-	m_clrPlyr = thePal.GetColorValue ( m_rgbPlyr, ptrthebltformat->GetBitsPerPixel () );
-}
-
-const int NUM_PLYR_COLORS = 7;
-static COLORREF plyrClrs [NUM_PLYR_COLORS] = {
-		RGB (142, 33, 23),
-		RGB (32, 26, 151),
-		RGB (255, 227, 36),
-		RGB (11, 215, 0),
-		RGB (0, 152, 159),
-		RGB (195, 78, 150),
-		RGB (127, 19, 190)
-};
-
-void CPlayer::SetPlyrNum (int iNum) 
-{ 
-
-	ASSERT_STRICT_VALID (this); 
-	m_iPlyrNum = iNum; 
-
-	SetColor ( plyrClrs [ iNum % NUM_PLYR_COLORS ] );
-}
-
-void CPlayer::StartGame ()
+void CPlayer::Close( )
 {
 
-	m_iPplBldg = m_InitData.GetSupplies (CRaceDef::people);
-	m_iFood = m_InitData.GetSupplies (CRaceDef::food);
-	m_iGas = m_InitData.GetSupplies (CRaceDef::gas);
-	// help them build roads
-	if ( IsAI () )
-		m_iGas += m_iGas * theGame.m_iAi;
+    delete[] m_piBldgExists;
+    m_piBldgExists = NULL;
+    delete m_pXferToClient;
+    m_pXferToClient = NULL;
+    ctor( );
+}
 
-	m_fConstProd = m_InitData.GetRace (CRaceDef::build_bldgs);
-	m_fMtrlsProd = m_InitData.GetRace (CRaceDef::manf_materials);
-	m_fManfProd = m_InitData.GetRace (CRaceDef::manf_vehicles);
-	m_fMineProd = m_InitData.GetRace (CRaceDef::mine_prod);
-	m_fFarmProd = m_InitData.GetRace (CRaceDef::farm_prod);
-	m_fRsrchProd = m_InitData.GetRace (CRaceDef::research);
-	m_fAttack = m_InitData.GetRace (CRaceDef::attack);
-	m_fDefense = m_InitData.GetRace (CRaceDef::defense);
+void CPlayer::SetAI( BYTE bAI )
+{
 
-	m_fPopGrowth = m_InitData.GetRace (CRaceDef::pop_grow) * 0.0012;
-	m_fPopDeath = m_InitData.GetRace (CRaceDef::pop_die) * 0.0008;
-	m_fEatingRate = m_InitData.GetRace (CRaceDef::pop_eat) * 0.01;
+    ASSERT_VALID( this );
+    m_bAI = bAI;
 
-	m_iRsrchHave = 0;
-	m_iRsrchItem = 0;
+    if ( ( !m_bAI ) && ( m_bLocal ) )
+        m_bMe = TRUE;
+    else
+        m_bMe = FALSE;
+}
 
-	if (m_piBldgExists != NULL)
-		delete [] m_piBldgExists;
-	m_piBldgExists = new LONG [theStructures.GetNumBuildings ()];
-	memset (m_piBldgExists, 0, theStructures.GetNumBuildings () * sizeof (LONG));
+void CPlayer::SetLocal( BYTE bLocal )
+{
 
-	m_aRsrch.RemoveAll ();
-	m_aRsrch.SetSize (theRsrch.GetSize ());
-	m_aRsrch.ElementAt (0).m_bDiscovered = TRUE;
+    ASSERT_VALID( this );
+    m_bLocal = bLocal;
 
-	// if no points required it's discovered (how we kill an item w/o removing it)
-	for (int iOn=1; iOn<m_aRsrch.GetSize(); iOn++)
-		if (theRsrch[iOn].m_iPtsRequired <= 0)
-			m_aRsrch.ElementAt (iOn).m_bDiscovered = TRUE;
+    if ( ( !m_bAI ) && ( m_bLocal ) )
+        m_bMe = TRUE;
+    else
+        m_bMe = FALSE;
+}
+
+void CPlayer::SetAiHdl( DWORD_PTR dwHdl )
+{
+
+    ASSERT_STRICT_VALID( this );
+    ai.dwHdl = m_dwAiHdl = dwHdl;
+}
+
+void CPlayer::SetColor( COLORREF clr )
+{
+
+    m_rgbPlyr = clr | 0x02000000;
+    m_clrPlyr = thePal.GetColorValue( m_rgbPlyr, ptrthebltformat->GetBitsPerPixel( ) );
+}
+
+// 64 team colors. First 7 are the original palette; the rest are Lab-space
+// farthest-point picks (min pairwise dist ~20.6, well past the ~15 "clearly
+// distinct" floor) so no two teams look alike. Truecolor render = exact RGB.
+const int       NUM_PLYR_COLORS           = 64;
+static COLORREF plyrClrs[NUM_PLYR_COLORS] = {
+    RGB( 142,  33,  23 ), RGB(  32,  26, 151 ), RGB( 255, 227,  36 ),
+    RGB(  11, 215,   0 ), RGB(   0, 152, 159 ), RGB( 195,  78, 150 ),
+    RGB( 127,  19, 190 ), RGB(   0, 153, 255 ), RGB( 140, 133,  63 ),
+    RGB( 115, 255, 185 ), RGB( 255, 128,   0 ), RGB( 255,   0, 102 ),
+    RGB(   0, 140,  42 ), RGB(   0,   0, 255 ), RGB( 255,   0, 204 ),
+    RGB( 205, 205, 205 ), RGB( 255,   0,  26 ), RGB( 199, 255, 115 ),
+    RGB( 255, 143, 115 ), RGB(  90,  90,  90 ), RGB(  63,  71, 140 ),
+    RGB(   0, 255, 255 ), RGB( 255, 199, 115 ), RGB( 115, 115, 255 ),
+    RGB(  64, 198, 255 ), RGB( 227, 115, 255 ), RGB( 230,   0, 255 ),
+    RGB( 178, 255,   0 ), RGB( 140,  84,   0 ), RGB(  63, 140,  94 ),
+    RGB( 140,  63,  79 ), RGB(   0, 255, 128 ), RGB(   0,  76, 255 ),
+    RGB(   0,  98, 140 ), RGB( 199, 159,   0 ), RGB( 199,  60,   0 ),
+    RGB( 130,  35, 140 ), RGB( 255, 115, 143 ), RGB( 112, 140,   0 ),
+    RGB( 255,   0, 153 ), RGB(  50, 199, 169 ), RGB( 199, 199,  90 ),
+    RGB( 119, 199,   0 ), RGB( 122, 199,  90 ), RGB( 140,  94,  63 ),
+    RGB( 199,   0,  40 ), RGB( 153,   0, 255 ), RGB( 179, 199,   0 ),
+    RGB( 199,   0,  99 ), RGB(   0,   0, 199 ), RGB( 199, 144,  90 ),
+    RGB( 199, 119,   0 ), RGB( 199,  50, 184 ), RGB( 255, 255, 115 ),
+    RGB(  50,  94, 199 ), RGB( 140,   0,  84 ), RGB(   0, 199, 119 ),
+    RGB(  90, 133, 199 ), RGB(  50, 199,  65 ), RGB( 255, 115, 213 ),
+    RGB( 199,  90,  90 ), RGB( 144,  90, 199 ), RGB( 199,  94,  50 ),
+    RGB( 255, 178,   0 ) };
+
+COLORREF CPlayer::GetTeamColor( int iPlyrNum )
+{
+    return plyrClrs[iPlyrNum % NUM_PLYR_COLORS];
+}
+
+int CPlayer::GetNumTeamColors( )
+{
+    return NUM_PLYR_COLORS;
+}
+
+void CPlayer::SetPlyrNum( int iNum )
+{
+
+    ASSERT_STRICT_VALID( this );
+    m_iPlyrNum = iNum;
+
+    SetColor( GetTeamColor( iNum ) );
+}
+
+void CPlayer::StartGame( )
+{
+
+    m_iPplBldg = m_InitData.GetSupplies( CRaceDef::people );
+    m_iFood    = m_InitData.GetSupplies( CRaceDef::food );
+    m_iGas     = m_InitData.GetSupplies( CRaceDef::gas );
+    // help them build roads
+    if ( IsAI( ) )
+        m_iGas += m_iGas * theGame.m_iAi;
+
+    m_fConstProd = m_InitData.GetRace( CRaceDef::build_bldgs );
+    m_fMtrlsProd = m_InitData.GetRace( CRaceDef::manf_materials );
+    m_fManfProd  = m_InitData.GetRace( CRaceDef::manf_vehicles );
+    m_fMineProd  = m_InitData.GetRace( CRaceDef::mine_prod );
+    m_fFarmProd  = m_InitData.GetRace( CRaceDef::farm_prod );
+    m_fRsrchProd = m_InitData.GetRace( CRaceDef::research );
+    m_fAttack    = m_InitData.GetRace( CRaceDef::attack );
+    m_fDefense   = m_InitData.GetRace( CRaceDef::defense );
+
+    m_fPopGrowth  = m_InitData.GetRace( CRaceDef::pop_grow ) * 0.0012;
+    m_fPopDeath   = m_InitData.GetRace( CRaceDef::pop_die ) * 0.0008;
+    m_fEatingRate = m_InitData.GetRace( CRaceDef::pop_eat ) * 0.01;
+
+    m_iRsrchHave = 0;
+    m_iRsrchItem = 0;
+    m_iLastDiscovered = 0;
+
+    if ( m_piBldgExists != NULL )
+        delete[] m_piBldgExists;
+    m_piBldgExists = new LONG[theStructures.GetNumBuildings( )];
+    memset( m_piBldgExists, 0, theStructures.GetNumBuildings( ) * sizeof( LONG ) );
+
+    m_aRsrch.RemoveAll( );
+    m_aRsrch.SetSize( theRsrch.GetSize( ) );
+    m_aRsrch.ElementAt( 0 ).m_bDiscovered = TRUE;
+
+    // if no points required it's discovered (how we kill an item w/o removing it)
+    for ( int iOn = 1; iOn < m_aRsrch.GetSize( ); iOn++ )
+        if ( theRsrch[iOn].m_iPtsRequired <= 0 )
+            m_aRsrch.ElementAt( iOn ).m_bDiscovered = TRUE;
+
+    // AI players START with Pontoon Bridges (operator, 2026-07-12): river-split
+    // AI starts died waiting on a tech gate no rescue logic can substitute for.
+    // Humans research it normally. Runs identically on every client (StartGame
+    // is roster-driven), so MP-deterministic.
+    if ( IsAI( ) && m_aRsrch.GetSize( ) > CRsrchArray::bridge_short )
+        m_aRsrch.ElementAt( CRsrchArray::bridge_short ).m_bDiscovered = TRUE;
 
 #ifdef _CHEAT
-	if ( theApp.GetProfileInt ("Cheat", "KnowItAll", 0) )
-		for (int iOn=1; iOn<m_aRsrch.GetSize(); iOn++)
-			m_aRsrch.ElementAt (iOn).m_bDiscovered = TRUE;
+    if ( EnGetProfileInt( "Cheat", "KnowItAll", 0 ) )
+        for ( int iOn = 1; iOn < m_aRsrch.GetSize( ); iOn++ ) m_aRsrch.ElementAt( iOn ).m_bDiscovered = TRUE;
 #endif
 
-	// if shareware net game - hurt them
-#ifdef BUGBUG //needs to know which players are shareware...
-	if ( (theApp.IsShareware ()) && (GetNetNum () != 0) )
-		{
-		m_fConstProd *= 0.8;
-		m_fMtrlsProd *= 0.8;
-		m_fManfProd *= 0.8;
-		m_fMineProd *= 0.8;
-		m_fFarmProd *= 0.8;
-		m_fPopGrowth *= 0.8;
-		m_fPopDeath *= 1.2;
-		m_fEatingRate *= 1.2;
-		m_fRsrchProd *= 0.8;
-		TRAP ();
-		m_fAttack *= 0.8;
-		m_fDefense *= 0.8;
-		}
+            // if shareware net game - hurt them
+#ifdef BUGBUG  // needs to know which players are shareware...
+    if ( ( theApp.IsShareware( ) ) && ( GetNetNum( ) != 0 ) )
+    {
+        m_fConstProd *= 0.8;
+        m_fMtrlsProd *= 0.8;
+        m_fManfProd *= 0.8;
+        m_fMineProd *= 0.8;
+        m_fFarmProd *= 0.8;
+        m_fPopGrowth *= 0.8;
+        m_fPopDeath *= 1.2;
+        m_fEatingRate *= 1.2;
+        m_fRsrchProd *= 0.8;
+        TRAP( );
+        m_fAttack *= 0.8;
+        m_fDefense *= 0.8;
+    }
 #endif
 }
 
-void CPlayer::SetRelations (int iVal) 
-{ 
-
-	m_iRelations = iVal; 
-
-	if ( ! IsMe () )
-		theGame.CheckAlliances ();
-}
-
-void CPlayer::SetTheirRelations (int iVal) 
-{ 
-
-	m_iTheirRelations = iVal; 
-
-	if ( ! IsMe () )
-		theGame.CheckAlliances ();
-}
-
-void CPlayer::AddFood (int iNum) 
-{ 
-
-	ASSERT_STRICT_VALID (this); 
-	m_iFood += iNum; 
-
-	m_aiMade [CMaterialTypes::food] += iNum;
-}
-
-BOOL CPlayer::BuildRoad () 
-{ 
-
-	// if not AI or AI & easy do this
-	if ( ( ! IsAI () ) || ( theGame.m_iAi == 0 ) )
-		{
-		if (m_iGas < GAS_PER_ROAD) 
-			return (FALSE);
-		m_iGas -= GAS_PER_ROAD; 
-		return (TRUE); 
-		}
-
-	// level 1 - take 1 gas
-	if ( theGame.m_iAi == 1 )
-		{
-		if (m_iGas < 1) 
-			return (FALSE);
-		m_iGas --;
-		return (TRUE); 
-		}
-
-	// level 2 - must have gas
-	if ( theGame.m_iAi == 2 )
-		{
-		if (m_iGas < 1) 
-			return (FALSE);
-		return (TRUE); 
-		}
-
-	// level 3 - must have gas or refinery
-	if ( m_iGas > 0 )
-		return (TRUE);
-	TRAP ();
-	return GetExists ( CStructureData::refinery );
-}
-
-void CPlayer::AddGas (int iNum) 
-{ 
-
-	ASSERT_STRICT_VALID (this); 
-	m_iGas += iNum; 
-
-	m_aiMade [CMaterialTypes::gas] += iNum;
-}
-
-void CPlayer::StartLoop ()
+void CPlayer::SetRelations( int iVal )
 {
 
-const int GAS_USUAGE = 3;		// was 4
-const int MIN_GAS_NEED = 1;
+    m_iRelations = iVal;
 
-	if (m_iPplBldg < m_iPplNeedBldg)
-		m_fPplMult = float (m_iPplBldg) / float (m_iPplNeedBldg);
-	else
-		m_fPplMult = 1.0;
-	if (m_iPwrHave < m_iPwrNeed)
-		m_fPwrMult = float (m_iPwrHave) / float (m_iPwrNeed);
-	else
-		m_fPwrMult = 1.0;
-
-	m_iGasTurn += theGame.GetOpersElapsed ();
-	if ( m_iGasTurn >= 5 * 24 * AVG_SPEED_MUL)
-		{
-		if (m_iGasUsed == 0)
-			m_iGasNeed = MIN_GAS_NEED;
-		else
-			{
-			div_t dtRate = div (m_iGasUsed, GAS_USUAGE);
-			if (m_iGas > dtRate.quot)
-				m_iGas -= dtRate.quot;
-			else
-				m_iGas = 0;
-			m_iGasUsed = dtRate.rem;
-
-			m_iGasNeed = ( dtRate.quot * 12 * 5 * 24 * AVG_SPEED_MUL ) / m_iGasTurn;
-			m_iGasNeed = __max ( m_iGasNeed, MIN_GAS_NEED );
-			}
-
-		m_iGasTurn = 0;
-		}
-
-	// clear for next count
-	m_iPwrHave = 0;
-	m_iPwrNeed = 0;
-	m_iPplNeedBldg = 0;
-	m_iFoodProd = 0;
-
-	m_iRsrchHave = 0;
+    if ( !IsMe( ) )
+        theGame.CheckAlliances( );
 }
 
-void CPlayer::Research (int iNumSec)
+void CPlayer::SetTheirRelations( int iVal )
 {
 
-	if ((m_iRsrchHave <= 0) || (m_iRsrchItem <= 0))
-		return;
+    m_iTheirRelations = iVal;
 
-	BOOL bFoundIt = FALSE;
-	CRsrchItem * pRi = &theRsrch.ElementAt (m_iRsrchItem);
-	CRsrchStatus * pRs = &GetRsrch (GetRsrchItem ());
-	ASSERT (! pRs->m_bDiscovered);
-
-	int iNum = m_iRsrchHave * iNumSec * 2;
-	pRs->m_iPtsDiscovered += iNum;
-
-	// did we discover it
-	if (pRs->m_iPtsDiscovered > pRi->m_iPtsRequired * 2)
-		bFoundIt = TRUE;
-	else
-		if (pRs->m_iPtsDiscovered > pRi->m_iPtsRequired)
-			if ( RandNum (pRs->m_iPtsDiscovered * iNum) > pRi->m_iPtsRequired * iNum )
-				bFoundIt = TRUE;
-
-	if (! bFoundIt)
-		{
-		if ((! IsAI ()) && (theApp.m_pdlgRsrch != NULL))
-			theApp.m_pdlgRsrch->UpdateProgress ();
-		return;
-		}
-
-	// set attributes
-	UpdateRacialAttributes ( m_iRsrchItem );
-
-	// tell others
-	CNetRsrchDisc msg ( this, m_iRsrchItem );
-	theGame.PostToAll ( &msg, sizeof (msg), FALSE );
-
-	// ok, we discovered something		
-	m_iRsrchHave = 0;
-	pRs->m_bDiscovered = TRUE;
-	if (IsAI ())
-	  {
-#ifdef _LOGOUT
-		logPrintf (LOG_PRI_CRITICAL, LOG_AI_MISC, "Player %d discovered %d", GetPlyrNum (), m_iRsrchItem);
-#endif
-		m_iRsrchItem = AiNextRsrch (this, m_iRsrchItem);
-#ifdef _LOGOUT
-		logPrintf (LOG_PRI_CRITICAL, LOG_AI_MISC, "Player %d started researching %d", GetPlyrNum (), m_iRsrchItem);
-#endif
-		return;
-		}
-
-	// tell the user
-	int iTmp = m_iRsrchItem;
-	m_iRsrchItem = 0;
-	if (IsMe ())
-		{
-		ResearchDiscovered (iTmp);
-		CString sMsg;
-		sMsg.LoadString (IDS_EVENT_RSRCH_DONE);
-		CRsrchItem * pRi = &theRsrch.ElementAt ( iTmp );
-		csPrintf (&sMsg, pRi->m_sName);
-		theApp.m_wndBar.SetStatusText (0, sMsg, CStatInst::status);
-		theGame.MulEvent (MEVENT_RSRCH_DONE, NULL);
-		CWndComm::UpdateMail ();
-		}
+    if ( !IsMe( ) )
+        theGame.CheckAlliances( );
 }
+
+void CPlayer::AddFood( int iNum )
+{
+
+    ASSERT_STRICT_VALID( this );
+    m_iFood += iNum;
+
+    m_aiMade[CMaterialTypes::food] += iNum;
+}
+
+BOOL CPlayer::BuildRoad( )
+{
+
+    // if not AI or AI & easy do this
+    // in other words, for the ez ai and for humans, roads cost more gas
+    if ( ( !IsAI( ) ) || ( theGame.m_iAi == 0 ) )
+    {
+        if ( m_iGas < GAS_PER_ROAD )
+            return ( FALSE );
+        m_iGas -= GAS_PER_ROAD;
+        return ( TRUE );
+    }
+
+    // level 1 - take 1 gas
+    if ( theGame.m_iAi == 1 )
+    {
+        if ( m_iGas < 1 )
+            return ( FALSE );
+        m_iGas--;
+        return ( TRUE );
+    }
+
+    // level 2 - must have gas, but costs none
+    if ( theGame.m_iAi == 2 )
+    {
+        if ( m_iGas < 1 )
+            return ( FALSE );
+        return ( TRUE );
+    }
+
+    // level 3+ - must have gas or refinery
+    if ( m_iGas > 0 )
+        return ( TRUE );
+    TRAP( ); // why trap? because, realistically, the AI should have gas, 
+    // and if it doesn't we want to know
+    return GetExists( CStructureData::refinery );
+}
+
+void CPlayer::AddGas( int iNum )
+{
+
+    ASSERT_STRICT_VALID( this );
+    m_iGas += iNum;
+
+    m_aiMade[CMaterialTypes::gas] += iNum;
+}
+
+// ApplySurplusEdicts -- the ONE per-pump pass that prices every surplus-scaled edict (Desperate
+// Measures, Public Works, Civil Defence, War Footing, and Research Subsidy's surplus half).
+// Called at the end
+// of StartLoop, for every player including the AI: it is cheap, deterministic, and in a net game
+// every client must compute the identical draft or the economies desync.
+//
+// Every one of them is a FLAT cost plus a cut of a SURPLUS, and the two need not be the same
+// resource (see the family table in edicts.h). Desperate Measures, for instance, is
+// DESPERATE_BASE_DRAFT workers plus SURPLUS_DRAFT_PCT% of the spare left over, and its scrounge
+// scales with the total -- so an empire with idle population gets MORE out of the edict, at the
+// same resources-per-worker exchange rate.
+//
+// ACCOUNTING, uniform across the family: a flat cost is booked into m_iPplNeedBldg/m_iPwrNeed
+// and LEFT there -- it is NOT added to m_iSurplusPplTick/m_iSurplusPwrTick. Only the surplus-
+// derived cuts go into the Tick sums. The reason is that the Tick sums are what next pump adds
+// back to reconstruct "the spare as if these edicts were not running": borrowed idle capacity
+// must be handed back, but a flat bill the colony is really paying must stay inside the need, or
+// the edicts would see their own bills as free capacity and spend them again. One consequence
+// worth stating: the spare this pass is handed has already had every flat cost deducted (they
+// were in last pump's need), so the walk below must NOT deduct them a second time -- it takes
+// the percentage straight off the pool.
+//
+// The whole difficulty is making that percentage HOLD STILL. A draft is itself part of the
+// workforce need, so a naive pct of "spare = have - need" chases its own tail: draft up -> spare
+// down -> draft down -> spare up, oscillating every pump and flickering the output with it.
+// Three things are required, and none alone is enough:
+//
+//   1. Read LAST pump's FINISHED need (m_iPplNeedLast). The live m_iPplNeedBldg is a partial sum
+//      while the buildings are still accumulating, so its mid-pump value depends on where a
+//      building happens to sit in the iteration order -- jitter even with no feedback at all.
+//   2. Add the surplus edicts' own previous CUTS back (m_iSurplusPplLast / m_iSurplusPwrLast)
+//      before taking the new cut. What is left is the spare as it would be IF THESE EDICTS WERE
+//      NOT BORROWING IT -- a quantity the cut does not appear in. The cut then computes the same
+//      answer every pump while the rest of the economy holds: the fixed point we want, rather
+//      than an orbit around one.
+//   3. Compute it HERE, once, not at each host building. Two rockets asking a live counter would
+//      get two different answers; here the cached m_iDespDraft is what the sim charges AND what
+//      the info window quotes.
+//
+// A colony with no slack at all therefore pays exactly the flat costs of whatever it switched
+// on, and goes into deficit by them if it cannot afford them -- enabling an edict is a real
+// commitment, which is the whole point of the flat half.
+void CPlayer::ApplySurplusEdicts( )
+{
+
+    ASSERT_STRICT_VALID( this );
+
+    // Clear this pump's cached results -- an inactive edict drafts nothing and bonuses it is no
+    // longer paying for must not survive into this pump.
+    m_iDespDraft     = 0;
+    m_iPubWorksDraft = 0;
+    m_iCivDefDraft   = 0;
+    m_iCivDefPower   = 0;
+    m_iWarFootDraft  = 0;
+    m_iWarFootPower  = 0;
+    m_iRsrchSubDraft = 0;
+    m_fSurplusConstMult    = 1.0f;
+    m_fSurplusFortMult     = 1.0f;
+    m_fSurplusBldgDmgMult  = 1.0f;
+    m_fSurplusInfBuildMult = 1.0f;
+    m_fSurplusRsrchMult    = 1.0f;
+
+    // Spare workforce / power "as if the surplus edicts were not running" (points 1 + 2 above).
+    // A Last field < 0 means there is no finished pump to read yet (new game, or the first pump
+    // after a load -- these fields are runtime-only, deliberately not serialized). Scoring a
+    // zeroed need would make the ENTIRE workforce look spare and spike the drafts for one pump,
+    // so treat the spare as 0: the active edicts charge exactly their flat costs, nothing more.
+    LONG lSparePpl = 0;
+    LONG lSparePwr = 0;
+    if ( m_iPplNeedLast >= 0 )
+        lSparePpl = m_iPplBldg - ( m_iPplNeedLast - m_iSurplusPplLast );
+    if ( m_iPwrNeedLast >= 0 )
+        lSparePwr = m_iPwrHaveLast - ( m_iPwrNeedLast - m_iSurplusPwrLast );
+    if ( lSparePpl < 0 )
+        lSparePpl = 0;
+    if ( lSparePwr < 0 )
+        lSparePwr = 0;
+    m_iSurplusSparePpl = lSparePpl;   // what the UI/harness report as "spare" this pump
+    m_iSurplusSparePwr = lSparePwr;
+
+    // Each surplus edict charges its FLAT cost (booked, never added back) and then takes its cut
+    // of the REMAINING pool, shrinking it for the next one. So the walk is bounded -- they can
+    // never between them borrow more surplus than the colony has idle -- and its result depends
+    // only on EdictId order, never on building or player iteration order. They are visited below
+    // in that order; keep this walk and EdictIsSurplus (edicts.h) in step.
+
+    // --- EDICT_RESEARCH_SUBSIDY (office): pct upkeeps + a cut of the spare workforce ----------
+    // Its "flat" half is not a number but the static +30% research / +25% power / +15% workers
+    // in its g_aEdicts row, charged by RecomputeEdictMults + StartLoop like any other edict's.
+    // Here we only price the surplus half: a SMALLER cut than the rest of the family
+    // (RSRCH_SUBSIDY_DRAFT_PCT), seconding idle workers to the labs for up to
+    // RSRCH_SUBSIDY_MAX_PCT more research. The cut is surplus-derived, so it IS added back.
+    // Lowest EdictId of the family, so it is visited first and cuts the untouched pool.
+    if ( IsEdictActive( EDICT_RESEARCH_SUBSIDY ) )
+    {
+        int iCut = SurplusShare( (int)lSparePpl, RSRCH_SUBSIDY_DRAFT_PCT );
+        lSparePpl -= iCut;
+
+        m_iRsrchSubDraft = iCut;
+        AddPplNeedBldg( iCut );
+        m_iSurplusPplTick += iCut;
+        m_fSurplusRsrchMult = 1.0f + ( RSRCH_SUBSIDY_MAX_PCT / 100.0f ) *
+                                         SurplusScale( iCut, RSRCH_SUBSIDY_FULL_DRAFT );
+    }
+
+    // --- EDICT_DESPERATE_MEASURES (rocket): flat workers + a cut of the spare workforce -------
+    if ( IsEdictActive( EDICT_DESPERATE_MEASURES ) )
+    {
+        int iCut = SurplusShare( (int)lSparePpl, SURPLUS_DRAFT_PCT );
+        lSparePpl -= iCut;
+
+        m_iDespDraft = DESPERATE_BASE_DRAFT + iCut;
+        // Book the whole draft as demand HERE (this runs after StartLoop's reset, so we are
+        // seeding the pump's fresh need); only the CUT half is remembered for next pump's
+        // add-back, per the accounting rule in the header. The rocket's own GetPeople() is still
+        // booked by CBuilding::Operate; this is only the conscription.
+        AddPplNeedBldg( m_iDespDraft );
+        m_iSurplusPplTick += iCut;
+    }
+
+    // --- EDICT_PUBLIC_WORKS (rocket): flat workers + a cut of the spare workforce -------------
+    // The bonus scales with the TOTAL draft, so even a colony with no slack gets the base's
+    // worth (PUBLIC_WORKS_BASE_DRAFT / PUBLIC_WORKS_FULL_DRAFT of the maximum).
+    if ( IsEdictActive( EDICT_PUBLIC_WORKS ) )
+    {
+        int iCut = SurplusShare( (int)lSparePpl, SURPLUS_DRAFT_PCT );
+        lSparePpl -= iCut;
+
+        m_iPubWorksDraft = PUBLIC_WORKS_BASE_DRAFT + iCut;
+        AddPplNeedBldg( m_iPubWorksDraft );
+        m_iSurplusPplTick += iCut;
+        m_fSurplusConstMult = 1.0f + ( PUBLIC_WORKS_MAX_PCT / 100.0f ) *
+                                         SurplusScale( (int)m_iPubWorksDraft, PUBLIC_WORKS_FULL_DRAFT );
+    }
+
+    // --- EDICT_CIVIL_DEFENCE (rocket): flat workers + a cut of the surplus POWER --------------
+    // Population + surplus energy. The workers are the flat bill (they man the shelters whether
+    // or not anyone is idle); the EFFECT is set by the power drawn, which is the surplus half.
+    if ( IsEdictActive( EDICT_CIVIL_DEFENCE ) )
+    {
+        int iCutPwr = SurplusShare( (int)lSparePwr, SURPLUS_POWER_PCT );
+        lSparePwr -= iCutPwr;
+
+        m_iCivDefDraft = CIVDEF_BASE_DRAFT;   // flat, no surplus-people cut
+        m_iCivDefPower = iCutPwr;
+        AddPplNeedBldg( m_iCivDefDraft );
+        AddPwrNeed( m_iCivDefPower );
+        m_iSurplusPwrTick += iCutPwr;         // only the surplus half is added back
+
+        float fScale = SurplusScale( iCutPwr, CIVDEF_FULL_POWER );
+        m_fSurplusBldgDmgMult = 1.0f - ( CIVDEF_MAX_DMG_PCT / 100.0f ) * fScale;
+        m_fSurplusFortMult    = 1.0f + ( CIVDEF_MAX_FORT_PCT / 100.0f ) * fScale;
+    }
+
+    // --- EDICT_WAR_FOOTING (command center): flat POWER + a cut of the spare workforce --------
+    // Energy + surplus people: the mirror of Civil Defence. The power is the flat bill; the
+    // effect is set by the workers drafted.
+    if ( IsEdictActive( EDICT_WAR_FOOTING ) )
+    {
+        int iCutPpl = SurplusShare( (int)lSparePpl, SURPLUS_DRAFT_PCT );
+        lSparePpl -= iCutPpl;
+
+        m_iWarFootDraft = iCutPpl;
+        m_iWarFootPower = WARFOOT_BASE_POWER;   // flat, no surplus-power cut
+        AddPplNeedBldg( m_iWarFootDraft );
+        AddPwrNeed( m_iWarFootPower );
+        m_iSurplusPplTick += iCutPpl;           // only the surplus half is added back
+
+        m_fSurplusInfBuildMult = 1.0f + ( WARFOOT_MAX_INF_PCT / 100.0f ) *
+                                            SurplusScale( iCutPpl, WARFOOT_FULL_DRAFT );
+    }
+
+    ReportBldgDmgMult( );
+}
+
+// --- Civil Defence across the network ---------------------------------------------------------
+// The edict's damage reduction (m_fSurplusBldgDmgMult) is priced above from the owner's own spare
+// power, which only the owner's machine has: buildings Operate only where their owner is local,
+// so on the server a REMOTE human's power totals are zero and its computed value is always 1.0.
+// But the server is where building damage is applied (UnitDamage -> DecDamagePoints). So the
+// owner reports its value (CNetBldgDmgMult) and the server uses that for a non-local player.
+// Meat Shield (m_fEdictBldgDmgMult) comes from the replicated edict bits and Blast Shielding from
+// the replicated research flags, so neither is reported. Local players and single player: as before.
+float CPlayer::GetEdictBldgDmgMult( ) const
+{
+    float fSurplus = m_fSurplusBldgDmgMult;
+    if ( ( !IsLocal( ) ) && theGame.IsNetGame( ) )
+        fSurplus = IsEdictActive( EDICT_CIVIL_DEFENCE ) ? ( m_iRemoteBldgDmgPermille / 1000.0f ) : 1.0f;
+    return ( m_fEdictBldgDmgMult * fSurplus );
+}
+
+// Owner side, once per pump from ApplySurplusEdicts: a client tells the server when its value
+// changes, at most every CIVDEF_REPORT_INTERVAL_MS (a later pump sends the pending value), and
+// always on the first pump of a game. The server's own players need no message.
+void CPlayer::ReportBldgDmgMult( )
+{
+    if ( ( !IsLocal( ) ) || ( !theGame.IsNetGame( ) ) || theGame.AmServer( ) )
+        return;
+    int iPermille = BldgDmgPermille( m_fSurplusBldgDmgMult );
+    if ( iPermille == m_iSentBldgDmgPermille )
+        return;
+    DWORD dwNow = timeGetTime( );
+    if ( ( m_iSentBldgDmgPermille >= 0 ) && ( dwNow - m_dwSentBldgDmgTime < (DWORD)CIVDEF_REPORT_INTERVAL_MS ) )
+        return;
+    CNetBldgDmgMult msg( this, iPermille );
+    theGame.PostToServer( &msg, sizeof( msg ) );
+    m_iSentBldgDmgPermille = iPermille;
+    m_dwSentBldgDmgTime    = dwNow;
+}
+
+// Server side (bldg_dmg_mult in netapi.cpp, already checked to come from this player's own
+// connection). Clamped to what the edict can produce, so a bad value cannot buy more.
+void CPlayer::SetRemoteBldgDmgPermille( int iPermille )
+{
+    m_iRemoteBldgDmgPermille = ClampBldgDmgPermille( iPermille );
+}
+
+// --- What ApplySurplusEdicts charged this pump -----------------------------------------------
+// The info-window readout (the edict checkbox labels) and the harness `pstats` dump both read THESE, never
+// their own copy of the arithmetic, so a number on screen is by construction the number the sim
+// used. A non-surplus edict answers 0 / neutral.
+int CPlayer::GetEdictDraftPpl( int edictId ) const
+{
+    ASSERT_STRICT_VALID( this );
+    switch ( edictId )
+    {
+    case EDICT_RESEARCH_SUBSIDY:     return ( (int)m_iRsrchSubDraft );
+    case EDICT_DESPERATE_MEASURES:   return ( (int)m_iDespDraft );
+    case EDICT_PUBLIC_WORKS:         return ( (int)m_iPubWorksDraft );
+    case EDICT_CIVIL_DEFENCE:        return ( (int)m_iCivDefDraft );
+    case EDICT_WAR_FOOTING:          return ( (int)m_iWarFootDraft );
+    }
+    return ( 0 );
+}
+
+int CPlayer::GetEdictDraftPwr( int edictId ) const
+{
+    ASSERT_STRICT_VALID( this );
+    switch ( edictId )
+    {
+    case EDICT_CIVIL_DEFENCE:        return ( (int)m_iCivDefPower );    // the surplus half here
+    case EDICT_WAR_FOOTING:          return ( (int)m_iWarFootPower );   // flat bill
+    // Research Subsidy's power cost is the pct upkeep in its g_aEdicts row, not a flat number
+    // this pass booked, so there is nothing to report here.
+    }
+    return ( 0 );
+}
+
+// The edict's effect scale. 0..1 for the ramped edicts (0 = drafted nothing, 1 = fully
+// staffed); for Desperate Measures there is no cap, so report the scrounge multiplier instead
+// (draft / DESPERATE_RATE_PER -- the exact factor CBuilding::Operate scales the rates by).
+float CPlayer::GetEdictScale( int edictId ) const
+{
+    ASSERT_STRICT_VALID( this );
+    switch ( edictId )
+    {
+    case EDICT_DESPERATE_MEASURES:
+        return ( (float)m_iDespDraft / (float)DESPERATE_RATE_PER );
+    case EDICT_PUBLIC_WORKS:
+        return ( SurplusScale( (int)m_iPubWorksDraft, PUBLIC_WORKS_FULL_DRAFT ) );
+    case EDICT_CIVIL_DEFENCE:   // surplus input is POWER (the workers are the flat bill)
+        return ( SurplusScale( (int)m_iCivDefPower, CIVDEF_FULL_POWER ) );
+    case EDICT_WAR_FOOTING:     // surplus input is PEOPLE (the power is the flat bill)
+        return ( SurplusScale( (int)m_iWarFootDraft, WARFOOT_FULL_DRAFT ) );
+    case EDICT_RESEARCH_SUBSIDY:   // surplus input is PEOPLE (the static pcts are the flat half)
+        return ( SurplusScale( (int)m_iRsrchSubDraft, RSRCH_SUBSIDY_FULL_DRAFT ) );
+    }
+    return ( 1.0f );
+}
+
+// The live line appended to a surplus edict's (i) tooltip in the info window: ONLY what the
+// current draft is buying. The draft counts themselves ride in the checkbox's own label, and
+// Desperate Measures' yield is shown in the rocket's Production widget, so neither is repeated
+// here. "" for a non-surplus edict or an inactive one (nothing to say).
+std::string CPlayer::GetEdictEffectText( int edictId ) const
+{
+    ASSERT_STRICT_VALID( this );
+    if ( !EdictIsSurplus( edictId ) || !IsEdictActive( edictId ) )
+        return ( std::string( ) );
+
+    const float fScale = GetEdictScale( edictId );
+    char        buf[160];
+    buf[0] = 0;
+
+    switch ( edictId )
+    {
+    case EDICT_PUBLIC_WORKS:
+        snprintf( buf, sizeof( buf ), "+%d%% build speed",
+                  (int)( PUBLIC_WORKS_MAX_PCT * fScale + 0.5f ) );
+        break;
+    case EDICT_CIVIL_DEFENCE:
+        snprintf( buf, sizeof( buf ), "-%d%% building damage, +%d%% fort speed",
+                  (int)( CIVDEF_MAX_DMG_PCT * fScale + 0.5f ),
+                  (int)( CIVDEF_MAX_FORT_PCT * fScale + 0.5f ) );
+        break;
+    case EDICT_WAR_FOOTING:
+        snprintf( buf, sizeof( buf ), "+%d%% infantry build speed",
+                  (int)( WARFOOT_MAX_INF_PCT * fScale + 0.5f ) );
+        break;
+    case EDICT_RESEARCH_SUBSIDY:
+        // The static +30% is on the checkbox's own description; this line is only the EXTRA the
+        // seconded workers are buying right now.
+        snprintf( buf, sizeof( buf ), "+%d%% extra research",
+                  (int)( RSRCH_SUBSIDY_MAX_PCT * fScale + 0.5f ) );
+        break;
+    // EDICT_DESPERATE_MEASURES (and anything else): its yield is shown in the Production widget.
+    }
+    return ( std::string( buf ) );
+}
+
+void CPlayer::StartLoop( )
+{
+
+    const int GAS_USUAGE   = 3;  // was 4
+    const int MIN_GAS_NEED = 1;
+
+    // Edict upkeep (Edicts v1): active civ-wide edicts add recurring energy/workforce
+    // demand as a pct of the accumulated base, applied here — BEFORE the throttle below —
+    // so an unaffordable edict correctly drags m_fPwrMult/m_fPplMult down (the cost half).
+    if ( m_fEdictEnergyUpkeepPct    > 0.0f ) m_iPwrNeed     += (int)( m_iPwrNeed     * m_fEdictEnergyUpkeepPct );
+    // Flat edict draw (Resonance Sweep). Added AFTER the pct line so the percentage taxes the
+    // colony own demand and not the emitter -- and added here, once per civ, rather than at a
+    // host building, so owning three Command Centers does not triple the bill. Like the pct
+    // above this rides the raw member only until the loop resets it; GetPwrNeed re-adds it for
+    // display. Unaffordable means the whole colony browns out through m_fPwrMult below, which
+    // is the intended pressure -- and for the sweep specifically that same m_fPwrMult is what
+    // stretches its recharge, so an emitter you cannot power throttles itself.
+    m_iPwrNeed += GetEdictFlatPwrNeed( );
+    if ( m_fEdictWorkforceUpkeepPct > 0.0f ) m_iPplNeedBldg += (int)( m_iPplNeedBldg * m_fEdictWorkforceUpkeepPct );
+
+    // EDICT_AUTO_RESEARCH's flat civ-wide half (its per-lab worker surcharge is charged at the
+    // building, in CBuilding::Operate's UTresearch case). Booked here with the pct upkeeps so it
+    // is inside the need m_fPwrMult/m_fPplMult throttle from AND inside the m_iPwrNeedLast /
+    // m_iPplNeedLast snapshot below -- a bill the colony really pays, never spare capacity.
+    if ( IsEdictActive( EDICT_AUTO_RESEARCH ) )
+    {
+        m_iPwrNeed     += AUTO_RSRCH_POWER;
+        m_iPplNeedBldg += AUTO_RSRCH_WORKERS;
+    }
+
+    // #82/#87: never divide by a zero (or negative) need; a negative have against zero need produced -inf, then NaN in GetFrameProd, then an INT_MIN fire rate whose product with AVG_SPEED_MUL overflowed to 0 at the Shoot divide.
+    if ( m_iPplNeedBldg > 0 && m_iPplBldg < m_iPplNeedBldg )
+        m_fPplMult = float( m_iPplBldg ) / float( m_iPplNeedBldg );
+    else
+        m_fPplMult = 1.0;
+    if ( m_iPwrNeed > 0 && m_iPwrHave < m_iPwrNeed )
+        m_fPwrMult = float( m_iPwrHave ) / float( m_iPwrNeed );
+    else
+        m_fPwrMult = 1.0;
+
+    m_iGasTurn += theGame.GetOpersElapsed( );
+    if ( m_iGasTurn >= 5 * 24 * AVG_SPEED_MUL )
+    {
+        if ( m_iGasUsed == 0 )
+            m_iGasNeed = MIN_GAS_NEED;
+        else
+        {
+            div_t dtRate = div( (int)m_iGasUsed, GAS_USUAGE );
+            // fuel_efficiency research lowers how much gas the same travel burns
+            // (GetFuelPct() = 100 down to ~60 at 10 levels; see CPlayer::GetFuelPct).
+            int iBurn = ( dtRate.quot * GetFuelPct( ) ) / 100;
+            if ( m_iGas > iBurn )
+                m_iGas -= iBurn;
+            else
+                m_iGas = 0;
+            m_iGasUsed = dtRate.rem;
+
+            m_iGasNeed = ( iBurn * 12 * 5 * 24 * AVG_SPEED_MUL ) / m_iGasTurn;
+            m_iGasNeed = __max( m_iGasNeed, MIN_GAS_NEED );
+        }
+
+        m_iGasTurn = 0;
+
+        // This per-period boundary (~once per game-minute) is also our history
+        // sampling tick. m_iPwrHave / m_iPwrNeed are still the finalized totals from
+        // the just-finished accumulation cycle (they aren't cleared until below).
+        SampleHistory( );
+    }
+
+    // Surplus-scaled edicts read the workforce as of a FINISHED pump, so snapshot here -- after
+    // the edict upkeep fold-in above (so it matches the need m_fPplMult was just computed from)
+    // and before the reset below wipes it. The drafts roll over the same way: what the surplus
+    // edicts drew this pump becomes next pump's add-back. (The upkeep pct also scaled the drafts
+    // inside m_iPplNeedBldg while the add-back is the raw figure; the difference is
+    // upkeepPct * draft, which only makes the spare estimate slightly conservative.)
+    m_iPplNeedLast    = m_iPplNeedBldg;
+    m_iSurplusPplLast = m_iSurplusPplTick;
+    m_iSurplusPplTick = 0;
+    m_iPwrHaveLast    = m_iPwrHave;
+    m_iPwrNeedLast    = m_iPwrNeed;
+    m_iSurplusPwrLast = m_iSurplusPwrTick;
+    m_iSurplusPwrTick = 0;
+
+    // clear for next count
+    m_iPwrHave     = 0;
+    m_iPwrNeed     = 0;
+    m_iPplNeedBldg = 0;
+    m_iFoodProd    = 0;
+
+    m_iRsrchHave = 0;
+
+    // Price the surplus-scaled edicts for the pump that is about to run. This must be AFTER the
+    // reset (it seeds the fresh need with the drafts) and after m_fPplMult/m_fPwrMult are
+    // computed above (the research credit is throttled by them, like any other producer).
+    ApplySurplusEdicts( );
+}
+
+// Append one colony-stat sample to the ring buffer (called once per period from
+// StartLoop). Feeds the building-info windows' history graphs.
+void CPlayer::SampleHistory( )
+{
+    m_aHistPwrHave[m_iHistHead]  = m_iPwrHave;
+    m_aHistPwrNeed[m_iHistHead]  = m_iPwrNeed;
+    m_aHistPplTotal[m_iHistHead] = GetPplTotal( );
+    m_aHistPplBldg[m_iHistHead]  = m_iPplBldg;
+    m_aHistAptCap[m_iHistHead]   = m_iAptCap;
+    m_aHistOfcCap[m_iHistHead]   = m_iOfcCap;
+    m_aHistPplNeed[m_iHistHead]  = m_iPplNeedBldg;   // runtime-only series (not serialized)
+
+    m_iHistHead = ( m_iHistHead + 1 ) % HIST_LEN;
+    if ( m_iHistCount < HIST_LEN )
+        m_iHistCount++;
+
+    // Feed the multi-resolution rings (runtime-only) that back the graph
+    // time-range buttons: each ring keeps a sample every N game-minutes.
+    // Keep in lock-step with the init table in CPlayer::ctor (5/15/150 = the
+    // 10m/30m/5h graph ranges).
+    static const int _hrCad[HR_RINGS] = { 5, 30, 300 };   // 10m / 1h / 10h graph ranges (x120 samples)
+    LONG hv[HR_SERIES] = { m_iPwrHave, m_iPwrNeed, GetPplTotal( ), m_iPplBldg,
+                           m_iAptCap, m_iOfcCap, m_iPplNeedBldg };
+    for ( int r = 0; r < HR_RINGS; r++ ) {
+        if ( ++m_iHRTick[r] >= _hrCad[r] ) {
+            m_iHRTick[r] = 0;
+            int h = m_iHRHead[r];
+            for ( int s = 0; s < HR_SERIES; s++ ) m_aHR[r][s][h] = hv[s];
+            m_iHRHead[r] = ( h + 1 ) % HIST_LEN;
+            if ( m_iHRCount[r] < HIST_LEN )
+                m_iHRCount[r]++;
+        }
+    }
+}
+
+// Rebuild the runtime multi-resolution rings from the (just-deserialized)
+// per-minute history buffer. The rings aren't in the save format; without this
+// the 10m/1h graph ranges start EMPTY on every load (the history "vanishes"
+// across a save/load). Decimating the saved buffer at each ring's cadence,
+// newest-anchored, restores up to 120 game-min of coarse history immediately.
+// The 10h ring (300 min/sample) can get at most 1 seed from a 120-sample buffer
+// — it stays on the graph's degrade-to-finer-source fallback and fills over play.
+void CPlayer::SeedHRFromHist( )
+{
+    // Keep in lock-step with the cadence tables in ctor( ) and SampleHistory( ).
+    static const int _hrCad[HR_RINGS] = { 5, 30, 300 };   // 10m / 1h / 10h graph ranges (x120 samples)
+
+    for ( int r = 0; r < HR_RINGS; r++ )
+    {
+        m_iHRHead[r] = m_iHRCount[r] = 0;
+        m_iHRTick[r] = _hrCad[r] - 1;
+    }
+    if ( m_iHistCount <= 0 )
+        return;
+
+    for ( int r = 0; r < HR_RINGS; r++ )
+    {
+        int c = _hrCad[r];
+        int n = ( m_iHistCount + c - 1 ) / c;   // <= 24 for c=5, always <= HIST_LEN
+        for ( int k = n - 1; k >= 0; k-- )      // oldest -> newest
+        {
+            int i = ( m_iHistCount - 1 ) - k * c;   // newest sample lands at k=0
+            int h = m_iHRHead[r];
+            m_aHR[r][0][h] = GetHistPwrHave ( i );
+            m_aHR[r][1][h] = GetHistPwrNeed ( i );
+            m_aHR[r][2][h] = GetHistPplTotal( i );
+            m_aHR[r][3][h] = GetHistPplBldg ( i );
+            m_aHR[r][4][h] = GetHistAptCap  ( i );
+            m_aHR[r][5][h] = GetHistOfcCap  ( i );
+            m_aHR[r][6][h] = GetHistPplNeed ( i );   // backfilled flat pre-load
+            m_iHRHead[r] = ( h + 1 ) % HIST_LEN;
+            m_iHRCount[r]++;
+        }
+        m_iHRTick[r] = 0;   // the newest seed represents "now" — full cadence until the next ring sample
+    }
+}
+
+void CPlayer::Research( int iNumSec )
+{
+    // AutoResearch edict: when idle, auto-start the cheapest available topic. Runs only for the
+    // owning client (Research() is called under IsLocal(), mainloop.cpp) and starts research via
+    // the set_rsrch net command — server-authoritative, so all clients set m_iRsrchItem the same
+    // way (identical path the AI + manual UI use). The pending guard posts EXACTLY ONCE per
+    // idle→active transition: the set_rsrch handler docks 10% of points when switching (iOn>0),
+    // so re-posting each loop would repeatedly penalise progress. It self-clears once research is
+    // active (item landed) or the edict is off; a human can't receive free techs, so the picked
+    // topic can't go stale in flight and leave the guard stuck.
+    if ( IsEdictActive( EDICT_AUTO_RESEARCH ) && ( m_iRsrchItem <= 0 ) )
+    {
+        if ( !m_bAutoRsrchPending )
+        {
+            int       iBest    = 0;
+            long long iMinCost = 0x7FFFFFFFFFFFFFFFLL;   // 64-bit: m_iPtsRequired is
+            for ( int i = 1; i < theRsrch.GetSize( ); ++i )   // cheapest available; lowest index wins ties
+                if ( CanRsrch( i ) && theRsrch.ElementAt( i ).m_iPtsRequired < iMinCost )
+                {
+                    iMinCost = theRsrch.ElementAt( i ).m_iPtsRequired;
+                    iBest    = i;
+                }
+            if ( iBest > 0 )
+            {
+                CMsgRsrch msg( GetPlyrNum( ), iBest );
+                theGame.PostToServer( &msg, sizeof( msg ) );
+                m_bAutoRsrchPending = TRUE;
+            }
+        }
+    }
+    else
+        m_bAutoRsrchPending = FALSE;   // research active, or edict off → allow the next auto-pick
+
+    // negative garbage (saved corruption) must be CLEARED, not just skipped,
+    // or the AI stays 'busy researching' forever (same deadlock as the OOB case)
+    if ( m_iRsrchItem < 0 )
+        m_iRsrchItem = 0;
+
+    if ( ( m_iRsrchHave <= 0 ) || ( m_iRsrchItem <= 0 ) )
+        return;
+
+    // Upper-bound guard: m_iRsrchItem can go out of range (suspected AiNextRsrch
+    // returning an OOB index), and ElementAt() is an unchecked raw-pointer index on
+    // every platform (MSVC CArray + the POSIX mfc_compat shim) -> ACCESS VIOLATION at
+    // the :ASSERT deref below. Was a bare 'return', which left the invalid topic
+    // in place: the tick bailed every call while the AI saw 'busy researching'
+    // and never started another topic = a SILENT PERMANENT research deadlock
+    // (operator: late-game AIs stuck on old tech, not researching). Clear the
+    // bad topic so the AI's CheckResearch restarts with a valid one.
+    if ( ( m_iRsrchItem >= theRsrch.GetSize( ) ) ||
+         ( m_iRsrchItem >= m_aRsrch.GetSize( ) ) )
+    {
+        m_iRsrchItem = 0;
+        return;
+    }
+
+    BOOL          bFoundIt = FALSE;
+    CRsrchItem*   pRi      = &theRsrch.ElementAt( m_iRsrchItem );
+    CRsrchStatus* pRs      = &GetRsrch( GetRsrchItem( ) );
+    ASSERT( !pRs->m_bDiscovered );
+
+    // Research Speed line: +10% points per level (100% at none .. 150% at level 5).
+    // 64-bit intermediate because the scaled product is 1.5x what this line used to
+    // compute, and the 32-bit version of this arithmetic has overflowed before (see
+    // the m_iPtsDiscovered note below). At 100% the result is bit-identical to the old
+    // expression, so saves and pre-line games are unaffected.
+    long long llNum = ( (long long)m_iRsrchHave * iNumSec * 2 * GetRsrchSpeedPct( ) ) / 100;
+    if ( llNum > 0x7FFFFFFF ) llNum = 0x7FFFFFFF;   // unreachable in practice, but this
+    if ( llNum < 0 )          llNum = 0;            // line has overflowed before (see below)
+    int iNum = (int)llNum;
+    pRs->m_iPtsDiscovered += iNum;
+
+    // did we discover it
+    if ( pRs->m_iPtsDiscovered > pRi->m_iPtsRequired * 2 )
+        bFoundIt = TRUE;
+    else if ( pRs->m_iPtsDiscovered > pRi->m_iPtsRequired )
+        // Both sides used to be scaled by iNum, which cancels out of the comparison
+        // (P[U(0,A*k) > B*k] == P[U(0,A) > B]) but overflowed int in long games
+        // (m_iPtsDiscovered is unbounded) making RandNum's argument NEGATIVE ->
+        // rand.cpp:49 assert. Drop the factor: identical odds, no overflow. Research
+        // runs only for local players, so no cross-machine RNG-stream impact.
+    {
+        // RandNum takes an int and asserts on a negative argument, but m_iPtsDiscovered is
+        // 64-bit now -- narrowing it implicitly is exactly how this line produced a negative
+        // roll before. Saturate instead. With costs held under RSRCH_PTS_CEILING this branch
+        // never sees a value that large anyway (it only runs while discovered <= required * 2).
+        LONGLONG llRoll = pRs->m_iPtsDiscovered;
+        if ( llRoll > 0x7FFFFFFF )
+            llRoll = 0x7FFFFFFF;
+        if ( RandNum( (int)llRoll ) > pRi->m_iPtsRequired )
+            bFoundIt = TRUE;
+    }
+
+    if ( !bFoundIt )
+    {
+        // CDlgResearch removed (Phase 2d) — SDL2ResearchDialog re-reads progress on open.
+        return;
+    }
+
+    // set attributes
+    UpdateRacialAttributes( m_iRsrchItem );
+
+    // tell others
+    CNetRsrchDisc msg( this, m_iRsrchItem );
+    theGame.PostToAll( &msg, sizeof( msg ), FALSE );
+
+    // ok, we discovered something
+    m_iRsrchHave       = 0;
+    pRs->m_bDiscovered = TRUE;
+    m_iLastDiscovered  = m_iRsrchItem;  // remember for the Discovery button (persists in saves)
+    if ( IsAI( ) )
+    {
+#ifdef _LOGOUT
+        logPrintf( LOG_PRI_CRITICAL, LOG_AI_MISC, "Player %d discovered %d", GetPlyrNum( ), m_iRsrchItem );
+#endif
+        m_iRsrchItem = AiNextRsrch( this, m_iRsrchItem );
+#ifdef _LOGOUT
+        logPrintf( LOG_PRI_CRITICAL, LOG_AI_MISC, "Player %d started researching %d", GetPlyrNum( ), m_iRsrchItem );
+#endif
+        return;
+    }
+
+    // tell the user
+    int iTmp     = m_iRsrchItem;
+    m_iRsrchItem = 0;
+    if ( IsMe( ) )
+    {
+        ResearchDiscovered( iTmp );
+        pRi = &theRsrch.ElementAt( iTmp );
+        std::string sMsg = strPrintf( EnLoadStdString( IDS_EVENT_RSRCH_DONE ).c_str(),
+                                      pRi->m_sName.c_str() );
+        theApp.m_wndBar.SetStatusText( 0, sMsg.c_str(), CStatInst::status );
+        theGame.MulEvent( MEVENT_RSRCH_DONE, NULL );
+        CWndComm::UpdateMail( );
+    }
+}
+
+//---------------------------------------------------------------------------
+// Resonance Sweep (EDICT_RESONANCE_SWEEP, unlocked by CRsrchArray::drive_core_resonance).
+// Once per recharge (RESONANCE_SWEEP_RELOAD_SECS at full power, longer when the grid is short
+// -- see GetSweepReloadSecs), pick ONE enemy rocket at random and resolve what
+// we know of it. The three outcomes are deliberately the SAME three the engine already runs
+// when one of our own units scouts an enemy building (the reveal block in
+// CUnit::IncrementSpotting, unit.cpp) -- this is that block reached by a different trigger,
+// not a new visibility rule:
+//     destroyed     -> delete the corpse, so our map stops drawing a ship that is gone
+//     never seen    -> MakeBldgVisible, then refresh
+//     already known -> refresh only (damage level, construction pct, animations)
+// The refresh is what keeps the edict worth its power once every rocket has been found: an
+// enemy building that has left our vision keeps the look it had when we last saw it
+// (DecrementSpotting only pauses its animations), so absent a ping its damage reads however
+// stale our last sighting was, and a ship destroyed out of sight would sit there intact.
+//
+// LOCAL VIEW ONLY, and that is why this needs no net message. m_iVisible means "can the local
+// human see this"; the whole spotting system is single-viewpoint (IncrementSpotting bails
+// unless m_pOwner->IsMe). So this runs for IsMe() alone, mutates no simulated state, and each
+// client sweeps for its own player.
+//
+// The pick uses a PRIVATE LCG and never RandNum. RandNum drives MyRand, which rand.cpp
+// documents as feeding ALL deterministic game randomness (world-gen, placement, combat rolls)
+// and which the cross-platform join handshake fingerprints; drawing from it on a per-client,
+// view-only path would advance that shared stream by a different amount on every machine.
+// Which rocket lights up has no business being part of the simulation.
+//---------------------------------------------------------------------------
+// Flat (absolute) power drawn by the active civ-wide edicts, plus the Resonance Sweep's
+// per-tier surcharge. Live rather than cached: researching a Drive-Core Resonance tier while
+// the edict is already on must raise the draw immediately, and a copy cached in
+// RecomputeEdictMults would not move until the next toggle.
+int CPlayer::GetEdictFlatPwrNeed( ) const
+{
+    int iPwr = 0;
+    for ( int id = 0; id < EDICT_COUNT; ++id )
+    {
+        if ( ( m_dwEdicts & ( 1u << id ) ) == 0 )
+            continue;
+        if ( g_aEdicts[id].scope != EDICT_CIVWIDE )
+            continue;
+        iPwr += g_aEdicts[id].iFlatEnergyUpkeep;
+    }
+
+    // The catalog holds the tier-1 emitter; each tier above it widens the ring and costs more.
+    if ( IsEdictActive( EDICT_RESONANCE_SWEEP ) )
+    {
+        int iTier = GetResonanceTier( );
+        if ( iTier > 1 )
+            iPwr += RESONANCE_SWEEP_POWER_TIER * ( iTier - 1 );
+    }
+    return ( iPwr );
+}
+
+// Recharge time for one ping. m_fPwrMult is the fraction of our power demand actually met
+// (StartLoop), so this stretches in proportion to the shortfall: full power = the base, half
+// power = double, quarter = quadruple. Capped rather than allowed to divide by ~0, so a total
+// blackout stalls the sweep at RESONANCE_SWEEP_MAX_RELOAD instead of producing a nonsense or
+// negative interval.
+int CPlayer::GetSweepReloadSecs( ) const
+{
+    float fPwr = m_fPwrMult;
+    if ( fPwr > 1.0f )
+        fPwr = 1.0f;
+
+    int iSecs;
+    if ( fPwr <= (float)RESONANCE_SWEEP_RELOAD_SECS / RESONANCE_SWEEP_MAX_RELOAD )
+        iSecs = RESONANCE_SWEEP_MAX_RELOAD;
+    else
+        iSecs = (int)( (float)RESONANCE_SWEEP_RELOAD_SECS / fPwr );
+
+    if ( iSecs > RESONANCE_SWEEP_MAX_RELOAD )
+        iSecs = RESONANCE_SWEEP_MAX_RELOAD;
+    if ( iSecs < RESONANCE_SWEEP_RELOAD_SECS )
+        iSecs = RESONANCE_SWEEP_RELOAD_SECS;
+    return ( iSecs );
+}
+
+struct SweepLightContext
+{
+    CPlayer* pPlayer;
+    CBuilding* pChosenRocket;
+    std::vector<CHexCoord>* pLitHexes;
+};
+
+// Light one hex of a sweep ring. Enemy rocket footprints other than the chosen rocket are
+// excluded before IncVisible, so the shared reveal handler cannot disclose them.
+static int fnSweepLight( CHex* pHex, CHexCoord hex, void* pData )
+{
+    SweepLightContext* pContext = (SweepLightContext*)pData;
+    if ( pHex->GetUnits( ) & CHex::bldg )
+    {
+        CBuilding* pBldg = theBuildingHex._GetBuilding( hex );
+        if ( ( pBldg != NULL ) && ( pBldg != pContext->pChosenRocket ) &&
+             ( pBldg->GetData( ) != NULL ) &&
+             ( pBldg->GetData( )->GetType( ) == CStructureData::rocket ) &&
+             ( pBldg->GetOwner( ) != NULL ) && ( pBldg->GetOwner( ) != pContext->pPlayer ) &&
+             ( pBldg->GetOwner( )->GetTheirRelations( ) != RELATIONS_ALLIANCE ) )
+            return ( FALSE );
+    }
+
+    pHex->IncVisible( );
+    if ( pHex->GetVisibility( ) == 1 )
+        EnHexBecameVisible( pHex, hex, pContext->pPlayer );
+    pContext->pLitHexes->push_back( hex );
+    return ( FALSE );
+}
+
+// Release one hex of a sweep ring. Mirrors CUnit::DecrementSpotting, including re-freezing an
+// enemy building's ambients once it drops out of sight again.
+static void SweepUnlightHex( CHex* pHex, CHexCoord hex, CPlayer* pPlayer )
+{
+    // m_bVisible is a BYTE: decrementing one that is already 0 wraps it to 255 and pins the hex
+    // lit for the rest of the game. We release only recorded increments, but still guard the
+    // count because an independent map reset could have invalidated it.
+    ASSERT( pHex->GetVisibility( ) );
+    if ( pHex->GetVisible( ) <= 0 )
+        return;
+
+    pHex->DecVisible( );
+    if ( !pHex->GetVisibility( ) )
+    {
+        hex.SetInvalidated( );
+        if ( pHex->GetUnits( ) & CHex::bldg )
+        {
+            CBuilding* pBldg = theBuildingHex._GetBuilding( hex );
+            if ( ( pBldg != NULL ) && ( pBldg->GetOwner( ) != pPlayer ) && !pBldg->IsLive( ) )
+                pBldg->PauseAnimations( TRUE );
+        }
+    }
+}
+
+// Light the ground around a rocket the sweep just found. Tier 1 lights nothing -- it is a bare
+// contact and the ship itself is handled by the caller.
+void CPlayer::SweepLight( CBuilding* pRocket )
+{
+    if ( m_bSweepLit )
+        SweepUnlight( );              // never stack two rings
+
+    int iRing = GetSweepRings( );
+    if ( ( iRing <= 0 ) || ( pRocket == NULL ) )
+        return;
+
+    CHexCoord hexOrg( pRocket->GetHex( ).X( ) - iRing, pRocket->GetHex( ).Y( ) - iRing );
+    hexOrg.Wrap( );
+
+    m_hexSweepLit   = hexOrg;
+    m_iSweepLitCX   = pRocket->GetCX( ) + 2 * iRing;
+    m_iSweepLitCY   = pRocket->GetCY( ) + 2 * iRing;
+    m_bSweepLit     = TRUE;
+    m_iSweepLitMillis = RESONANCE_SWEEP_LIT_SECS * 1000;
+
+    m_aSweepLitHexes.clear( );
+    SweepLightContext context = { this, pRocket, &m_aSweepLitHexes };
+    theMap.EnumHexes( m_hexSweepLit, m_iSweepLitCX, m_iSweepLitCY, fnSweepLight, &context );
+}
+
+// Release only the hexes whose visibility counts this ring raised; safe to call when nothing is lit.
+void CPlayer::SweepUnlight( )
+{
+    if ( !m_bSweepLit )
+        return;
+
+    m_bSweepLit     = FALSE;          // cleared FIRST so re-entry cannot decrement twice
+    m_iSweepLitMillis = 0;
+    for ( std::vector<CHexCoord>::size_type i = 0; i < m_aSweepLitHexes.size( ); ++i )
+    {
+        CHex* pHex = theMap._GetHex( m_aSweepLitHexes[i] );
+        if ( pHex != NULL )
+            SweepUnlightHex( pHex, m_aSweepLitHexes[i], this );
+    }
+    m_aSweepLitHexes.clear( );
+}
+
+void CPlayer::ResonanceSweep( int iElapsedMillis )
+{
+    // Age out any lit ring FIRST, and release it unconditionally if the sweep is no longer
+    // running -- the edict can be switched off, or revoked with our last Command Center
+    // (EdictHostLost), while a ring is up, and the hexes must come back either way.
+    if ( iElapsedMillis < 0 )
+        iElapsedMillis = 0;
+    BOOL bRunning = IsMe( ) && IsEdictActive( EDICT_RESONANCE_SWEEP );
+    if ( m_bSweepLit )
+    {
+        m_iSweepLitMillis -= iElapsedMillis;
+        if ( ( m_iSweepLitMillis <= 0 ) || ( !bRunning ) )
+            SweepUnlight( );
+    }
+
+    // Only the local human view. Zero the bank when the edict is off so re-arming starts a
+    // fresh cycle rather than firing instantly on time that accrued while it was switched off.
+    if ( !bRunning )
+    {
+        m_iSweepMillis = 0;
+        return;
+    }
+
+    int iReload = GetSweepReloadSecs( ) * 1000;
+    // Compare before adding so even a very long stall cannot overflow the bank.
+    if ( iElapsedMillis < iReload - m_iSweepMillis )
+    {
+        m_iSweepMillis += iElapsedMillis;
+        return;
+    }
+    // Start a fresh interval from this contact. A stalled frame must not bank a
+    // second contact that fires immediately after it.
+    m_iSweepMillis = 0;
+
+    // Pass 1 - count the candidates. Allies are skipped: their rockets are already visible to
+    // us, so pinging one would burn the sweep to learn nothing.
+    int      nRocket = 0;
+    POSITION pos     = theBuildingMap.GetStartPosition( );
+    while ( pos != NULL )
+    {
+        DWORD      dwID;
+        CBuilding* pBldg;
+        theBuildingMap.GetNextAssoc( pos, dwID, pBldg );
+        if ( ( pBldg == NULL ) || ( pBldg->GetData( ) == NULL ) )
+            continue;
+        if ( pBldg->GetData( )->GetType( ) != CStructureData::rocket )
+            continue;
+        if ( ( pBldg->GetOwner( ) == NULL ) || ( pBldg->GetOwner( )->IsMe( ) ) )
+            continue;
+        if ( pBldg->GetOwner( )->GetTheirRelations( ) == RELATIONS_ALLIANCE )
+            continue;
+        nRocket++;
+    }
+    if ( nRocket <= 0 )
+        return;
+
+    // Private stream (see the note above): the documented MSVC CRT LCG, the same shape
+    // rand.cpp uses, but on our own state so g_enRandState is left untouched.
+    m_uSweepRand = m_uSweepRand * 214013U + 2531011U;
+    int iWant = (int)( ( ( m_uSweepRand >> 16 ) & 0x7FFF ) % (unsigned int)nRocket );
+
+    // Pass 2 - walk to the chosen one and take the pointer. We must be OUT of the map
+    // iteration before acting on it: the destroyed case deletes the building, which would
+    // invalidate the POSITION we are iterating with.
+    CBuilding* pRocket = NULL;
+    int        iOn     = 0;
+    pos = theBuildingMap.GetStartPosition( );
+    while ( pos != NULL )
+    {
+        DWORD      dwID;
+        CBuilding* pBldg;
+        theBuildingMap.GetNextAssoc( pos, dwID, pBldg );
+        if ( ( pBldg == NULL ) || ( pBldg->GetData( ) == NULL ) )
+            continue;
+        if ( pBldg->GetData( )->GetType( ) != CStructureData::rocket )
+            continue;
+        if ( ( pBldg->GetOwner( ) == NULL ) || ( pBldg->GetOwner( )->IsMe( ) ) )
+            continue;
+        if ( pBldg->GetOwner( )->GetTheirRelations( ) == RELATIONS_ALLIANCE )
+            continue;
+        if ( iOn++ == iWant )
+        {
+            pRocket = pBldg;
+            break;
+        }
+    }
+    if ( pRocket == NULL )
+        return;
+
+    std::string sWho = pRocket->GetOwner( )->GetName( );
+
+    // Always name the map location. A bearing the player cannot act on is not intel: without
+    // this the status line says a ship was found and leaves them to hunt a big map for it.
+    char sWhere[64];
+    sprintf( sWhere, " at %d,%d", pRocket->GetHex( ).X( ), pRocket->GetHex( ).Y( ) );
+
+    // Destroyed: drop the corpse. Mirrors the dead-building branch of the scouting reveal --
+    // our map has been showing a ship that no longer exists, and this is how the player finds
+    // out. Nothing below this line may touch pRocket.
+    if ( pRocket->IsFlag( CUnit::dead ) )
+    {
+        delete pRocket;
+        theApp.m_wndBar.SetStatusText(
+            0, ( "Resonance Sweep: no return from " + sWho + sWhere + ". That ship has been destroyed." ).c_str( ),
+            CStatInst::status );
+        return;
+    }
+
+    BOOL bNew = !pRocket->IsVisible( );
+    if ( bNew )
+        pRocket->MakeBldgVisible( );
+
+    // Refresh what we display of it, exactly as the scouting reveal does.
+    pRocket->SetConstPer( );
+    pRocket->UpdateDamageLevel( );
+    if ( ( !pRocket->IsConstructing( ) ) && ( !pRocket->IsFlag( CUnit::stopped ) ) )
+    {
+        if ( !pRocket->GetAmbient( CSpriteView::ANIM_FRONT_1 )->IsEnabled( ) )
+            pRocket->EnableAnimations( TRUE );
+        pRocket->PauseAnimations( FALSE );
+    }
+
+    // From tier 2 the ping also opens the ground around it for a few seconds (real vision:
+    // their vehicles show while it is lit). Tier 1 lights nothing and this is a no-op.
+    SweepLight( pRocket );
+
+    theApp.m_wndBar.SetStatusText(
+        0,
+        ( ( bNew ? ( "Resonance Sweep: contact. Located the ship belonging to " + sWho )
+                 : ( "Resonance Sweep: re-acquired the ship belonging to " + sWho ) ) + sWhere + "." ).c_str( ),
+        CStatInst::status );
+}
+
+#ifdef _CHEAT
+// DEV cheat (SP only): discover every research topic + apply its effect + refresh UI. Lets
+// the research-gated tail (AltOutput toggles, fort/seaport/shipyard/embassy, edicts) be
+// verified instantly instead of a multi-hour grind. Per topic, mirrors Research()'s
+// completion path: set m_bDiscovered (opens the gates) + UpdateRacialAttributes (applies the
+// effect) + ResearchDiscovered (count + live research/build-dialog refresh). _CHEAT-gated
+// (Debug/Sanitize only — NOT Release); callers also opt-in via [Cheat] registry + SP-guard.
+// Cross-platform: the Windows F12 hotkey and a POSIX control_socket cmd both call it.
+void CPlayer::DebugDiscoverAllResearch( )
+{
+    for ( int iOn = 0; iOn < m_aRsrch.GetSize( ); iOn++ )
+    {
+        if ( !m_aRsrch.ElementAt( iOn ).m_bDiscovered )
+        {
+            m_aRsrch.ElementAt( iOn ).m_bDiscovered = TRUE;
+            UpdateRacialAttributes( iOn );
+            ResearchDiscovered( iOn );
+        }
+    }
+}
+#endif
 
 // we may have to update some flags
-void CPlayer::UpdateRacialAttributes ( int iRsrch )
+void CPlayer::UpdateRacialAttributes( int iRsrch )
 {
 
-	switch ( iRsrch )
-	  {
-		case CRsrchArray::const_1 :
-			m_fConstProd = m_InitData.GetRace (CRaceDef::build_bldgs) * 1.125;
-			break;
-		case CRsrchArray::const_2 :
-			m_fConstProd = m_InitData.GetRace (CRaceDef::build_bldgs) * 1.25;
-			break;
-		case CRsrchArray::const_3 :
-			m_fConstProd = m_InitData.GetRace (CRaceDef::build_bldgs) * 1.5;
-			break;
-		case CRsrchArray::manf_1 :
-			m_fManfProd = m_InitData.GetRace (CRaceDef::manf_vehicles) * 1.125;
-			break;
-		case CRsrchArray::manf_2 :
-			m_fManfProd = m_InitData.GetRace (CRaceDef::manf_vehicles) * 1.25;
-			break;
-		case CRsrchArray::manf_3 :
-			m_fManfProd = m_InitData.GetRace (CRaceDef::manf_vehicles) * 1.5;
-			break;
-		case CRsrchArray::mine_1 :
-			m_fMineProd = m_InitData.GetRace (CRaceDef::mine_prod) * 1.125;
-			break;
-		case CRsrchArray::mine_2 :
-			m_fMineProd = m_InitData.GetRace (CRaceDef::mine_prod) * 1.25;
-			break;
-		case CRsrchArray::farm_1 :
-			m_fFarmProd = m_InitData.GetRace (CRaceDef::farm_prod) * 1.25;
-			break;
+    switch ( iRsrch )
+    {
+    case CRsrchArray::const_1:
+        m_fConstProd = m_InitData.GetRace( CRaceDef::build_bldgs ) * 1.125;
+        break;
+    case CRsrchArray::const_2:
+        m_fConstProd = m_InitData.GetRace( CRaceDef::build_bldgs ) * 1.25;
+        break;
+    case CRsrchArray::const_3:
+        m_fConstProd = m_InitData.GetRace( CRaceDef::build_bldgs ) * 1.5;
+        break;
+    case CRsrchArray::manf_1:
+        m_fManfProd = m_InitData.GetRace( CRaceDef::manf_vehicles ) * 1.125;
+        break;
+    case CRsrchArray::manf_2:
+        m_fManfProd = m_InitData.GetRace( CRaceDef::manf_vehicles ) * 1.25;
+        break;
+    case CRsrchArray::manf_3:
+        m_fManfProd = m_InitData.GetRace( CRaceDef::manf_vehicles ) * 1.5;
+        break;
+    case CRsrchArray::mine_1:
+        m_fMineProd = m_InitData.GetRace( CRaceDef::mine_prod ) * 1.125;
+        break;
+    case CRsrchArray::mine_2:
+        m_fMineProd = m_InitData.GetRace( CRaceDef::mine_prod ) * 1.25;
+        break;
+    case CRsrchArray::farm_1:
+        m_fFarmProd = m_InitData.GetRace( CRaceDef::farm_prod ) * 1.25;
+        break;
 
-		case CRsrchArray::spot_1 :
-		case CRsrchArray::spot_2 :
-		case CRsrchArray::spot_3 :
-			m_bSpotting = m_iRsrchItem - CRsrchArray::spot_1 + 1;
-			m_bSpotting = __minmax ( 0, 3, m_bSpotting );
-			break;
-		case CRsrchArray::range_1 :
-		case CRsrchArray::range_2 :
-		case CRsrchArray::range_3 :
-			m_bRange = m_iRsrchItem - CRsrchArray::range_1 + 1;
-			m_bRange = __minmax ( 0, 3, m_bRange );
-			break;
-		case CRsrchArray::atk_1 :
-		case CRsrchArray::atk_2 :
-		case CRsrchArray::atk_3 :
-			m_bAttack = m_iRsrchItem - CRsrchArray::atk_1 + 1;
-			m_bAttack = __minmax ( 0, 3, m_bAttack );
-			break;
-		case CRsrchArray::def_1 :
-		case CRsrchArray::def_2 :
-		case CRsrchArray::def_3 :
-			m_bDefense = m_iRsrchItem - CRsrchArray::def_1 + 1;
-			m_bDefense = __minmax ( 0, 3, m_bDefense );
-			break;
-		case CRsrchArray::acc_1 :
-		case CRsrchArray::acc_2 :
-		case CRsrchArray::acc_3 :
-			m_bAccuracy = m_iRsrchItem - CRsrchArray::acc_1 + 1;
-			m_bAccuracy = __minmax ( 0, 3, m_bAccuracy );
-			break;
-		}
+    case CRsrchArray::spot_1:
+    case CRsrchArray::spot_2:
+    case CRsrchArray::spot_3:
+        m_bSpotting = m_iRsrchItem - CRsrchArray::spot_1 + 1;
+        m_bSpotting = __minmax( 0, 3, m_bSpotting );
+        break;
+    // spot_4..7 are appended at the END of the enum (not contiguous after spot_3),
+    // so map them explicitly. Sight bonus per level is in CUnit::AssignData.
+    case CRsrchArray::spot_4:
+        m_bSpotting = 4;
+        break;
+    case CRsrchArray::spot_5:
+        m_bSpotting = 5;
+        break;
+    case CRsrchArray::spot_6:
+        m_bSpotting = 6;
+        break;
+    case CRsrchArray::spot_7:
+        m_bSpotting = 7;
+        break;
+    case CRsrchArray::range_1:
+    case CRsrchArray::range_2:
+    case CRsrchArray::range_3:
+        m_bRange = m_iRsrchItem - CRsrchArray::range_1 + 1;
+        m_bRange = __minmax( 0, 3, m_bRange );
+        break;
+    // range_4 is appended at the END of the enum (not contiguous after range_3), so map it
+    // explicitly -- the subtraction above would give a nonsense level. The level-4 range
+    // bonus is a diminishing step in CUnit::AssignData (the >>(4-lvl) form would shift by 0).
+    case CRsrchArray::range_4:
+        m_bRange = 4;
+        break;
+    case CRsrchArray::atk_1:
+    case CRsrchArray::atk_2:
+    case CRsrchArray::atk_3:
+        m_bAttack = m_iRsrchItem - CRsrchArray::atk_1 + 1;
+        m_bAttack = __minmax( 0, 3, m_bAttack );
+        break;
+    // atk_4..atk_8 are appended at the END of the enum -- same reason as range_4 above.
+    // atk_4 was appended in an earlier batch than atk_5..8, so the two groups are NOT
+    // contiguous with each other and each level is mapped by hand. The per-level bonus
+    // (diminishing, floored at +2 percentage points) is a table in CUnit::AssignData.
+    case CRsrchArray::atk_4:
+        m_bAttack = 4;
+        break;
+    case CRsrchArray::atk_5:
+        m_bAttack = 5;
+        break;
+    case CRsrchArray::atk_6:
+        m_bAttack = 6;
+        break;
+    case CRsrchArray::atk_7:
+        m_bAttack = 7;
+        break;
+    case CRsrchArray::atk_8:
+        m_bAttack = 8;
+        break;
+    case CRsrchArray::def_1:
+    case CRsrchArray::def_2:
+    case CRsrchArray::def_3:
+        m_bDefense = m_iRsrchItem - CRsrchArray::def_1 + 1;
+        m_bDefense = __minmax( 0, 3, m_bDefense );
+        break;
+    case CRsrchArray::acc_1:
+    case CRsrchArray::acc_2:
+    case CRsrchArray::acc_3:
+        m_bAccuracy = m_iRsrchItem - CRsrchArray::acc_1 + 1;
+        m_bAccuracy = __minmax( 0, 3, m_bAccuracy );
+        break;
+    }
 }
 
-void CPlayer::UpdateRemote ( CNetSaveInfo * pMsg )
+void CPlayer::UpdateRemote( CNetSaveInfo* pMsg )
 {
 
-	m_iPplBldg = pMsg->m_iPplBldg;
-	m_iPplVeh = pMsg->m_iPplVeh;
-	m_iFood = pMsg->m_iFood;
-	m_iGas = pMsg->m_iGas;
-	m_iRsrchItem = pMsg->m_iRsrchItem;
-	if ( m_iRsrchItem > 0 )
-		{
-		TRAP ();
-		GetRsrch ( m_iRsrchItem ).m_iPtsDiscovered = pMsg->m_iPtsDiscovered;
-		}
+    m_iPplBldg   = pMsg->m_iPplBldg;
+    m_iPplVeh    = pMsg->m_iPplVeh;
+    m_iFood      = pMsg->m_iFood;
+    m_iGas       = pMsg->m_iGas;
+    m_iRsrchItem = pMsg->m_iRsrchItem;
+    if ( m_iRsrchItem > 0 )
+    {
+        TRAP( );
+        GetRsrch( m_iRsrchItem ).m_iPtsDiscovered = pMsg->m_iPtsDiscovered;
+    }
 }
 
-void CPlayer::PeopleAndFood (int iNumSec)
+void CPlayer::PeopleAndFood( int iNumSec )
 {
 
-	// time to eat
-	int iPplTotal = m_iPplBldg + m_iPplVeh;
-	float fPplTtlSec = float (iPplTotal * iNumSec) / float (AVG_SPEED_MUL);
-	m_fFoodMod += fPplTtlSec * m_fEatingRate;
+    // time to eat
+    int   iPplTotal  = m_iPplBldg + m_iPplVeh;
+    float fPplTtlSec = float( iPplTotal * iNumSec ) / float( AVG_SPEED_MUL );
+    // Edict food upkeep (Edicts v1): active civ-wide edicts (Nutrition) make the colony
+    // actually EAT more food — apply the pct to REAL consumption here, not just the readout
+    // below. (Was readout-only = a no-op "cost": the displayed Food Need rose but food never
+    // actually drained faster, so the edict had no real downside. Operator-reported.)
+    {
+        float fEat = fPplTtlSec * m_fEatingRate;
+        if ( m_fEdictFoodUpkeepPct > 0.0f )
+            fEat *= ( 1.0f + m_fEdictFoodUpkeepPct );
+        m_fFoodMod += fEat;
+    }
 
-	// track what we need for a minute
-	m_iFoodNeed = float (iPplTotal * 60) * m_fEatingRate;
+    // track what we need for a minute (mirror the same upkeep so the readout matches consumption)
+    m_iFoodNeed = float( iPplTotal * 60 ) * m_fEatingRate;
+    if ( m_fEdictFoodUpkeepPct > 0.0f )
+        m_iFoodNeed += (int)( m_iFoodNeed * m_fEdictFoodUpkeepPct );
 
-	// do we need to eat?
-	if (m_fFoodMod >= 1)
-		{
-		int iFood = (int) m_fFoodMod;
-		m_fFoodMod -= (int) m_fFoodMod;
+    // do we need to eat?
+    if ( m_fFoodMod >= 1 )
+    {
+        int iFood = (int)m_fFoodMod;
+        m_fFoodMod -= (int)m_fFoodMod;
 
-		// if we don't have enough food - kill some people off
-		if (iFood > m_iFood)
-			{
-			iFood = __max (1, iFood);
+        // if we don't have enough food - kill some people off
+        if ( iFood > m_iFood )
+        {
+            iFood = __max( 1, iFood );
 
-			// we only kill off part of the pop that can't eat
-			m_fPopMod += m_fPopDeath * fPplTtlSec * (1.0 - float (m_iFood) / float (iFood));
-			if ( m_fPopMod >= 1 )
-				{
-				if ((int) m_fPopMod > m_iPplBldg / 4)
-					m_fPopMod = float (m_iPplBldg / 4);
-				m_iPplBldg -= (int) m_fPopMod;
-				m_fPopMod -= (int) m_fPopMod;
-				m_iPplBldg = __max ( m_iPplBldg, 10 );
-				if (IsMe ())
-					theApp.m_wndBar.UpdatePeople ();
-				}
+            // we only kill off part of the pop that can't eat
+            m_fPopMod += m_fPopDeath * fPplTtlSec * ( 1.0 - float( m_iFood ) / float( iFood ) );
+            if ( m_fPopMod >= 1 )
+            {
+                if ( (int)m_fPopMod > m_iPplBldg / 4 )
+                    m_fPopMod = float( m_iPplBldg / 4 );
+                m_iPplBldg -= (int)m_fPopMod;
+                m_fPopMod -= (int)m_fPopMod;
+                m_iPplBldg = __max( m_iPplBldg, 10 );
+                if ( IsMe( ) )
+                    theApp.m_wndBar.UpdatePeople( );
+            }
 
-			m_iFood = 0;
-			if (IsMe ())
-				theApp.m_wndBar.UpdateFood ();
-			return;
-			}
+            m_iFood = 0;
+            if ( IsMe( ) )
+                theApp.m_wndBar.UpdateFood( );
+            return;
+        }
 
-		// eat the food
-		m_iFood -= iFood;
-		}
-		
-	// apartment check - no babies if over 200% of capacity or over 100% and have excess people
-	if ( iPplTotal > m_iAptCap * 2 )
-		goto CheckDie;
-	if ( m_iPplBldg > m_iOfcCap * 2 )
-		goto CheckDie;
-	if ( m_iPplBldg > m_iPplNeedBldg)
-		{
-		if ( iPplTotal > m_iAptCap )
-			goto CheckDie;
-		if ( m_iPplBldg > m_iOfcCap )
-			goto CheckDie;
-		}
+        // eat the food
+        m_iFood -= iFood;
+    }
 
-	// no babies unless we have enough food or need people
-	if ( (m_iFood > m_iFoodNeed ) || ( m_iPplNeedBldg > m_iPplBldg ) )
-		{
-		// slow this down a little
-		if (MyRand () & 0x0100)
-			return;
+    // apartment check - no babies if over 200% of capacity or over 100% and have excess people
+    if ( iPplTotal > m_iAptCap * 2 )
+        goto CheckDie;
+    if ( m_iPplBldg > m_iOfcCap * 2 )
+        goto CheckDie;
+    if ( m_iPplBldg > m_iPplNeedBldg )
+    {
+        if ( iPplTotal > m_iAptCap )
+            goto CheckDie;
+        if ( m_iPplBldg > m_iOfcCap )
+            goto CheckDie;
+    }
 
-		// we will have babies up to 100% of our food capability + 1/16th of our overstock
-		float fFullPpl = float (m_iFoodProd) / ( m_fEatingRate * 60.0 );
-		float fMaxPpl = fFullPpl;
-		if ( m_iFood > m_iFoodNeed * 4 )
-			fMaxPpl += float ( ( m_iFood - m_iFoodNeed * 4 ) / 16 ) / ( m_fEatingRate * 60.0 );
+    // no babies unless we have enough food or need people
+    if ( ( m_iFood > m_iFoodNeed ) || ( m_iPplNeedBldg > m_iPplBldg ) )
+    {
+        // slow this down a little
+        if ( MyRand( ) & 0x0100 )
+            return;
 
-		// do we need more babies?
-		if ((int) fMaxPpl >= iPplTotal)
-			{
-			float fAdd =  fPplTtlSec * m_fPopGrowth;
-			if ( iPplTotal > m_iAptCap )		// slow down if crowded
-				fAdd /= 2.0;
-			else
-				if (m_iPplBldg < m_iPplNeedBldg)		// speed up if serious need
-					fAdd *= 2.0;
-			m_fPopMod += fAdd;
-			if (m_fPopMod >= 1)
-				{
-				int iOldApt = GetPplTotal ();
-				int iOldOfc = GetPplBldg ();
+        // we will have babies up to 100% of our food capability + 1/16th of our overstock
+        float fFullPpl = float( m_iFoodProd ) / ( m_fEatingRate * 60.0 );
+        float fMaxPpl  = fFullPpl;
+        if ( m_iFood > m_iFoodNeed * 4 )
+            fMaxPpl += float( ( m_iFood - m_iFoodNeed * 4 ) / 16 ) / ( m_fEatingRate * 60.0 );
 
-				int iPopMod = (int) m_fPopMod;
-				m_iPplBldg += iPopMod;
-				m_fPopMod -= iPopMod;
-				if ( m_iPplBldg > (int) fMaxPpl )
-					m_iPplBldg = (int) fMaxPpl;
-				if (IsMe ())
-					theApp.m_wndBar.UpdatePeople ();
+        // do we need more babies?
+        if ( (int)fMaxPpl >= iPplTotal )
+        {
+            float fAdd = fPplTtlSec * GetPopGrowth( );   // use accessor so the Nutrition edict's +pop-growth (m_fEdictPopGrowthMult) applies
+            if ( iPplTotal > m_iAptCap )             // slow down if crowded
+                fAdd /= 2.0;
+            else if ( m_iPplBldg < m_iPplNeedBldg )  // speed up if serious need
+                fAdd *= 2.0;
+            m_fPopMod += fAdd;
+            if ( m_fPopMod >= 1 )
+            {
+                int iOldApt = GetPplTotal( );
+                int iOldOfc = GetPplBldg( );
 
-				if (IsMe ())
-					{
-					if ((iOldApt <= m_iAptCap) && (GetPplTotal () > m_iAptCap))
-						theGame.Event (EVENT_LOW_HOUSING, EVENT_BAD);
-					if ((iOldOfc <= m_iOfcCap) && (GetPplBldg () > m_iOfcCap))
-						theGame.Event (EVENT_LOW_OFFICE, EVENT_BAD);
-					}
-				}
-			return;
-			}
-		}
+                int iPopMod = (int)m_fPopMod;
+                m_iPplBldg += iPopMod;
+                m_fPopMod -= iPopMod;
+                if ( m_iPplBldg > (int)fMaxPpl )
+                    m_iPplBldg = (int)fMaxPpl;
+                if ( IsMe( ) )
+                    theApp.m_wndBar.UpdatePeople( );
+
+                if ( IsMe( ) )
+                {
+                    if ( ( iOldApt <= m_iAptCap ) && ( GetPplTotal( ) > m_iAptCap ) )
+                        theGame.Event( EVENT_LOW_HOUSING, EVENT_BAD );
+                    if ( ( iOldOfc <= m_iOfcCap ) && ( GetPplBldg( ) > m_iOfcCap ) )
+                        theGame.Event( EVENT_LOW_OFFICE, EVENT_BAD );
+                }
+            }
+            return;
+        }
+    }
 
 CheckDie:
-	// do we have more than we can feed?
-	if ( ( m_iPplNeedBldg < m_iPplBldg ) && ( m_iFood < m_iFoodNeed * 2 ) )
-		{
-		m_fPopMod += m_fPopDeath * fPplTtlSec;
-		if ( m_fPopMod >= 1 )
-			{
-			m_iPplBldg -= (int) m_fPopMod;
-			m_fPopMod -= (int) m_fPopMod;
-			m_iPplBldg = __max ( m_iPplBldg, 10 );
-			if (IsMe ())
-				theApp.m_wndBar.UpdatePeople ();
-			}
-		}
+    // do we have more than we can feed?
+    if ( ( m_iPplNeedBldg < m_iPplBldg ) && ( m_iFood < m_iFoodNeed * 2 ) )
+    {
+        m_fPopMod += m_fPopDeath * fPplTtlSec;
+        if ( m_fPopMod >= 1 )
+        {
+            m_iPplBldg -= (int)m_fPopMod;
+            m_fPopMod -= (int)m_fPopMod;
+            m_iPplBldg = __max( m_iPplBldg, 10 );
+            if ( IsMe( ) )
+                theApp.m_wndBar.UpdatePeople( );
+        }
+    }
 }
 
-BOOL CPlayer::CanRsrch (int iIndex)
+BOOL CPlayer::CanRsrch( int iIndex )
 {
 
-	// bad index - can't research
-	if ( (iIndex <= 0) || (CRsrchArray::num_types <= iIndex) )
-		return (FALSE);
+    // bad index - can't research
+    if ( ( iIndex <= 0 ) || ( CRsrchArray::num_types <= iIndex ) )
+        return ( FALSE );
 
-	CRsrchItem * pRi = &theRsrch.ElementAt (iIndex);
+    CRsrchItem* pRi = &theRsrch.ElementAt( iIndex );
 
-	// its already discovered
-	if (GetRsrch (iIndex).m_bDiscovered)
-		return (FALSE);
-		
-	// can we research it in this scenario
-	if ((theGame.GetScenario () != -1) && (theGame.GetScenario () < pRi->m_iScenarioReq))
-		return (FALSE);
+    // its already discovered
+    if ( GetRsrch( iIndex ).m_bDiscovered )
+        return ( FALSE );
 
-	// are all precursor topics discovered
-	for (int iNum=0, *piNum=pRi->m_piRsrchRequired; iNum<pRi->m_iNumRsrchRequired; iNum++, piNum++)
-		if (! GetRsrch (*piNum).m_bDiscovered)
-			return (FALSE);
+    // can we research it in this scenario
+    if ( ( theGame.GetScenario( ) != -1 ) && ( theGame.GetScenario( ) < pRi->m_iScenarioReq ) )
+        return ( FALSE );
 
-	// are all precursor buildings built?
-	for (iNum=0, piNum=pRi->m_piBldgsRequired; iNum<pRi->m_iNumBldgsRequired; iNum++, piNum++)
-		if (! GetExists (*piNum))
-			return (FALSE);
+    // are all precursor topics discovered
+    for ( int iNum = 0, *piNum = pRi->m_piRsrchRequired; iNum < pRi->m_iNumRsrchRequired; iNum++, piNum++ )
+        if ( !GetRsrch( *piNum ).m_bDiscovered )
+            return ( FALSE );
 
-	return (TRUE);
+    // are all precursor buildings built?
+    for ( int iNum = 0, *piNum = pRi->m_piBldgsRequired; iNum < pRi->m_iNumBldgsRequired; iNum++, piNum++ )
+        if ( !GetExists( *piNum ) )
+            return ( FALSE );
+
+    // Research Speed 1: gated on how much research the colony has ALREADY completed,
+    // not on a precursor topic (the prereq array is AND-only and cannot express "any
+    // N of them"). Only PAID topics count -- the free ones load pre-discovered, so
+    // counting them would grant 5 of the 10 before the game even starts. Loop bound is
+    // GetRsrchSize() (the player's own array), not num_types, so a save still being
+    // resized up cannot walk off the end.
+    if ( iIndex == CRsrchArray::rsrch_speed_1 )
+    {
+        int iDone = 0;
+        for ( int iOn = 1; iOn < GetRsrchSize( ); iOn++ )
+            if ( GetRsrch( iOn ).m_bDiscovered && ( theRsrch[iOn].m_iPtsRequired > 0 ) )
+                iDone++;
+        if ( iDone < RSRCH_SPEED_MIN_TOPICS )
+            return ( FALSE );
+    }
+
+    // Pontoon Bridges: ONE-OF building gate (light factory line / refinery /
+    // heavy factory) - the prereq array is AND-only, so the OR lives here
+    if ( iIndex == CRsrchArray::bridge_short )
+        if ( !GetExists( CStructureData::light_0 ) && !GetExists( CStructureData::light_1 ) &&
+             !GetExists( CStructureData::light_2 ) && !GetExists( CStructureData::refinery ) &&
+             !GetExists( CStructureData::heavy ) )
+            return ( FALSE );
+
+    return ( TRUE );
 }
 
-void SerializeElements (CArchive & ar, CPlayer * * ppNewPlyr, int iCount)
+void SerializeElements( CArchive& ar, CPlayer** ppNewPlyr, int iCount )
 {
 
-	while (iCount--)
-		{
-		(*ppNewPlyr)->Serialize (ar);
-		ppNewPlyr++;
-		}
+    while ( iCount-- )
+    {
+        ( *ppNewPlyr )->Serialize( ar );
+        ppNewPlyr++;
+    }
 }
 
-void CPlayer::Serialize(CArchive& ar)
+void CPlayer::Serialize( CArchive& ar )
 {
 
-	if (ar.IsStoring ())
-		{
-		ASSERT_VALID (this);
+    if ( ar.IsStoring( ) )
+    {
+        ASSERT_VALID( this );
 
-		ar << m_rgbPlyr << m_clrPlyr;
-		ar << m_iPwrNeed;
-		ar << m_iPwrHave;
-		ar << m_iPplNeedBldg;
-		ar << m_iPplBldg;
-		ar << m_iPplVeh;
-		ar << m_iFood;
-		ar << m_iFoodProd;
-		ar << m_iFoodNeed;
-		ar << m_iGas;
-		ar << m_iGasUsed;
-		ar << m_iGasNeed;
-		ar << m_iGasTurn;
-		ar << m_fPplMult;
-		ar << m_fPwrMult;
+        ar << m_rgbPlyr << m_clrPlyr;
+        ar << m_iPwrNeed;
+        ar << m_iPwrHave;
+        ar << m_iPplNeedBldg;
+        ar << m_iPplBldg;
+        ar << m_iPplVeh;
+        ar << m_iFood;
+        ar << m_iFoodProd;
+        ar << m_iFoodNeed;
+        ar << m_iGas;
+        ar << m_iGasUsed;
+        ar << m_iGasNeed;
+        ar << m_iGasTurn;
+        ar << m_fPplMult;
+        ar << m_fPwrMult;
 
-		ar << m_iRsrchHave;
-		ar << m_iRsrchItem;
-		m_aRsrch.Serialize (ar);
-		if (m_piBldgExists == NULL)
-			ar << (LONG) 0;
-		else
-			{
-			ar << (LONG) theStructures.GetNumBuildings ();
-			for (int iOn=0; iOn<theStructures.GetNumBuildings (); iOn++)
-				ar << m_piBldgExists [iOn];
-			}
+        ar << m_iRsrchHave;
+        ar << m_iRsrchItem;
 
-		ar << m_fConstProd;
-		ar << m_fMtrlsProd;
-		ar << m_fManfProd;
-		ar << m_fMineProd;
-		ar << m_fFarmProd;
-		ar << m_fPopGrowth;
-		ar << m_fPopDeath;
-		ar << m_fEatingRate;
-		ar << m_fPopMod;
-		ar << m_fFoodMod;
-		ar << m_fRsrchProd;
-		ar << m_fAttack;
-		ar << m_fDefense;
+        // Serialize research statuses element-by-element to avoid raw (vptr) copying.
+        ar.WriteCount( m_aRsrch.GetSize( ) );
+        for ( INT_PTR i = 0; i < m_aRsrch.GetSize( ); ++i ) m_aRsrch.ElementAt( i ).Serialize( ar );
 
-		ar << m_iRelations;
+        if ( m_piBldgExists == NULL )
+            ar << (LONG)0;
+        else
+        {
+            ar << (LONG)theStructures.GetNumBuildings( );
+            for ( int iOn = 0; iOn < theStructures.GetNumBuildings( ); iOn++ ) ar << m_piBldgExists[iOn];
+        }
 
-		ar << m_iBldgsBuilt;
-		ar << m_iVehsBuilt;
-		for (int iInd=0; iInd<CMaterialTypes::num_types; iInd++)
-			ar << m_aiMade [iInd] << m_aiHave[iInd];
-		ar << m_iBldgsDest;
-		ar << m_iVehsDest;
+        ar << m_fConstProd;
+        ar << m_fMtrlsProd;
+        ar << m_fManfProd;
+        ar << m_fMineProd;
+        ar << m_fFarmProd;
+        ar << m_fPopGrowth;
+        ar << m_fPopDeath;
+        ar << m_fEatingRate;
+        ar << m_fPopMod;
+        ar << m_fFoodMod;
+        ar << m_fRsrchProd;
+        ar << m_fAttack;
+        ar << m_fDefense;
 
-		ar << m_iBldgsHave << m_iVehsHave;
+        ar << m_iRelations;
 
-		ar << m_sName;
+        ar << m_iBldgsBuilt;
+        ar << m_iVehsBuilt;
+        for ( int iInd = 0; iInd < CMaterialTypes::num_types; iInd++ ) 
+            ar << m_aiMade[iInd] << m_aiHave[iInd];
+        ar << m_iBldgsDest;
+        ar << m_iVehsDest;
 
-		ar << m_iPlyrNum;
-		if ( theGame.AmServer ())
-			ar << m_bAI;
-		else
-			ar << (BYTE) FALSE;
-		ar << m_bLocal;
-		ar << m_bMe;
+        ar << m_iBldgsHave << m_iVehsHave;
 
-		ar << m_bSpotting;
-		ar << m_bRange;
-		ar << m_bAttack;
-		ar << m_bDefense;
-		ar << m_bAccuracy;
+        ar << m_sName;
 
-		ar << m_iAptCap << m_iOfcCap << m_dwIDRocket;
-		ar << m_iNumTrucks << m_iNumCranes;
+        ar << m_iPlyrNum;
+        if ( theGame.AmServer( ) )
+            ar << m_bAI;
+        else
+            ar << (BYTE)FALSE;
+        ar << m_bLocal;
+        ar << m_bMe;
 
-		m_InitData.Serialize (ar);
-		}
+        ar << m_bSpotting;
+        ar << m_bRange;
+        ar << m_bAttack;
+        ar << m_bDefense;
+        ar << m_bAccuracy;
 
-	else
-	  {
-		ar >> m_rgbPlyr >> m_clrPlyr;
-		ar >> m_iPwrNeed;
-		ar >> m_iPwrHave;
-		ar >> m_iPplNeedBldg;
-		ar >> m_iPplBldg;
-		ar >> m_iPplVeh;
-		ar >> m_iFood;
-		ar >> m_iFoodProd;
-		ar >> m_iFoodNeed;
-		ar >> m_iGas;
-		ar >> m_iGasUsed;
-		ar >> m_iGasNeed;
-		ar >> m_iGasTurn;
-		ar >> m_fPplMult;
-		ar >> m_fPwrMult;
+        ar << m_iAptCap << m_iOfcCap << m_dwIDRocket;
+        ar << m_iNumTrucks << m_iNumCranes;
 
-		ar >> m_iRsrchHave;
-		ar >> m_iRsrchItem;
-		m_aRsrch.Serialize (ar);
+        m_InitData.Serialize( ar );
 
-		// in a net game saved early some players may not have the R&D initialized
-		if ( m_aRsrch.GetSize () < theRsrch.GetSize () )
-			{
-			m_aRsrch.SetSize (theRsrch.GetSize ());
-			m_aRsrch.ElementAt (0).m_bDiscovered = TRUE;
+        // Save release 3+: most-recent discovery (for the research window's
+        // "Discovery" button). See version.h. Always written by this build.
+        ar << (LONG)m_iLastDiscovered;
 
-			// if no points required it's discovered (how we kill an item w/o removing it)
-			for (int iOn=1; iOn<m_aRsrch.GetSize(); iOn++)
-				if (theRsrch[iOn].m_iPtsRequired <= 0)
-					m_aRsrch.ElementAt (iOn).m_bDiscovered = TRUE;
-			}
+        // Save release 4+: colony stat history ring buffers (graphs). Always written.
+        ar << (LONG)m_iHistHead << (LONG)m_iHistCount;
+        for ( int i = 0; i < HIST_LEN; i++ )
+            ar << m_aHistPwrHave[i] << m_aHistPwrNeed[i] << m_aHistPplTotal[i]
+               << m_aHistPplBldg[i] << m_aHistAptCap[i] << m_aHistOfcCap[i];
 
-		LONG l; ar >> l;
-		if (! l)
-			m_piBldgExists = NULL;
-		else
-			{
-			m_piBldgExists = new LONG [l];
-			for (int iOn=0; iOn<l; iOn++)
-				ar >> m_piBldgExists [iOn];
-			}
-		memset (m_piBldgExists, 0, theStructures.GetNumBuildings () * sizeof (LONG));
+        // Save release 6+: the workforce-NEED series (7th history series). Previously
+        // runtime-only and backfilled flat on load, so the workforce graph's "need" line
+        // didn't restore across a save/load. Always written (current release >= 6).
+        for ( int i = 0; i < HIST_LEN; i++ )
+            ar << m_aHistPplNeed[i];
 
-		ar >> m_fConstProd;
-		ar >> m_fMtrlsProd;
-		ar >> m_fManfProd;
-		ar >> m_fMineProd;
-		ar >> m_fFarmProd;
-		ar >> m_fPopGrowth;
-		ar >> m_fPopDeath;
-		ar >> m_fEatingRate;
-		ar >> m_fPopMod;
-		ar >> m_fFoodMod;
-		ar >> m_fRsrchProd;
-		ar >> m_fAttack;
-		ar >> m_fDefense;
+        // Save release 6+: the FULL runtime multi-resolution rings (the 10m/30m/5h graph
+        // ranges). These hold the long history; previously they were runtime-only and were
+        // REBUILT on load by decimating the short per-minute buffer (SeedHRFromHist), which
+        // could only cover the fine buffer's ~120-sample span -> the long history was
+        // truncated to ~the last few minutes on load (operator: "only ~10 min after load").
+        // Persisting the rings directly preserves the entire history across save/load.
+        for ( int r = 0; r < HR_RINGS; r++ )
+        {
+            ar << (LONG)m_iHRHead[r] << (LONG)m_iHRCount[r] << (LONG)m_iHRTick[r];
+            for ( int s = 0; s < HR_SERIES; s++ )
+                for ( int i = 0; i < HIST_LEN; i++ )
+                    ar << m_aHR[r][s][i];
+        }
 
-		ar >> m_iRelations;
+        // Diagnostic (EN_SAVE_DIAG): confirm how many history samples are being WRITTEN per
+        // player, to settle whether an empty post-load graph is a save gap or a stale save.
+        if ( getenv( "EN_SAVE_DIAG" ) )
+            fprintf( stderr, "[savehist] plyr=%d wrote histCount=%d head=%d HR=[%d,%d,%d] ver=%d\n",
+                     (int)m_iPlyrNum, (int)m_iHistCount, (int)m_iHistHead,
+                     (int)m_iHRCount[0], (int)m_iHRCount[1], (int)m_iHRCount[2], (int)VER_RELEASE );
 
-		ar >> m_iBldgsBuilt;
-		ar >> m_iVehsBuilt;
-		for (int iInd=0; iInd<CMaterialTypes::num_types; iInd++)
-			ar >> m_aiMade [iInd] >> m_aiHave [iInd];
-		ar >> m_iBldgsDest;
-		ar >> m_iVehsDest;
+        // Save release 5+: active EDICTS bitmask (CPlayer::m_dwEdicts). Always written.
+        // The derived multipliers/upkeeps are NOT serialized — they are recomputed
+        // from the bitmask on load via RecomputeEdictMults().
+        ar << (DWORD)m_dwEdicts;
+    }
 
-		ar >> m_iBldgsHave >> m_iVehsHave;
+    else
+    {
+        ar >> m_rgbPlyr >> m_clrPlyr;
+        ar >> m_iPwrNeed;
+        ar >> m_iPwrHave;
+        ar >> m_iPplNeedBldg;
+        ar >> m_iPplBldg;
+        // #82/#87: a pre-fix or otherwise corrupted save can carry m_iPplBldg near INT_MIN
+        // or INT_MAX (the runaway-accumulator symptom; its write-site origin is still
+        // unexplained -- see BUGS #82). Loaded unclamped it feeds `iPplTotal * 60` in
+        // PeopleAndFood (signed overflow before the float cast) and the m_fPplMult divide
+        // in StartLoop before either runs even once. This does not repair or explain the
+        // bad value -- it only stops an already-bad number from propagating once loaded.
+        m_iPplBldg = __minmax( 1, 1000000, m_iPplBldg );
+        ar >> m_iPplVeh;
+        ar >> m_iFood;
+        ar >> m_iFoodProd;
+        ar >> m_iFoodNeed;
+        ar >> m_iGas;
+        ar >> m_iGasUsed;
+        ar >> m_iGasNeed;
+        ar >> m_iGasTurn;
+        ar >> m_fPplMult;
+        ar >> m_fPwrMult;
 
-		ar >> m_sName;
+        ar >> m_iRsrchHave;
+        ar >> m_iRsrchItem;
 
-		ar >> m_iPlyrNum;
-		ar >> m_bAI;
-		ar >> m_bLocal;
-		ar >> m_bMe;
-	  
-		ar >> m_bSpotting;
-		ar >> m_bRange;
-		ar >> m_bAttack;
-		ar >> m_bDefense;
-		ar >> m_bAccuracy;
+        // Resonance Sweep's lit ring is runtime-only and is NOT serialized. Hex visibility is
+        // rebuilt from our own units on load, so a ring recorded before the save refers to
+        // counts that no longer exist -- drop it rather than releasing it (see SweepUnlight).
+        m_bSweepLit     = FALSE;
+        m_iSweepLitMillis = 0;
+        m_aSweepLitHexes.clear( );
+        m_iSweepMillis    = 0;
+        // Read research statuses element-by-element to preserve valid object layout.
+        {
+            DWORD_PTR nNewSize = ar.ReadCount( );
+            m_aRsrch.SetSize( nNewSize );
+            for ( INT_PTR i = 0; i < m_aRsrch.GetSize( ); ++i ) m_aRsrch.ElementAt( i ).Serialize( ar );
+        }
 
-		ar >> m_iAptCap >>m_iOfcCap >> m_dwIDRocket;
-		ar >> m_iNumTrucks >> m_iNumCranes;
+        // in a net game saved early some players may not have the R&D initialized
+        if ( m_aRsrch.GetSize( ) < theRsrch.GetSize( ) )
+        {
+            m_aRsrch.SetSize( theRsrch.GetSize( ) );
+            m_aRsrch.ElementAt( 0 ).m_bDiscovered = TRUE;
 
-		m_InitData.Serialize (ar);
+            // if no points required it's discovered (how we kill an item w/o removing it)
+            for ( int iOn = 1; iOn < m_aRsrch.GetSize( ); iOn++ )
+                if ( theRsrch[iOn].m_iPtsRequired <= 0 )
+                    m_aRsrch.ElementAt( iOn ).m_bDiscovered = TRUE;
+        }
 
-		m_bState = created;
-		m_dwAiHdl = 0;
-		m_iNetNum = 0;
-		
-		// in case color depth changes
-		SetPlyrNum ( m_iPlyrNum );
-	  }
+        LONG l;
+        ar >> l;
+        if ( !l )
+        {
+            ASSERT( l ); // why would this be null?
+            m_piBldgExists = NULL;
+        }
+        else
+        {
+            // determine the arraysize before memset, to prevent writing outside of the array (if new buildings were added)
+            // get which ever is longer, l or theStructures.GetNumBuildings( )
+            int arraySize  = max( (int)l, theStructures.GetNumBuildings( ) );
+
+            if ( m_piBldgExists ) // in case its somehow called twice?
+                delete[] m_piBldgExists;
+
+            m_piBldgExists = new LONG[arraySize];
+            memset( m_piBldgExists, 0, arraySize * sizeof( LONG ) );
+
+            for ( int iOn = 0; iOn < l; iOn++ ) ar >> m_piBldgExists[iOn];
+        }
+
+        ar >> m_fConstProd;
+        ar >> m_fMtrlsProd;
+        ar >> m_fManfProd;
+        ar >> m_fMineProd;
+        ar >> m_fFarmProd;
+        ar >> m_fPopGrowth;
+        ar >> m_fPopDeath;
+        ar >> m_fEatingRate;
+        ar >> m_fPopMod;
+        ar >> m_fFoodMod;
+        ar >> m_fRsrchProd;
+        ar >> m_fAttack;
+        ar >> m_fDefense;
+
+        ar >> m_iRelations;
+
+        ar >> m_iBldgsBuilt;
+        ar >> m_iVehsBuilt;
+        for ( int iInd = 0; iInd < CMaterialTypes::num_types; iInd++ ) ar >> m_aiMade[iInd] >> m_aiHave[iInd];
+        ar >> m_iBldgsDest;
+        ar >> m_iVehsDest;
+
+        ar >> m_iBldgsHave >> m_iVehsHave;
+
+        ar >> m_sName;
+
+        ar >> m_iPlyrNum;
+        ar >> m_bAI;
+        ar >> m_bLocal;
+        ar >> m_bMe;
+
+        ar >> m_bSpotting;
+        ar >> m_bRange;
+        ar >> m_bAttack;
+        ar >> m_bDefense;
+        ar >> m_bAccuracy;
+
+        ar >> m_iAptCap >> m_iOfcCap >> m_dwIDRocket;
+        ar >> m_iNumTrucks >> m_iNumCranes;
+
+        m_InitData.Serialize( ar );
+
+        // Save release 3+ carries the most-recent discovery (Discovery button).
+        // Older saves (release 2) predate the field — leave it default (0) and do
+        // NOT read, or the stream would desync. theGame.m_dwVer holds the loaded
+        // save's release (read at the top of CGame::Serialize, before players).
+        if ( theGame.m_dwVer >= 3 )
+        {
+            LONG l;
+            ar >> l;
+            m_iLastDiscovered = l;
+        }
+        else
+            m_iLastDiscovered = 0;
+
+        // Save release 4+ carries the colony stat history. Older saves predate it,
+        // so the arrays stay at their init (empty) and we do NOT read.
+        if ( theGame.m_dwVer >= 4 )
+        {
+            LONG lHead, lCount;
+            ar >> lHead >> lCount;
+            m_iHistHead  = (int)lHead;
+            m_iHistCount = (int)lCount;
+            for ( int i = 0; i < HIST_LEN; i++ )
+                ar >> m_aHistPwrHave[i] >> m_aHistPwrNeed[i] >> m_aHistPplTotal[i]
+                   >> m_aHistPplBldg[i] >> m_aHistAptCap[i] >> m_aHistOfcCap[i];
+
+            // Save release 6+ carries the workforce-NEED series (7th) for real; read it back
+            // so the workforce graph's "need" line restores. Older saves (release 4/5) predate
+            // it -> backfill flat at the just-deserialized live need (a flat pre-load line, not
+            // zeros); it tracks for real from the next SampleHistory on.
+            if ( theGame.m_dwVer >= 6 )
+                for ( int i = 0; i < HIST_LEN; i++ ) ar >> m_aHistPplNeed[i];
+            else
+                for ( int i = 0; i < HIST_LEN; i++ ) m_aHistPplNeed[i] = m_iPplNeedBldg;
+
+            // Save release 6+ carries the FULL runtime rings too -> read them directly (the
+            // whole 10m/30m/5h history), matching the save order (after the workforce series).
+            // Older saves (<6) didn't persist them.
+            if ( theGame.m_dwVer >= 6 )
+                for ( int r = 0; r < HR_RINGS; r++ )
+                {
+                    LONG lh, lc, lt;
+                    ar >> lh >> lc >> lt;
+                    m_iHRHead[r] = (int)lh; m_iHRCount[r] = (int)lc; m_iHRTick[r] = (int)lt;
+                    for ( int s = 0; s < HR_SERIES; s++ )
+                        for ( int i = 0; i < HIST_LEN; i++ )
+                            ar >> m_aHR[r][s][i];
+                }
+
+            // Diagnostic (EN_SAVE_DIAG): confirm how many history samples were READ back.
+            // If save wrote >0 but load reads 0 (or the graph is still empty), that isolates
+            // the fault to the load/graph path vs. a save-with-no-history.
+            if ( getenv( "EN_SAVE_DIAG" ) )
+                fprintf( stderr, "[loadhist] plyr=%d read histCount=%d head=%d HR=[%d,%d,%d] saveVer=%d\n",
+                         (int)m_iPlyrNum, (int)m_iHistCount, (int)m_iHistHead,
+                         (int)m_iHRCount[0], (int)m_iHRCount[1], (int)m_iHRCount[2], (int)theGame.m_dwVer );
+
+            // Older saves (< release 6) didn't persist the runtime rings — rebuild them by
+            // decimating the per-minute buffer (best-effort; covers only the fine buffer's
+            // span). Release 6+ read the full rings directly above, so no reseed needed.
+            if ( theGame.m_dwVer < 6 )
+                SeedHRFromHist( );
+        }
+
+        // Save release 5+ carries the active EDICTS bitmask. Older saves predate it,
+        // so m_dwEdicts stays at its ctor default (0 = no edicts) and we do NOT read.
+        // After restoring the bits, rebuild the derived multipliers/upkeeps (those are
+        // not serialized) so the loaded edicts immediately apply to the sim.
+        if ( theGame.m_dwVer >= 5 )
+        {
+            DWORD dwEd;
+            ar >> dwEd;
+            m_dwEdicts = dwEd;
+            RecomputeEdictMults( );
+        }
+
+        m_bState  = created;
+        m_dwAiHdl = 0;
+        m_iNetNum = 0;
+
+        // m_bPlacedRocket isn't serialized, so it would deserialize as FALSE (its
+        // ctor value). Any saved game is post-landing (you can't save during the
+        // initial rocket placement), so force it TRUE here. Without this the minimap
+        // mode test (CWndWorld m_bIsRadar = has-command-center || !placed-rocket)
+        // sees "rocket not placed" and forces RADAR on every loaded game, and the
+        // building-count base (mainloop ConstComplete recount) is off by one.
+        m_bPlacedRocket = TRUE;
+
+        // in case color depth changes
+        SetPlyrNum( m_iPlyrNum );
+    }
+}
+
+BOOL CPlayer::BuildCcBldg(int iBldg) {
+    return 1;
 }
 
 #ifdef _DEBUG
-void CPlayer::AssertValid() const
+void CPlayer::AssertValid( ) const
 {
 
-	CObject::AssertValid ();
+    CObject::AssertValid( );
 
-	ASSERT_VALID_CSTRING (&m_sName);
-	ASSERT ((m_iNetNum & 0xFF) == m_iNetNum);
+    // m_sName converted to std::string (Phase 5c) — no MFC validator.
+    ASSERT( ( m_iNetNum & 0xFF ) == m_iNetNum );
 
-	for (int iInd=0; iInd<CMaterialTypes::num_types; iInd++)
-		ASSERT (m_aiHave [iInd] >= 0);
+    // it makes sense for these to be 0 when you start a new minimal game
+    /*
+    for ( int iInd = 0; iInd < CMaterialTypes::num_types; iInd++ ) ASSERT( m_aiHave[iInd] >= 0 );
+    */
 }
 #endif
 
@@ -933,2026 +2274,2441 @@ void CPlayer::AssertValid() const
 /////////////////////////////////////////////////////////////////////////////
 // CGame - a game
 
-void CGame::_ctor ()
+void CGame::_ctor( )
 {
 
-	m_bServer = FALSE;
-	m_bIsNetGame = FALSE;
-	ctor ();
+    m_bServer    = FALSE;
+    m_bIsNetGame = FALSE;
+    // Set HERE and not in ctor(): the gameplay data hash is computed once at
+    // startup, and ctor() runs again for every new game (015 phase 3).
+    m_dwDataHash = 0;
+    ctor( );
 
-	m_memPoolLarge = MemPoolInitFS ( VP_MAXSENDDATA, 10, MEM_POOL_SERIALIZE );
-	m_memPoolSmall = MemPoolInitFS ( MSG_POOL_SIZE, 100, MEM_POOL_SERIALIZE );
+    // block size, block count, flags
+   // m_memPoolLarge = mempool_large( );  // MEM_POOL_SERIALIZE flag used indicates this needs to be usable multithreaded.
+   // m_memPoolSmall = mempool_small( );
+    m_memPoolLarge.init( );
+    m_memPoolSmall.init( );
+
+    // MemPoolInitFS creates a new memory pool from which fixed-size memory blocks are to be allocated. You must create
+    // a memory pool before allocating fixed-size memory blocks.
+    //
+    // The blockSize parameter specifies the size of fixed-size memory blocks to be allocated from this pool. You can’t
+    // change the block size after the first allocation. SmartHeap may round the block size up for alignment — use
+    // MemPoolInfo or MemSizePtr to determine the actual block size.
+    //
+    // The blockCount parameter specifies the initial number of blocks to allocate in the memory pool — the pool will
+    // grow beyond this if necessary to satisfy allocation requests.
+    //
+    // See MemPoolInit for details on the flags parameter.
+    //
+    // MemPoolInitFS is equivalent to calling the combination of MemPoolInit, MemPoolSetBlockSizeFS, and
+    // MemPoolPreAllocate.
 }
 
-void CGame::ctor ()
+void CGame::ctor( )
 {
 
-	m_iAi = m_iSize = m_iPos = 0;
-	m_sFileName = "";
+    m_iAi = m_iSize = m_iPos = 0;
+    m_iWorldType = WORLD_DEFAULT;
+    m_iRivers    = 60;  // river density slider baseline
+    m_iOcean     = 50;  // ocean size slider baseline (~= current average)
+    m_iWorldGenCount = 0;  // MP parity (Bug 2): set authoritatively in StartNewWorld/CmdStart before world-gen
+    m_sFileName              = "";
 
-	m_iTryCount = 0;
-	m_iState = main;
-	m_pMe = NULL;
-	m_pServer = NULL;
-	m_bHP = FALSE;
+    m_iTryCount = 0;
+    m_iState    = main;
+    m_pMe       = NULL;
+    m_pServer   = NULL;
+    m_bHP       = FALSE;
 
-	m_uTimer = 0;
-	m_bUnPauseMe = m_bToldPause = m_bNetPause = m_bPauseMsgs = m_bMessages = 
-																						m_bAnimate = m_bOperate = FALSE;
-	m_dwElapsedTime = 0;
-	m_dwOperTimeLast = m_dwFrameTimeLast = timeGetTime ();
-	m_dwFramesElapsed = m_dwOpersElapsed = m_dwOperSecElapsed = m_dwOperSecFrames;
-	m_dwFrame = 0;
+    m_uTimer     = 0;
+    m_bUnPauseMe = m_bShouldPause = m_bShouldNetPause = m_bPauseMsgs = m_bMessages = m_bAnimate = m_bOperate = FALSE;
+    m_aPausedNet.clear( );
+    m_dwElapsedTime                                                                                  = 0;
+    m_dwOperTimeLast = m_dwFrameTimeLast = timeGetTime( );
+    m_dwFramesElapsed = m_dwOpersElapsed = m_dwOperSecElapsed = m_dwOperSecFrames;
+    m_dwFrame                                                 = 0;
 
-	m_iNetJoin = create;
-	m_iSideSize = 32;
-	m_dwNextUnitID = 2;
-	m_iNextPlyrNum = 1;
-	m_iNextAINum = 1;
+    m_iNetJoin     = create;
+    m_iSideSize    = 32;
+    m_dwNextUnitID = 2;
+    m_iNextPlyrNum = 1;
+    m_iNextAINum   = 1;
 
-	m_bHaveAlliances = FALSE;
+    m_bHaveAlliances = FALSE;
 
-	m_iScenarioNum = -1;
-	m_iScenarioVar = 0;
-	memset ( m_adwScenarioUnits, 0, sizeof (m_adwScenarioUnits) );
+    m_iScenarioNum = -1;
+    m_iScenarioVar = 0;
+    memset( m_adwScenarioUnits, 0, sizeof( m_adwScenarioUnits ) );
 
-	m_iSpeedMul = NUM_SPEEDS / 2;
+    m_iSpeedMul = NUM_SPEEDS / 2;
 
-	m_pHpRtr = NULL;
+    m_pHpRtr = NULL;
 
-	m_hexAreaCenter = CHexCoord (0, 0);
-	memset (&m_wpArea, 0, sizeof (WINDOWPLACEMENT));
-	memset (&m_wpWorld, 0, sizeof (WINDOWPLACEMENT));
-	memset (&m_wpChat, 0, sizeof (WINDOWPLACEMENT));
-	memset (&m_wpBldgs, 0, sizeof (WINDOWPLACEMENT));
-	memset (&m_wpVehicles, 0, sizeof (WINDOWPLACEMENT));
-	memset (&m_wpRelations, 0, sizeof (WINDOWPLACEMENT));
-	memset (&m_wpFile, 0, sizeof (WINDOWPLACEMENT));
-	memset (&m_wpRsrch, 0, sizeof (WINDOWPLACEMENT));
+    m_hexAreaCenter = CHexCoord( 0, 0 );
+    memset( &m_wpArea, 0, sizeof( WINDOWPLACEMENT ) );
+    memset( &m_wpWorld, 0, sizeof( WINDOWPLACEMENT ) );
+    memset( &m_wpChat, 0, sizeof( WINDOWPLACEMENT ) );
+    memset( &m_wpBldgs, 0, sizeof( WINDOWPLACEMENT ) );
+    memset( &m_wpVehicles, 0, sizeof( WINDOWPLACEMENT ) );
+    memset( &m_wpRelations, 0, sizeof( WINDOWPLACEMENT ) );
+    memset( &m_wpFile, 0, sizeof( WINDOWPLACEMENT ) );
+    memset( &m_wpRsrch, 0, sizeof( WINDOWPLACEMENT ) );
 
-	_SettimeGetTime ();
+    _SettimeGetTime( );
 
-	m_xScreen = theApp.m_iScrnX;
-	m_yScreen = theApp.m_iScrnY;
+    m_xScreen = theApp.m_iScrnX;
+    m_yScreen = theApp.m_iScrnY;
 
-	m_pXferFromServer = NULL;
-	m_pGameFile = NULL;
-	m_iGameBufLen = 0;
-	m_iNumSends = 0;
+    m_pXferFromServer = NULL;
+    m_pGameFile       = NULL;
+    m_iGameBufLen     = 0;
+    m_iNumSends       = 0;
 
-	m_dwMaj = VER_MAJOR;
-	m_dwMin = VER_MINOR;
-	m_dwVer = VER_RELEASE;
-	m_wDbg = _wDebug;
-	m_wCht = _wCheat;
+    m_dwMaj = VER_MAJOR;
+    m_dwMin = VER_MINOR;
+    m_dwVer = VER_RELEASE;
+    m_wDbg  = _wDebug;
+    m_wCht  = _wCheat;
 
-	ASSERT_VALID (this);
+    ASSERT_VALID( this );
 }
 
-void CGame::Open (BOOL bLocal)
+void CGame::Open( BOOL bLocal )
 {
 
-	ASSERT_VALID (this);
+    ASSERT_VALID( this );
 
-	CString sSaveName = theGame.m_sFileName;
-	if ( (theApp.m_pCreateGame == NULL ) ||
-						( (theApp.m_pCreateGame->m_iTyp != CCreateBase::load_single) &&
-						(theApp.m_pCreateGame->m_iTyp != CCreateBase::load_multi) ) )
-		ctor ();
-	theGame.m_sFileName = sSaveName;
+    std::string sSaveName = theGame.m_sFileName;
+    if ( ( theApp.m_pCreateGame == NULL ) || ( ( theApp.m_pCreateGame->m_iTyp != CCreateBase::load_single ) &&
+                                               ( theApp.m_pCreateGame->m_iTyp != CCreateBase::load_multi ) ) )
+        ctor( );
+    theGame.m_sFileName = sSaveName;
 
-	int iSpeed = theApp.GetProfileInt ("Game", "Speed", NUM_SPEEDS / 2);
-	iSpeed = __minmax (0, NUM_SPEEDS - 1, iSpeed);
-	SetGameMul (iSpeed);
+    int iSpeed = EnGetProfileInt( "Game", "Speed", NUM_SPEEDS / 2 );
+    iSpeed     = __minmax( 0, NUM_SPEEDS - 1, iSpeed );
+    SetGameMul( iSpeed );
 
-	if (! bLocal)
-		{
-		m_pMe = m_pServer = NULL;
-		m_bHP = FALSE;
-		}
-	else
+    if ( !bLocal )
+    {
+        m_pMe = m_pServer = NULL;
+        m_bHP             = FALSE;
+    }
+    else
 
-		{
-		CPlayer * pPlyr = new CPlayer ();
-		m_pMe = pPlyr;
-		m_bHP = TRUE;
-		pPlyr->m_bLocal = pPlyr->m_bMe = TRUE;
-		pPlyr->SetRelations (RELATIONS_ALLIANCE);
-		pPlyr->SetTheirRelations (RELATIONS_ALLIANCE);
-		AddPlayer (pPlyr);
+    {
+        CPlayer* pPlyr  = new CPlayer( );
+        m_pMe           = pPlyr;
+        m_bHP           = TRUE;
+        pPlyr->m_bLocal = pPlyr->m_bMe = TRUE;
+        pPlyr->SetRelations( RELATIONS_ALLIANCE );
+        pPlyr->SetTheirRelations( RELATIONS_ALLIANCE );
+        AddPlayer( pPlyr );
 
-		// is this the server or do we need to create it?
-		if (m_bServer)
-			m_pServer = pPlyr;
-		}
+        // is this the server or do we need to create it?
+        if ( m_bServer )
+            m_pServer = pPlyr;
+    }
 
-	SetState (open);
-	SetMsgs (TRUE);
+    SetState( open );
+    SetShouldProcessMessages(TRUE);
 }
 
 // get the item in the list
-CPlayer * CGame::_GetPlayer (int iNetNum) const
+CPlayer* CGame::_GetPlayer( int iNetNum ) const
 {
 
-	ASSERT_VALID (this);
+    ASSERT_VALID( this );
 
-	POSITION pos;
-	for (pos = m_lstAll.GetTailPosition(); pos != NULL; )
-		{
-		CPlayer *pPlr = m_lstAll.GetPrev (pos);
-		ASSERT_VALID (pPlr);
-		if (pPlr->GetNetNum() == iNetNum)
-			return (pPlr);
-		}
+    POSITION pos;
+    for ( pos = m_lstAll.GetTailPosition( ); pos != NULL; )
+    {
+        CPlayer* pPlr = m_lstAll.GetPrev( pos );
+        ASSERT_VALID( pPlr );
+        if ( pPlr->GetNetNum( ) == iNetNum )
+            return ( pPlr );
+    }
 
-	// could be a load game
-	if ( (theApp.m_pCreateGame != NULL) && 
-								 ( (theApp.m_pCreateGame->m_iTyp == CCreateBase::load_multi) ||
-								 	 (theApp.m_pCreateGame->m_iTyp == CCreateBase::load_join) ) )
-		{
-		POSITION pos;
-		for (pos = theGame.m_lstLoad.GetTailPosition(); pos != NULL; )
-			{
-			CPlayer *pPlr = theGame.m_lstLoad.GetPrev (pos);
-			if (pPlr->GetNetNum() == iNetNum)
-				return (pPlr);
-			}
-		}
+    // could be a load game
+    if ( ( theApp.m_pCreateGame != NULL ) && ( ( theApp.m_pCreateGame->m_iTyp == CCreateBase::load_multi ) ||
+                                               ( theApp.m_pCreateGame->m_iTyp == CCreateBase::load_join ) ) )
+    {
+        POSITION pos;
+        for ( pos = theGame.m_lstLoad.GetTailPosition( ); pos != NULL; )
+        {
+            CPlayer* pPlr = theGame.m_lstLoad.GetPrev( pos );
+            if ( pPlr->GetNetNum( ) == iNetNum )
+                return ( pPlr );
+        }
+    }
 
-	// ok - he may be dead
-	for (pos = m_lstDead.GetTailPosition(); pos != NULL; )
-		{
-		CPlayer *pPlr = m_lstDead.GetPrev (pos);
-		ASSERT_VALID (pPlr);
-		if (pPlr->GetNetNum() == iNetNum)
-			{
-			TRAP ();
-			return (pPlr);
-			}
-		}
+    // ok - he may be dead
+    for ( pos = m_lstDead.GetTailPosition( ); pos != NULL; )
+    {
+        CPlayer* pPlr = m_lstDead.GetPrev( pos );
+        ASSERT_VALID( pPlr );
+        if ( pPlr->GetNetNum( ) == iNetNum )
+        {
+            TRAP( );
+            return ( pPlr );
+        }
+    }
 
-	return (NULL);
+    return ( NULL );
 }
 
 // get the item in the list
-CPlayer * CGame::GetPlayer (int iNetNum) const
+CPlayer* CGame::GetPlayer( int iNetNum ) const
 {
 
-	CPlayer * pPlyr = _GetPlayer (iNetNum);
-	if (pPlyr != NULL)
-		return (pPlyr);
+    CPlayer* pPlyr = _GetPlayer( iNetNum );
+    if ( pPlyr != NULL )
+        return ( pPlyr );
 
-	ASSERT (FALSE);
-//BUGBUG	ThrowError (ERR_TLP_BAD_PLAYER_NET_NUM);
-	return (NULL);
+    ASSERT( FALSE );
+    // BUGBUG	ThrowError (ERR_TLP_BAD_PLAYER_NET_NUM);
+    return ( NULL );
 }
 
-CPlayer * CGame::_GetPlayerByPlyr (int iPlyrNum) const
+CPlayer* CGame::_GetPlayerByPlyr( int iPlyrNum ) const
 {
 
-	ASSERT_VALID (this);
+    ASSERT_VALID( this );
 
-	// if == 0 -> its us
-	if (iPlyrNum == 0)
-		return (m_pMe);
+    // if == 0 -> its us
+    if ( iPlyrNum == 0 )
+        return ( m_pMe );
 
-	POSITION pos;
-	for (pos = m_lstAll.GetTailPosition(); pos != NULL; )
-		{
-		CPlayer *pPlr = m_lstAll.GetPrev (pos);
-		ASSERT_VALID (pPlr);
-		if (pPlr->GetPlyrNum() == iPlyrNum)
-			return (pPlr);
-		}
+    POSITION pos;
+    for ( pos = m_lstAll.GetTailPosition( ); pos != NULL; )
+    {
+        CPlayer* pPlr = m_lstAll.GetPrev( pos );
+        ASSERT_VALID( pPlr );
+        if ( pPlr->GetPlyrNum( ) == iPlyrNum )
+            return ( pPlr );
+    }
 
-	return (NULL);						// avoid compile error
+    return ( NULL );  // avoid compile error
 }
 
-CPlayer * CGame::GetPlayerByPlyr (int iPlyrNum) const
+CPlayer* CGame::GetPlayerByPlyr( int iPlyrNum ) const
 {
 
-	CPlayer * pPlyr = _GetPlayerByPlyr (iPlyrNum);
-	if (pPlyr != NULL)
-		return (pPlyr);
+    CPlayer* pPlyr = _GetPlayerByPlyr( iPlyrNum );
+    if ( pPlyr != NULL )
+        return ( pPlyr );
 
-	// ok - he may be dead
-	POSITION pos;
-	for (pos = m_lstDead.GetTailPosition(); pos != NULL; )
-		{
-		CPlayer *pPlr = m_lstDead.GetPrev (pos);
-		ASSERT_VALID (pPlr);
-		if (pPlr->GetPlyrNum() == iPlyrNum)
-			return (pPlr);
-		}
+    // ok - he may be dead
+    POSITION pos;
+    for ( pos = m_lstDead.GetTailPosition( ); pos != NULL; )
+    {
+        CPlayer* pPlr = m_lstDead.GetPrev( pos );
+        ASSERT_VALID( pPlr );
+        if ( pPlr->GetPlyrNum( ) == iPlyrNum )
+            return ( pPlr );
+    }
 
-	ASSERT (FALSE);
-	return (NULL);
+    ASSERT( FALSE );
+    return ( NULL );
 }
 
-void CGame::SetGameMul (int iSpeed) 
-{ 
-	
-	if ( iSpeed > NUM_SPEEDS / 2 )
-		iSpeed *= 2;
-	m_iSpeedMul = iSpeed + AVG_SPEED_MUL / 2;
-}
-
-void CGame::LoadToPlyr ( CPlayer * pPlrLoad, CPlayer * pPlrAll )
+void CGame::SetGameMul( int iSpeed )
 {
 
-	if ( pPlrLoad != pPlrAll )
-		{
-		pPlrAll->SetName ( pPlrLoad->GetName () );
-		pPlrAll->SetAI ( FALSE );
-		pPlrAll->SetLocal ( FALSE );
-		}
-
-	if ( theApp.m_pCreateGame != NULL )
-		{
-		if ( pPlrAll->GetState () == CPlayer::load_pick )
-			pPlrAll->SetState (CPlayer::ready);
-		((CMultiBase *) theApp.m_pCreateGame)->m_wndPlyrList.RemovePlayer ( pPlrLoad );
-		((CMultiBase *) theApp.m_pCreateGame)->m_wndPlyrList.AddPlayer ( pPlrAll );
-		}
-
-	// copy net connection across
-	if ( pPlrLoad != pPlrAll )
-		{
-		pPlrAll->SetNetNum ( pPlrLoad->GetNetNum () );
-		pPlrLoad->SetNetNum ( 0 );
-		if ( pPlrLoad->m_pXferToClient != NULL )
-			{
-			pPlrAll->m_pXferToClient = pPlrLoad->m_pXferToClient;
-			pPlrAll->m_pXferToClient = NULL;
-			}
-
-		// remove from load list
-		POSITION pos = m_lstLoad.Find ( pPlrLoad, NULL );
-		if ( pos != NULL )
-			{
-			m_lstLoad.RemoveAt ( pos );
-			delete pPlrLoad;
-			}
-		}
+    if ( iSpeed > NUM_SPEEDS / 2 )
+        iSpeed *= 2;
+    m_iSpeedMul = iSpeed + AVG_SPEED_MUL / 2;
 }
 
-int CGame::GetGameMul () const 
-{ 
-
-	int iSpeed = m_iSpeedMul - AVG_SPEED_MUL / 2;
-	if ( iSpeed > NUM_SPEEDS / 2 )
-		iSpeed /= 2;
-	return ( iSpeed ); 
-}
-
-void CGame::SetMsgsPaused ( BOOL bPause ) 
-{ 
-
-	if ( bPause ) 
-		{ 
-		if ( m_uTimer != 0 )
-			theApp.m_wndMain.KillTimer ( m_uTimer );
-		theApp.m_wndMain.SetTimer ( m_uTimer = 119, 20 * 1000, NULL );
-		m_bPauseMsgs = TRUE; 
-		m_bUnPauseMe = FALSE; 
-		return; 
-		}
-
-	m_bUnPauseMe = TRUE; 
-	if ( m_uTimer != 0 )
-		{
-		theApp.m_wndMain.KillTimer ( m_uTimer );
-		m_uTimer = 0;
-		}
-	theGame.ClrNetPause ();
-}
-
-void CGame::StartAllPlayers () const
+void CGame::LoadToPlyr( CPlayer* pPlrLoad, CPlayer* pPlrAll )
 {
 
-	ASSERT_VALID (this);
-	ASSERT (m_bServer == TRUE);
+    if ( pPlrLoad != pPlrAll )
+    {
+        pPlrAll->SetName( pPlrLoad->GetName( ) );
+        pPlrAll->SetAI( FALSE );
+        pPlrAll->SetLocal( FALSE );
+    }
 
-	// we send everyone a message telling them their player number
-	// this is also gauranteed to be the first message when we go to
-	// create the game
-	POSITION pos;
-	for (pos = m_lstAll.GetHeadPosition(); pos != NULL; )
-		{
-		CPlayer *pPlr = m_lstAll.GetNext (pos);
-		ASSERT_VALID (pPlr);
-		if ((! pPlr->IsLocal ()) && (pPlr->GetState () != CPlayer::replace))
-			{
-			if ( pPlr->m_pXferToClient != NULL )
-				{
-				TRAP ();
-				delete pPlr->m_pXferToClient;
-				pPlr->m_pXferToClient = NULL;
-				}
-			CNetYouAre msg (pPlr->GetPlyrNum ());
-			theNet.Send (pPlr->GetNetNum(), &msg, sizeof (msg));
-			}
-		}
+    if ( theApp.m_pCreateGame != NULL )
+    {
+        if ( pPlrAll->GetState( ) == CPlayer::load_pick )
+            pPlrAll->SetState( CPlayer::ready );
+        ( (CMultiBase*)theApp.m_pCreateGame )->m_wndPlyrList.RemovePlayer( pPlrLoad );
+        ( (CMultiBase*)theApp.m_pCreateGame )->m_wndPlyrList.AddPlayer( pPlrAll );
+    }
 
-	// clean out buffer
-	TRAP ( m_pGameFile != NULL );
-	delete m_pGameFile;
-	((CGame *) this)->m_pGameFile = NULL;
-	delete m_pXferFromServer;
-	((CGame *) this)->m_pXferFromServer = NULL;
+    // copy net connection across
+    if ( pPlrLoad != pPlrAll )
+    {
+        pPlrAll->SetNetNum( pPlrLoad->GetNetNum( ) );
+        pPlrLoad->SetNetNum( 0 );
+        if ( pPlrLoad->m_pXferToClient != NULL )
+        {
+            pPlrAll->m_pXferToClient = pPlrLoad->m_pXferToClient;
+            pPlrAll->m_pXferToClient = NULL;
+        }
 
-	// we now send init info on each player in m_lstOther order.
-	//   join.cpp builds m_lstOther in the same order so they match
-	for (pos = m_lstAll.GetHeadPosition(); pos != NULL; )
-		{
-		CPlayer *pPlr = m_lstAll.GetNext (pos);
-		ASSERT_VALID (pPlr);
-		if ((! pPlr->IsLocal ()) && (pPlr->GetState () != CPlayer::replace))
-			{
-			POSITION posInfo;
-			for (posInfo = m_lstAll.GetHeadPosition(); posInfo != NULL; )
-				{
-				CPlayer *pPlrInfo = m_lstAll.GetNext (posInfo);
-				ASSERT_VALID (pPlrInfo);
-				CNetPlayer * pMsg = CNetCmd::AllocPlayer (pPlrInfo);
-				if (pPlrInfo == pPlr)
-					pMsg->m_bLocal = TRUE;
-				if (pPlrInfo->GetState () == CPlayer::replace)
-					pMsg->m_bAI = TRUE;
-				if (pPlrInfo == theGame.GetServer ())
-					pMsg->m_bServer = TRUE;
-				theNet.Send (pPlr->GetNetNum(), pMsg, pMsg->GetLen ());
-				delete pMsg;
-				}
-			}
-		}
+        // remove from load list
+        POSITION pos = m_lstLoad.Find( pPlrLoad, NULL );
+        if ( pos != NULL )
+        {
+            m_lstLoad.RemoveAt( pos );
+            delete pPlrLoad;
+        }
+    }
 }
 
-void CGame::StartNewWorld (unsigned uRand, int iSide, int iSideSize)
+int CGame::GetGameMul( ) const
 {
 
-	ASSERT_VALID (this);
-	ASSERT (m_bServer == TRUE);
-
-	// set the size
-	m_iSideSize = iSideSize;
-
-	CNetStart msg (uRand, iSide, iSideSize, 
-					theApp.m_pCreateGame->m_iAi, theApp.m_pCreateGame->m_iNumAi,
-					theGame.GetAll().GetCount () - theApp.m_pCreateGame->m_iNumAi, 
-					theApp.m_pCreateGame->m_iSize);
-
-	POSITION pos;
-	for (pos = m_lstAll.GetHeadPosition(); pos != NULL; )
-		{
-		CPlayer *pPlr = m_lstAll.GetNext (pos);
-		ASSERT_VALID (pPlr);
-		if (! pPlr->IsLocal ())
-			theNet.Send (pPlr->GetNetNum(), &msg, sizeof (msg));
-		}
+    int iSpeed = m_iSpeedMul - AVG_SPEED_MUL / 2;
+    if ( iSpeed > NUM_SPEEDS / 2 )
+        iSpeed /= 2;
+    return ( iSpeed );
 }
 
-void CGame::SendToServer (CNetCmd const * pMsg, int iLen)
+void CGame::SetMessagesPaused(BOOL bPause )
 {
 
-	ASSERT_VALID (this);
-	ASSERT_CMD (pMsg);
-	ASSERT (m_bServer);
-	TRAP ();
+    if ( bPause )
+    {
+        if ( m_uTimer != 0 )
+            theApp.m_wndMain.KillTimer( m_uTimer );
+        theApp.m_wndMain.SetTimer( m_uTimer = 119, 20 * 1000, NULL );
+        m_bPauseMsgs = TRUE;
+        m_bUnPauseMe = FALSE;
+        return;
+    }
 
-	EnterCriticalSection (&cs);
-
-	ProcessMsg ((CNetCmd *) pMsg);
-
-	LeaveCriticalSection (&cs);
+    m_bUnPauseMe = TRUE;
+    if ( m_uTimer != 0 )
+    {
+        theApp.m_wndMain.KillTimer( m_uTimer );
+        m_uTimer = 0;
+    }
+    theGame.ClearNetPause();
 }
 
-void CGame::PostToServer (CNetCmd const * pMsg, int iLen)
+// Host: connection idNet sent pause_messages. We stay paused while ANY connection
+// has a pause outstanding. The key is the sender's net id (the vdmplay msgFrom),
+// never its plyr num: a Load Network Game joiner's plyr num changes between its
+// pause and its unpause, which left one flag set forever and the host paused for
+// good (joiner stopped getting veh_comp_loc).
+void CGame::NetPauseRequest( VPPLAYERID idNet, BOOL bPause )
 {
 
-	ASSERT_VALID (this);
-	ASSERT_CMD (pMsg);
+    ASSERT( m_bServer );
 
-	// if we are on the server we call directly
-	if (m_bServer)
-		AddToQueue (pMsg, iLen);
-	else
-		theNet.Send (GetServerNetNum(), pMsg, iLen);
+    std::vector<VPPLAYERID>::iterator it = std::find( m_aPausedNet.begin( ), m_aPausedNet.end( ), idNet );
+    if ( bPause )
+    {
+        // net id 0 is never a live connection, so nothing could ever unpause it
+        ASSERT( idNet != 0 );
+        if ( ( idNet != 0 ) && ( it == m_aPausedNet.end( ) ) )
+            m_aPausedNet.push_back( idNet );
+        SetMessagesPaused( TRUE );
+        return;
+    }
+
+    if ( it != m_aPausedNet.end( ) )
+        m_aPausedNet.erase( it );
+
+    // any other connection still paused - wait for the rest. NOT a fault (it was a
+    // TRAP, which froze the host at the start of the first 3-client MP game): with
+    // several clients the pause windows overlap routinely, e.g. at game start.
+    if ( !m_aPausedNet.empty( ) )
+    {
+        if ( theApp.m_pLogFile != NULL )
+            theApp.Log( "Pause: staying paused, another player still paused" );
+        return;
+    }
+
+    // everyone says ok
+    if ( theApp.m_pLogFile != NULL )
+    {
+        SYSTEMTIME st;
+        char       sBuf[200];
+        GetLocalTime( &st );
+        sprintf( sBuf, "Pause: Off at %d:%d", st.wMinute, st.wSecond );
+        theApp.Log( sBuf );
+    }
+    SetMessagesPaused( FALSE );
 }
 
-void CGame::PostToClient ( int iPlyr, CNetCmd const * pMsg, int iLen)
-{ 
-
-	CPlayer * pPlyr = _GetPlayerByPlyr (iPlyr);
-	if ( pPlyr != NULL )
-		{
-		PostToClient ( pPlyr, pMsg, iLen ); 
-		return;
-		}
-
-	theNet.Send ( iPlyr, pMsg, iLen );
-}
-
-void CGame::PostToClient ( CPlayer * pPlyr, CNetCmd const * pMsg, int iLen)
+// Host: connection idNet is gone (left, taken over by the AI, or removed). Its
+// outstanding pause goes with it; resume if it was the last one holding us.
+void CGame::NetPauseDrop( VPPLAYERID idNet )
 {
 
-	ASSERT_VALID (this);
-	ASSERT_CMD (pMsg);
-	ASSERT (m_bServer);
+    if ( ( !m_bServer ) || ( idNet == 0 ) )
+        return;
 
-	// if we are on the server we call directly
-	if (m_bServer)
-		{
-		if (pPlyr->IsAI ())
-			AiMessage (pPlyr->GetAiHdl (), pMsg, iLen);
-		else
-			{
-			if (pPlyr == _GetMe ())
-				AddToQueue (pMsg, iLen);
-			else
-				theNet.Send (pPlyr->GetNetNum (), pMsg, iLen);
-			}
-		}
-	else
-		PostClientToClient ( pPlyr, pMsg, iLen);
+    std::vector<VPPLAYERID>::iterator it = std::find( m_aPausedNet.begin( ), m_aPausedNet.end( ), idNet );
+    if ( it == m_aPausedNet.end( ) )
+        return;
+
+    // was TRAP (untested 1996 path): a joiner whose link drops mid-load does this
+    EN_TRAP_REMOVED( "NetPauseDrop: a connection left with a pause outstanding - dropped" );
+    m_aPausedNet.erase( it );
+    if ( m_aPausedNet.empty( ) )
+        SetMessagesPaused( FALSE );
 }
 
-void CGame::PostToClientByNet ( int iNet, CNetCmd const * pMsg, int iLen)
+extern void EnMpDiagLog( const char* fmt, ... );   // [mp-plyr] trace (netapi.cpp)
+
+void CGame::StartAllPlayers( ) const
 {
 
-	ASSERT_VALID (this);
-	ASSERT_CMD (pMsg);
-	ASSERT (m_bServer);
+    ASSERT_VALID( this );
+    ASSERT( m_bServer == TRUE );
 
-	// if it's us, we're there
-	if ( iNet == GetMyNetNum () )
-		{
-		AddToQueue (pMsg, iLen);
-		return;
-		}
+    // we send everyone a message telling them their player number
+    // this is also gauranteed to be the first message when we go to
+    // create the game
+    POSITION pos;
+    for ( pos = m_lstAll.GetHeadPosition( ); pos != NULL; )
+    {
+        CPlayer* pPlr = m_lstAll.GetNext( pos );
+        ASSERT_VALID( pPlr );
+        if ( ( !pPlr->IsLocal( ) ) && ( pPlr->GetState( ) != CPlayer::replace ) )
+        {
+            if ( pPlr->m_pXferToClient != NULL )
+            {
+                TRAP( );
+                delete pPlr->m_pXferToClient;
+                pPlr->m_pXferToClient = NULL;
+            }
+            CNetYouAre msg( pPlr->GetPlyrNum( ) );
+            EnMpDiagLog( "StartAllPlayers: you_are -> netnum=%d plyr=%d name='%s'",
+                         pPlr->GetNetNum( ), pPlr->GetPlyrNum( ), pPlr->GetName( ) );
+            theNet.Send( pPlr->GetNetNum( ), &msg, sizeof( msg ) );
+        }
+        else if ( !pPlr->IsLocal( ) )
+            EnMpDiagLog( "StartAllPlayers: SKIP netnum=%d plyr=%d name='%s' state=replace (dead/ghost join?)",
+                         pPlr->GetNetNum( ), pPlr->GetPlyrNum( ), pPlr->GetName( ) );
+    }
 
-	TRAP ();
-	theNet.Send ( iNet, pMsg, iLen );
+    // clean out buffer
+    TRAP( m_pGameFile != NULL );
+    delete m_pGameFile;
+    ( (CGame*)this )->m_pGameFile = NULL;
+    delete m_pXferFromServer;
+    ( (CGame*)this )->m_pXferFromServer = NULL;
+
+    // we now send init info on each player in m_lstOther order.
+    //   join.cpp builds m_lstOther in the same order so they match
+    for ( pos = m_lstAll.GetHeadPosition( ); pos != NULL; )
+    {
+        CPlayer* pPlr = m_lstAll.GetNext( pos );
+        ASSERT_VALID( pPlr );
+        if ( ( !pPlr->IsLocal( ) ) && ( pPlr->GetState( ) != CPlayer::replace ) )
+        {
+            POSITION posInfo;
+            for ( posInfo = m_lstAll.GetHeadPosition( ); posInfo != NULL; )
+            {
+                CPlayer* pPlrInfo = m_lstAll.GetNext( posInfo );
+                ASSERT_VALID( pPlrInfo );
+                CNetPlayer* pMsg = CNetCmd::AllocPlayer( pPlrInfo );
+                if ( pPlrInfo == pPlr )
+                    pMsg->m_bLocal = TRUE;
+                if ( pPlrInfo->GetState( ) == CPlayer::replace )
+                    pMsg->m_bAI = TRUE;
+                if ( pPlrInfo == theGame.GetServer( ) )
+                    pMsg->m_bServer = TRUE;
+                theNet.Send( pPlr->GetNetNum( ), pMsg, pMsg->GetLen( ) );
+                delete pMsg;
+            }
+        }
+    }
 }
 
-void CGame::PostClientToClient ( CPlayer * pPlyr, CNetCmd const * pMsg, int iLen)
+void CGame::StartNewWorld( unsigned uRand, int iSide, int iSideSize )
 {
+#ifdef LOGGINGON
+    OutputDebugStringA( "StartNewWorld\n" );
+#endif
 
-	ASSERT_VALID (this);
-	ASSERT_CMD (pMsg);
+    ASSERT_VALID( this );
+    ASSERT( m_bServer == TRUE );
 
-	if (pPlyr == GetMe())
-		{
-		AddToQueue (pMsg, iLen);
-		return;
-		}
+    // set the size
+    m_iSideSize = iSideSize;
 
-	// if we are on the server we call directly
-	if (m_bServer)
-		{
-		if (pPlyr->IsAI ())
-			AiMessage (pPlyr->GetAiHdl (), pMsg, iLen);
-		else
-			theNet.Send (pPlyr->GetNetNum (), pMsg, iLen);
-		}
-	else
+#ifdef LOGGINGON
+    OutputDebugStringA( "CNetStart msg create\n" );
+#endif
+    // MP world-gen parity (Bug 2): the frozen count is now set in CreateNewWorld
+    // just before GetWorldSize (which reads it for planet sizing). Re-assert here
+    // that it still matches what CNetStart encodes (roster unchanged in between).
+    ASSERT( m_iWorldGenCount == theGame.GetAll( ).GetCount( ) );
 
-		{
-		if (! pPlyr->IsAI ())
-			theNet.Send (pPlyr->GetNetNum(), pMsg, iLen);
-		else
-			{
-			CMsgAiMsg * pAiMsg = CMsgAiMsg::Alloc (pPlyr, pMsg, iLen);
-			theNet.Send (theGame.GetServerNetNum(), pAiMsg, pAiMsg->m_iAllocLen);
-			delete [] (char *) pAiMsg;
-			}
-		}
+    CNetStart msg( uRand, iSide, iSideSize, theApp.m_pCreateGame->m_iAi, theApp.m_pCreateGame->m_iNumAi,
+                   theGame.GetAll( ).GetCount( ) - theApp.m_pCreateGame->m_iNumAi, theApp.m_pCreateGame->m_iSize,
+                   theApp.m_pCreateGame->m_iWorldType, theApp.m_pCreateGame->m_iRivers,
+                   theApp.m_pCreateGame->m_iOcean );
+
+    POSITION pos;
+    for ( pos = m_lstAll.GetHeadPosition( ); pos != NULL; )
+    {
+        CPlayer* pPlr = m_lstAll.GetNext( pos );
+        ASSERT_VALID( pPlr );
+        if ( !pPlr->IsLocal( ) )
+        {
+            // Duplicate-CNetStart trace (seat-3 death, board 2026-08-23): every
+            // start send is now attributable - a client seeing TWO of these
+            // learns from THIS log whether the host really sent twice or one
+            // send was delivered twice (routing/dup at the transport).
+            { extern void EnMpDiagLog( const char*, ... );
+              EnMpDiagLog( "CNetStart SEND -> netnum=%d (rand=%u count=%d)",
+                           pPlr->GetNetNum( ), uRand, theGame.GetAll( ).GetCount( ) ); }
+            theNet.Send( pPlr->GetNetNum( ), &msg, sizeof( msg ) );
+        }
+    }
 }
 
-void CGame::PostToAllAi (CNetCmd const * pMsg, int iLen)
+void CGame::SendToServer( CNetCmd const* pMsg, int iLen )
 {
 
-	ASSERT_VALID (this);
-	ASSERT_CMD (pMsg);
+    ASSERT_VALID( this );
+    ASSERT_CMD( pMsg );
+    ASSERT( m_bServer );
+    TRAP( );
 
-	if (! m_bServer)
-		{
-		POSITION pos;
-		for (pos = m_lstAi.GetTailPosition(); pos != NULL; )
-			{
-			CPlayer *pPlr = m_lstAi.GetPrev (pos);
-			ASSERT_VALID (pPlr);
-			ASSERT (pPlr->IsAI ());
-			PostClientToClient ( pPlr, pMsg, iLen);
-			}
-		return;
-		}
-		
-	POSITION pos;
-	for (pos = m_lstAi.GetTailPosition(); pos != NULL; )
-		{
-		CPlayer *pPlr = m_lstAi.GetPrev (pos);
-		ASSERT_VALID (pPlr);
-		ASSERT (pPlr->IsAI ());
-		AiMessage (pPlr->GetAiHdl (), pMsg, iLen);
-		}
+    EnterCriticalSection( &cs );
+
+    ProcessMessage((CNetCmd *) pMsg);
+
+    LeaveCriticalSection( &cs );
 }
 
-void CGame::PostToAllClients (CNetCmd const * pMsg, int iLen, BOOL bAI)
+void CGame::PostToServer( CNetCmd const* pMsg, int iLen )
 {
 
-	ASSERT_VALID (this);
-	ASSERT_CMD (pMsg);
-	ASSERT (m_bServer);
+    ASSERT_VALID( this );
+    ASSERT_CMD( pMsg );
 
-	if (bAI)
-		PostToAllAi (pMsg, iLen);
-	theNet.Broadcast (pMsg, iLen, FALSE);
+
+
+    // if we are on the server we call directly
+    if ( m_bServer )
+    {
+#ifdef LOGGINGON
+        OutputDebugStringA( "AddToQueue\n" );
+#endif
+        AddToQueue( pMsg, iLen );
+    }
+    else
+    {
+#ifdef LOGGINGON
+        OutputDebugStringA( "theNet.Send\n" );
+#endif
+        theNet.Send( GetServerNetNum( ), pMsg, iLen );
+    }
 }
 
-void CGame::PostToAll (CNetCmd const * pMsg, int iLen, BOOL bAI)
+void CGame::PostToClient( int iPlyr, CNetCmd const* pMsg, int iLen )
 {
 
-	ASSERT_VALID (this);
-	ASSERT_CMD (pMsg);
+    CPlayer* pPlyr = _GetPlayerByPlyr( iPlyr );
+    if ( pPlyr != NULL )
+    {
+        PostToClient( pPlyr, pMsg, iLen );
+        return;
+    }
 
-	if (bAI)
-		PostToAllAi (pMsg, iLen);
-
-	theNet.Broadcast (pMsg, iLen, TRUE);
-
-	AddToQueue (pMsg, iLen);
+    theNet.Send( iPlyr, pMsg, iLen );
 }
 
-BOOL CGame::IsAllReady () const
+void CGame::PostToClient( CPlayer* pPlyr, CNetCmd const* pMsg, int iLen )
 {
 
-	ASSERT_VALID (this);
+    ASSERT_VALID( this );
+    ASSERT_CMD( pMsg );
+    ASSERT( m_bServer );
 
-	// have to wait to tell us to go
-	if ( ! theGame.HaveHP () )
-		return (FALSE);
-
-	if (m_iNetJoin == approve)
-		return (FALSE);
-		
-	POSITION pos;
-	for (pos = m_lstAll.GetTailPosition(); pos != NULL; )
-		{
-		CPlayer *pPlr = m_lstAll.GetPrev (pos);
-		ASSERT_VALID (pPlr);
-		if (pPlr->GetState () != CPlayer::ready)
-			return (FALSE);
-		}
-
-	return (TRUE);
+    // if we are on the server we call directly
+    if ( m_bServer )
+    {
+        if ( pPlyr->IsAI( ) )
+        {
+            // redundancy filter: this is the HOT per-player AI delivery path
+            // (broadcasts fan out through here per player); skip types this
+            // AI provably ignores. Server-local; cannot affect client sync.
+            if ( AiMessageWanted( pPlyr, pMsg ) )
+                AiMessage( pPlyr->GetAiHdl( ), pMsg, iLen );
+            else
+                Perf::CounterInc( "ai.msg.skip" );
+        }
+        else
+        {
+            if ( pPlyr == _GetMe( ) )
+                AddToQueue( pMsg, iLen );
+            else
+                theNet.Send( pPlyr->GetNetNum( ), pMsg, iLen );
+        }
+    }
+    else
+        PostClientToClient( pPlyr, pMsg, iLen );
 }
 
-void CGame::AddPlayer (CPlayer *pPlr)
+void CGame::PostToClientByNet( int iNet, CNetCmd const* pMsg, int iLen )
 {
 
-	ASSERT_VALID (this);
-	ASSERT_VALID (pPlr);
+    ASSERT_VALID( this );
+    ASSERT_CMD( pMsg );
+    ASSERT( m_bServer );
 
-	if (pPlr->GetPlyrNum () == 0)
-		pPlr->SetPlyrNum (m_iNextPlyrNum++);
+    // if it's us, we're there
+    if ( iNet == GetMyNetNum( ) )
+    {
+        AddToQueue( pMsg, iLen );
+        return;
+    }
 
-	if ( (theApp.m_pCreateGame != NULL) && 
-									( (theApp.m_pCreateGame->m_iTyp == CCreateBase::load_join) ||
-										(theApp.m_pCreateGame->m_iTyp == CCreateBase::load_multi) ) )
-		m_lstLoad.AddTail (pPlr);
-	else
-		m_lstAll.AddTail (pPlr);
+    TRAP( );
+    theNet.Send( iNet, pMsg, iLen );
 }
 
-void CGame::AddAiPlayer (CPlayer *pPlr)
+void CGame::PostClientToClient( CPlayer* pPlyr, CNetCmd const* pMsg, int iLen )
 {
 
-	ASSERT_VALID (this);
-	ASSERT_VALID (pPlr);
+    ASSERT_VALID( this );
+    ASSERT_CMD( pMsg );
 
-	if (pPlr->GetPlyrNum () == 0)
-		pPlr->SetPlyrNum (m_iNextPlyrNum++);
+    if ( pPlyr == GetMe( ) )
+    {
+        AddToQueue( pMsg, iLen );
+        return;
+    }
 
-	if ( pPlr->m_sName.IsEmpty () )
-		{
-		CString sNum = IntToCString (m_iNextAINum++);
-		pPlr->m_sName.LoadString (IDS_AI_NAME);
-		csPrintf (&(pPlr->m_sName), (char const *) sNum);
-		}
-	pPlr->m_iNetNum = 0;
-	pPlr->SetAI (TRUE);
-	pPlr->SetState (CPlayer::ready);
+    // if we are on the server we call directly
+    if ( m_bServer )
+    {
+        if ( pPlyr->IsAI( ) )
+        {
+            // redundancy filter (see PostToClient above)
+            if ( AiMessageWanted( pPlyr, pMsg ) )
+                AiMessage( pPlyr->GetAiHdl( ), pMsg, iLen );
+            else
+                Perf::CounterInc( "ai.msg.skip" );
+        }
+        else
+            theNet.Send( pPlyr->GetNetNum( ), pMsg, iLen );
+    }
+    else
 
-	m_lstAi.AddTail (pPlr);
+    {
+        if ( !pPlyr->IsAI( ) )
+            theNet.Send( pPlyr->GetNetNum( ), pMsg, iLen );
+        else
+        {
+            CMsgAiMsg* pAiMsg = CMsgAiMsg::Alloc( pPlyr, pMsg, iLen );
+            theNet.Send( theGame.GetServerNetNum( ), pAiMsg, pAiMsg->m_iAllocLen );
+            delete[] (char*)pAiMsg;
+        }
+    }
 }
 
-void CGame::AiTakeOverPlayer (CPlayer *pPlr, BOOL bStartThread, BOOL bShowDlg)
+void CGame::PostToAllAi( CNetCmd const* pMsg, int iLen )
 {
 
-	ASSERT_VALID (pPlr);
+    ASSERT_VALID( this );
+    ASSERT_CMD( pMsg );
 
-	pPlr->SetAI (TRUE);
-	pPlr->SetLocal (m_bServer);
-	pPlr->SetState (CPlayer::ready);
-	pPlr->SetNetNum (0);
+    if ( !m_bServer )
+    {
+        POSITION pos;
+        for ( pos = m_lstAi.GetTailPosition( ); pos != NULL; )
+        {
+            CPlayer* pPlr = m_lstAi.GetPrev( pos );
+            ASSERT_VALID( pPlr );
+            ASSERT( pPlr->IsAI( ) );
+            PostClientToClient( pPlr, pMsg, iLen );
+        }
+        return;
+    }
 
-	m_lstAi.AddTail (pPlr);
+    POSITION pos;
+    for ( pos = m_lstAi.GetTailPosition( ); pos != NULL; )
+    {
+        CPlayer* pPlr = m_lstAi.GetPrev( pos );
+        ASSERT_VALID( pPlr );
+        ASSERT( pPlr->IsAI( ) );
 
-	if (m_bServer)
-		{
-		if ( pPlr->m_bPauseMsgs )
-			{
-			TRAP ();
-			pPlr->m_bPauseMsgs = FALSE;
-			POSITION pos;
-			for (pos = theGame.GetAll ().GetHeadPosition(); pos != NULL; )
-				{
-				CPlayer *pPlr = theGame.GetAll().GetNext (pos);
-				// if any player says pause - we pause
-				if ( pPlr->m_bPauseMsgs )
-					{
-					TRAP ();
-					goto NoUnPause;
-					}
-				}
-			SetMsgsPaused ( FALSE );
-			}
-NoUnPause:
+        // redundancy filter: skip deliveries this AI provably ignores
+        // (owner-gated types; see AiMessageWanted in ai.cpp). Server-local,
+        // cannot affect client sync.
+        if ( !AiMessageWanted( pPlr, pMsg ) )
+        {
+            Perf::CounterInc( "ai.msg.skip" );
+            continue;
+        }
 
-		// tell them
-		CDlgSaveMsg dlgMsg ( &(theApp.m_wndMain) );
-		if ( bShowDlg )
-			{
-			dlgMsg.m_sText.LoadString (IDS_AI_TAKEOVER);
-			csPrintf ( &(dlgMsg.m_sText), (const char *) pPlr->GetName() );
-			dlgMsg.Create (IDD_SAVE_MSG, &(theApp.m_wndMain));
-			}
-
-		::AiTakeOverPlayer (pPlr);
-		if (bStartThread)
-			myStartThread ( &(pPlr->ai), (AFX_THREADPROC) AiThread);
-
-		if ( theApp.m_pdlgPlyrList != NULL )
-			theApp.m_pdlgPlyrList->NameChange ( pPlr );
-		if ( theApp.m_pdlgRelations != NULL )
-			theApp.m_pdlgRelations->InvalidateRect ( NULL );
-	
-		if ( bShowDlg )
-			dlgMsg.DestroyWindow ();
-		}
+        AiMessage( pPlr->GetAiHdl( ), pMsg, iLen );
+    }
 }
 
-void CGame::AiReleasePlayer (CPlayer *pPlr, int iNetNum, const char * pName, 
-																								BOOL bLocal, BOOL bPlaying)
+void CGame::PostToAllClients( CNetCmd const* pMsg, int iLen, BOOL bAI )
 {
 
-	ASSERT_VALID (pPlr);
+    ASSERT_VALID( this );
+    ASSERT_CMD( pMsg );
+    ASSERT( m_bServer );
 
-	pPlr->SetAI (FALSE);
-	pPlr->SetLocal (bLocal);
-	pPlr->SetState (CPlayer::ready);
-	pPlr->SetNetNum (iNetNum);
-	pPlr->SetName (pName);
-
-	POSITION pos = m_lstAi.Find (pPlr, NULL);
-	if (pos != NULL)
-		m_lstAi.RemoveAt (pos);
-
-	if (m_bServer)
-		{
-		::AiKillPlayer (pPlr->GetAiHdl ());
-		pPlr->m_iNumAiGpfs = 0;
-
-		if ( theApp.m_pdlgPlyrList != NULL )
-			{
-			TRAP (); //name change?
-			theApp.m_pdlgPlyrList->NameChange ( pPlr );
-			}
-		if ( theApp.m_pdlgRelations != NULL )
-			{
-			TRAP ();
-			theApp.m_pdlgRelations->InvalidateRect ( NULL );
-			}
-		}
-
-	if (! bLocal)
-		return;
-
-	m_pMe = pPlr;
-	
-	if (! bPlaying)
-		return;
-
-	// now add it's units to the windows
-	// add to the listbox - only do this if its ours
-	TRAP ();
-	pos = theBuildingMap.GetStartPosition ();
-	while (pos != NULL)
-		{
-		DWORD dwID;
-		CBuilding *pBldg;
-		theBuildingMap.GetNextAssoc (pos, dwID, pBldg);
-		ASSERT_STRICT_VALID (pBldg);
-		if (pBldg->GetOwner ()->IsMe ())
-			{
-			TRAP ();
-			theApp.m_wndBldgs.AddToList (pBldg);
-			pBldg->MakeBldgVisible ();
-			pBldg->DetermineSpotting ();
-			pBldg->IncrementSpotting (pBldg->m_hex);
-			}
-		}
-
-	// same for vehicles
-	pos = theVehicleMap.GetStartPosition ();
-	while (pos != NULL)
-		{
-		DWORD dwID;
-		CVehicle *pVeh;
-		theVehicleMap.GetNextAssoc (pos, dwID, pVeh);
-		ASSERT_STRICT_VALID (pVeh);
-		if (pVeh->GetOwner ()->IsMe ())
-			{
-			TRAP ();
-			theApp.m_wndVehicles.AddToList (pVeh);
-
-			pVeh->IncVisible ();
-			if (pVeh->GetHexOwnership ())
-				{
-				TRAP ();
-				pVeh->DetermineSpotting ();
-				pVeh->IncrementSpotting (pVeh->GetHexHead ());
-				}
-			}
-		if ((pVeh->GetHexOwnership ()) && (pVeh->GetOwner ()->IsLocal ()))
-			pVeh->OppoAndOthers ();
-		}
+    if ( bAI )
+        PostToAllAi( pMsg, iLen );
+    theNet.Broadcast( pMsg, iLen, FALSE );
 }
 
-void CGame::DeletePlayer (CPlayer *pPlr)
+void CGame::PostToAll( CNetCmd const* pMsg, int iLen, BOOL bAI )
 {
-	
-	RemovePlayer (pPlr);
 
-	POSITION pos = m_lstDead.Find (pPlr, NULL);
-	if (pos != NULL)
-		m_lstDead.RemoveAt (pos);
+    ASSERT_VALID( this );
+    ASSERT_CMD( pMsg );
 
-	delete pPlr;
+    if ( bAI )
+        PostToAllAi( pMsg, iLen );
+
+    theNet.Broadcast( pMsg, iLen, TRUE );
+
+    AddToQueue( pMsg, iLen );
+}
+
+BOOL CGame::IsAllReady( ) const
+{
+
+    ASSERT_VALID( this );
+
+    // have to wait to tell us to go
+    if ( !theGame.HaveHP( ) )
+        return ( FALSE );
+
+    if ( m_iNetJoin == approve )
+        return ( FALSE );
+
+    POSITION pos;
+    for ( pos = m_lstAll.GetTailPosition( ); pos != NULL; )
+    {
+        CPlayer* pPlr = m_lstAll.GetPrev( pos );
+        ASSERT_VALID( pPlr );
+        if ( pPlr->GetState( ) != CPlayer::ready )
+            return ( FALSE );
+    }
+
+    return ( TRUE );
+}
+
+void CGame::AddPlayer( CPlayer* pPlr )
+{
+#ifdef LOGGINGON
+    OutputDebugStringA( "AddPlayer\n" );
+#endif
+
+    ASSERT_VALID( this );
+    ASSERT_VALID( pPlr );
+
+    if ( pPlr->GetPlyrNum( ) == 0 )
+        pPlr->SetPlyrNum( m_iNextPlyrNum++ );
+
+    if ( ( theApp.m_pCreateGame != NULL ) && ( ( theApp.m_pCreateGame->m_iTyp == CCreateBase::load_join ) ||
+                                               ( theApp.m_pCreateGame->m_iTyp == CCreateBase::load_multi ) ) )
+        m_lstLoad.AddTail( pPlr );
+    else
+        m_lstAll.AddTail( pPlr );
+}
+
+void CGame::AddAiPlayer( CPlayer* pPlr )
+{
+#ifdef LOGGINGON
+    OutputDebugStringA( "AddAiPlayer\n" );
+#endif
+
+    ASSERT_VALID( this );
+    OutputDebugStringA( "this is valid; checking pPlr\n" );
+    ASSERT_VALID( pPlr );
+
+    if ( pPlr->GetPlyrNum( ) == 0 )
+        pPlr->SetPlyrNum( m_iNextPlyrNum++ );
+
+    if ( pPlr->m_sName.empty( ) )
+    {
+        std::string sNum = IntToStr( m_iNextAINum++ );
+        std::string sName = strPrintf( EnLoadStdString( IDS_AI_NAME ).c_str(), sNum.c_str() );
+        pPlr->m_sName = sName.c_str();
+    }
+    pPlr->m_iNetNum = 0;
+    pPlr->SetAI( TRUE );
+    pPlr->SetState( CPlayer::ready );
+
+    m_lstAi.AddTail( pPlr );
+}
+
+void CGame::AiTakeOverPlayer( CPlayer* pPlr, BOOL bStartThread, BOOL bShowDlg )
+{
+
+    ASSERT_VALID( pPlr );
+
+    EnMpDiagLog( "AiTakeOverPlayer: plyr=%d name='%s' isMe=%d server=%d startThread=%d",
+                 pPlr->GetPlyrNum( ), pPlr->GetName( ), ( _GetMe( ) == pPlr ) ? 1 : 0,
+                 (int)m_bServer, (int)bStartThread );
+
+    const VPPLAYERID idNet = pPlr->GetNetNum( );   // its pause is keyed by this
+
+    pPlr->SetAI( TRUE );
+    pPlr->SetLocal( m_bServer );
+    pPlr->SetState( CPlayer::ready );
+    pPlr->SetNetNum( 0 );
+
+    m_lstAi.AddTail( pPlr );
+
+    if ( m_bServer )
+    {
+        // undo its pausing (OnMsgLeave already did, keyed by the same net id)
+        NetPauseDrop( idNet );
+
+        // tell them
+        CDlgSaveMsg dlgMsg( CWnd::FromHandle( theApp.m_wndMain.m_hWnd ) );
+        if ( bShowDlg )
+        {
+            dlgMsg.m_sText = strPrintf( EnLoadStdString( IDS_AI_TAKEOVER ).c_str(),
+                                        (const char*)pPlr->GetName( ) );
+            dlgMsg.Create( IDD_SAVE_MSG, CWnd::FromHandle( theApp.m_wndMain.m_hWnd ) );
+        }
+
+        ::AiTakeOverPlayer( pPlr );
+        if ( bStartThread )
+            myStartThread( &( pPlr->ai ), (AFX_THREADPROC)AiThread );
+
+        // CDlgPlyrList removed (Phase 2d) — SDL2PlayerListDialog refreshes from
+        // theGame state on each open, so no name-change push is needed.
+        // (CDlgRelations invalidate removed)
+
+        if ( bShowDlg )
+            dlgMsg.DestroyWindow( );
+    }
+}
+
+void CGame::AiReleasePlayer( CPlayer* pPlr, int iNetNum, const char* pName, BOOL bLocal, BOOL bPlaying )
+{
+
+    ASSERT_VALID( pPlr );
+
+    pPlr->SetAI( FALSE );
+    pPlr->SetLocal( bLocal );
+    pPlr->SetState( CPlayer::ready );
+    pPlr->SetNetNum( iNetNum );
+    pPlr->SetName( pName );
+
+    POSITION pos = m_lstAi.Find( pPlr, NULL );
+    if ( pos != NULL )
+        m_lstAi.RemoveAt( pos );
+
+    if ( m_bServer )
+    {
+        // the player is human now: it must not keep a handle to a manager that
+        // is going away (AiTakeOverPlayer would later hand it the freed one)
+        DWORD_PTR dwAiID = pPlr->GetAiHdl( );
+        pPlr->SetAiHdl( 0 );
+        if ( bPlaying )
+            ::AiKillPlayer( dwAiID );    // its running thread deletes it (Manage -> AiDeletePlayer)
+        else
+            ::AiDeletePlayer( dwAiID );  // StartGame: its thread was never started, so nothing else ever would
+        pPlr->m_iNumAiGpfs = 0;
+
+        // CDlgPlyrList removed (Phase 2d) — SDL2PlayerListDialog refreshes on open.
+        // (CDlgRelations invalidate removed)
+    }
+
+    if ( !bLocal )
+        return;
+
+    m_pMe = pPlr;
+
+    if ( !bPlaying )
+        return;
+
+    // now add it's units to the windows
+    // add to the listbox - only do this if its ours
+    TRAP( );
+    pos = theBuildingMap.GetStartPosition( );
+    while ( pos != NULL )
+    {
+        DWORD      dwID;
+        CBuilding* pBldg;
+        theBuildingMap.GetNextAssoc( pos, dwID, pBldg );
+        ASSERT_STRICT_VALID( pBldg );
+        if ( pBldg->GetOwner( )->IsMe( ) )
+        {
+            TRAP( );
+            theApp.m_wndBldgs.AddToList( pBldg );
+            pBldg->MakeBldgVisible( );
+            pBldg->DetermineSpotting( );
+            pBldg->IncrementSpotting( pBldg->m_hex );
+        }
+    }
+
+    // same for vehicles
+    pos = theVehicleMap.GetStartPosition( );
+    while ( pos != NULL )
+    {
+        DWORD     dwID;
+        CVehicle* pVeh;
+        theVehicleMap.GetNextAssoc( pos, dwID, pVeh );
+        ASSERT_STRICT_VALID( pVeh );
+        if ( pVeh->GetOwner( )->IsMe( ) )
+        {
+            TRAP( );
+            theApp.m_wndVehicles.AddToList( pVeh );
+
+            pVeh->IncVisible( );
+            if ( pVeh->GetHexOwnership( ) )
+            {
+                TRAP( );
+                pVeh->DetermineSpotting( );
+                pVeh->IncrementSpotting( pVeh->GetHexHead( ) );
+            }
+        }
+        if ( ( pVeh->GetHexOwnership( ) ) && ( pVeh->GetOwner( )->IsLocal( ) ) )
+            pVeh->OppoAndOthers( );
+    }
+}
+
+void CGame::DeletePlayer( CPlayer* pPlr )
+{
+
+    RemovePlayer( pPlr );
+
+    POSITION pos = m_lstDead.Find( pPlr, NULL );
+    if ( pos != NULL )
+        m_lstDead.RemoveAt( pos );
+
+    delete pPlr;
 }
 
 // removes player from the game but does NOT delete the pointer
-void CGame::RemovePlayer (CPlayer *pPlr)
+void CGame::RemovePlayer( CPlayer* pPlr )
 {
 
-	ASSERT_VALID (this);
-	ASSERT_VALID (pPlr);
+    ASSERT_VALID( this );
+    ASSERT_VALID( pPlr );
 
-	// we're dead
-	pPlr->SetState (CPlayer::dead);
+    // we're dead
+    pPlr->SetState( CPlayer::dead );
 
-	// undo pausing
-	if ( m_bServer )
-		{
-		if ( pPlr->m_bPauseMsgs )
-			{
-			TRAP ();
-			pPlr->m_bPauseMsgs = FALSE;
-			POSITION pos;
-			for (pos = theGame.GetAll ().GetHeadPosition(); pos != NULL; )
-				{
-				CPlayer *pPlr = theGame.GetAll().GetNext (pos);
-				// if any player says pause - we pause
-				if ( pPlr->m_bPauseMsgs )
-					{
-					TRAP ();
-					goto NoUnPause;
-					}
-				}
-			SetMsgsPaused ( FALSE );
-			}
-		}
-NoUnPause:
+    // undo pausing (keyed by its connection; no-op for the AI and the host)
+    NetPauseDrop( pPlr->GetNetNum( ) );
 
-	// they're gone
-	if ( theApp.m_pdlgPlyrList != NULL )
-		theApp.m_pdlgPlyrList->RemovePlayer ( pPlr );
-	if ( theApp.m_pdlgRelations != NULL )
-		theApp.m_pdlgRelations->RemovePlayer ( pPlr );
+    // CDlgPlyrList removed (Phase 2d) — SDL2PlayerListDialog refreshes on open.
+    // (CDlgRelations RemovePlayer removed)
 
-	// tell the AI
-	DWORD dwAiID = pPlr->GetAiHdl ();
-	pPlr->SetAiHdl ( 0 );
-	if ( (m_bServer) && (dwAiID != 0) && (pPlr->IsAI ()) && (pPlr->m_iNumAiGpfs < 100) )
-		::AiKillPlayer ( dwAiID );
+    // tell the AI
+    DWORD_PTR dwAiID = pPlr->GetAiHdl( );   // pointer-width (was DWORD -> x64 truncation)
+    pPlr->SetAiHdl( 0 );
+    if ( ( m_bServer ) && ( dwAiID != 0 ) && ( pPlr->IsAI( ) ) && ( pPlr->m_iNumAiGpfs < 100 ) )
+        ::AiKillPlayer( dwAiID );
 
-	// close the connection - UNLESS to the server
-	if ( pPlr == theGame.GetServer () )
-		{
-		theGame._SetServer ( NULL );
-		pPlr->SetNetNum (0);
-		}
-	else
-		if (pPlr->GetNetNum () != 0)
-			{
-			theNet.DeletePlayer (pPlr->GetNetNum ());
-			theApp.BaseYield ();
-			}
+    // close the connection - UNLESS to the server
+    if ( pPlr == theGame.GetServer( ) )
+    {
+        theGame._SetServer( NULL );
+        pPlr->SetNetNum( 0 );
+    }
+    else if ( pPlr->GetNetNum( ) != 0 )
+    {
+        theNet.DeletePlayer( pPlr->GetNetNum( ) );
+        theApp.BaseYield( );
+    }
 
-	// we can't remove the AI player yet
-	if ((! m_bServer) || (! pPlr->IsAI ()))
-		{
-		POSITION pos = m_lstAi.Find (pPlr, NULL);
-		if (pos != NULL)
-			m_lstAi.RemoveAt (pos);
-		if ((pos = m_lstAll.Find (pPlr, NULL)) != NULL)
-			m_lstAll.RemoveAt (pos);
+    // we can't remove the AI player yet
+    if ( ( !m_bServer ) || ( !pPlr->IsAI( ) ) )
+    {
+        POSITION pos = m_lstAi.Find( pPlr, NULL );
+        if ( pos != NULL )
+            m_lstAi.RemoveAt( pos );
+        if ( ( pos = m_lstAll.Find( pPlr, NULL ) ) != NULL )
+            m_lstAll.RemoveAt( pos );
 
-		m_lstDead.AddTail (pPlr);
-		}
+        m_lstDead.AddTail( pPlr );
+    }
 
-	// no IPC if only 1 HP
-	if ( theApp.m_wndChat.m_hWnd != NULL )
-		{
-		// kill chat
-		theApp.m_wndChat.KillAiChatWnd (pPlr);
+    // no IPC if only 1 HP
+    if ( theApp.m_wndChat.m_hWnd != NULL )
+    {
+        // kill chat
+        theApp.m_wndChat.KillAiChatWnd( pPlr );
 
-		// if now single player loose the comm
-		if (theGame.GetAll ().GetCount () <= theGame.GetAi ().GetCount () + 1)
-			theApp.m_wndChat.DestroyWindow ();
-		}
-	if (theGame.GetAll ().GetCount () <= theGame.GetAi ().GetCount () + 1)
-		theApp.CloseDlgChat ();
+        // if now single player loose the comm
+        if ( theGame.GetAll( ).GetCount( ) <= theGame.GetAi( ).GetCount( ) + 1 )
+            theApp.m_wndChat.DestroyWindow( );
+    }
+    if ( theGame.GetAll( ).GetCount( ) <= theGame.GetAi( ).GetCount( ) + 1 )
+        theApp.CloseDlgChat( );
 }
 
 // we can remove the AI player once it's thread has ended
-void CGame::AiPlayerIsDead (CPlayer *pPlr)
+void CGame::AiPlayerIsDead( CPlayer* pPlr )
 {
 
-	ASSERT_VALID (this);
-	ASSERT_VALID (pPlr);
+    ASSERT_VALID( this );
+    ASSERT_VALID( pPlr );
 
-	// should never happen
-	if ((! m_bServer) || (! pPlr->IsAI ()))
-		return;
+    // should never happen
+    if ( ( !m_bServer ) || ( !pPlr->IsAI( ) ) )
+        return;
 
-	POSITION pos = m_lstAi.Find (pPlr, NULL);
-	if (pos != NULL)
-		m_lstAi.RemoveAt (pos);
-	if ((pos = m_lstAll.Find (pPlr, NULL)) != NULL)
-		m_lstAll.RemoveAt (pos);
+    POSITION pos = m_lstAi.Find( pPlr, NULL );
+    if ( pos != NULL )
+        m_lstAi.RemoveAt( pos );
+    if ( ( pos = m_lstAll.Find( pPlr, NULL ) ) != NULL )
+        m_lstAll.RemoveAt( pos );
 
-	m_lstDead.AddTail (pPlr);
+    m_lstDead.AddTail( pPlr );
 }
 
-void CGame::DeleteAll ()
+void CGame::DeleteAll( )
 {
 
-	ASSERT_VALID (this);
+    ASSERT_VALID( this );
 
-	// these will get deleted below
-	m_pMe = m_pServer = NULL;
+    // these will get deleted below
+    m_pMe = m_pServer = NULL;
 
-	// delete the elements of m_lstAll
-	//   from tail cause of assert
-	POSITION pos = m_lstAll.GetTailPosition ();
-	while (pos != NULL)
-		{
-		CPlayer * pPlr = m_lstAll.GetPrev (pos);
-		ASSERT_VALID (pPlr);
-		delete pPlr;
-		}
+    // delete the elements of m_lstAll
+    //   from tail cause of assert
+    POSITION pos = m_lstAll.GetTailPosition( );
+    while ( pos != NULL )
+    {
+        CPlayer* pPlr = m_lstAll.GetPrev( pos );
+        ASSERT_VALID( pPlr );
+        delete pPlr;
+    }
 
-	m_lstAll.RemoveAll ();
+    m_lstAll.RemoveAll( );
 
-	// delete dead guys
-	pos = m_lstDead.GetTailPosition ();
-	while (pos != NULL)
-		{
-		CPlayer * pPlr = m_lstDead.GetPrev (pos);
-		ASSERT_VALID (pPlr);
-		}
+    // delete dead guys
+    pos = m_lstDead.GetTailPosition( );
+    while ( pos != NULL )
+    {
+        CPlayer* pPlr = m_lstDead.GetPrev( pos );
+        ASSERT_VALID( pPlr );
+    }
 
-	m_lstDead.RemoveAll ();
+    m_lstDead.RemoveAll( );
 }
 
-void CGame::CloseAll ()
+void CGame::CloseAll( )
 {
 
-	ASSERT_VALID (this);
+    ASSERT_VALID( this );
 
-	// first remove the AI list (they are all in lstAll too!!!)
-	m_lstAi.RemoveAll ();
+    // first remove the AI list (they are all in lstAll too!!!)
+    m_lstAi.RemoveAll( );
 
-	DeleteAll ();
-	ASSERT_VALID (this);
+    DeleteAll( );
+    ASSERT_VALID( this );
 }
 
-void CGame::Close ()
+void CGame::Close( )
 {
 
-	ASSERT_VALID (this);
+    ASSERT_VALID( this );
 
-	SetMsgs (FALSE);
+    SetShouldProcessMessages(FALSE);
 
-	delete m_pXferFromServer;
-	m_pXferFromServer = NULL;
+    delete m_pXferFromServer;
+    m_pXferFromServer = NULL;
 
-	// close m_lstAll
-	CloseAll ();
-	ASSERT (m_lstAll.GetCount () == 0);
-	ASSERT (m_lstDead.GetCount () == 0);
+    // close m_lstAll
+    CloseAll( );
+    ASSERT( m_lstAll.GetCount( ) == 0 );
+    ASSERT( m_lstDead.GetCount( ) == 0 );
 
-	theNet.CloseSession ( TRUE );
+    theNet.CloseSession( TRUE );
 
-	delete m_pHpRtr;
+    delete m_pHpRtr;
 
-	// re-init vars
-	SetState (close);
-	ctor ();
+    // re-init vars
+    SetState( close );
+    ctor( );
 }
 
-void CGame::ProcessAllMessages ()
+void CGame::ProcessAllMessages( )
 {
 
-	if (! m_bMessages)
-		return;
+    if ( !m_bMessages )
+        return;
 
-	// process all messages so we have none pending
-	while (TRUE)
-		{
-		EnterCriticalSection (&cs);
-		if (m_lstMsgs.GetCount () <= 0)
-			{
-			LeaveCriticalSection (&cs);
-			break;
-			}
-		char * pBuf = (char *) m_lstMsgs.RemoveHead ();
-		if (pBuf == NULL)
-			{
-			LeaveCriticalSection (&cs);
-			break;
-			}
-		ProcessMsg ((CNetCmd *) pBuf);
-		FreeQueueElem ( (CNetCmd *) pBuf );
+    // A start deferred by the client waiting room (CmdStart / start_loaded_game,
+    // netapi.cpp) runs from the join flow once the lobby closes. Whatever the
+    // host queued behind it must wait for that start, as it did in 1996 when
+    // the start ran in-line.
+    extern bool g_bClientLobbyWaiting, g_bClientStartReceived;
 
-		// throttle messages back on if a net game
-		if ( ( theGame.IsNetGame () ) && ( theGame.IsToldPause () ) )
-			{
-			if ( theGame.m_lstMsgs.GetCount () <= MIN_NUM_MESSAGES )
-				{
-				theGame.ClrToldPause ();
-		
-				LeaveCriticalSection (&cs);
-				CMsgPauseMsg msg ( FALSE );
-				if ( theGame.AmServer () )
-					theGame.PostToAllClients ( &msg, sizeof (msg) );
-				else
-					theGame.PostToServer ( &msg, sizeof (msg) );
-				EnterCriticalSection (&cs);
-				}
-			}
+    // process all messages so we have none pending
+    while ( !( g_bClientLobbyWaiting && g_bClientStartReceived ) )
+    {
+        EnterCriticalSection( &cs );
+        if (m_messagePointerList.GetCount( ) <= 0 )
+        {
+            LeaveCriticalSection( &cs );
+            break;
+        }
+        char* pBuf = (char*)m_messagePointerList.RemoveHead( );
+        if ( pBuf == NULL )
+        {
+            LeaveCriticalSection( &cs );
+            break;
+        }
+        ProcessMessage((CNetCmd *) pBuf);
+        FreeQueueElement((CNetCmd *) pBuf);
 
-		LeaveCriticalSection (&cs);
-		}
+        // throttle messages back on if a net game
+        if ( ( theGame.IsNetGame( ) ) && (theGame.ShouldPause() ) )
+        {
+            if (theGame.m_messagePointerList.GetCount( ) <= MIN_NUM_MESSAGES )
+            {
+                theGame.ClearShouldPause();
+
+                LeaveCriticalSection( &cs );
+                CMsgPauseMsg msg( FALSE );
+                if ( theGame.AmServer( ) )
+                    theGame.PostToAllClients( &msg, sizeof( msg ) );
+                else
+                    theGame.PostToServer( &msg, sizeof( msg ) );
+                EnterCriticalSection( &cs );
+            }
+        }
+
+        LeaveCriticalSection( &cs );
+    }
 }
 
 // TRUE if have or others have with me
-void CGame::CheckAlliances ()
-{ 
-
-	m_bHaveAlliances = FALSE;
-	POSITION pos;
-	for (pos = m_lstAll.GetTailPosition(); pos != NULL; )
-		{
-		CPlayer *pPlr = m_lstAll.GetPrev (pos);
-		if ( ( ! pPlr->IsMe () ) && ( (pPlr->GetRelations () == RELATIONS_ALLIANCE) ||
-															(pPlr->GetTheirRelations () == RELATIONS_ALLIANCE) ) )
-			{
-			m_bHaveAlliances = TRUE;
-			return;
-			}
-		}
-}
-
-int CGame::LoadGame (CWnd * pPar, BOOL bReplace)
+void CGame::CheckAlliances( )
 {
 
-	EnableAllWindows (NULL, FALSE);
-
-	CString sFilters, sExt;
-	sFilters.LoadString (IDS_SAVE_FILTERS);
-	sExt.LoadString (IDS_SAVE_EXT);
-	CFileDialog dlg (TRUE, sExt, NULL, OFN_HIDEREADONLY | OFN_FILEMUSTEXIST, sFilters, pPar);	
-	if (dlg.DoModal () != IDOK)
-		{
-		EnableAllWindows (NULL, TRUE);
-		return (IDCANCEL);
-		}
-
-	theGame.m_sFileName = dlg.GetPathName ();
-
-	// put up a message to say we are loading
-	theApp.m_pCreateGame->CreateDlgStatus ();
-	CString sText;
-	sText.LoadString (IDS_LOAD_NAME);
-	csPrintf (&sText, dlg.GetFileTitle ());
-	theApp.m_pCreateGame->GetDlgStatus()->SetWindowText (sText);
-	theApp.m_pCreateGame->GetDlgStatus()->SetPer (0);
-	theApp.m_pCreateGame->GetDlgStatus()->SetMsg (IDS_LOAD_FILE);
-	theApp.m_pCreateGame->ShowDlgStatus();
-
-	theApp.BaseYield ();
-
-	try
-		{
-		theGame.IncTry ();
-		// we throw out everything we have
-		if (bReplace)
-			theApp.ClearWorld ();
-		else
-			theApp.NewWorld ();
-
-		theApp.m_pCreateGame->GetDlgStatus()->SetPer (PER_WORLD_START);
-		theApp.m_pCreateGame->GetDlgStatus()->SetMsg (IDS_LOAD_FILE);
-
-		// game file - read into memory
-		CString sSaveName = theGame.m_sFileName;
-		CFile fil (m_sFileName, CFile::modeRead | CFile::shareExclusive | CFile::typeBinary);
-		int iLen = fil.GetLength ();
-		char * pBuf = (char *) malloc (iLen);
-		if (pBuf == NULL)
-			ThrowError (ERR_OUT_OF_MEMORY);
-		fil.Read (pBuf, iLen);
-		fil.Close ();
-
-		// decompress it
-		int iDecompLen;
-		void * pDeComp = CoDec::Decompress ( pBuf, iLen, iDecompLen );
-		free (pBuf);
-
-		// put it in a CMemFile
-		CMemFile filMem;
-		filMem.Attach ( (BYTE *) pDeComp, iDecompLen );
-
-		CArchive ar (&filMem, CArchive::load);
-		Serialize (ar);
-		ar.Close ();
-
-		filMem.Detach ();
-		CoDec::FreeBuf ( pDeComp );
-		filMem.Close ();
-		theGame.m_sFileName = sSaveName;
-		theGame.DecTry ();
-		}
-
-	catch (int iNum)
-		{
-		theGame.DecTry ();
-		delete theApp.m_pCreateGame;
-		theApp.m_pCreateGame = NULL;
-		CatchNum (iNum);
-		theApp.CloseWorld ();
-		return (IDCANCEL);
-		}
-	catch ( SE_Exception e )
-		{
-		TRAP ();
-		theGame.DecTry ();
-		delete theApp.m_pCreateGame;
-		theApp.m_pCreateGame = NULL;
-		CatchSE ( e );
-		theApp.CloseWorld ();
-		return (IDCANCEL);
-		}
-	catch (...)
-		{
-		TRAP ();
-		theGame.DecTry ();
-		delete theApp.m_pCreateGame;
-		theApp.m_pCreateGame = NULL;
-		CatchOther ();
-		theApp.CloseWorld ();
-		return (IDCANCEL);
-		}
-
-	// pick player
-	return (IDOK);
+    m_bHaveAlliances = FALSE;
+    POSITION pos;
+    for ( pos = m_lstAll.GetTailPosition( ); pos != NULL; )
+    {
+        CPlayer* pPlr = m_lstAll.GetPrev( pos );
+        if ( ( !pPlr->IsMe( ) ) && ( ( pPlr->GetRelations( ) == RELATIONS_ALLIANCE ) ||
+                                     ( pPlr->GetTheirRelations( ) == RELATIONS_ALLIANCE ) ) )
+        {
+            m_bHaveAlliances = TRUE;
+            return;
+        }
+    }
 }
 
-int CGame::StartGame (BOOL bReplace)
+int CGame::LoadGame( CWnd* pPar, BOOL bReplace )
 {
+#ifdef LOGGINGON
+    OutputDebugStringA( "CGame::LoadGame\n" );
+#endif
 
-	// set relations based on who we picked
-	POSITION pos;
-	for (pos = theGame.m_lstAll.GetHeadPosition(); pos != NULL; )
-		{
-		CPlayer *pPlr = theGame.m_lstAll.GetNext (pos);
-		if ( pPlr == GetMe () )
-			{
-			pPlr->SetRelations (RELATIONS_ALLIANCE);
-			pPlr->SetTheirRelations (RELATIONS_ALLIANCE);
-			}
-		else
-			{
-			pPlr->SetRelations (RELATIONS_NEUTRAL);
-			pPlr->SetTheirRelations (RELATIONS_NEUTRAL);
-			}
-		}
+    // LOAD-while-in-game crash #2 (mac2 repro): NewWorld() below RemoveAll's the hex/unit maps and
+    // then rebuilds, during which BaseYield() pumps SDL events. A mouse-move/click dispatched to a
+    // game panel (CWndArea::OnMouseMove -> GetHit -> GetVisibleBuilding -> CUnit::IsVisible) in that
+    // window derefs freed/dangling map state -> SIGSEGV. AmInGame() stays TRUE here (proven), so we
+    // use a dedicated teardown flag, gated in SDL2Compositor::RouteEventInner. RAII so it ALWAYS
+    // resets on every return path (can't leave the game event-dead). Scoped to LoadGame only =
+    // new-game-from-menu (CreateNewWorld, no LoadGame) is unaffected; the modal file browser runs
+    // its own event loop, not the compositor, so it is unaffected too.
+    struct WorldTearGuard {
+        WorldTearGuard( )  { theApp.SetWorldTearingDown( TRUE ); }
+        ~WorldTearGuard( ) { theApp.SetWorldTearingDown( FALSE ); }
+    } _worldTearGuard;
 
-	if (AmServer ())
-		{
-		if ( IsNetGame () )
-			{
-			// drop lstLoad players
-			POSITION pos;
-			for (pos = theGame.m_lstLoad.GetTailPosition(); pos != NULL; )
-				{
-				TRAP ();
-				CPlayer *pPlr = theGame.m_lstLoad.GetPrev (pos);
-				if ( theApp.m_pCreateGame != NULL )
-					theApp.m_pCreateGame->RemovePlayer (pPlr);
-				theNet.DeletePlayer (pPlr->GetNetNum());
-				delete pPlr;
-				}
-			theGame.m_lstLoad.RemoveAll ();
-			}
+    EnableAllWindows( NULL, FALSE );
 
-		// we need to swap out the AI where necessary
-		POSITION pos = theGame.GetAll().GetHeadPosition(); 
-		while (pos != NULL)
-			{
-			CPlayer *pPlr = theGame.GetAll().GetNext (pos);
-			ASSERT_STRICT_VALID (pPlr);
-			
-			// if ! ready -> needs to be AI
-			if ((pPlr->GetState () != CPlayer::ready) && (! pPlr->IsAI ()))
-				theGame.AiTakeOverPlayer (pPlr, FALSE);
-			else
-				// if ready -> can't be AI
-				if ((pPlr->GetState () == CPlayer::ready) && (pPlr->GetAiHdl () != 0))
-					theGame.AiReleasePlayer (pPlr, pPlr->GetNetNum (), pPlr->GetName (), 
-																									pPlr->IsLocal (), FALSE);
-			}
+    // Use SDL2 file browser if the SDL2 window is active, else fall back to MFC
+    if ( theApp.m_gameWindow )
+    {
+        SDL2FileBrowser browser( theApp.m_gameWindow.get(), SDL2FileBrowser::Open,
+                                 "Load Game", "", "", ".en" );
+        if ( browser.DoModal() != 1 || !browser.WasConfirmed() )
+        {
+            EnableAllWindows( NULL, TRUE );
+            return ( IDCANCEL );
+        }
+        theGame.m_sFileName = browser.GetSelectedPath().c_str();
+    }
+    else
+    {
+        std::string sFilters = EnLoadStdString( IDS_SAVE_FILTERS );
+        std::string sExt     = EnLoadStdString( IDS_SAVE_EXT );
+        CFileDialog dlg( TRUE, sExt.c_str(), NULL, OFN_HIDEREADONLY | OFN_FILEMUSTEXIST,
+                         sFilters.c_str(), pPar );
+        if ( dlg.DoModal( ) != IDOK )
+        {
+            EnableAllWindows( NULL, TRUE );
+            return ( IDCANCEL );
+        }
+        theGame.m_sFileName = (LPCSTR)dlg.GetPathName( );
+    }
 
-		if ( IsNetGame () )
-			{
-			// give them the final status of each player
-			for (pos = m_lstAll.GetHeadPosition(); pos != NULL; )
-				{
-				CPlayer *pPlr = m_lstAll.GetNext (pos);
-				ASSERT_VALID (pPlr);
-				if ( ! pPlr->IsLocal () )
-					{
-					POSITION posInfo;
-					for (posInfo = m_lstAll.GetHeadPosition(); posInfo != NULL; )
-						{
-						CPlayer *pPlrInfo = m_lstAll.GetNext (posInfo);
-						ASSERT_VALID (pPlrInfo);
-						CNetPlayer * pMsg = CNetCmd::AllocPlayer (pPlrInfo);
-						if (pPlrInfo == pPlr)
-							pMsg->m_bLocal = TRUE;
-						if (pPlrInfo == theGame.GetServer ())
-							pMsg->m_bServer = TRUE;
-						theNet.Send (pPlr->GetNetNum(), pMsg, pMsg->GetLen ());
-						delete pMsg;
-						}
-					}
-				}
+    // Extract just the filename for the status message ('/' too — on POSIX the
+    // full path was shown because only '\\' was treated as a separator)
+    std::string sFileTitle = theGame.m_sFileName;
+    size_t iSlash = sFileTitle.find_last_of( "\\/" );
+    if ( iSlash != std::string::npos ) sFileTitle = sFileTitle.substr( iSlash + 1 );
 
-			// tell others to start
-			CMsgStartLoadedGame msg;
-			PostToAllClients ( &msg, sizeof (msg) );
-			}
-		}
+    // put up a message to say we are loading
+    theApp.m_pCreateGame->CreateDlgStatus( );
+    std::string sText = strPrintf( EnLoadStdString( IDS_LOAD_NAME ).c_str(), sFileTitle.c_str() );
+    theApp.m_pCreateGame->GetDlgStatus( )->SetMsg( sText );
+    theApp.m_pCreateGame->GetDlgStatus( )->SetPer( 0 );
+    theApp.m_pCreateGame->ShowDlgStatus( );
 
-	// do this here because we needed bAI above for switching
-	if (HaveHP ())
-		{
-		GetMe ()->SetLocal (TRUE);
-		m_pHpRtr = new CHPRouter (theGame.GetMe ()->GetPlyrNum ());
-		m_pHpRtr->Init ();
-		}
+    theApp.BaseYield( );
 
-	ASSERT (TestEverything ());
+    try
+    {
+        theGame.IncTry( );
+        // we throw out everything we have
+        if ( bReplace )
+            theApp.ClearWorld( );
+        else
+            theApp.NewWorld( );
 
-	// we have no remembered spotting of units if multi-player OR we changed who we are
-	BOOL bChangeSpotting = FALSE;
-	if (GetScenario () == -1)
-		if ( IsNetGame () || ( GetMe()->GetPlyrNum () != m_iSavedPlyrNum ) )
-			{
-			bChangeSpotting = TRUE;
-			// all roads and city tiles are invisible
-			int iNum = theMap.Get_eX () * theMap.Get_eY () - 2;
-			CHex * pHexOn = theMap._GetHex (0, 0) + 1;
-			while (iNum--)
-				{
-				if ( (pHexOn->GetVisibleType () == CHex::city) || 
-																		(pHexOn->GetVisibleType () == CHex::road) )
-					{
-					BOOL bIsCoast;
-					if ( (pHexOn-1)->IsWater () || (pHexOn+1)->IsWater () )
-						bIsCoast = TRUE;
-					else
-						{
-						CHexCoord _hex ( pHexOn->GetHex () );
-						if ( theMap.GetHex ( _hex.X(), _hex.Y() - 1 )->IsWater () ||
-													theMap.GetHex ( _hex.X(), _hex.Y() + 1 )->IsWater () )
-							bIsCoast = TRUE;
-						else
-							bIsCoast = FALSE;
-						}
+        theApp.m_pCreateGame->GetDlgStatus( )->SetPer( PER_WORLD_START );
+        theApp.m_pCreateGame->GetDlgStatus( )->SetMsg( IDS_LOAD_FILE );
 
-					if (bIsCoast)
-						{
-						pHexOn->SetVisibleType ( CHex::coastline );
-						pHexOn->m_psprite = theTerrain.GetSprite ( CHex::coastline, CHex:: island );
-						}
-					else
-						{
-						int iType = (pHexOn-1)->GetVisibleType ();
-						pHexOn->SetVisibleType ( iType );
-						int iNum = theTerrain.GetCount ( iType );
-						pHexOn->m_psprite = theTerrain.GetSprite ( iType, iNum <= 1 ? 0 : RandNum (iNum - 1) );
-						}
-					}
-				pHexOn++;
-				}
-			}
+        // game file - read into memory
+        std::string sSaveName = theGame.m_sFileName;
+        CFile   fil( m_sFileName.c_str(), CFile::modeRead | CFile::shareExclusive | CFile::typeBinary );
+        int     iLen = fil.GetLength( );
+        char*   pBuf = (char*)malloc( iLen );
+        if ( pBuf == NULL )
+            ThrowError( ERR_OUT_OF_MEMORY );
+        fil.Read( pBuf, iLen );
+        fil.Close( );
 
-	// we now need to update some data now that players are set
-	pos = theBuildingMap.GetStartPosition ();
-	while (pos != NULL)
-		{
-		DWORD dwID;
-		CBuilding *pBldg;
-		theBuildingMap.GetNextAssoc (pos, dwID, pBldg);
-		ASSERT_VALID (pBldg);
-		if ( bChangeSpotting )
-			{
-			pBldg->SetConstPer ();
-			pBldg->m_iVisible = pBldg->m_pOwner->IsMe () ? 1 : 0;
-			}
-		pBldg->FixForPlayer ();
-		}
-	pos = theVehicleMap.GetStartPosition ();
-	while (pos != NULL)
-		{
-		DWORD dwID;
-		CVehicle *pVeh;
-		theVehicleMap.GetNextAssoc (pos, dwID, pVeh);
-		ASSERT_VALID (pVeh);
-		pVeh->FixForPlayer ();
-		}
-	ASSERT (TestEverything ());
+        // decompress it
+        int   iDecompLen;
+        void* pDeComp = CoDec::Decompress( pBuf, iLen, iDecompLen );
+        free( pBuf );
 
-	// create path manager
-	if (! thePathMgr.Init (theMap.Get_eX (), theMap.Get_eY ()))
-		{
-		EnableAllWindows (NULL, TRUE);
-		theApp.CloseWorld ();
-		return (IDCANCEL);
-		}
+        // put it in a CMemFile
+        CMemFile filMem;
+        filMem.Attach( (BYTE*)pDeComp, iDecompLen );
 
-	// center on our rocket
-	m_maploc = CMapLoc ( 0, 0 );
-	pos = theBuildingMap.GetStartPosition ();
-	while (pos != NULL)
-		{
-		DWORD dwID;
-		CBuilding *pBldg;
-		theBuildingMap.GetNextAssoc (pos, dwID, pBldg);
-		ASSERT_STRICT_VALID (pBldg);
-		if ( pBldg->GetOwner()->IsMe () )
-			{
-			m_maploc = pBldg->GetWorldPixels ();
-			if ( pBldg->GetData()->GetType () == CStructureData::rocket )
-				break;
-			}
-		}
+        CArchive ar( &filMem, CArchive::load );
+        Serialize( ar );
+        ar.Close( );
 
-	if (bReplace)
-		{
-		// put it where it was
-		CWndArea * pWnd = theAreaList.BringToTop ();
-		if (pWnd != NULL)
-			{
-			pWnd->GetAA().Set (m_maploc, m_iDir, m_iZoom);
-			pWnd->CheckZoomBtns ();
-			}
-		}
-	else
-	  {
-		theApp.m_wndBar.Create ();	// first to set row3
-		if ( theGame.IsNetGame () )
-			theApp.m_wndChat.Create ();
-		if (GetMe()->GetExists (CStructureData::research))
-			{
-			if (theApp.m_pdlgRsrch == NULL)
-				theApp.m_pdlgRsrch = new CDlgResearch (&theApp.m_wndMain);
-			if (theApp.m_pdlgRsrch->m_hWnd == NULL)
-				theApp.m_pdlgRsrch->Create (IDD_RESEARCH, &theApp.m_wndMain);
-			}
-		CWndArea * pWndArea = new CWndArea ();
-		pWndArea->Create (m_maploc, NULL, FALSE);
-		pWndArea->SetupDone ();
-		pWndArea->GetAA().Set (m_maploc, m_iDir, m_iZoom);
-		pWndArea->CheckZoomBtns ();
+        filMem.Detach( );
+        CoDec::FreeBuf( pDeComp );
+        filMem.Close( );
+        theGame.m_sFileName = sSaveName;
+        theGame.DecTry( );
+    }
 
-		theApp.m_wndWorld.Create ();		// world must come after area
-		pWndArea->SetFocus ();
-	  }
-	EnableAllWindows (NULL, TRUE);
+    catch ( int iNum )
+    {
+        theGame.DecTry( );
+        delete theApp.m_pCreateGame;
+        theApp.m_pCreateGame = NULL;
+        CatchNum( iNum );
+        theApp.CloseWorld( );
+        // LoadGame disabled all windows at entry (EnableAllWindows FALSE); the
+        // dialog-cancel paths re-enable, but the load-failure catches forgot to —
+        // leaving the main menu dead after e.g. a save version-mismatch. Re-enable.
+        EnableAllWindows( NULL, TRUE );
+        return ( IDCANCEL );
+    }
+    catch ( SE_Exception e )
+    {
+        TRAP( );
+        theGame.DecTry( );
+        delete theApp.m_pCreateGame;
+        theApp.m_pCreateGame = NULL;
+        CatchSE( e );
+        theApp.CloseWorld( );
+        EnableAllWindows( NULL, TRUE );
+        return ( IDCANCEL );
+    }
+    catch ( ... )
+    {
+        TRAP( );
+        theGame.DecTry( );
+        delete theApp.m_pCreateGame;
+        theApp.m_pCreateGame = NULL;
+        CatchOther( );
+        theApp.CloseWorld( );
+        EnableAllWindows( NULL, TRUE );
+        return ( IDCANCEL );
+    }
 
-	// now we start each thread
-	if ( AmServer () )
-		{
-		int iNum = theGame.GetAi ().GetCount ();
-		int iOn = 0;
-		for (pos = theGame.GetAi().GetHeadPosition(); pos != NULL; )
-			{
-			CPlayer *pPlr = theGame.GetAi().GetNext (pos);
-			ASSERT_VALID (pPlr);
-			ASSERT (pPlr->IsAI ());
-			pPlr->ai.dwHdl = pPlr->GetAiHdl ();
-			pPlr->ai.hex = pPlr->m_hexMapStart;
+    // pick player
+    return ( IDOK );
+}
+
+int CGame::StartGame( BOOL bReplace )
+{
+#ifdef LOGGINGON
+    OutputDebugStringA( "CGame::StartGame\n" );
+#endif
+
+    // set relations based on who we picked
+    POSITION pos;
+    for ( pos = theGame.m_lstAll.GetHeadPosition( ); pos != NULL; )
+    {
+        CPlayer* pPlr = theGame.m_lstAll.GetNext( pos );
+        if ( pPlr == GetMe( ) )
+        {
+            pPlr->SetRelations( RELATIONS_ALLIANCE );
+            pPlr->SetTheirRelations( RELATIONS_ALLIANCE );
+        }
+        else
+        {
+            pPlr->SetRelations( RELATIONS_NEUTRAL );
+            pPlr->SetTheirRelations( RELATIONS_NEUTRAL );
+        }
+    }
+
+    if ( AmServer( ) )
+    {
+        if ( IsNetGame( ) )
+        {
+            // drop lstLoad players
+            POSITION pos;
+            for ( pos = theGame.m_lstLoad.GetTailPosition( ); pos != NULL; )
+            {
+                TRAP( );
+                CPlayer* pPlr = theGame.m_lstLoad.GetPrev( pos );
+                if ( theApp.m_pCreateGame != NULL )
+                    theApp.m_pCreateGame->RemovePlayer( pPlr );
+                theNet.DeletePlayer( pPlr->GetNetNum( ) );
+                delete pPlr;
+            }
+            theGame.m_lstLoad.RemoveAll( );
+        }
+
+        // we need to swap out the AI where necessary
+        POSITION pos = theGame.GetAll( ).GetHeadPosition( );
+        while ( pos != NULL )
+        {
+            CPlayer* pPlr = theGame.GetAll( ).GetNext( pos );
+            ASSERT_STRICT_VALID( pPlr );
+
+            // if ! ready -> needs to be AI
+            if ( ( pPlr->GetState( ) != CPlayer::ready ) && ( !pPlr->IsAI( ) ) )
+                theGame.AiTakeOverPlayer( pPlr, FALSE );
+            else
+                // if ready -> can't be AI
+                if ( ( pPlr->GetState( ) == CPlayer::ready ) && ( pPlr->GetAiHdl( ) != 0 ) )
+                    theGame.AiReleasePlayer( pPlr, pPlr->GetNetNum( ), pPlr->GetName( ), pPlr->IsLocal( ), FALSE );
+        }
+
+        if ( IsNetGame( ) )
+        {
+            // give them the final status of each player
+            for ( pos = m_lstAll.GetHeadPosition( ); pos != NULL; )
+            {
+                CPlayer* pPlr = m_lstAll.GetNext( pos );
+                ASSERT_VALID( pPlr );
+                if ( !pPlr->IsLocal( ) )
+                {
+                    POSITION posInfo;
+                    for ( posInfo = m_lstAll.GetHeadPosition( ); posInfo != NULL; )
+                    {
+                        CPlayer* pPlrInfo = m_lstAll.GetNext( posInfo );
+                        ASSERT_VALID( pPlrInfo );
+                        CNetPlayer* pMsg = CNetCmd::AllocPlayer( pPlrInfo );
+                        if ( pPlrInfo == pPlr )
+                            pMsg->m_bLocal = TRUE;
+                        if ( pPlrInfo == theGame.GetServer( ) )
+                            pMsg->m_bServer = TRUE;
+                        theNet.Send( pPlr->GetNetNum( ), pMsg, pMsg->GetLen( ) );
+                        delete pMsg;
+                    }
+                }
+            }
+
+            // tell others to start
+            CMsgStartLoadedGame msg;
+            PostToAllClients( &msg, sizeof( msg ) );
+        }
+    }
+
+    // do this here because we needed bAI above for switching
+    if ( HaveHP( ) )
+    {
+        GetMe( )->SetLocal( TRUE );
+        m_pHpRtr = new CHPRouter( theGame.GetMe( )->GetPlyrNum( ) );
+        m_pHpRtr->Init( );
+    }
+
+    ASSERT( TestEverything( ) );
+
+    // we have no remembered spotting of units if multi-player OR we changed who we are
+    BOOL bChangeSpotting = FALSE;
+    if ( GetScenario( ) == -1 )
+        if ( IsNetGame( ) || ( GetMe( )->GetPlyrNum( ) != m_iSavedPlyrNum ) )
+        {
+            bChangeSpotting = TRUE;
+            // all roads and city tiles are invisible
+            int   iNum   = theMap.Get_eX( ) * theMap.Get_eY( ) - 2;
+            CHex* pHexOn = theMap._GetHex( 0, 0 ) + 1;
+            while ( iNum-- )
+            {
+                if ( ( pHexOn->GetVisibleType( ) == CHex::city ) || ( pHexOn->GetVisibleType( ) == CHex::road ) )
+                {
+                    BOOL bIsCoast;
+                    if ( ( pHexOn - 1 )->IsWater( ) || ( pHexOn + 1 )->IsWater( ) )
+                        bIsCoast = TRUE;
+                    else
+                    {
+                        CHexCoord _hex( pHexOn->GetHex( ) );
+                        if ( theMap.GetHex( _hex.X( ), _hex.Y( ) - 1 )->IsWater( ) ||
+                             theMap.GetHex( _hex.X( ), _hex.Y( ) + 1 )->IsWater( ) )
+                            bIsCoast = TRUE;
+                        else
+                            bIsCoast = FALSE;
+                    }
+
+                    if ( bIsCoast )
+                    {
+                        pHexOn->SetVisibleType( CHex::coastline );
+                        pHexOn->m_psprite = theTerrain.GetSprite( CHex::coastline, CHex::island );
+                    }
+                    else
+                    {
+                        int iType = ( pHexOn - 1 )->GetVisibleType( );
+                        pHexOn->SetVisibleType( iType );
+                        int iNum          = theTerrain.GetCount( iType );
+                        pHexOn->m_psprite = theTerrain.GetSprite( iType, iNum <= 1 ? 0 : RandNum( iNum - 1 ) );
+                    }
+                }
+
+                // farm plots are "hidden until seen" like roads: the save carries the
+                // SAVER's view, where their own plots are always painted. Re-disguise
+                // as the underlying soil (mirrors CFarmBuilding::RevertFields); the
+                // farm's next BuildFarm tick repaints any plot we can currently see.
+                else if ( pHexOn->GetVisibleType( ) == CHex::fields )
+                {
+                    int iSoil = pHexOn->GetType( );
+                    pHexOn->SetVisibleType( iSoil );
+                    pHexOn->SetGrowStage( 0 );
+                    CHexCoord _hex( pHexOn->GetHex( ) );
+                    int iCount        = theTerrain.GetCount( iSoil );
+                    pHexOn->m_psprite = theTerrain.GetSprite(
+                        iSoil, iCount <= 1 ? 0 : ( ( _hex.X( ) * 2 + _hex.Y( ) ) % iCount ) );
+                }
+                pHexOn++;
+            }
+        }
+
+    // we now need to update some data now that players are set
+    pos = theBuildingMap.GetStartPosition( );
+    while ( pos != NULL )
+    {
+        DWORD      dwID;
+        CBuilding* pBldg;
+        theBuildingMap.GetNextAssoc( pos, dwID, pBldg );
+        ASSERT_VALID( pBldg );
+        if ( bChangeSpotting )
+        {
+            pBldg->SetConstPer( );
+            pBldg->m_iVisible = pBldg->m_pOwner->IsMe( ) ? 1 : 0;
+        }
+        pBldg->FixForPlayer( );
+    }
+    pos = theVehicleMap.GetStartPosition( );
+    while ( pos != NULL )
+    {
+        DWORD     dwID;
+        CVehicle* pVeh;
+        theVehicleMap.GetNextAssoc( pos, dwID, pVeh );
+        ASSERT_VALID( pVeh );
+        pVeh->FixForPlayer( );
+    }
+    ASSERT( TestEverything( ) );
+
+    // create path manager
+    if ( !thePathMgr.Init( theMap.Get_eX( ), theMap.Get_eY( ) ) )
+    {
+        EnableAllWindows( NULL, TRUE );
+        theApp.CloseWorld( );
+        return ( IDCANCEL );
+    }
+
+    // Loaded world: same reset as a new one.
+    EnNavNewGame( );
+
+#if EN_PATH_PROBES
+    // Same dimensions, same moment: the step-A shadow instance (load path).
+    EnPathShadowInit( theMap.Get_eX( ), theMap.Get_eY( ) );
+#endif
+
+    // Load path twin of the CreateNewWorld start: after Init, after EnNavNewGame.
+    EnPathWorkerStart( theMap.Get_eX( ), theMap.Get_eY( ) );
+
+    // center on our rocket
+    m_maploc = CMapLoc( 0, 0 );
+    pos      = theBuildingMap.GetStartPosition( );
+    while ( pos != NULL )
+    {
+        DWORD      dwID;
+        CBuilding* pBldg;
+        theBuildingMap.GetNextAssoc( pos, dwID, pBldg );
+        ASSERT_STRICT_VALID( pBldg );
+        if ( pBldg->GetOwner( )->IsMe( ) )
+        {
+            m_maploc = pBldg->GetWorldPixels( );
+            if ( pBldg->GetData( )->GetType( ) == CStructureData::rocket )
+                break;
+        }
+    }
+
+    if ( bReplace )
+    {
+        // put it where it was
+        CWndArea* pWnd = theAreaList.BringToTop( );
+        if ( pWnd != NULL )
+        {
+            pWnd->GetAA( ).Set( m_maploc, m_iDir, m_iZoom );
+            pWnd->CheckZoomBtns( );
+        }
+    }
+    else
+    {
+        theApp.m_wndBar.Create( );  // first to set row3
+        if ( theGame.IsNetGame( ) && !theApp.m_gameWindow )
+            theApp.m_wndChat.Create( );
+        // CDlgResearch removed (Phase 2d) — SDL2ResearchDialog is modal.
+
+        // Player load game?
+
+#ifdef LOGGINGON
+        OutputDebugStringA( "Creating CWndArea and setup\n" );
+#endif
+
+        CWndArea* pWndArea = new CWndArea( );
+        pWndArea->Create( m_maploc, NULL, FALSE );
+        pWndArea->SetupDone( );
+        pWndArea->GetAA( ).Set( m_maploc, m_iDir, m_iZoom );
+        pWndArea->CheckZoomBtns( );
+
+        // but it was already done, maybe? ISSUE? crash?
+        // 
+        // create world for loaded game
+        // because only do it if its null?
+        if ( theApp.m_wndWorld.m_hWnd == NULL )
+        {
+            theApp.m_wndWorld.Create( );  // world must come after area
+        }
+
+        pWndArea->SetFocus( );
+
+        // Make MFC main window transparent, attach others as SDL panels
+        if ( theApp.m_gameWindow )
+        {
+            ::SetWindowLong( theApp.m_wndMain.m_hWnd, GWL_EXSTYLE,
+                ::GetWindowLong( theApp.m_wndMain.m_hWnd, GWL_EXSTYLE ) | WS_EX_LAYERED );
+            ::SetLayeredWindowAttributes( theApp.m_wndMain.m_hWnd, 0, 0, LWA_ALPHA );
+
+            // Vehicle/building lists are native SDL2 now — just hide MFC
+            auto hideW = []( auto& w ) {
+                if ( !w.m_hWnd ) return;
+                ::SetWindowLong( w.m_hWnd, GWL_EXSTYLE,
+                    ::GetWindowLong( w.m_hWnd, GWL_EXSTYLE ) | WS_EX_LAYERED );
+                ::SetLayeredWindowAttributes( w.m_hWnd, 0, 0, LWA_ALPHA );
+            };
+            hideW( theApp.m_wndVehicles );
+            hideW( theApp.m_wndBldgs );
+            theApp.m_gameWindow->Raise();
+        }
+    }
+    EnableAllWindows( NULL, TRUE );
+
+    // now we start each thread
+    if ( AmServer( ) )
+    {
+        int iNum = theGame.GetAi( ).GetCount( );
+        int iOn  = 0;
+        for ( pos = theGame.GetAi( ).GetHeadPosition( ); pos != NULL; )
+        {
+            CPlayer* pPlr = theGame.GetAi( ).GetNext( pos );
+            ASSERT_VALID( pPlr );
+            ASSERT( pPlr->IsAI( ) );
+            pPlr->ai.dwHdl = pPlr->GetAiHdl( );
+            pPlr->ai.hex   = pPlr->m_hexMapStart;
 
 #ifdef _CHEAT
-			if (theApp.GetProfileInt ("Debug", "NoThreads", 0) == 0)
+            if ( EnGetProfileInt( "Debug", "NoThreads", 0 ) == 0 )
 #endif
-				myStartThread ( &(pPlr->ai), (AFX_THREADPROC) AiThread);
+                myStartThread( &( pPlr->ai ), (AFX_THREADPROC)AiThread );
 
-			theApp.m_pCreateGame->GetDlgStatus()->SetPer (PER_START_AI + (iOn * PER_NUM_START_AI) / iNum);
-			iOn++;
-			}
-		}
+            theApp.m_pCreateGame->GetDlgStatus( )->SetPer( PER_START_AI + ( iOn * PER_NUM_START_AI ) / iNum );
+            iOn++;
+        }
+    }
 
-	// show all visible roads & buildings
-	if ( bChangeSpotting )
-		{
-		int iNum = theMap.Get_eX () * theMap.Get_eY ();
-		CHex * pHexOn = theMap._GetHex (0, 0);
-		while (iNum--)
-			{
-			if ( pHexOn->GetVisibility () )
-				{
-				switch ( pHexOn->GetType () )
-					{
-					case CHex::city : {
-						CBuilding * pBldg = theBuildingHex.GetBuilding ( pHexOn->GetHex () );
-						if ( pBldg != NULL )
-							pBldg->MakeBldgVisible ();
-						else
-							pHexOn->SetVisibleType ( CHex::city );
-						break; }
-					case CHex::road :
-						CHexCoord _hex ( pHexOn->GetHex () );
-						pHexOn->ChangeToRoad ( _hex, TRUE, TRUE );
-						break;
-					}
-				}
-			pHexOn++;
-			}
-		}
+    // show all visible roads & buildings
+    if ( bChangeSpotting )
+    {
+        int   iNum   = theMap.Get_eX( ) * theMap.Get_eY( );
+        CHex* pHexOn = theMap._GetHex( 0, 0 );
+        while ( iNum-- )
+        {
+            if ( pHexOn->GetVisibility( ) )
+            {
+                switch ( pHexOn->GetType( ) )
+                {
+                case CHex::city: {
+                    CBuilding* pBldg = theBuildingHex.GetBuilding( pHexOn->GetHex( ) );
+                    if ( pBldg != NULL )
+                        pBldg->MakeBldgVisible( );
+                    else
+                        pHexOn->SetVisibleType( CHex::city );
+                    break;
+                }
+                case CHex::road:
+                    CHexCoord _hex( pHexOn->GetHex( ) );
+                    pHexOn->ChangeToRoad( _hex, TRUE, TRUE );
+                    break;
+                }
+            }
+            pHexOn++;
+        }
+    }
 
-	MySrand (m_uSeed);
-	theApp.RestartWorld ();
+    MySrand( m_uSeed );
+    theApp.RestartWorld( );
 
-	// display the new world
-	theApp.LetsGo ();
+    // display the new world
+    theApp.LetsGo( );
 
-	return (IDOK);
+    return ( IDOK );
 }
 
-static void fnCompSave ( DWORD dwData, int iBlk )
+static void fnCompSave( DWORD_PTR dwData, int iBlk )
 {
 
-	CDlgSaveMsg * pDlg = (CDlgSaveMsg *) dwData;
-	pDlg->UpdateData ( TRUE );
-	pDlg->m_sStat.LoadString ( IDS_SAVE_COMPRESS );
-	CString sNum = IntToCString ( iBlk );
-	csPrintf ( &(pDlg->m_sStat), sNum );
-	pDlg->UpdateData ( FALSE );
+    CDlgSaveMsg* pDlg = (CDlgSaveMsg*)dwData;
+    pDlg->UpdateData( TRUE );
+    std::string sNum = IntToStr( iBlk );
+    pDlg->m_sStat = strPrintf( EnLoadStdString( IDS_SAVE_COMPRESS ).c_str(), sNum.c_str() );
+    pDlg->UpdateData( FALSE );
 
-	// needed for MODEM games
-	theApp.BaseYield ();
-	::Sleep ( 0 );
+    // iBlk is the 1-based compression block index; m_iTotalBlocks was computed
+    // from the uncompressed length so we can show a real percentage.
+    if ( pDlg->m_iTotalBlocks > 0 )
+        pDlg->SetProgress( __min( 100, ( iBlk * 100 ) / pDlg->m_iTotalBlocks ) );
+
+    // needed for MODEM games
+    theApp.BaseYield( );
+    ::Sleep( 0 );
 }
 
-int CGame::SaveGame (CWnd * pPar) 
+int CGame::SaveGame( CWnd* pPar )
 {
 
-	// do we have a CD?
-	if ( ! CheckForCD () )
-		return (IDCANCEL);
+    // do we have a CD?
+    if ( !CheckForCD( ) )
+        return ( IDCANCEL );
 
-	// can't save if haven't landed
-	CWndArea * pWnd = theAreaList.GetTop ();
-	if (pWnd == NULL)
-		return (IDCANCEL);
+    // can't save if haven't landed
+    CWndArea* pWnd = theAreaList.GetTop( );
+    if ( pWnd == NULL )
+        return ( IDCANCEL );
 
-	if ((pWnd->GetMode () == CWndArea::rocket_ready) || 
-														(pWnd->GetMode () == CWndArea::rocket_pos) ||
-														(pWnd->GetMode () == CWndArea::rocket_wait))
-		return (IDCANCEL);
+    if ( ( pWnd->GetMode( ) == CWndArea::rocket_ready ) || ( pWnd->GetMode( ) == CWndArea::rocket_pos ) ||
+         ( pWnd->GetMode( ) == CWndArea::rocket_wait ) )
+        return ( IDCANCEL );
 
-	ASSERT ((theAreaList.GetTop ()->GetMode () != CWndArea::rocket_ready) &&
-					(theAreaList.GetTop ()->GetMode () != CWndArea::rocket_pos));
-	ASSERT (TestEverything ());
+    ASSERT( ( theAreaList.GetTop( )->GetMode( ) != CWndArea::rocket_ready ) &&
+            ( theAreaList.GetTop( )->GetMode( ) != CWndArea::rocket_pos ) );
+    ASSERT( TestEverything( ) );
 
-	CString sFilters, sExt;
-	sFilters.LoadString (IDS_SAVE_FILTERS);
-	sExt.LoadString (IDS_SAVE_EXT);
+    // If SDL2 window is active and filename is pre-set, skip file dialog
+    if ( theApp.m_gameWindow && !m_sFileName.empty() )
+    {
+        // Filename already chosen by SDL2FileBrowser — proceed directly
+    }
+    else if ( theApp.m_gameWindow )
+    {
+        // Use SDL2 file browser
+        std::string defaultName = m_sFileName;
+        size_t lastSlash = defaultName.find_last_of("\\/");
+        if (lastSlash != std::string::npos)
+            defaultName = defaultName.substr(lastSlash + 1);
+        if (defaultName.empty()) defaultName = "savegame";
 
-	char const * pName;
-	if (m_sFileName.IsEmpty ())
-		pName = "";
-	else
-		pName = m_sFileName;
+        SDL2FileBrowser browser( theApp.m_gameWindow.get(), SDL2FileBrowser::Save,
+                                 "Save Game", "", defaultName, ".en" );
+        EnableAllWindows( NULL, FALSE );
+        int iRtn = browser.DoModal();
+        if ( iRtn != 1 || !browser.WasConfirmed() )
+        {
+            EnableAllWindows( NULL, TRUE );
+            return ( IDCANCEL );
+        }
+        m_sFileName = browser.GetSelectedPath().c_str();
+    }
+    else
+    {
+        std::string sFilters = EnLoadStdString( IDS_SAVE_FILTERS );
+        std::string sExt     = EnLoadStdString( IDS_SAVE_EXT );
 
-	CFileDialog dlg (FALSE, sExt, pName, OFN_HIDEREADONLY | OFN_OVERWRITEPROMPT, sFilters, pPar);	
-	EnableAllWindows (NULL, FALSE);
-	int iRtn = dlg.DoModal ();
-	if (iRtn != IDOK)
-		{
-		EnableAllWindows (NULL, TRUE);
-		return (iRtn);
-		}
+        char const* pName;
+        if ( m_sFileName.empty( ) )
+            pName = "";
+        else
+            pName = m_sFileName.c_str();
 
-	m_sFileName = dlg.GetPathName ();
+        CFileDialog dlg( FALSE, sExt.c_str(), pName, OFN_HIDEREADONLY | OFN_OVERWRITEPROMPT,
+                         sFilters.c_str(), pPar );
+        EnableAllWindows( NULL, FALSE );
+        int iRtn = dlg.DoModal( );
+        if ( iRtn != IDOK )
+        {
+            EnableAllWindows( NULL, TRUE );
+            return ( iRtn );
+        }
 
-	// put up a message to say we are saving
-	CDlgSaveMsg dlgMsg (pPar);
-	dlgMsg.m_sText.LoadString (IDS_SAVE_NAME);
-	csPrintf (&dlgMsg.m_sText, m_sFileName);
-	if ( IsNetGame () )
-		dlgMsg.m_sStat.LoadString ( IDS_SAVE_REMOTE );
-	else
-		dlgMsg.m_sStat.LoadString ( IDS_SAVE_LOCAL );
-	dlgMsg.Create (IDD_SAVE_MSG, pPar);
+        m_sFileName = (LPCSTR)dlg.GetPathName( );
+    }
 
-	// disable all other windows
-	theApp.m_wndMain._EnableGameWindows ( FALSE );
+    // put up a message to say we are saving
+    CDlgSaveMsg dlgMsg( pPar );
+    dlgMsg.m_sText = strPrintf( EnLoadStdString( IDS_SAVE_NAME ).c_str(),
+                                m_sFileName.c_str() );
+    if ( IsNetGame( ) )
+        dlgMsg.m_sStat = EnLoadStdString( IDS_SAVE_REMOTE );
+    else
+        dlgMsg.m_sStat = EnLoadStdString( IDS_SAVE_LOCAL );
+    dlgMsg.Create( IDD_SAVE_MSG, pPar );
 
-	// we grab the crit sec here not because we need it but because it 
-	// will cause all AI threads to stop at a clean location so the CPU
-	// spends all it's time saving the game. It's ok if an AI keeps running,
-	// just slower.
-	EnterCriticalSection (&cs);
+    // disable all other windows
+    theApp.m_wndMain._EnableGameWindows( FALSE );
 
-	// now we ask for updated materials on all players - some may be late
-	if ( IsNetGame () && HaveHP () )
-		{
-		CNetNeedSaveInfo msg ( GetMe () );
-		theGame.PostToAll ( &msg, sizeof (msg), FALSE );
-		}
+    // we grab the crit sec here not because we need it but because it
+    // will cause all AI threads to stop at a clean location so the CPU
+    // spends all it's time saving the game. It's ok if an AI keeps running,
+    // just slower.
+    EnterCriticalSection( &cs );
 
-	// we now need to pause to get the above messages back and to block all
-	// the AI threads.
-	int iWait = 2 + 2 * ( m_lstAll.GetCount () - m_lstAi.GetCount () );
-	if ( IsNetGame () )
-		iWait += 10;
-	while ( iWait -- )
-		{
-		ProcessAllMessages ();
-		theApp.BaseYield ();
-		Sleep ( 100 );
-		}
+    // now we ask for updated materials on all players - some may be late
+    if ( IsNetGame( ) && HaveHP( ) )
+    {
+        CNetNeedSaveInfo msg( GetMe( ) );
+        theGame.PostToAll( &msg, sizeof( msg ), FALSE );
+    }
 
-	pWnd = theAreaList.GetTop ();
-	if (pWnd != NULL)
-		{
-		m_maploc = pWnd->GetAA().m_maploc;
-		m_iDir = pWnd->GetAA().m_iDir;
-		m_iZoom = pWnd->GetAA().m_iZoom;
-		}
-	else
-	  {
-		m_maploc = CMapLoc (0, 0);
-		m_iDir = 0;
-		m_iZoom = 0;
-	  }
+    // we now need to pause to get the above messages back and to block all
+    // the AI threads.
+    int iWait = 2 + 2 * ( m_lstAll.GetCount( ) - m_lstAi.GetCount( ) );
+    if ( IsNetGame( ) )
+        iWait += 10;
+    while ( iWait-- )
+    {
+        ProcessAllMessages( );
+        theApp.BaseYield( );
+        Sleep( 100 );
+    }
 
-	// we save it
-	try
-		{
-		theGame.IncTry ();
-		SetState (save);
+    pWnd = theAreaList.GetTop( );
+    if ( pWnd != NULL )
+    {
+        m_maploc = pWnd->GetAA( ).m_maploc;
+        m_iDir   = pWnd->GetAA( ).m_iDir;
+        m_iZoom  = pWnd->GetAA( ).m_iZoom;
+    }
+    else
+    {
+        m_maploc = CMapLoc( 0, 0 );
+        m_iDir   = 0;
+        m_iZoom  = 0;
+    }
 
-		// stop processing and clear out final messages
-		theGame.SetOper ( FALSE );
-		theApp.BaseYield ();
-		ProcessAllMessages ();
+    // No path search may be in flight across serialization (plan section 2.6). The guard
+    // closes submissions and waits for the queue and every worker to go idle, then
+    // re-opens on EVERY way out of this function - and there are a dozen, plus the
+    // throw the serialization itself can raise. Nothing pending is serialized; nothing
+    // in this slice is serialized at all, but the seam is the point.
+    EnPathWorkerQuiesceScope _pqSave;
 
-		dlgMsg.UpdateData ( TRUE );
-		dlgMsg.m_sStat.LoadString ( IDS_SAVE_DATA );
-		dlgMsg.UpdateData ( FALSE );
+    // we save it
+    try
+    {
+        theGame.IncTry( );
+        SetState( save );
 
-		// CMemFile to save to
-		CMemFile fil;
+        // stop processing and clear out final messages
+        theGame.SetShouldOperate(FALSE);
+        theApp.BaseYield( );
+        ProcessAllMessages( );
 
-		CArchive ar (&fil, CArchive::store);
-		Serialize (ar);
-		ar.Close ();
+        dlgMsg.UpdateData( TRUE );
+        dlgMsg.m_sStat = EnLoadStdString( IDS_SAVE_DATA );
+        dlgMsg.UpdateData( FALSE );
 
-		// compress it
-		int iLen = fil.GetLength ();
-		BYTE * pBuf = fil.Detach ();
-		int iCompLen;
-		void * pComp = CoDec::Compress ( CoDec::GAME, pBuf, iLen, iCompLen, fnCompSave, (DWORD) &dlgMsg );
-		free (pBuf);
+        // CMemFile to save to
+        CMemFile fil;
 
-		theApp.BaseYield ();
+        CArchive ar( &fil, CArchive::store );
+        Serialize( ar );
+        ar.Close( );
 
-		dlgMsg.UpdateData ( TRUE );
-		dlgMsg.m_sStat.LoadString ( IDS_SAVE_WRITE );
-		dlgMsg.UpdateData ( FALSE );
+        // compress it
+        int   iLen = fil.GetLength( );
+        BYTE* pBuf = fil.Detach( );
+        int   iCompLen;
+        // The GAME codec (BPE) compresses in fixed 5000-byte blocks
+        // (BPECoDec::BLOCKSIZE); fnCompSave turns the running block index into a
+        // percentage against this total.
+        const int kBpeBlockSize = 5000;
+        dlgMsg.m_iTotalBlocks = ( iLen + kBpeBlockSize - 1 ) / kBpeBlockSize;
+        void* pComp = CoDec::Compress( CoDec::CODEC::GAME, pBuf, iLen, iCompLen, fnCompSave, (DWORD_PTR)&dlgMsg );
+        free( pBuf );
 
-		// write it to disk
-		CFile filDest (m_sFileName, CFile::modeCreate | CFile::modeWrite | CFile::shareExclusive | CFile::typeBinary);
-		filDest.Write ( pComp, iCompLen );
-		CoDec::FreeBuf ( pComp );
-		filDest.Close ();
+        theApp.BaseYield( );
 
-		theGame.SetOper ( TRUE );
-		LeaveCriticalSection (&cs);
-		theApp.m_wndMain._EnableGameWindows ( TRUE );
+        dlgMsg.UpdateData( TRUE );
+        dlgMsg.m_sStat = EnLoadStdString( IDS_SAVE_WRITE );
+        dlgMsg.UpdateData( FALSE );
 
-		SetState (play);
-		theGame.DecTry ();
-		}
+        // write it to disk
+        CFile filDest( m_sFileName.c_str(), CFile::modeCreate | CFile::modeWrite | CFile::shareExclusive | CFile::typeBinary );
+        filDest.Write( pComp, iCompLen );
+        CoDec::FreeBuf( pComp );
+        filDest.Close( );
 
-	catch (...)
-		{
-		CString sMsg;
-		sMsg.LoadString ( IDS_CANT_SAVE );
-		csPrintf (&sMsg, (char const *) m_sFileName );
-		AfxMessageBox (sMsg);
+        theGame.SetShouldOperate(TRUE);
+        LeaveCriticalSection( &cs );
+        theApp.m_wndMain._EnableGameWindows( TRUE );
 
-		theGame.SetOper ( TRUE );
-		LeaveCriticalSection (&cs);
-		theApp.m_wndMain._EnableGameWindows ( TRUE );
+        SetState( play );
+        theGame.DecTry( );
+    }
 
-		SetState (play);
-		theGame.DecTry ();
-		}
+    catch ( ... )
+    {
+        std::string sMsg = strPrintf( EnLoadStdString( IDS_CANT_SAVE ).c_str(),
+                                      m_sFileName.c_str() );
+        EnMessageBox( sMsg.c_str() );
 
-	EnableAllWindows (NULL, TRUE);
-	dlgMsg.DestroyWindow ();
+        theGame.SetShouldOperate(TRUE);
+        LeaveCriticalSection( &cs );
+        theApp.m_wndMain._EnableGameWindows( TRUE );
 
-	return (IDOK);
+        SetState( play );
+        theGame.DecTry( );
+    }
+
+    EnableAllWindows( NULL, TRUE );
+    dlgMsg.DestroyWindow( );
+
+    return ( IDOK );
 }
 
-static CString GetVerText (DWORD dwMaj, DWORD dwMin, DWORD dwVer, WORD wDbg, WORD wCht)
+static std::string GetVerText( DWORD dwMaj, DWORD dwMin, DWORD dwVer, WORD wDbg, WORD wCht )
 {
 
-	CString sRtn = IntToCString (dwMaj) + "." + IntToCString (dwMin) + "." + IntToCString (dwVer);
+    std::string sRtn = IntToStr( dwMaj ) + "." + IntToStr( dwMin ) + "." + IntToStr( dwVer );
 
-	if (wDbg && wCht)
-		sRtn += " (debug, cheat)";
-	else
-		if (wDbg)
-			sRtn += " (debug)";
-		else
-			if (wCht)
-				sRtn += " (cheat)";
+    if ( wDbg && wCht )
+        sRtn += " (debug, cheat)";
+    else if ( wDbg )
+        sRtn += " (debug)";
+    else if ( wCht )
+        sRtn += " (cheat)";
 
-	return (sRtn);
+    return ( sRtn );
 }
 
 // iMode 0 - reg
 //       1 - dialog
 //       2 - not smaller
-void CGame::ReadWP ( CArchive & ar, WINDOWPLACEMENT & wp, int iMode )
+void CGame::ReadWP( CArchive& ar, WINDOWPLACEMENT& wp, int iMode )
 {
 
-	ar.Read ( &wp, sizeof (WINDOWPLACEMENT) );
+    ar.Read( &wp, sizeof( WINDOWPLACEMENT ) );
 
-	// adjust
-	wp.ptMinPosition.x = ( wp.ptMinPosition.x * theApp.m_iScrnX ) / m_xScreen;
-	wp.ptMinPosition.y = ( wp.ptMinPosition.y * theApp.m_iScrnY ) / m_yScreen;
-	wp.ptMaxPosition.x = ( wp.ptMaxPosition.x * theApp.m_iScrnX ) / m_xScreen;
-	wp.ptMaxPosition.y = ( wp.ptMaxPosition.y * theApp.m_iScrnY ) / m_yScreen;
-	if ( iMode == 0 )
-		{
-		wp.rcNormalPosition.left = ( wp.rcNormalPosition.left * theApp.m_iScrnX ) / m_xScreen;
-		wp.rcNormalPosition.top = ( wp.rcNormalPosition.top * theApp.m_iScrnY ) / m_yScreen;
-		wp.rcNormalPosition.right = ( wp.rcNormalPosition.right * theApp.m_iScrnX ) / m_xScreen;
-		wp.rcNormalPosition.bottom = ( wp.rcNormalPosition.bottom * theApp.m_iScrnY ) / m_yScreen;
-		}
-	else
-		if ( iMode == 2 )
-			OffsetRect ( &(wp.rcNormalPosition), 
-					wp.rcNormalPosition.left - ( wp.rcNormalPosition.left * theApp.m_iScrnX ) / m_xScreen,
-					wp.rcNormalPosition.top - ( wp.rcNormalPosition.top * theApp.m_iScrnY ) / m_yScreen );
+    // adjust
+    wp.ptMinPosition.x = ( wp.ptMinPosition.x * theApp.m_iScrnX ) / m_xScreen;
+    wp.ptMinPosition.y = ( wp.ptMinPosition.y * theApp.m_iScrnY ) / m_yScreen;
+    wp.ptMaxPosition.x = ( wp.ptMaxPosition.x * theApp.m_iScrnX ) / m_xScreen;
+    wp.ptMaxPosition.y = ( wp.ptMaxPosition.y * theApp.m_iScrnY ) / m_yScreen;
+    if ( iMode == 0 )
+    {
+        wp.rcNormalPosition.left   = ( wp.rcNormalPosition.left * theApp.m_iScrnX ) / m_xScreen;
+        wp.rcNormalPosition.top    = ( wp.rcNormalPosition.top * theApp.m_iScrnY ) / m_yScreen;
+        wp.rcNormalPosition.right  = ( wp.rcNormalPosition.right * theApp.m_iScrnX ) / m_xScreen;
+        wp.rcNormalPosition.bottom = ( wp.rcNormalPosition.bottom * theApp.m_iScrnY ) / m_yScreen;
+    }
+    else if ( iMode == 2 )
+        OffsetRect( &( wp.rcNormalPosition ),
+                    wp.rcNormalPosition.left - ( wp.rcNormalPosition.left * theApp.m_iScrnX ) / m_xScreen,
+                    wp.rcNormalPosition.top - ( wp.rcNormalPosition.top * theApp.m_iScrnY ) / m_yScreen );
 }
 
-void CGame::Serialize(CArchive& ar)
+void CGame::Serialize( CArchive& ar )
 {
 
-	ASSERT (this == &theGame);
+    ASSERT( this == &theGame );
 
-	if (ar.IsStoring ())
-		{
-		ASSERT_VALID (this);
-		ASSERT (TestEverything ());
+    if ( ar.IsStoring( ) )
+    {
+        ASSERT_VALID( this );
+        ASSERT( TestEverything( ) );
 
-		m_dwMaj = VER_MAJOR;
-		m_dwMin = VER_MINOR;
-		m_dwVer = VER_RELEASE;
-		m_wDbg = _wDebug;
-		m_wCht = _wCheat;
+        m_dwMaj = VER_MAJOR;
+        m_dwMin = VER_MINOR;
+        m_dwVer = VER_RELEASE;
+        m_wDbg  = _wDebug;
+        m_wCht  = _wCheat;
 
-		// version, cheats, & debug
-		ar << m_dwMaj << m_dwMin << m_dwVer << m_wDbg << m_wCht;
-		ar << m_sFileName;
+        // version, cheats, & debug
+        ar << m_dwMaj << m_dwMin << m_dwVer << m_wDbg << m_wCht;
+        ar << m_sFileName;
 
-		ar << m_xScreen << m_yScreen;
-		ar << m_iAi;
-		ar << m_iSize;
-		ar << m_iPos;
-		ar << m_sGameName;
-		ar << m_sGameDesc;
-		ar << m_iScenarioVar;
-		for (int iInd=0; iInd<5; iInd++)
-			ar << m_adwScenarioUnits [iInd];
+        ar << m_xScreen << m_yScreen;
+        ar << m_iAi;
+        ar << m_iSize;
+        ar << m_iPos;
+        ar << m_sGameName;
+        ar << m_sGameDesc;
+        ar << m_iScenarioVar;
+        for ( int iInd = 0; iInd < 5; iInd++ ) ar << m_adwScenarioUnits[iInd];
 
-		ar << m_dwOperTimeLast << m_dwFrameTimeLast << m_dwFramesElapsed << m_dwOpersElapsed;
-		ar << m_dwOperSecElapsed << m_dwOperSecFrames << m_dwElapsedTime << m_dwFrame;
-		ar << m_iSideSize;
-		ar << m_iNextPlyrNum;
-		ar << m_iNextAINum;
-		ar << m_dwNextUnitID;
-		ar << (WORD) m_bServer;
-		ar << m_iScenarioNum;
-		ar << m_iSpeedMul;
+        ar << m_dwOperTimeLast << m_dwFrameTimeLast << m_dwFramesElapsed << m_dwOpersElapsed;
+        ar << m_dwOperSecElapsed << m_dwOperSecFrames << m_dwElapsedTime << m_dwFrame;
+        ar << m_iSideSize;
+        ar << m_iNextPlyrNum;
+        ar << m_iNextAINum;
+        ar << m_dwNextUnitID;
+        ar << (WORD)m_bServer;
+        ar << m_iScenarioNum;
+        ar << m_iSpeedMul;
 
-		ar << m_bHaveAlliances;
-		ar << m_uSeed;
+        ar << m_bHaveAlliances;
+        ar << m_uSeed;
 
-		// window positions
-		ar << m_hexAreaCenter;
-		ar.Write (&m_wpArea, sizeof (WINDOWPLACEMENT));
-		ar.Write (&m_wpWorld, sizeof (WINDOWPLACEMENT));
-		ar.Write (&m_wpChat, sizeof (WINDOWPLACEMENT));
-		ar.Write (&m_wpBldgs, sizeof (WINDOWPLACEMENT));
-		ar.Write (&m_wpVehicles, sizeof (WINDOWPLACEMENT));
-		ar.Write (&m_wpRelations, sizeof (WINDOWPLACEMENT));
-		ar.Write (&m_wpFile, sizeof (WINDOWPLACEMENT));
-		ar.Write (&m_wpRsrch, sizeof (WINDOWPLACEMENT));
+        // window positions
+        ar << m_hexAreaCenter;
+        ar.Write( &m_wpArea, sizeof( WINDOWPLACEMENT ) );
+        ar.Write( &m_wpWorld, sizeof( WINDOWPLACEMENT ) );
+        ar.Write( &m_wpChat, sizeof( WINDOWPLACEMENT ) );
+        ar.Write( &m_wpBldgs, sizeof( WINDOWPLACEMENT ) );
+        ar.Write( &m_wpVehicles, sizeof( WINDOWPLACEMENT ) );
+        ar.Write( &m_wpRelations, sizeof( WINDOWPLACEMENT ) );
+        ar.Write( &m_wpFile, sizeof( WINDOWPLACEMENT ) );
+        ar.Write( &m_wpRsrch, sizeof( WINDOWPLACEMENT ) );
 
-		CWndArea * pWnd = theAreaList.GetTop ();
-		if (pWnd == NULL)
-			{
-			TRAP ();
-			m_iZoom = max( 1, theApp.GetZoomData()->GetFirstZoom() );
-			m_iDir = 0;
-			}
-		else
-			{
-			m_iZoom = pWnd->GetAA ().m_iZoom;
-			m_iDir = pWnd->GetAA ().m_iDir;
-			}
-		ar << m_maploc;
-		ar << (BYTE) m_iDir;
-		ar << (BYTE) m_iZoom;
-		ar << (BYTE) m_iNetJoin;
+        CWndArea* pWnd = theAreaList.GetTop( );
+        if ( pWnd == NULL )
+        {
+            TRAP( );
+            m_iZoom = max( 1, theApp.GetZoomData( )->GetFirstZoom( ) );
+            m_iDir  = 0;
+        }
+        else
+        {
+            m_iZoom = pWnd->GetAA( ).m_iZoom;
+            m_iDir  = pWnd->GetAA( ).m_iDir;
+        }
+        ar << m_maploc;
+        ar << (BYTE)m_iDir;
+        ar << (BYTE)m_iZoom;
+        ar << (BYTE)m_iNetJoin;
 
-		// the players
-		ar << (WORD) m_lstAll.GetCount ();
-		POSITION pos;
-		for (pos = m_lstAll.GetHeadPosition(); pos != NULL; )
-			{
-			CPlayer *pPlr = m_lstAll.GetNext (pos);
-			pPlr->Serialize (ar);
-			}
-		ar << (WORD) m_pMe->GetPlyrNum ();
-		ar << (WORD) m_pServer->GetPlyrNum ();
+        // the players
+        ar << (WORD)m_lstAll.GetCount( );
+        POSITION pos;
+        for ( pos = m_lstAll.GetHeadPosition( ); pos != NULL; )
+        {
+            CPlayer* pPlr = m_lstAll.GetNext( pos );
+            pPlr->Serialize( ar );
+        }
+        ar << (WORD)m_pMe->GetPlyrNum( );
+        ar << (WORD)m_pServer->GetPlyrNum( );
 
-		// the dead players
-		ar << (WORD) m_lstDead.GetCount ();
-		for (pos = m_lstDead.GetHeadPosition(); pos != NULL; )
-			{
-			CPlayer *pPlr = m_lstDead.GetNext (pos);
-			pPlr->Serialize (ar);
-			}
+        // the dead players
+        ar << (WORD)m_lstDead.GetCount( );
+        for ( pos = m_lstDead.GetHeadPosition( ); pos != NULL; )
+        {
+            CPlayer* pPlr = m_lstDead.GetNext( pos );
+            pPlr->Serialize( ar );
+        }
 
-		// save the map
-		theMap.Serialize (ar);
-		theMinerals.Serialize (ar);
+        // save the map
+        theMap.Serialize( ar );
+        theMinerals.Serialize( ar );
 
-		// save the bridges
-		theBridgeMap.Serialize (ar);
+        // mineral flag/map round-trip diagnosis (store)
+#if EN_SAVE_PROBES
+        {
+            int flagged = 0;
+            for ( int yy = 0; yy < theMap.Get_eY( ); yy++ )
+                for ( int xx = 0; xx < theMap.Get_eX( ); xx++ )
+                    if ( theMap._GetHex( xx, yy )->GetUnits( ) & CHex::minerals ) flagged++;
+            char b[160];
+            sprintf_s( b, sizeof( b ), "[SAVE store] minerals=%d flaggedHexes=%d eX=%d eY=%d\n",
+                       (int)theMinerals.GetCount( ), flagged, theMap.Get_eX( ), theMap.Get_eY( ) );
+            OutputDebugStringA( b );
+            FILE* f = NULL; if ( fopen_s( &f, EnLogPath( "worlddbg.log" ).c_str(), "a" ) == 0 && f ) { fputs( b, f ); fclose( f ); }
+        }
+#endif
 
-		// save the units
-		ar << (WORD) theBuildingMap.GetCount ();
-		pos = theBuildingMap.GetStartPosition ();
-		while (pos != NULL)
-			{
-			DWORD dwID;
-			CBuilding *pBldg;
-			theBuildingMap.GetNextAssoc (pos, dwID, pBldg);
-			ar << (WORD) pBldg->GetData()->GetType () << (BYTE) pBldg->GetDir () << (WORD) pBldg->GetOwner()->GetPlyrNum () << (DWORD) pBldg->GetID();
-			pBldg->Serialize (ar);
-			}
-		ar << (WORD) theVehicleMap.GetCount ();
-		pos = theVehicleMap.GetStartPosition ();
-		while (pos != NULL)
-			{
-			DWORD dwID;
-			CVehicle * pVeh;
-			theVehicleMap.GetNextAssoc (pos, dwID, pVeh);
-			ar << (LONG) pVeh->GetData()->GetType () << (WORD) pVeh->GetOwner()->GetPlyrNum () << (DWORD) pVeh->GetID();
-			pVeh->Serialize (ar);
-			}
+        // save the bridges
+        theBridgeMap.Serialize( ar );
 
-		AiSaveGame (ar);
-		}
+        // save the units
+        ar << (WORD)theBuildingMap.GetCount( );
+        pos = theBuildingMap.GetStartPosition( );
+        while ( pos != NULL )
+        {
+            DWORD      dwID;
+            CBuilding* pBldg;
+            theBuildingMap.GetNextAssoc( pos, dwID, pBldg );
+            ar << (WORD)pBldg->GetData( )->GetType( ) << (BYTE)pBldg->GetDir( )
+               << (WORD)pBldg->GetOwner( )->GetPlyrNum( ) << (DWORD)pBldg->GetID( );
+            pBldg->Serialize( ar );
+        }
+        ar << (WORD)theVehicleMap.GetCount( );
+        pos = theVehicleMap.GetStartPosition( );
+        while ( pos != NULL )
+        {
+            DWORD     dwID;
+            CVehicle* pVeh;
+            theVehicleMap.GetNextAssoc( pos, dwID, pVeh );
+            ar << (LONG)pVeh->GetData( )->GetType( ) << (WORD)pVeh->GetOwner( )->GetPlyrNum( ) << (DWORD)pVeh->GetID( );
+            pVeh->Serialize( ar );
+        }
 
-	else
-		{
-		theApp.Log ( "Loading CGame" );
-		// these all need to be set before we start
-		ASSERT_VALID (&theTerrain);
-		ASSERT_VALID (&theStructures);
-		ASSERT_VALID (&theTransports);
-		ASSERT_VALID (&theBuildingHex);
-		ASSERT_VALID (&theVehicleHex);
-		ASSERT_VALID (&theStructureType);
+        AiSaveGame( ar );
+    }
 
-		// version, cheats, & debug
-		ar >> m_dwMaj >> m_dwMin >> m_dwVer >> m_wDbg >> m_wCht;
-		if ( theApp.GetProfileInt ("Cheat", "DiffVer", 1) )
-//			if ((m_dwMaj != VER_MAJOR) || (m_dwMin != VER_MINOR) ||
-			if ( (m_dwMaj != VER_MAJOR) || (m_dwMin == 0) ||
-																				(m_wDbg != _wDebug) || (m_wCht != _wCheat))
-				{
-				CString sMsg, sVer1, sVer2;
-				sMsg.LoadString (IDS_SAVE_VER);
-				sVer1 = GetVerText (m_dwMaj, m_dwMin, m_dwVer, m_wDbg, m_wCht);
-				sVer2 = GetVerText (VER_MAJOR, VER_MINOR, VER_RELEASE, _wDebug, _wCheat);
-				csPrintf (&sMsg, (char const *) sVer1, (char const *) sVer2);
-				AfxMessageBox (sMsg);
-				ThrowError (ERR_RES_CREATE_WND);
-				}
+    else
+    {
+        theApp.Log( "Loading CGame" );
+        // these all need to be set before we start
+        ASSERT_VALID( &theTerrain );
+        ASSERT_VALID( &theStructures );
+        ASSERT_VALID( &theTransports );
+        ASSERT_VALID( &theBuildingHex );
+        ASSERT_VALID( &theVehicleHex );
+        ASSERT_VALID( &theStructureType );
 
-		ar >> m_sFileName;
-		ar >> m_xScreen >> m_yScreen;
+        // version, cheats, & debug
+        ar >> m_dwMaj >> m_dwMin >> m_dwVer >> m_wDbg >> m_wCht;
 
-		ar >> m_iAi;
-		ar >> m_iSize;
-		ar >> m_iPos;
-		ar >> m_sGameName;
-		ar >> m_sGameDesc;
-		ar >> m_iScenarioVar;
-		for (int iInd=0; iInd<5; iInd++)
-			ar >> m_adwScenarioUnits [iInd];
+        // BUGS #102: m_dwVer is the SAVE-FORMAT counter - the field readers gate on it
+        // (theGame.m_dwVer >= 3/4/5/6 at :1399, :1410, :1424, :1432, :1462) - but nothing
+        // validated it. A save written by a LATER build carries the same major/minor, so
+        // it passes the product-version check below, and is then decoded under a counter
+        // this build does not implement: there is no branch for the newer fields, they
+        // cannot be skipped, and every subsequent read is misaligned. That is a stream
+        // desync rather than a refusal, which is the failure the >= gates exist to avoid.
+        // Refuse forward saves explicitly. OLDER saves are unaffected - reading them is
+        // exactly what those gates are for - and this check is deliberately NOT under
+        // Cheat\DiffVer: a format the build cannot parse is not a tester preference.
+        // DEBUG OVERRIDE (Cheat\IgnoreSaveVersion, default 0 = OFF).
+        // #101 deliberately narrowed Cheat\DiffVer so it can no longer waive a
+        // MAJOR/MINOR mismatch - correct for the shipped tester door, but it left no
+        // way to force-load a mismatched save while debugging. This is that way, and
+        // it is deliberately a SEPARATE, self-describing key rather than widening
+        // DiffVer again: it waives the forward-counter refusal and the whole header
+        // check, it is named for exactly what it does, and it is off unless someone
+        // sets it. RELEASE GATE: compiled out of a shipping Release entirely (below)
+        // and must be absent from a shipping registry, same as DiffVer. Registry base
+        // is HKCU\Software\Second Chance\Second Chance.
+#if defined( _DEBUG ) || defined( _CHEAT )
+        const BOOL bIgnoreSaveVer = EnGetProfileInt( "Cheat", "IgnoreSaveVersion", 0 ) ? TRUE : FALSE;
+#else
+        // BUGS #99 batch (save format Release 8): a shipped Release must not be able to
+        // honour a debug door that waives the save-header checks at all, so the registry
+        // read is compiled out and the waiver becomes a compile-time FALSE - the same
+        // principle #101 applied to the DiffVer door. Both predicates below are written
+        // against this one flag and are otherwise untouched, so with the key unset (the
+        // default, and the only shipped state) behaviour is identical in every config.
+        const BOOL bIgnoreSaveVer = FALSE;
+#endif
 
-		ar >> m_dwOperTimeLast >> m_dwFrameTimeLast >> m_dwFramesElapsed >> m_dwOpersElapsed;
-		ar >> m_dwOperSecElapsed >> m_dwOperSecFrames >> m_dwElapsedTime >> m_dwFrame;
-		ar >> m_iSideSize;
-		ar >> m_iNextPlyrNum;
-		ar >> m_iNextAINum;
-		ar >> m_dwNextUnitID;
-		WORD w; ar >> w; m_bServer = TRUE;
-		ar >> m_iScenarioNum;
-		ar >> m_iSpeedMul;
+        if ( ( m_dwVer > (DWORD)VER_RELEASE ) && ( !bIgnoreSaveVer ) )
+        {
+            // strPrintf is NOT printf: it substitutes MFC-style POSITIONAL %1/%2
+            // and pulls every argument with va_arg( va, const char* )
+            // (EnSettings.cpp:246). printf specifiers are copied through verbatim,
+            // so the original %lu form showed the player the literal text "%lu".
+            // Format the numbers into strings first and use positional placeholders,
+            // the way the sibling IDS_SAVE_VER message below already does.
+            std::string sSaveFmt  = std::to_string( (unsigned long)m_dwVer );
+            std::string sBuildFmt = std::to_string( (unsigned long)VER_RELEASE );
+            std::string sMsg = strPrintf(
+                "This saved game was written by a newer version of Second Chance.\n\n"
+                "Save format %1; this build reads up to %2.\n\n"
+                "Load it with the version that wrote it.",
+                sSaveFmt.c_str( ), sBuildFmt.c_str( ) );
+            EnMessageBox( sMsg.c_str( ) );
+            ThrowError( ERR_RES_CREATE_WND );
+        }
 
-		ar >> m_bHaveAlliances;
-		ar >> m_uSeed;
+        // BUGS #101: the Cheat\DiffVer tester door waived the WHOLE header check, so a
+        // Release build with DiffVer=0 accepted a mismatched product version and then
+        // deserialised it instead of refusing. Narrow the door rather than remove it:
+        // the three conditions are computed unconditionally (pure reads of fields
+        // deserialised above plus compile-time constants - no calls, no side effects,
+        // no ordering dependency), and DiffVer now waives ONLY the debug/cheat-flag
+        // pair it exists for. With DiffVer non-zero the predicate is identical to the
+        // shipped one, so the default path is unchanged.
+        const BOOL bDiffVer              = EnGetProfileInt( "Cheat", "DiffVer", 1 ) ? TRUE : FALSE;
+        const BOOL wrongMajorVersion     = ( m_dwMaj != VER_MAJOR );
+        const BOOL wrongMinorVersion     = ( m_dwMin != VER_MINOR );
+        const BOOL debugCheatMissmatched = ( m_wDbg != _wDebug ) || ( m_wCht != _wCheat );
 
-		// window positions - adjust to this screen's resolution
-		ar >> m_hexAreaCenter;
-		ReadWP ( ar, m_wpArea, 0 );
-		ReadWP ( ar, m_wpWorld, 0 );
-		ReadWP ( ar, m_wpChat, 2 );
-		ReadWP ( ar, m_wpBldgs, 2 );
-		ReadWP ( ar, m_wpVehicles, 2 );
-		ReadWP ( ar, m_wpRelations, 1 );
-		ReadWP ( ar, m_wpFile, 1 );
-		ReadWP ( ar, m_wpRsrch, 1 );
+        if ( ( wrongMajorVersion || wrongMinorVersion || ( debugCheatMissmatched && bDiffVer ) )
+             && ( !bIgnoreSaveVer ) )
+        {
+            std::string sVer1 = GetVerText( m_dwMaj, m_dwMin, m_dwVer, m_wDbg, m_wCht );
+            std::string sVer2 = GetVerText( VER_MAJOR, VER_MINOR, VER_RELEASE, _wDebug, _wCheat );
+            std::string sMsg = strPrintf( EnLoadStdString( IDS_SAVE_VER ).c_str(),
+                                          sVer1.c_str( ), sVer2.c_str( ) );
+            EnMessageBox( sMsg.c_str() );
+            ThrowError( ERR_RES_CREATE_WND );
+        }
 
-		ar >> m_maploc;
-		BYTE b; ar >> b; m_iDir = b;
-		ar >> b; m_iZoom = b;
-		ar >> b; m_iNetJoin = b;
+        ar >> m_sFileName;
+        ar >> m_xScreen >> m_yScreen;
 
-		// the players
-		WORD wCount;
-		ar >> wCount;
-		while (wCount--)
-			{
-			CPlayer * pPlr = new CPlayer ();
-			pPlr->Serialize (ar);
-			m_lstAll.AddTail (pPlr);
-			if (pPlr->IsAI ())
-				m_lstAi.AddTail (pPlr);
-			m_iNextPlyrNum = __max ( m_iNextPlyrNum, pPlr->GetPlyrNum () + 1 );
-			}
-		ar >> wCount; m_pMe = GetPlayerByPlyr (wCount);
-		m_iSavedPlyrNum = wCount;
-		ar >> wCount; m_pServer = GetPlayerByPlyr (wCount);
+        ar >> m_iAi;
+        ar >> m_iSize;
+        ar >> m_iPos;
+        ar >> m_sGameName;
+        ar >> m_sGameDesc;
+        ar >> m_iScenarioVar;
+        for ( int iInd = 0; iInd < 5; iInd++ ) ar >> m_adwScenarioUnits[iInd];
 
-		ar >> wCount;
-		while (wCount--)
-			{
-			CPlayer * pPlr = new CPlayer ();
-			pPlr->Serialize (ar);
-			pPlr->SetState (CPlayer::dead);
-			m_iNextPlyrNum = __max ( m_iNextPlyrNum, pPlr->GetPlyrNum () + 1 );
-			m_lstDead.AddTail (pPlr);
-			}
+        ar >> m_dwOperTimeLast >> m_dwFrameTimeLast >> m_dwFramesElapsed >> m_dwOpersElapsed;
+        ar >> m_dwOperSecElapsed >> m_dwOperSecFrames >> m_dwElapsedTime >> m_dwFrame;
+        ar >> m_iSideSize;
+        ar >> m_iNextPlyrNum;
+        ar >> m_iNextAINum;
+        ar >> m_dwNextUnitID;
+        WORD w;
+        ar >> w;
+        m_bServer = TRUE;
+        ar >> m_iScenarioNum;
+        ar >> m_iSpeedMul;
 
-		ASSERT_VALID (this);
+        ar >> m_bHaveAlliances;
+        ar >> m_uSeed;
 
-		// load the map
-		theMap.Serialize (ar);
-		ASSERT_VALID (&theMap);
-		theMinerals.Serialize (ar);
-		ASSERT_VALID (&theMinerals);
+        // window positions - adjust to this screen's resolution
+        ar >> m_hexAreaCenter;
+        ReadWP( ar, m_wpArea, 0 );
+        ReadWP( ar, m_wpWorld, 0 );
+        ReadWP( ar, m_wpChat, 2 );
+        ReadWP( ar, m_wpBldgs, 2 );
+        ReadWP( ar, m_wpVehicles, 2 );
+        ReadWP( ar, m_wpRelations, 1 );
+        ReadWP( ar, m_wpFile, 1 );
+        ReadWP( ar, m_wpRsrch, 1 );
 
-		// load the bridges
-		theBridgeMap.Serialize (ar);
-		ASSERT_VALID (&theBridgeMap);
+        ar >> m_maploc;
+        BYTE b;
+        ar >> b;
+        m_iDir = b;
+        ar >> b;
+        m_iZoom = b;
+        ar >> b;
+        m_iNetJoin = b;
 
-		// load the units
-		ar >> wCount;
-		while (wCount--)
-			{
-			WORD wBldg; BYTE bDir; WORD wOwner; DWORD dwID;
-			ar >> wBldg >> bDir >> wOwner >> dwID;
-			CBuilding * pBldg = CBuilding::Alloc (wBldg, bDir, wOwner, dwID);
-			pBldg->Serialize (ar);
-			}
-		ar >> wCount;
-		while (wCount--)
-			{
-			LONG lVeh; WORD wOwner; DWORD dwID;
-			ar >> lVeh >> wOwner >> dwID;
-			CVehicle * pVeh = new CVehicle (lVeh, wOwner, dwID);
-			pVeh->Serialize (ar);
-			}
+        // the players
+        WORD wCount;
+        ar >> wCount;
+        while ( wCount-- )
+        {
+            CPlayer* pPlr = new CPlayer( );
+            pPlr->Serialize( ar );
+            m_lstAll.AddTail( pPlr );
+            if ( pPlr->IsAI( ) )
+                m_lstAi.AddTail( pPlr );
+            m_iNextPlyrNum = __max( m_iNextPlyrNum, pPlr->GetPlyrNum( ) + 1 );
+        }
+        ar >> wCount;
+        m_pMe           = GetPlayerByPlyr( wCount );
+        m_iSavedPlyrNum = wCount;
+        ar >> wCount;
+        m_pServer = GetPlayerByPlyr( wCount );
 
-		// we now need to update some data now that everything is loaded
-		POSITION pos = theBuildingMap.GetStartPosition ();
-		while (pos != NULL)
-			{
-			DWORD dwID;
-			CBuilding *pBldg;
-			theBuildingMap.GetNextAssoc (pos, dwID, pBldg);
-			ASSERT_VALID (pBldg);
-			pBldg->FixUp ();
-			}
-		pos = theVehicleMap.GetStartPosition ();
-		while (pos != NULL)
-			{
-			DWORD dwID;
-			CVehicle *pVeh;
-			theVehicleMap.GetNextAssoc (pos, dwID, pVeh);
-			ASSERT_VALID (pVeh);
-			pVeh->FixUp ();
-			}
+        ar >> wCount;
+        while ( wCount-- )
+        {
+            CPlayer* pPlr = new CPlayer( );
+            pPlr->Serialize( ar );
+            pPlr->SetState( CPlayer::dead );
+            m_iNextPlyrNum = __max( m_iNextPlyrNum, pPlr->GetPlyrNum( ) + 1 );
+            m_lstDead.AddTail( pPlr );
+        }
 
-		// show buildings for scenarios
-		if ( (m_iScenarioNum == 4) || (m_iScenarioNum == 5) )
-			for (int iInd=0; iInd<5; iInd++)
-				{
-				CBuilding * pBldg = theBuildingMap.GetBldg ( m_adwScenarioUnits [iInd] );
-				if (pBldg != NULL)
-					ShowBuilding (iInd, pBldg);
-				}
+        ASSERT_VALID( this );
 
-		// see if can have R&D
-		if ( HaveHP () )
-			theApp.m_wndBar.CheckButtons ();
+        // load the map
+        theMap.Serialize( ar );
+        ASSERT_VALID( &theMap );
+        theMinerals.Serialize( ar );
+        ASSERT_VALID( &theMinerals );
 
-		// test everything
-		ASSERT (TestEverything ());
+        // mineral flag/map round-trip diagnosis (load)
+#if EN_SAVE_PROBES
+        {
+            int flagged = 0;
+            for ( int yy = 0; yy < theMap.Get_eY( ); yy++ )
+                for ( int xx = 0; xx < theMap.Get_eX( ); xx++ )
+                    if ( theMap._GetHex( xx, yy )->GetUnits( ) & CHex::minerals ) flagged++;
+            char b[160];
+            sprintf_s( b, sizeof( b ), "[LOAD] minerals=%d flaggedHexes=%d eX=%d eY=%d\n",
+                       (int)theMinerals.GetCount( ), flagged, theMap.Get_eX( ), theMap.Get_eY( ) );
+            OutputDebugStringA( b );
+            FILE* f = NULL; if ( fopen_s( &f, EnLogPath( "worlddbg.log" ).c_str(), "a" ) == 0 && f ) { fputs( b, f ); fclose( f ); }
+        }
+#endif
 
-		// if not the server then loading over the net
-		BOOL bLocal = ( (theApp.m_pCreateGame == NULL) || (theApp.m_pCreateGame->m_iTyp != CCreateBase::load_join) );
-		AiLoadGame ( ar, bLocal );
-		if ( bLocal )
-			AiLoadComplete ();
+        // load the bridges
+        theBridgeMap.Serialize( ar );
+        ASSERT_VALID( &theBridgeMap );
 
-		// set to our screen res
-		m_xScreen = theApp.m_iScrnX;
-		m_yScreen = theApp.m_iScrnY;
-		theApp.Log ( "CGame loaded" );
-		}
+        // heal orphaned bridge marks saved by the dead-crane window
+        // (bit set, no bridge unit -> any path probe across it AVs)
+        {
+            int iHealed = 0;
+            for ( int yy = 0; yy < theMap.Get_eY( ); yy++ )
+                for ( int xx = 0; xx < theMap.Get_eX( ); xx++ )
+                {
+                    CHex* pHexB = theMap._GetHex( xx, yy );
+                    if ( ( pHexB->GetUnits( ) & CHex::bridge ) && theBridgeHex._GetBridge( xx, yy ) == NULL )
+                    {
+                        pHexB->NandUnits( CHex::bridge );
+                        iHealed++;
+                    }
+                }
+            if ( iHealed )
+            {
+                char szH[80];
+                sprintf_s( szH, sizeof( szH ), "[BRIDGEHEAL] cleared %d orphaned bridge-mark hexes\n", iHealed );
+                OutputDebugStringA( szH );
+            }
+        }
+
+        // load the units
+        ar >> wCount;
+        while ( wCount-- )
+        {
+            WORD  wBldg;
+            BYTE  bDir;
+            WORD  wOwner;
+            DWORD dwID;
+            ar >> wBldg >> bDir >> wOwner >> dwID;
+            CBuilding* pBldg = CBuilding::Alloc( wBldg, bDir, wOwner, dwID );
+            pBldg->Serialize( ar );
+        }
+        ar >> wCount;
+        while ( wCount-- )
+        {
+            LONG  lVeh;
+            WORD  wOwner;
+            DWORD dwID;
+            ar >> lVeh >> wOwner >> dwID;
+            CVehicle* pVeh = new CVehicle( lVeh, wOwner, dwID );
+            pVeh->Serialize( ar );
+        }
+
+        // we now need to update some data now that everything is loaded
+        POSITION pos = theBuildingMap.GetStartPosition( );
+        while ( pos != NULL )
+        {
+            DWORD      dwID;
+            CBuilding* pBldg;
+            theBuildingMap.GetNextAssoc( pos, dwID, pBldg );
+            ASSERT_VALID( pBldg );
+            pBldg->FixUp( );
+        }
+        pos = theVehicleMap.GetStartPosition( );
+        while ( pos != NULL )
+        {
+            DWORD     dwID;
+            CVehicle* pVeh;
+            theVehicleMap.GetNextAssoc( pos, dwID, pVeh );
+            ASSERT_VALID( pVeh );
+            pVeh->FixUp( );
+        }
+
+        // show buildings for scenarios
+        if ( ( m_iScenarioNum == 4 ) || ( m_iScenarioNum == 5 ) )
+            for ( int iInd = 0; iInd < 5; iInd++ )
+            {
+                CBuilding* pBldg = theBuildingMap.GetBldg( m_adwScenarioUnits[iInd] );
+                if ( pBldg != NULL )
+                    ShowBuilding( iInd, pBldg );
+            }
+
+        // see if can have R&D
+        if ( HaveHP( ) )
+            theApp.m_wndBar.CheckButtons( );
+
+        // test everything
+        ASSERT( TestEverything( ) );
+
+        // if not the server then loading over the net
+        BOOL bLocal =
+            ( ( theApp.m_pCreateGame == NULL ) || ( theApp.m_pCreateGame->m_iTyp != CCreateBase::load_join ) );
+        AiLoadGame( ar, bLocal );
+        if ( bLocal )
+            AiLoadComplete( );
+
+        // set to our screen res
+        m_xScreen = theApp.m_iScrnX;
+        m_yScreen = theApp.m_iScrnY;
+        theApp.Log( "CGame loaded" );
+    }
 }
 
 #ifdef _DEBUG
-void CGame::AssertValid() const
+void CGame::AssertValid( ) const
 {
-
-	CObject::AssertValid ();
-
-	ASSERT_VALID_OR_NULL (m_pMe);
-	ASSERT_VALID_OR_NULL (m_pServer);
-	ASSERT_VALID (&m_lstAll);
-	ASSERT_VALID (&m_lstAi);
-	ASSERT_VALID (&m_lstDead);
-
-	if (m_pServer)
-		{
-		if (m_bServer)
-			m_pServer == m_pMe;
-		else
-			m_pServer->m_iNetNum != m_pMe->m_iNetNum;
-		}
-}
-
-BOOL TestEverything ()
-{
-
-	ASSERT_VALID (&theTerrain);
-	ASSERT_VALID (&theStructures);
-	ASSERT_VALID (&theTransports);
-	ASSERT_VALID (&theStructureType);
-	ASSERT_VALID (&theMap);
-
-	ASSERT_VALID (&theMinerals);
-
-	POSITION pos = theMinerals.GetStartPosition ();
-	while (pos != NULL)
-		{
-		DWORD dwID;
-		CMinerals * pMn;
-		theMinerals.GetNextAssoc (pos, dwID, pMn);
-		ASSERT_VALID (pMn);
-		}
-
-	ASSERT_VALID (&theGame);
-
-	for (pos = theGame.GetAll().GetHeadPosition(); pos != NULL; )
-		{
-		CPlayer *pPlr = theGame.GetAll().GetNext (pos);
-		ASSERT_VALID (pPlr);
-		}
-
-	ASSERT_VALID (&theBuildingHex);
-	ASSERT_VALID (&theVehicleHex);
-	ASSERT_VALID (&theBuildingMap);
-	ASSERT_VALID (&theVehicleMap);
-
-	// test the units
-	pos = theBuildingMap.GetStartPosition ();
-	while (pos != NULL)
-		{
-		DWORD dwID;
-		CBuilding *pBldg;
-		theBuildingMap.GetNextAssoc (pos, dwID, pBldg);
-		ASSERT_VALID (pBldg);
-		}
-
-	pos = theVehicleMap.GetStartPosition ();
-	while (pos != NULL)
-		{
-		DWORD dwID;
-		CVehicle *pVeh;
-		theVehicleMap.GetNextAssoc (pos, dwID, pVeh);
-		ASSERT_VALID (pVeh);
-		}
-
-	// test the ownership
-	pos = theBuildingHex.GetStartPosition ();
-	while (pos != NULL)
-		{
-		DWORD dwLoc;
-		CBuilding *pBldg;
-		theBuildingHex.GetNextAssoc (pos, dwLoc, pBldg);
-		ASSERT_VALID (pBldg);
-		CHexCoord hex (dwLoc >> 16, dwLoc & 0xFFFF);
-
-		for (int y=0; y<pBldg->GetCY(); y++)
-			for (int x=0; x<pBldg->GetCX(); x++)
-				{
-				CHexCoord _hex (pBldg->GetHex().X() + x, pBldg->GetHex().Y() + y);
-				_hex.Wrap ();
-				if (_hex == hex)
-					goto got_it;
-				}
-		ASSERT (FALSE);
-got_it:
-		;
-		}
-
-	pos = theVehicleHex.GetStartPosition ();
-	while (pos != NULL)
-		{
-		DWORD dwLoc;
-		CVehicle *pVeh;
-		theVehicleHex.GetNextAssoc (pos, dwLoc, pVeh);
-		ASSERT_VALID (pVeh);
-		CSubHex sub (dwLoc >> 16, dwLoc & 0xFFFF);
-		if (pVeh->GetHexOwnership ())
-			ASSERT ((pVeh->GetHexOwnership ()) && ((sub == pVeh->GetPtHead ()) || 
-							(sub == pVeh->GetPtTail ()) || (sub == pVeh->GetPtNext ())));
-		}
-
-	return (TRUE);
-}
-
+#ifdef LOGGINGON
+  //  OutputDebugStringA( "CGame::AssertValid\n" );
 #endif
+
+    CObject::AssertValid( );
+
+#ifdef LOGGINGON
+   // OutputDebugStringA( "CGame::AssertValid:ASSERT_VALID_OR_NULL\n" );
+#endif
+
+
+    ASSERT_VALID_OR_NULL( m_pMe );
+    ASSERT_VALID_OR_NULL( m_pServer );
+    ASSERT_VALID( &m_lstAll );
+    ASSERT_VALID( &m_lstAi );
+    ASSERT_VALID( &m_lstDead );
+
+    if ( m_pServer )
+    {
+        if ( m_bServer )
+            ASSERT(m_pServer == m_pMe);
+        else
+            ASSERT(m_pServer->m_iNetNum != m_pMe->m_iNetNum);
+    }
+}
+#endif // _DEBUG (CGame::AssertValid)
+
+// TestEverything() is NOT Debug-only: the port's ASSERT (en_assert.h) evaluates
+// its argument in Release as well, so every ASSERT( TestEverything() ) site needs
+// this defined in all configs. The body's ASSERT_VALID(...) checks compile to
+// no-ops in Release; the plain ASSERT(...) invariants stay live (and logged).
+BOOL TestEverything( )
+{
+    // THROTTLE (2026-06-10): this is an O(every unit + every hex-ownership)
+    // validation sweep, and the HP router ASSERTs it on EVERY routed message
+    // (6 sites in chproute.cpp), including synchronously from the building
+    // operate pass (BuildMaterials -> MsgOutMat). In a large game (~700 bldgs
+    // + ~1700 vehs) an out-of-materials message storm turned this into
+    // seconds of main-thread validation per second -- fps fell to ~0.5 with
+    // sim=1.3-2.6 s/s, and dbgstack showed the operate pass parked under
+    // CBuilding::AssertValid -> CBuildingHex::GetBuilding -> CMap::Lookup.
+    // Run the full sweep at most once per 2s; callers ASSERT the return
+    // value, so the skip must return TRUE. All call sites are main-thread
+    // (HP router, init, cutscene), so a plain static is safe.
+    static DWORD s_dwLastSweep = 0;
+    DWORD        dwNowSweep    = timeGetTime( );
+    if ( s_dwLastSweep != 0 && ( dwNowSweep - s_dwLastSweep ) < 2000 )
+        return TRUE;
+    s_dwLastSweep = dwNowSweep;
+
+    ASSERT_VALID( &theTerrain );
+    ASSERT_VALID( &theStructures );
+    ASSERT_VALID( &theTransports );
+    ASSERT_VALID( &theStructureType );
+    ASSERT_VALID( &theMap );
+
+    ASSERT_VALID( &theMinerals );
+
+    POSITION pos = theMinerals.GetStartPosition( );
+    while ( pos != NULL )
+    {
+        DWORD      dwID;
+        CMinerals* pMn;
+        theMinerals.GetNextAssoc( pos, dwID, pMn );
+
+        // VTFIXME: this was failing on game load?
+        ASSERT_VALID( pMn ); // I think this is 100% nessasary
+    }
+
+    ASSERT_VALID( &theGame );
+
+    for ( pos = theGame.GetAll( ).GetHeadPosition( ); pos != NULL; )
+    {
+        CPlayer* pPlr = theGame.GetAll( ).GetNext( pos );
+        ASSERT_VALID( pPlr );
+    }
+
+    ASSERT_VALID( &theBuildingHex );
+    ASSERT_VALID( &theVehicleHex );
+    ASSERT_VALID( &theBuildingMap );
+    ASSERT_VALID( &theVehicleMap );
+
+    // test the units
+    pos = theBuildingMap.GetStartPosition( );
+    while ( pos != NULL )
+    {
+        DWORD      dwID;
+        CBuilding* pBldg;
+        theBuildingMap.GetNextAssoc( pos, dwID, pBldg );
+        ASSERT_VALID( pBldg );
+    }
+
+    pos = theVehicleMap.GetStartPosition( );
+    while ( pos != NULL )
+    {
+        DWORD     dwID;
+        CVehicle* pVeh;
+        theVehicleMap.GetNextAssoc( pos, dwID, pVeh );
+        ASSERT_VALID( pVeh );
+    }
+
+    // test the ownership
+    pos = theBuildingHex.GetStartPosition( );
+    while ( pos != NULL )
+    {
+        DWORD      dwLoc;
+        CBuilding* pBldg;
+        theBuildingHex.GetNextAssoc( pos, dwLoc, pBldg );
+        ASSERT_VALID( pBldg );
+        CHexCoord hex( dwLoc >> 16, dwLoc & 0xFFFF );
+
+        for ( int y = 0; y < pBldg->GetCY( ); y++ )
+            for ( int x = 0; x < pBldg->GetCX( ); x++ )
+            {
+                CHexCoord _hex( pBldg->GetHex( ).X( ) + x, pBldg->GetHex( ).Y( ) + y );
+                _hex.Wrap( );
+                if ( _hex == hex )
+                    goto got_it;
+            }
+        ASSERT( FALSE );
+    got_it:;
+    }
+
+    pos = theVehicleHex.GetStartPosition( );
+    while ( pos != NULL )
+    {
+        DWORD     dwLoc;
+        CVehicle* pVeh;
+        theVehicleHex.GetNextAssoc( pos, dwLoc, pVeh );
+        ASSERT_VALID( pVeh );
+        CSubHex sub( dwLoc >> 16, dwLoc & 0xFFFF );
+        if ( pVeh->GetHexOwnership( ) )
+            ASSERT( ( pVeh->GetHexOwnership( ) ) && ( ( sub == pVeh->GetPtHead( ) ) || ( sub == pVeh->GetPtTail( ) ) ||
+                                                      ( sub == pVeh->GetPtNext( ) ) ) );
+    }
+
+    return ( TRUE );
+}
