@@ -3683,10 +3683,15 @@ int CWndArea::OnCreate( LPCREATESTRUCT lpCreateStruct )
                     if (sc == SDL_SCANCODE_PERIOD) { pThis->TurnClock();   return true; }
 
                     // Building-placement rotation (new binding — alongside Ctrl+RMB):
-                    // [ rotates the footprint CCW, ] rotates it CW. Only acts while
-                    // planning a placement; RotateBuildDir no-ops otherwise.
-                    if (sc == SDL_SCANCODE_LEFTBRACKET)  { pThis->RotateBuildDir(-1); return true; }
-                    if (sc == SDL_SCANCODE_RIGHTBRACKET) { pThis->RotateBuildDir(+1); return true; }
+                    // [ rotates the footprint CCW, ] rotates it CW. Key delivery targets
+                    // the topmost area, which may not be the secondary area planning a
+                    // placement; fan out and let RotateBuildDir no-op on the others.
+                    if (sc == SDL_SCANCODE_LEFTBRACKET || sc == SDL_SCANCODE_RIGHTBRACKET) {
+                        int step = (sc == SDL_SCANCODE_LEFTBRACKET) ? -1 : +1;
+                        for (POSITION pos = theAreaList.GetHeadPosition(); pos != NULL; )
+                            theAreaList.GetNext(pos)->RotateBuildDir(step);
+                        return true;
+                    }
 
 #if defined(_WIN32)
 #ifdef _CHEAT
