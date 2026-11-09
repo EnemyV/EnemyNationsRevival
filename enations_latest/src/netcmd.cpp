@@ -1766,6 +1766,20 @@ BOOL CNetCmd::FitsBuffer( int cbAvail ) const
     case set_time:             cbNeed = sizeof( CMsgSetTime ); break;
     case start_file:           cbNeed = sizeof( CMsgStartFile ); break;
     case cancel_load:          cbNeed = sizeof( CMsgCancelLoad ); break;
+    // Header-only control messages: every sender posts a bare CNetCmd
+    // (main.cpp Pause/Resume) or the memberless CMsgStartLoadedGame, and the
+    // handlers read nothing past the header. Sized explicitly so the default
+    // below can deny (017): an unlisted type used to fall through to
+    // sizeof( CNetCmd ) and pass at 12 bytes whatever it claimed to be.
+    case cmd_pause:
+    case cmd_resume:           cbNeed = sizeof( CNetCmd ); break;
+    case start_loaded_game:    cbNeed = sizeof( CMsgStartLoadedGame ); break;
+    // No live sender (plyr_dead is local-only per its enum comment; host
+    // migration via cmd_new_server was never implemented), but both structs
+    // are size-pinned in wire_layout_assert.cpp, so size them at sizeof
+    // rather than leaving them to the deny default.
+    case plyr_dead:            cbNeed = sizeof( CMsgPlyrDead ); break;
+    case cmd_new_server:       cbNeed = sizeof( CMsgNewServer ); break;
     case pause_messages:       cbNeed = sizeof( CMsgPauseMsg ); break;
     case ai_gpf_takeover:      cbNeed = sizeof( CNetAiGpf ); break;
     case research_disc:        cbNeed = sizeof( CNetRsrchDisc ); break;
@@ -1828,7 +1842,12 @@ BOOL CNetCmd::FitsBuffer( int cbAvail ) const
         break;
     }
 
-    default:                   cbNeed = sizeof( CNetCmd ); break;
+    // Default-deny (017): every message type with a sender is sized above,
+    // and tests/cmake/check_fitsbuffer_coverage.cmake fails the build if a
+    // new enum value arrives without a rule. Anything else - an unknown or
+    // garbage type byte, last_message, the dead cmd_game_data slot - is
+    // rejected instead of being trusted at header size.
+    default:                   return FALSE;
     }
 
     return cbAvail >= cbNeed;

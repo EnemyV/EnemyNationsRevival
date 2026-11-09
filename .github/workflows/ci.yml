@@ -1,0 +1,54 @@
+name: CI
+
+on:
+  push:
+    branches: [ "release3_00_*" ]
+  pull_request:
+
+jobs:
+  windows:
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@v4
+      - name: Configure
+        run: cmake -S . -B cmakeBuild-x64 -A x64
+      - name: Build
+        run: ./build.ps1 -Release -x64
+      - name: Test
+        run: ctest --test-dir cmakeBuild-x64 -C Release --output-on-failure
+
+  linux:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install SDL2
+        run: sudo apt-get update && sudo apt-get install -y ninja-build pkg-config libsdl2-dev libsdl2-ttf-dev libsdl2-mixer-dev
+      - name: Configure
+        run: cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
+      - name: Build
+        run: cmake --build build --target enations -j$(nproc)
+      - name: Test
+        run: ctest --test-dir build --output-on-failure
+
+  macos:
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+      # Homebrew's sdl2 is the sdl2-compat shim, which the build rejects
+      # (see BUILD.md). Build real SDL2 2.30.12 from the pinned release and
+      # use it as the link-repair donor. TODO: pin a SHA-256 for the tarball.
+      - name: Build real SDL2 donor
+        run: |
+          curl -L -o /tmp/sdl2.tar.gz https://github.com/libsdl-org/SDL/releases/download/release-2.30.12/SDL2-2.30.12.tar.gz
+          tar -xzf /tmp/sdl2.tar.gz -C /tmp
+          cmake -S /tmp/SDL2-2.30.12 -B /tmp/sdl2-build -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=/tmp/sdl2-real
+          cmake --build /tmp/sdl2-build -j8
+          cmake --install /tmp/sdl2-build
+      - name: Install SDL2 companions
+        run: brew install pkg-config sdl2_ttf sdl2_mixer
+      - name: Configure
+        run: cmake -S . -B build-mac -DCMAKE_BUILD_TYPE=Release -DEN_MAC_SDL2_DONOR_DIR=/tmp/sdl2-real/lib
+      - name: Build
+        run: cmake --build build-mac --target enations -j8
+      - name: Test
+        run: ctest --test-dir build-mac --output-on-failure

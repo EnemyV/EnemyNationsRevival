@@ -558,16 +558,16 @@ if (MSVC)
     # Copy required DLLs to output directory (Windows only — Linux uses system .so).
     add_custom_command(TARGET enations POST_BUILD
         COMMAND ${CMAKE_COMMAND} -E copy_if_different
-            "${CMAKE_BINARY_DIR}/../tools/sdl2/SDL2-2.30.12/lib/${SDL2_ARCH}/SDL2.dll"
+            "${CMAKE_SOURCE_DIR}/tools/sdl2/SDL2-2.30.12/lib/${SDL2_ARCH}/SDL2.dll"
             $<TARGET_FILE_DIR:enations>
         COMMAND ${CMAKE_COMMAND} -E copy_if_different
-            "${CMAKE_BINARY_DIR}/../tools/sdl2/SDL2_mixer-2.8.1/lib/${SDL2_ARCH}/SDL2_mixer.dll"
+            "${CMAKE_SOURCE_DIR}/tools/sdl2/SDL2_mixer-2.8.1/lib/${SDL2_ARCH}/SDL2_mixer.dll"
             $<TARGET_FILE_DIR:enations>
         COMMAND ${CMAKE_COMMAND} -E copy_if_different
-            "${CMAKE_BINARY_DIR}/tools/vdmplay/$<CONFIG>/vdmplay.dll"
+            $<TARGET_FILE:vdmplay>
             $<TARGET_FILE_DIR:enations>
         COMMAND ${CMAKE_COMMAND} -E copy_if_different
-            "${CMAKE_BINARY_DIR}/../tools/sdl2/SDL2_ttf-2.22.0/lib/${SDL2_ARCH}/SDL2_ttf.dll"
+            "${CMAKE_SOURCE_DIR}/tools/sdl2/SDL2_ttf-2.22.0/lib/${SDL2_ARCH}/SDL2_ttf.dll"
             $<TARGET_FILE_DIR:enations>
         COMMAND ${CMAKE_COMMAND} -E copy_directory_if_different
             "${CMAKE_CURRENT_SOURCE_DIR}/../data/terrain_gpu"
@@ -667,8 +667,9 @@ add_custom_command(TARGET enations POST_BUILD
 # from a real SDL2 set and FATALs if it cannot — never a silent shim-linked binary.
 # Override the donor with -DEN_MAC_SDL2_DONOR_DIR=<dir> (default: the repo's run dir).
 if (APPLE)
-    if (NOT DEFINED EN_MAC_SDL2_DONOR_DIR)
-        set (EN_MAC_SDL2_DONOR_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../../run-mac")
+    set (EN_MAC_SDL2_DONOR_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../../run-mac" CACHE PATH "Directory holding real (non-shim) SDL2 dylibs used to repair the macOS link")
+    if (NOT EXISTS "${EN_MAC_SDL2_DONOR_DIR}")
+        message(FATAL_ERROR "macOS SDL2 donor not found: ${EN_MAC_SDL2_DONOR_DIR}. Homebrew sdl2 is the sdl2-compat shim and renders this game sprites on magenta, so the link is repaired from a real SDL2 copy. Install real SDL2 2.30.x dylibs and re-configure with -DEN_MAC_SDL2_DONOR_DIR=<dir containing them> (see BUILD.md, macOS section).")
     endif ()
     add_custom_command(TARGET enations POST_BUILD
         COMMAND ${CMAKE_COMMAND}

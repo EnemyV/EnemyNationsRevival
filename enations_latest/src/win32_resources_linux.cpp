@@ -6,10 +6,10 @@
 // gcc/CMake cannot compile a .RC, so lastplnt.rc is dropped from the Linux
 // source list and the string table is provided here as a compiled-in map.
 //
-// The table is intentionally empty for the initial bring-up: a missing IDS_*
-// degrades gracefully to an empty string (callers treat that as "no override").
-// Once the game runs, enumerate which IDS_* are actually loaded in single-player
-// and populate g_stringTable from lastplnt.rc's STRINGTABLE. Linux build only.
+// The table below mirrors lastplnt.rc's STRINGTABLE verbatim. It is kept complete
+// by the `posix_strings_complete` CTest check (tests/cmake/check_posix_strings.cmake),
+// which fails if any STRINGTABLE id has no entry here: a missing IDS_* otherwise
+// degrades silently to an empty string (blank message boxes). Linux build only.
 //---------------------------------------------------------------------------
 
 #ifdef _WIN32
@@ -395,6 +395,8 @@ const std::unordered_map<UINT, std::string>& string_table() {
         { IDS_ADDR,                    "Address >>" },
         { IDS_ADV_DEPTH,               "You should not force bitmaps to the screen depth unless you\n have at least a Pentium Pro/200, 32M of RAM, and 16X\nCD-ROM drive.\nDepths other than 8-bit will take 3 - 4 times longer to\nload, require 3 - 4 times the memory, and require\n2 - 4 times the processing power to render." },
         { IDS_ADV_ZOOM,                "You should not force zoom 0 unless you have at least 32M\nof RAM, and 16X CD-ROM drive. Zoom level 0 will take\n4 - 5 times longer to load and require 4 - 5 times the memory." },
+        { IDS_ERROR_LOW_COLOR_DEPTH,  "You have set Second Chance to run at Window's color depth (which is greater than 8-bit) and you do not have enough memory to run at this setting. Please change the setting back to based on free memory.\r\nDo you wish to run at 8-bit (will not change the permanent setting)?" },
+        { IDS_ERROR_LOW_COLOR_DEPTH2, "You have set Second Chance to run at Window's color depth (which is greater than 8-bit) and you do not have enough processing power to load quickly at this setting. Please change the setting back to based on free memory.\r\nDo you wish to run at 8-bit (will not change the permanent setting)?" },
         { IDS_ERROR_LOW_ZOOM,          "You have set Second Chance to load the zoom 0 sprites and you do not have enough memory to run at this setting. Please change the setting back to based on free memory.\r\nDo you wish to run with no zoom 0 (will not change the permanent setting)?" },
         { IDS_ERROR_LOW_ZOOM2,         "You have set Second Chance to load the zoom 0 sprites and you do not have enough processing power to load quickly at this setting. Please change the setting back to based on free memory.\r\nDo you wish to run with no zoom 0 (will not change the permanent setting)?" },
         { IDS_ERROR_LOW_MUSIC,         "You have set Second Chance to play digital audio music and you do not have enough processor power (P/120 min) and/or CD speed (6X min) to run at this setting. Please change the setting back to based on speed.\r\nDo you wish to run with MIDI (will not change the permanent setting)?" },
@@ -402,6 +404,8 @@ const std::unordered_map<UINT, std::string>& string_table() {
         { IDS_AI_TAKEOVER,             "The Computer is taking over player %1" },
         { IDS_KILLER_RES,              "Your CPU cannot effectively render at your present screen resolution of %1. Do you want Second Chance to set your screen resolution to %2?\r\n(This can be permanently changed in Advanced Options. Will unset when you exit the game.)" },
         { IDS_SERVER,                  "Server" },
+        { IDS_ERROR_16_BIT_WARNING,   "Warning, some video drivers do not handle 16-bit pixels as 5:6:5\r\nIn this case all art will appear mis-colored.\r\nThe only workaround for this is to try another draw method or another bit depth." },
+        { IDS_ERROR_MULT_PROT_WARNING, "A net lag can occur in the game if you have multiple protocols loaded (especially NETBEUI).\r\nIf this happens the only workaround is to unload the other protocols while playing." },
         { IDS_SAVE_REMOTE,             "Updating remote data" },
         { IDS_SAVE_LOCAL,              "Pausing AI players" },
         { IDS_SAVE_DATA,               "Saving game data" },

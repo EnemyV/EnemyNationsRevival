@@ -4,12 +4,9 @@ if (${CMAKE_VERSION} VERSION_LESS 3.12)
     cmake_policy(VERSION ${CMAKE_MAJOR_VERSION}.${CMAKE_MINOR_VERSION})
 endif ()
 
-# On Windows look in the bundled ccache dir; elsewhere just use PATH.
-if (WIN32)
-    find_program(CCACHE_PROGRAM ccache PATHS D:\\ccache-4.8.1-windows-x86_64)
-else ()
-    find_program(CCACHE_PROGRAM ccache)
-endif ()
+# Optional compiler cache: PATH lookup on every platform. Point
+# -DCCACHE_PROGRAM=<path> at a specific install if it is not on PATH.
+find_program(CCACHE_PROGRAM ccache)
 if (CCACHE_PROGRAM)
     message(STATUS "Found ccache: ${CCACHE_PROGRAM}")
     set(CMAKE_CXX_COMPILER_LAUNCHER ${CCACHE_PROGRAM})
@@ -139,4 +136,11 @@ if (MSVC)
     # target in enations_latest/src). Added after tools/vdmplay so `vdmplay` exists.
     ###############################
     add_subdirectory(tools/vdmplay/iserve_headless)
+endif ()
+
+# Headless tests (BUILD_TESTING, on by default). Script-only: they add no
+# build targets and never change what the game build produces.
+include(CTest)
+if (BUILD_TESTING)
+    add_subdirectory(tests)
 endif ()
