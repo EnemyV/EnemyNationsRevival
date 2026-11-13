@@ -21,11 +21,44 @@
 
 #include <SDL.h>
 #include <SDL_ttf.h>
-#ifdef _WIN32
+#if defined(_WIN32) || defined(__APPLE__)
 #include <SDL_syswm.h>
 #endif
 #include <fstream>
 #include <unordered_map>
+
+#ifdef __APPLE__
+// objc runtime declared by hand (the objc headers' BOOL collides with the Win32 shim's).
+extern "C" {
+    void* sel_registerName(const char* name);
+    void  objc_msgSend(void);
+}
+// Height of the camera-notch band at the top of the window's screen (NSScreen
+// safeAreaInsets.top, macOS 12+), 0 on displays without one. Hiding the menu bar does
+// not make that band drawable: macOS keeps the fullscreen game window below it, and a
+// panel placed inside it is covered by black. Intel Macs never had a notch, and their
+// struct-return ABI differs, so they report 0.
+static int MacNotchTopInset(SDL_Window* w) {
+#if defined(__aarch64__) || defined(__arm64__)
+    SDL_SysWMinfo info;
+    SDL_VERSION(&info.version);
+    if (!w || !SDL_GetWindowWMInfo(w, &info) || info.subsystem != SDL_SYSWM_COCOA)
+        return 0;
+    auto send0 = (void* (*)(void*, void*))objc_msgSend;
+    auto responds = (bool (*)(void*, void*, void*))objc_msgSend;
+    void* screen = send0((void*)info.info.cocoa.window, sel_registerName("screen"));
+    void* selInsets = sel_registerName("safeAreaInsets");
+    if (!screen || !responds(screen, sel_registerName("respondsToSelector:"), selInsets))
+        return 0;
+    struct EnEdgeInsets { double top, left, bottom, right; };
+    EnEdgeInsets in = ((EnEdgeInsets (*)(void*, void*))objc_msgSend)(screen, selInsets);
+    return in.top > 0 ? (int)(in.top + 0.999) : 0;
+#else
+    (void)w;
+    return 0;
+#endif
+}
+#endif
 
 // Remembered detached-window placements, keyed by panel name. A game window
 // (area/world/vehicles) that is closed and reopened — or, like an area map,
@@ -1088,6 +1121,11 @@ void SDL2Panel::Detach(SDL_Window* ownerWindow) {
                 minY = db.y;
             }
 #endif
+#ifdef __APPLE__
+            // ...except a notched display, whose top band stays covered even with the
+            // menu bar hidden; floor below it so title bars are not lost under it.
+            minY += MacNotchTopInset(m_ownWindow);
+#endif
             int wx, wy, ww, wh;
             SDL_GetWindowPosition(m_ownWindow, &wx, &wy);
             SDL_GetWindowSize(m_ownWindow, &ww, &wh);
@@ -1375,12 +1413,21 @@ void SDL2Panel::PresentOwn() {
         if (useRT) {
             SDL_SetRenderTarget(m_ownRenderer, prevTarget);
             if (m_mapZoomScale > 1.0f) {
+                // m_contentRT is in logical units, but the window target is in output
+                // pixels (2x on Retina/HiDPI), so the window-side rects must be scaled
+                // or the zoomed map lands at 1/density size in the top-left corner.
+                int outW = 0, outH = 0, winW = 0, winH = 0;
+                SDL_GetRendererOutputSize(m_ownRenderer, &outW, &outH);
+                SDL_GetWindowSize(m_ownWindow, &winW, &winH);
+                const float sx = winW > 0 ? (float)outW / winW : 1.0f;
+                const float sy = winH > 0 ? (float)outH / winH : 1.0f;
                 SDL_Rect src = { 0, tbH, m_width, m_height };
-                SDL_Rect viewport = { 0, tbH, m_width, m_height };
+                SDL_Rect viewport = { 0, (int)(tbH * sy + 0.5f),
+                                      (int)(m_width * sx + 0.5f), (int)(m_height * sy + 0.5f) };
                 SDL_RenderSetViewport(m_ownRenderer, &viewport);
-                SDL_FRect dst = { (1.0f - m_mapZoomScale) * m_width * 0.5f,
-                                  (1.0f - m_mapZoomScale) * m_height * 0.5f,
-                                  m_width * m_mapZoomScale, m_height * m_mapZoomScale };
+                SDL_FRect dst = { (1.0f - m_mapZoomScale) * m_width * sx * 0.5f,
+                                  (1.0f - m_mapZoomScale) * m_height * sy * 0.5f,
+                                  m_width * m_mapZoomScale * sx, m_height * m_mapZoomScale * sy };
                 SDL_RenderCopyF(m_ownRenderer, m_contentRT, &src, &dst);
                 SDL_RenderSetViewport(m_ownRenderer, nullptr);
             } else {
