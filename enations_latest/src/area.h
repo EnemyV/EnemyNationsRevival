@@ -158,6 +158,32 @@ public:
 	void		BldgCurOff ();
 	void		StatUnit (CUnit * pUnit);
 	void		CheckZoomBtns ();
+    void RequestSmoothZoom(float direction);
+    bool IsZoomAnimating() const { return m_zoomDirection != 0; }
+    float GetZoomVisualLevel() const;
+    void UpdateSmoothZoom();
+    void MapInputPoint(CPoint& point) const;
+    void ReprojectZoomGestures(int oldZoom, int newZoom);
+    float m_zoomTarget = -1.0f;
+    int m_zoomDirection = 0;
+    unsigned int m_zoomStart = 0;
+    unsigned int m_zoomDuration = 180;
+    float m_zoomFrom = 1.0f;
+    int m_wheelAccum = 0;
+    float m_wheelFraction = 0.0f;
+    CPoint m_panRawPoint = CPoint(0, 0);
+    bool m_panRawValid = false;
+    CPoint m_zoomPointer = CPoint(0, 0);
+    bool m_zoomPointerValid = false;
+    void UpdatePointerFeedback(UINT flags, CPoint point, bool notifyBase);
+    void UpdateSelectionRect(CPoint point);
+    bool IsSelectionDrag(CPoint point) const;
+    void UpdateSelectionDragRaw(int x, int y);
+    bool m_selectionRawValid = false;
+    bool m_selectionDragged = false;
+    CPoint m_selectionRawStart = CPoint(0, 0);
+    int m_selectionThresholdX = 1, m_selectionThresholdY = 1;
+    void SetMouseStateAt(CPoint point);
 
 	void		GiveUnits ( CPlayer * pPlyr );
 

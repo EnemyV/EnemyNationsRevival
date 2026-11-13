@@ -2468,6 +2468,11 @@ void SDL2Dialog::CaptureBackground() {
 }
 
 int SDL2Dialog::DoModal() {
+    struct ModalScope {
+        GameWindow* window;
+        explicit ModalScope(GameWindow* w) : window(w) { if (window) window->EnterModalDialog(); }
+        ~ModalScope() { if (window) window->LeaveModalDialog(); }
+    } modalScope(m_gameWindow);
     m_running = true;
     m_result = 0;
 

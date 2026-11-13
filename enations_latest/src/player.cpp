@@ -12,6 +12,7 @@
 #include <algorithm> // for the memory pool
 #include <cstdio>    // fprintf(stderr) for the EN_SAVE_DIAG history save/load diagnostic
 #include "player.h"
+#include "PerfHarness.h"
 #include "edicts.h"   // Edicts v1: g_aEdicts catalog for RecomputeEdictMults
 
 #include "ai.h"
@@ -55,6 +56,17 @@ static char BASED_CODE THIS_FILE[] = __FILE__;
 extern CRITICAL_SECTION cs;
 
 CGame theGame;
+
+// A rejected save is an expected load cancellation, not a window failure.
+namespace {
+struct SaveRejected {};
+thread_local bool loadingLocalSave = false;
+struct LocalSaveGuard {
+    bool previous;
+    LocalSaveGuard() : previous(loadingLocalSave) { loadingLocalSave = true; }
+    ~LocalSaveGuard() { loadingLocalSave = previous; }
+};
+}
 
 void ShowBuilding( int iInd, CBuilding* pBldg );
 
@@ -3210,7 +3222,8 @@ void CGame::RemovePlayer( CPlayer* pPlr )
         ::AiKillPlayer( dwAiID );
 
     // close the connection - UNLESS to the server
-    if ( pPlr == theGame.GetServer( ) )
+    ASSERT_STRICT_VALID( &theGame );
+    if ( pPlr == theGame.m_pServer )
     {
         theGame._SetServer( NULL );
         pPlr->SetNetNum( 0 );
@@ -3424,8 +3437,10 @@ int CGame::LoadGame( CWnd* pPar, BOOL bReplace )
 
     EnableAllWindows( NULL, FALSE );
 
-    // Use SDL2 file browser if the SDL2 window is active, else fall back to MFC
-    if ( theApp.m_gameWindow )
+    // Only an opt-in harness request supplies this path; normal loads remain modal.
+    if ( PerfHarnessPendingLoadPath( ) )
+        theGame.m_sFileName = PerfHarnessPendingLoadPath( );
+    else if ( theApp.m_gameWindow )
     {
         SDL2FileBrowser browser( theApp.m_gameWindow.get(), SDL2FileBrowser::Open,
                                  "Load Game", "", "", ".en" );
@@ -3481,6 +3496,8 @@ int CGame::LoadGame( CWnd* pPar, BOOL bReplace )
         std::string sSaveName = theGame.m_sFileName;
         CFile   fil( m_sFileName.c_str(), CFile::modeRead | CFile::shareExclusive | CFile::typeBinary );
         int     iLen = fil.GetLength( );
+        if ( iLen < 5 )
+            throw SaveRejected{};
         char*   pBuf = (char*)malloc( iLen );
         if ( pBuf == NULL )
             ThrowError( ERR_OUT_OF_MEMORY );
@@ -3496,17 +3513,48 @@ int CGame::LoadGame( CWnd* pPar, BOOL bReplace )
         CMemFile filMem;
         filMem.Attach( (BYTE*)pDeComp, iDecompLen );
 
-        CArchive ar( &filMem, CArchive::load );
-        Serialize( ar );
-        ar.Close( );
+        try
+        {
+            CArchive ar( &filMem, CArchive::load );
+            LocalSaveGuard localSaveGuard;
+            Serialize( ar );
+            if ( PerfHarnessPendingLoadPath() )
+                std::fprintf( stderr, "[P1-HARNESS] Serialize complete\n" );
+            ar.Close( );
+        }
+        catch ( ... )
+        {
+            BYTE* detached = filMem.Detach( );
+#ifndef _WIN32
+            free( detached ); // POSIX compatibility Detach returns a separate copy.
+#else
+            (void)detached; // MFC Detach returns pDeComp itself.
+#endif
+            CoDec::FreeBuf( pDeComp );
+            throw;
+        }
 
-        filMem.Detach( );
+        BYTE* detached = filMem.Detach( );
+#ifndef _WIN32
+        free( detached );
+#else
+        (void)detached;
+#endif
         CoDec::FreeBuf( pDeComp );
         filMem.Close( );
         theGame.m_sFileName = sSaveName;
         theGame.DecTry( );
     }
 
+    catch ( const SaveRejected& )
+    {
+        theGame.DecTry( );
+        delete theApp.m_pCreateGame;
+        theApp.m_pCreateGame = NULL;
+        theApp.CloseWorld( );
+        EnableAllWindows( NULL, TRUE );
+        return ( IDCANCEL );
+    }
     catch ( int iNum )
     {
         theGame.DecTry( );
@@ -4347,7 +4395,10 @@ void CGame::Serialize( CArchive& ar )
                 "Save format %1; this build reads up to %2.\n\n"
                 "Load it with the version that wrote it.",
                 sSaveFmt.c_str( ), sBuildFmt.c_str( ) );
-            EnMessageBox( sMsg.c_str( ) );
+            if ( !PerfHarnessPendingLoadPath( ) )
+                EnMessageBox( sMsg.c_str( ) );
+            if ( loadingLocalSave )
+                throw SaveRejected{};
             ThrowError( ERR_RES_CREATE_WND );
         }
 
@@ -4371,7 +4422,10 @@ void CGame::Serialize( CArchive& ar )
             std::string sVer2 = GetVerText( VER_MAJOR, VER_MINOR, VER_RELEASE, _wDebug, _wCheat );
             std::string sMsg = strPrintf( EnLoadStdString( IDS_SAVE_VER ).c_str(),
                                           sVer1.c_str( ), sVer2.c_str( ) );
-            EnMessageBox( sMsg.c_str() );
+            if ( !PerfHarnessPendingLoadPath( ) )
+                EnMessageBox( sMsg.c_str() );
+            if ( loadingLocalSave )
+                throw SaveRejected{};
             ThrowError( ERR_RES_CREATE_WND );
         }
 
@@ -4561,6 +4615,8 @@ void CGame::Serialize( CArchive& ar )
         BOOL bLocal =
             ( ( theApp.m_pCreateGame == NULL ) || ( theApp.m_pCreateGame->m_iTyp != CCreateBase::load_join ) );
         AiLoadGame( ar, bLocal );
+        if ( PerfHarnessPendingLoadPath() )
+            std::fprintf( stderr, "[P1-HARNESS] AiLoadGame complete\n" );
         if ( bLocal )
             AiLoadComplete( );
 

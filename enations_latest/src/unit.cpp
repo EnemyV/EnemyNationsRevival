@@ -3574,7 +3574,7 @@ void CVehicle::SetDestAndMode( CSubHex sub, VEH_POS iMode, BOOL bTrafficDetour )
 #endif
 
     // if we're moving just change the path
-    ASSERT( ( m_cMode != moving ) || ( m_iStepsLeft > 0 ) );
+    ASSERT( m_iStepsLeft >= 0 );
     // Arrival can leave freshly initialized interpolation with next==head.
     // That is not an active step: a new detour must start travel, not shrink
     // the body toward its own head while pretending to finish the old step.

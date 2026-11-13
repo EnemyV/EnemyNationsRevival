@@ -2951,9 +2951,7 @@ static void LoadCarrier( CMsgLoadCarrier* pMsg )
         return;
     }
 
-    // can we do it
-    if ( ( !pVehCarrier->GetData( )->IsCarrier( ) ) ||
-         ( pVehCarrier->m_iCargoSize + iAdd > pVehCarrier->GetEffPeopleCarry( ) ) )
+    if ( !pVehCarrier->GetData( )->IsCarrier( ) || pVehCargo == pVehCarrier )
     {
         ASSERT( FALSE );
         return;
@@ -2972,6 +2970,14 @@ static void LoadCarrier( CMsgLoadCarrier* pMsg )
         ASSERT( FALSE );
         return;
     }
+
+    // Local delivery is queued: another request can have loaded this cargo
+    // or consumed the remaining capacity since the sender checked it.
+    if ( pVehCargo->GetTransport( ) != NULL )
+        return;
+    if ( static_cast<long long>( pVehCarrier->m_iCargoSize ) + static_cast<long long>( iAdd ) >
+         static_cast<long long>( pVehCarrier->GetEffPeopleCarry( ) ) )
+        return;
 
 #ifdef _LOGOUT
     logPrintf( LOG_PRI_USEFUL, LOG_VEH_MOVE, "Loaded vehicle %d on vehicle %d at sub (%d,%d)", pVehCargo->GetID( ),

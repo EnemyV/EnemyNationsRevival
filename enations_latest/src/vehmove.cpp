@@ -2715,7 +2715,8 @@ void CVehicle::UnloadCarrier() {
                     _dest.Wrap();
                 }
 
-                // if we're here there was no exit location
+                // No candidate was found; retry from the known-water center.
+                _dest = _head;
             }
         } while (theMap._GetHex(_dest)->IsWater());
 
@@ -4365,8 +4366,18 @@ void CVehicle::HandleBlocked() {
     }
 
     CSubHex blockedStep;
-    if (MustKeepLane(blockedStep))
+    if (MustKeepLane(blockedStep)) {
+        // Replacing a cancelled step must release its distinct reservation.
+        const auto canonicalSub = [](const CSubHex &pt) {
+            return pt.x == CSubHex::Wrap(pt.x) && pt.y == CSubHex::Wrap(pt.y);
+        };
+        if (m_cOwn && canonicalSub(m_ptNext) && canonicalSub(m_ptHead) &&
+            canonicalSub(m_ptTail) && canonicalSub(blockedStep) &&
+            m_ptNext != blockedStep && m_ptNext != m_ptHead &&
+            m_ptNext != m_ptTail && theVehicleHex._GetVehicle(m_ptNext) == this)
+            theVehicleHex.ReleaseHex(m_ptNext, this);
         m_ptNext = blockedStep;
+    }
     CVehicle *pVehInWay = theVehicleHex._GetVehicle(m_ptNext);
 
     // is the block legit (didn't release properly?)
@@ -5011,6 +5022,15 @@ void CVehicle::EndReverse() {
 }
 
 void CVehicle::Turn180() {
+
+    // Relabelling the body cancels a distinct old forward reservation.
+    const auto canonicalSub = [](const CSubHex &pt) {
+        return pt.x == CSubHex::Wrap(pt.x) && pt.y == CSubHex::Wrap(pt.y);
+    };
+    if (m_cOwn && canonicalSub(m_ptNext) && canonicalSub(m_ptHead) &&
+        canonicalSub(m_ptTail) && m_ptNext != m_ptHead && m_ptNext != m_ptTail &&
+        theVehicleHex._GetVehicle(m_ptNext) == this)
+        theVehicleHex.ReleaseHex(m_ptNext, this);
 
     // turn off spotting for resetting below
     BOOL bSpotting = FALSE;

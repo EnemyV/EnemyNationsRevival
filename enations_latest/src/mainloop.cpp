@@ -25,6 +25,7 @@
 #include "GameWindow.h"
 #include <typeinfo>   // typeid: per-window r.draw attribution
 #include "Perf.h"
+#include "PerfHarness.h"
 #include "SDL2CreateStatus.h"
 #include "SDL2Compositor.h"
 #include "SDL2MFCPanel.h"
@@ -81,6 +82,31 @@ static int CountContenders( CList<CPlayer*, CPlayer*>& lst )
 // once-a-second check, exactly as it would have had play continued.
 static const DWORD DECIDED_GRACE_SECS = 60;
 
+// Defeat uses a periodically sampled completed-building count, while unseen
+// dead buildings intentionally remain in the map after their live count drops.
+// The once-per-second pass count is not a wall-clock age.
+static void LogDefeatBuilding( CPlayer* pPlr, CBuilding* pBldg, int iRecountPasses )
+{
+    const char* context = getenv( "EN_ASSERT_CONTEXT" );
+    if ( ( context == NULL ) || ( strcmp( context, "1" ) != 0 ) )
+        return;
+    static unsigned count = 0;
+    if ( count >= 128 )
+        return;
+    ++count;
+    fprintf( stderr,
+             "[DEFEAT-CONTEXT] elapsed=%lu player=%d live_count=%d built_snapshot=%d "
+             "recount_passes=%d building=%lu flags=%u constructing=%d valid_live_count=%d\n",
+             (unsigned long)theGame.GetElapsedSeconds( ), pPlr->GetPlyrNum( ),
+             pPlr->GetBldgsHave( ), pPlr->m_iBuiltBldgsHave, iRecountPasses,
+             (unsigned long)pBldg->GetID( ), (unsigned)pBldg->GetFlags( ),
+             (int)pBldg->IsConstructing( ),
+             (int)( ( pPlr->GetBldgsHave( ) >= 0 ) &&
+                    ( pBldg->IsFlag( CUnit::dead ) || ( pPlr->GetBldgsHave( ) > 0 ) ) ) );
+    if ( count == 128 )
+        fprintf( stderr, "[DEFEAT-CONTEXT] limit=128 further building records omitted\n" );
+}
+
 
 #ifdef _PROFILE
 extern "C"
@@ -126,6 +152,8 @@ int CConquerApp::Run( )
 
     // Profiling harness: reads EN_PERF / EN_PERF_INTERVAL_MS. No-op unless enabled.
     Perf::Init();
+    PerfHarnessStart();
+    struct HarnessStopGuard { ~HarnessStopGuard() { PerfHarnessStop(); } } harnessStopGuard;
 
     if ( m_pMainWnd == NULL )
     {
@@ -148,6 +176,7 @@ int CConquerApp::Run( )
         // 3. Render one frame
         for ( ;; )
         {
+            PerfHarnessService();
             BOOL bQuitReceived = FALSE;
 
             // Profiling: one "frame" == one outer loop iteration. Cheap no-op
@@ -1352,25 +1381,34 @@ void CConquerApp::GraphicsEnginePump( )
                     if ( ( pPlr->GetBldgsHave( ) <= 0 ) || ( pPlr->m_iBuiltBldgsHave == 0 ) )
                     {
                         // kill all their buildings & vehicles (if they have them)
-                        pos = theBuildingMap.GetStartPosition( );
-                        while ( pos != NULL )
+                        POSITION buildingPos = theBuildingMap.GetStartPosition( );
+                        while ( buildingPos != NULL )
                         {
                             DWORD      dwID;
                             CBuilding* pBldg;
-                            theBuildingMap.GetNextAssoc( pos, dwID, pBldg );
+                            theBuildingMap.GetNextAssoc( buildingPos, dwID, pBldg );
                             ASSERT_STRICT_VALID( pBldg );
                             if ( pBldg->GetOwner( ) == pPlr )
                             {
-                                ASSERT( FALSE );
+                                const bool bValidLiveCount = ( pPlr->GetBldgsHave( ) >= 0 ) &&
+                                    ( pBldg->IsFlag( CUnit::dead ) || ( pPlr->GetBldgsHave( ) > 0 ) );
+                                if ( !bValidLiveCount )
+                                    Perf::CounterInc( "assert.defeat.count" );
+                                LogDefeatBuilding( pPlr, pBldg, iFifteen );
+                                // A zero completed-building snapshot can leave
+                                // construction (or a just-completed building).
+                                // Dead unseen buildings are already uncounted.
+                                // A non-dead building must still be counted.
+                                ASSERT( bValidLiveCount );
                                 pBldg->PrepareToDie( NULL );
                             }
                         }
-                        pos = theVehicleMap.GetStartPosition( );
-                        while ( pos != NULL )
+                        POSITION vehiclePos = theVehicleMap.GetStartPosition( );
+                        while ( vehiclePos != NULL )
                         {
                             DWORD     dwID;
                             CVehicle* pVeh;
-                            theVehicleMap.GetNextAssoc( pos, dwID, pVeh );
+                            theVehicleMap.GetNextAssoc( vehiclePos, dwID, pVeh );
                             ASSERT_STRICT_VALID( pVeh );
                             if ( pVeh->GetOwner( ) == pPlr )
                                 pVeh->PrepareToDie( NULL );

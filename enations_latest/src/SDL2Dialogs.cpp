@@ -1,5 +1,6 @@
 #include "stdafx.h"
 #include "SDL2Dialogs.h"
+#include "PerfHarness.h"
 #include "en_hangdump.h"   // EnHangHeartbeat() + EnHangModalScope - hang watchdog
 #include <sstream>   // locale-grouped number formatting for the load-game stats
 #include <locale>
@@ -1135,21 +1136,25 @@ bool SDL2_RunLoadSinglePlayerFlow(GameWindow* gameWindow) {
 
     CPlayer* pPlr = NULL;
     std::string sPickName;
-    ShowWallpaperBackground(gameWindow);
-    SDL2PickPlayerDialog pickDlg(gameWindow);
-    if (pickDlg.DoModal() != 1) {
-        // LoadGame() disabled all windows; only StartGame (OK path) re-enables. A
-        // pick-cancel returns to the menu without StartGame, so re-enable or the menu
-        // is left input-dead. (Mirrors LoadGame's failure catches.)
-        EnableAllWindows(NULL, TRUE);
-        theGame.Close();
-        delete theApp.m_pCreateGame;
-        theApp.m_pCreateGame = NULL;
-        return false;
+    if (PerfHarnessPendingLoadPath()) {
+        pPlr = theGame._GetMe();
+        if (!pPlr) { EnableAllWindows(NULL, TRUE); theGame.Close(); delete theApp.m_pCreateGame; theApp.m_pCreateGame = NULL; return false; }
+        sPickName = pPlr->GetName() ? pPlr->GetName() : "";
+    } else {
+        ShowWallpaperBackground(gameWindow);
+        SDL2PickPlayerDialog pickDlg(gameWindow);
+        if (pickDlg.DoModal() != 1) {
+            // Cancel returns to the menu without StartGame, so re-enable input.
+            EnableAllWindows(NULL, TRUE);
+            theGame.Close();
+            delete theApp.m_pCreateGame;
+            theApp.m_pCreateGame = NULL;
+            return false;
+        }
+        pPlr = theGame.GetPlayerByPlyr(pickDlg.m_iSelectedPlyrNum);
+        if (!pPlr) { EnableAllWindows(NULL, TRUE); theGame.Close(); delete theApp.m_pCreateGame; theApp.m_pCreateGame = NULL; return false; }
+        sPickName = pickDlg.m_playerName;
     }
-    pPlr = theGame.GetPlayerByPlyr(pickDlg.m_iSelectedPlyrNum);
-    if (!pPlr) { EnableAllWindows(NULL, TRUE); theGame.Close(); delete theApp.m_pCreateGame; theApp.m_pCreateGame = NULL; return false; }
-    sPickName = pickDlg.m_playerName;
 
     theGame.SetHP(TRUE); theGame.SetScenario(-1);
     if (pPlr != theGame._GetMe()) {

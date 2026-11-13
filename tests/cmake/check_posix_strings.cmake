@@ -2,6 +2,7 @@
 # entry in the POSIX string table (win32_resources_linux.cpp). A missing entry
 # degrades silently to a blank string at runtime (plan 1.5).
 # Run via: cmake -DEN_SOURCE_DIR=<repo> -P <this file>
+cmake_policy(SET CMP0057 NEW)
 if (NOT DEFINED EN_SOURCE_DIR)
     message(FATAL_ERROR "EN_SOURCE_DIR not set")
 endif ()

@@ -36,6 +36,7 @@
 #include "SDL2AreaBar.h"
 #include "SDL2Compositor.h"
 #include "SDL2Panel.h"
+#include "zoom_interpolation.h"
 #include "SDL2RouteWindow.h"
 #include "Perf.h"
 #include "SDL2GameDialogs.h"
@@ -43,6 +44,8 @@
 #include <SDL_syswm.h>
 #include <unordered_map>
 #include <vector>
+#include <algorithm>
+#include <cmath>
 
 #ifndef PW_RENDERFULLCONTENT
 #define PW_RENDERFULLCONTENT 0x00000002
@@ -600,8 +603,7 @@ HCURSOR CWndArea::m_hCurNoRepair;
 // defined in lastplnt.cpp and declared extern in lastplnt.h under _CHEAT.
 // (Removed local `static ... = 1` shadows that forced both cheats ON and hid the registry value.)
 
-// accumulator for mouse wheel deltas
-static int s_areaWheelAccum = 0;
+
 
 // 1 if inc to next, 0 if not
 const int abPos[NUM_AREA_BUTTONS] = { 1, 1, 1, 1, 1, 1, 0, 1, 0, 0, 0, 0, 1, 0, 1, 0, 1 };
@@ -2217,6 +2219,10 @@ void CWndArea::UpdateBuildDrag( CPoint point )
     CHexCoord hexToUL   = ToBuildUL( hexNow );
 
     m_nDragSites = BuildDragLine( hexFromUL, hexToUL, m_iDragCx, m_iDragCy, m_ahexDrag, MAX_DRAG_PLACE );
+    // A single-site release uses the cursor anchor, even when a short drag
+    // moved within one footprint. Preview and validate that same site.
+    if ( m_nDragSites == 1 )
+        m_ahexDrag[0] = hexToUL;
     for ( int iOn = 0; iOn < m_nDragSites; iOn++ )
     {
         CBuildVerdict v;
@@ -2301,11 +2307,9 @@ void CWndArea::OnMouseMove( UINT nFlags, CPoint point )
 
     // drawing the selection box (LMB drag is always a box-select now — line
     // movement lives on the RMB drag below)
-    if ( m_iMode == normal_select )
+    if ( m_iMode == normal_select && !m_bPanBtnDown )
     {
-        m_selRect.SetRect( m_selOrig.x, m_selOrig.y, point.x, point.y );
-        m_selRect.NormalizeRect( );
-        m_selRect &= rect;
+        UpdateSelectionRect(point);
     }
 
     // RMB drag with 2+ units selected = line movement (drawn formation). A plain
@@ -2379,6 +2383,11 @@ void CWndArea::OnMouseMove( UINT nFlags, CPoint point )
         return;
     }
 
+    UpdatePointerFeedback(nFlags, point, true);
+}
+
+void CWndArea::UpdatePointerFeedback(UINT nFlags, CPoint point, bool notifyBase)
+{
     // where are we
     CHitInfo  hitinfo = m_aa.GetHit( point );
     CHexCoord hexcoord( hitinfo._GetHexCoord( ) );
@@ -2481,7 +2490,7 @@ void CWndArea::OnMouseMove( UINT nFlags, CPoint point )
             }
             else
                 theApp.m_wndBar.SetStatusText( 0, m_sHelpCantBuild[6].c_str( ), CStatInst::critical );
-            CWndBaseSuper::OnMouseMove( nFlags, point );
+            if (notifyBase) CWndBaseSuper::OnMouseMove( nFlags, point );
             return;
         }
 
@@ -2559,7 +2568,7 @@ void CWndArea::OnMouseMove( UINT nFlags, CPoint point )
         theMap.SetBldgCur( _hexBuild, m_iBuild, GetBuildDir( ), iCurType );
     }
 
-    CWndBaseSuper::OnMouseMove( nFlags, point );
+    if (notifyBase) CWndBaseSuper::OnMouseMove( nFlags, point );
 }
 
 //--------------------------------------------------------------------------
@@ -2567,6 +2576,7 @@ void CWndArea::OnMouseMove( UINT nFlags, CPoint point )
 //--------------------------------------------------------------------------
 void CWndArea::Draw( )
 {
+    UpdateSmoothZoom();
     // SPLIT (2026-09-13): CWndArea::Draw is 78.9 ms/s on the VM = 97.3% of r.draw and
     // 64.4% of SEC_RENDER, and nothing inside it was timed - the same shape the sprite
     // full-branch and the radar walk had before they were measured. Three scopes:
@@ -3612,38 +3622,66 @@ int CWndArea::OnCreate( LPCREATESTRUCT lpCreateStruct )
                     int barH   = pThis->m_WndStatic.m_sdlPanel->GetHeight();
                     int areaH  = pThis->m_aa.m_sdlPanel->GetHeight();
                     int barOffY = areaH - barH;
-                    if ( localY >= barOffY )
+                    if ( localY >= barOffY ) {
+                        if (event.type == SDL_MOUSEMOTION) {
+                            pThis->m_zoomPointerValid = false;
+                            if (pThis->m_bPanBtnDown) pThis->m_panRawValid = false;
+                        }
                         return pThis->m_WndStatic.m_sdl2Bar->HandleEvent(
                             event, pThis->m_WndStatic.m_sdlPanel->LayoutLocalX(localX),
                             pThis->m_WndStatic.m_sdlPanel->LayoutLocalY(localY - barOffY) );
+                    }
                 }
 
+                const int rawX = localX, rawY = localY;
                 UINT flags = SDLModToMFC();
                 CPoint pt(localX, localY);
+                pThis->MapInputPoint(pt);
 
                 switch (event.type) {
                 case SDL_MOUSEBUTTONDOWN:
+                    if (event.button.button == SDL_BUTTON_LEFT && rawX >= 0 && rawY >= 0 &&
+                        rawX < pThis->m_aa.m_sdlPanel->GetWidth() && rawY < pThis->m_aa.m_sdlPanel->GetHeight()) {
+                        pThis->m_zoomPointer = CPoint(rawX, rawY);
+                        pThis->m_zoomPointerValid = true;
+                    }
                     // clicking an area window makes it the focused/top one (GetTop)
                     theAreaList.SetTopArea(pThis);
                     if (event.button.button == SDL_BUTTON_LEFT) {
+                        pThis->m_selectionRawValid = false;
                         if (event.button.clicks >= 2)
                             pThis->OnLButtonDblClk(flags, pt);
-                        else
+                        else {
                             pThis->OnLButtonDown(flags, pt);
+                            if (pThis->m_iMode == normal_select) {
+                                pThis->m_selectionRawStart = CPoint(rawX, rawY);
+                                const float scale = pThis->m_aa.m_sdlPanel->GetMapZoomScale();
+                                pThis->m_selectionThresholdX = (std::max)(1, (int)std::ceil((theMap.HexWid(pThis->m_aa.m_iZoom) / 2) * scale));
+                                pThis->m_selectionThresholdY = (std::max)(1, (int)std::ceil((theMap.HexHt(pThis->m_aa.m_iZoom) / 2) * scale));
+                                pThis->m_selectionDragged = false;
+                                pThis->m_selectionRawValid = true;
+                            }
+                        }
                     } else if (event.button.button == SDL_BUTTON_RIGHT) {
                         if (event.button.clicks >= 2)
                             pThis->OnRButtonDblClk(flags, pt);
                         else
                             pThis->OnRButtonDown(flags, pt);
                     } else if (event.button.button == SDL_BUTTON_MIDDLE) {
-                        // MMB held = pan (modern binding; RMB is the command button)
+                        // Keep the previous pointer in screen coordinates so a
+                        // changing zoom does not inject a false drag delta.
+                        pThis->m_panRawPoint = CPoint(rawX, rawY);
+                        pThis->m_panRawValid = true;
                         pThis->OnMButtonDown(flags, pt);
                     }
                     return true;
 
                 case SDL_MOUSEBUTTONUP:
-                    if (event.button.button == SDL_BUTTON_LEFT)
+                    if (event.button.button == SDL_BUTTON_LEFT) {
+                        if (!pThis->m_bPanBtnDown) pThis->UpdateSelectionDragRaw(rawX, rawY);
                         pThis->OnLButtonUp(flags, pt);
+                        pThis->m_selectionRawValid = false;
+                    }
                     else if (event.button.button == SDL_BUTTON_RIGHT)
                         pThis->OnRButtonUp(flags, pt);
                     else if (event.button.button == SDL_BUTTON_MIDDLE)
@@ -3651,11 +3689,33 @@ int CWndArea::OnCreate( LPCREATESTRUCT lpCreateStruct )
                     return true;
 
                 case SDL_MOUSEMOTION:
+                    // Preserve the legacy outside-client guard before applying the
+                    // inverse transform (which can pull an outside point inside).
+                    if (rawX < 0 || rawY < 0 || rawX >= pThis->m_aa.m_sdlPanel->GetWidth() ||
+                        rawY >= pThis->m_aa.m_sdlPanel->GetHeight())
+                        pt = CPoint(rawX, rawY);
+                    pThis->m_zoomPointerValid = rawX >= 0 && rawY >= 0 &&
+                        rawX < pThis->m_aa.m_sdlPanel->GetWidth() && rawY < pThis->m_aa.m_sdlPanel->GetHeight();
+                    if (pThis->m_zoomPointerValid) pThis->m_zoomPointer = CPoint(rawX, rawY);
+                    if (!pThis->m_bPanBtnDown) pThis->UpdateSelectionDragRaw(rawX, rawY);
+                    else if (pThis->m_selectionRawValid && !pThis->m_selectionDragged)
+                        pThis->m_selectionRawStart = CPoint(rawX, rawY);
+                    if (pThis->m_bPanBtnDown) {
+                        if (pThis->m_zoomPointerValid) {
+                            AreaZoomPoint base = AreaZoomPanPrior({rawX, rawY},
+                                {pThis->m_panRawPoint.x, pThis->m_panRawPoint.y}, pThis->m_panRawValid);
+                            CPoint prior(base.x, base.y);
+                            pThis->MapInputPoint(prior);
+                            pThis->m_ptRMB = prior;
+                            pThis->m_panRawPoint = CPoint(rawX, rawY);
+                        }
+                        pThis->m_panRawValid = pThis->m_zoomPointerValid;
+                    }
 #ifndef _WIN32
                     // Feed the real client mouse pos so SetMouseState's
                     // GetCursorPos()+ScreenToClient() finds the hovered unit/hex
                     // (the stubs returned 0,0 → select/goto/target cursors never showed).
-                    en_SetCursorPos(pt.x, pt.y);
+                    en_SetCursorPos(rawX, rawY);
 #endif
                     pThis->OnMouseMove(flags, pt);
                     pThis->SetMouseState();  // Update cursor & m_uMouseMode (replaces WM_SETCURSOR)
@@ -3666,9 +3726,16 @@ int CWndArea::OnCreate( LPCREATESTRUCT lpCreateStruct )
                         theApp.m_gameWindow->EnsureCursorVisible();
                     return true;
 
-                case SDL_MOUSEWHEEL:
-                    pThis->OnMouseWheel(flags, (short)(event.wheel.y * WHEEL_DELTA), pt);
+                case SDL_MOUSEWHEEL: {
+#if SDL_VERSION_ATLEAST(2, 0, 18)
+                    float delta = event.wheel.preciseY;
+#else
+                    float delta = (float)event.wheel.y;
+#endif
+                    if (event.wheel.direction == SDL_MOUSEWHEEL_FLIPPED) delta = -delta;
+                    if (std::isfinite(delta) && delta != 0.0f) pThis->RequestSmoothZoom(-delta);
                     return true;
+                }
 
                 case SDL_KEYDOWN: {
                     SDL_Scancode sc = event.key.keysym.scancode;
@@ -4080,53 +4147,230 @@ void CWndArea::OnDestroy( )
     }
 }
 
-void CWndArea::ZoomIn( )
+// Discrete map assets differ by a factor of two. Animate the coarser
+// level from 1x to 2x, switching levels only at the matching endpoint. This
+// keeps the whole viewport covered without requiring an overscan buffer.
+void CWndArea::MapInputPoint(CPoint& point) const
 {
-
-    ASSERT_STRICT_VALID( this );
-
-    if ( m_aa.m_iZoom > theApp.GetZoomData( )->GetFirstZoom( ) )
-    {
-        m_aa.Zoom( CAnimAtr::ZOOM_IN );
-
-        ASSERT_STRICT_VALID( &theMap );
-        
-        InvalidateWindow ();
-        InvalidateSound( );
-    }
-
-    CheckZoomBtns( );
+    const SDL2Panel* panel = m_aa.m_sdlPanel;
+    if (!panel) return;
+    if (point.x < 0 || point.y < 0 || point.x >= panel->GetWidth() || point.y >= panel->GetHeight()) return;
+    const float scale = panel->GetMapZoomScale();
+    if (scale <= 1.0f) return;
+    const float cx = panel->GetWidth() * 0.5f;
+    const float cy = panel->GetHeight() * 0.5f;
+    AreaZoomPoint mapped = AreaZoomTransform({point.x, point.y}, cx, cy, 1.0f / scale);
+    point.x = mapped.x; point.y = mapped.y;
 }
 
-void CWndArea::ZoomOut( )
+void CWndArea::UpdateSelectionDragRaw(int x, int y)
 {
-
-    ASSERT_STRICT_VALID( this );
-
-    if ( m_aa.m_iZoom < NUM_ZOOM_LEVELS - 1 )
-    {
-        m_aa.Zoom( CAnimAtr::ZOOM_OUT );
-
-        ASSERT_STRICT_VALID( &theMap );
-        
-        InvalidateWindow ();
-        InvalidateSound( );
-    }
-
-    CheckZoomBtns( );
+    if (m_selectionRawValid && m_iMode == normal_select)
+        m_selectionDragged = AreaZoomSelectionDrag(
+            {m_selectionRawStart.x, m_selectionRawStart.y}, {x, y},
+            m_selectionThresholdX, m_selectionThresholdY);
 }
+
+bool CWndArea::IsSelectionDrag(CPoint point) const
+{
+    if (m_selectionRawValid) return m_selectionDragged;
+    return (abs(point.x - m_ptLMB.x) >= theMap.HexWid(m_aa.m_iZoom) / 2) ||
+           (abs(point.y - m_ptLMB.y) >= theMap.HexHt(m_aa.m_iZoom) / 2);
+}
+
+void CWndArea::UpdateSelectionRect(CPoint point)
+{
+    CRect bounds;
+    GetClientRect(&bounds);
+    AreaZoomRect next = AreaZoomSelectionRect({m_selOrig.x, m_selOrig.y}, {point.x, point.y},
+                                               bounds.right, bounds.bottom);
+    if (m_selRect.left != next.left || m_selRect.top != next.top ||
+        m_selRect.right != next.right || m_selRect.bottom != next.bottom) {
+        m_selRect.SetRect(next.left, next.top, next.right, next.bottom);
+        m_aa.m_bOverlayDirty = TRUE;
+    }
+}
+
+void CWndArea::ReprojectZoomGestures(int oldZoom, int newZoom)
+{
+    if (oldZoom == newZoom) return;
+    CSize size = m_aa.m_dibwnd.GetWinSize();
+    const float cx = size.cx * 0.5f, cy = size.cy * 0.5f;
+    const float scale = std::pow(2.0f, oldZoom - newZoom);
+    auto project = [cx, cy, scale](CPoint& p) {
+        AreaZoomPoint mapped = AreaZoomTransform({p.x, p.y}, cx, cy, scale);
+        p.x = mapped.x; p.y = mapped.y;
+    };
+    if (m_iMode == normal_select) {
+        project(m_ptLMB); project(m_selOrig);
+        CPoint a(m_selRect.left, m_selRect.top), b(m_selRect.right, m_selRect.bottom);
+        project(a); project(b);
+        m_selRect.SetRect(a.x, a.y, b.x, b.y);
+        m_selRect.NormalizeRect();
+        CRect bounds(0, 0, size.cx, size.cy);
+        m_selRect &= bounds;
+        m_aa.m_bOverlayDirty = TRUE;
+    }
+    if (m_bRmbCmdDown) {
+        project(m_ptRMDN);
+        if (m_bLineMove) { project(s_lineLastWin); project(m_lineEnd); }
+    }
+}
+
+float CWndArea::GetZoomVisualLevel() const
+{
+    return m_aa.m_iZoom - (m_aa.m_sdlPanel ? std::log2(m_aa.m_sdlPanel->GetMapZoomScale()) : 0.0f);
+}
+
+void CWndArea::RequestSmoothZoom(float direction)
+{
+    UpdateSmoothZoom();
+    SDL2Panel* panel = m_aa.m_sdlPanel;
+    if (!panel || !panel->CanSmoothZoom()) {
+        // Preserve sub-notch input for the discrete fallback.
+        m_wheelFraction += direction;
+        while (m_wheelFraction <= -1.0f && m_aa.m_iZoom > theApp.GetZoomData()->GetFirstZoom()) {
+            ReprojectZoomGestures(m_aa.m_iZoom, m_aa.m_iZoom - 1);
+            m_aa.Zoom(CAnimAtr::ZOOM_IN); m_wheelFraction += 1.0f;
+            InvalidateWindow(); InvalidateSound();
+        }
+        while (m_wheelFraction >= 1.0f && m_aa.m_iZoom < NUM_ZOOM_LEVELS - 1) {
+            ReprojectZoomGestures(m_aa.m_iZoom, m_aa.m_iZoom + 1);
+            m_aa.Zoom(CAnimAtr::ZOOM_OUT); m_wheelFraction -= 1.0f;
+            InvalidateWindow(); InvalidateSound();
+        }
+        if ((m_aa.m_iZoom <= theApp.GetZoomData()->GetFirstZoom() && m_wheelFraction < 0.0f) ||
+            (m_aa.m_iZoom >= NUM_ZOOM_LEVELS - 1 && m_wheelFraction > 0.0f)) m_wheelFraction = 0.0f;
+        CheckZoomBtns();
+        return;
+    }
+    // Fallback-only sub-notch input must not leak into a later fallback.
+    m_wheelFraction = AreaZoomFallbackFraction(m_wheelFraction, true);
+    const float current = m_aa.m_iZoom - std::log2(panel->GetMapZoomScale());
+    if (m_zoomTarget < 0.0f) m_zoomTarget = current;
+    m_zoomTarget = (std::max)((float)theApp.GetZoomData()->GetFirstZoom(),
+                             (std::min)((float)(NUM_ZOOM_LEVELS - 1), m_zoomTarget + direction));
+    m_zoomFrom = current;
+    float distance = std::fabs(m_zoomTarget - current);
+    m_zoomDuration = (unsigned int)(std::max)(1.0f, 180.0f * distance);
+    m_zoomStart = SDL_GetTicks();
+    m_zoomDirection = distance > 0.000001f ? 1 : 0;
+    if (!m_zoomDirection) m_zoomTarget = -1.0f;
+    panel->SetDirty();
+}
+
+void CWndArea::UpdateSmoothZoom()
+{
+    SDL2Panel* panel = m_aa.m_sdlPanel;
+    if (!m_zoomDirection) {
+        // Fractional zoom can remain visible while idle. If its render resources
+        // disappear, settle it too, so input never targets a missing transform.
+        if (panel && m_wheelFraction != 0.0f && panel->CanSmoothZoom())
+            m_wheelFraction = AreaZoomFallbackFraction(m_wheelFraction, true);
+        if (!panel || panel->GetMapZoomScale() <= 1.0f || panel->CanSmoothZoom()) return;
+        m_zoomTarget = GetZoomVisualLevel();
+        m_zoomDirection = 1;
+    }
+    if (!panel || !panel->CanSmoothZoom()) {
+        // Resource loss settles the nearest requested discrete level so input and
+        // presentation cannot disagree about the transform.
+        int level = (int)std::lround(m_zoomTarget);
+        ReprojectZoomGestures(m_aa.m_iZoom, level);
+        while (m_aa.m_iZoom < level) m_aa.Zoom(CAnimAtr::ZOOM_OUT);
+        while (m_aa.m_iZoom > level) m_aa.Zoom(CAnimAtr::ZOOM_IN);
+        InvalidateWindow(); InvalidateSound();
+        m_zoomTarget = -1.0f; m_zoomDirection = 0;
+        if (panel) panel->SetMapZoomScale(1.0f);
+        CheckZoomBtns();
+        return;
+    }
+    unsigned int now = SDL_GetTicks();
+    float level = AreaZoomScale(m_zoomFrom, m_zoomTarget, m_zoomStart, m_zoomDuration, now);
+    // Render the coarser asset at scale 1..2, switching only at a matching endpoint.
+    int coarse = AreaZoomCoarseLevel(level);
+    coarse = (std::max)(theApp.GetZoomData()->GetFirstZoom(), (std::min)(NUM_ZOOM_LEVELS - 1, coarse));
+    if (coarse != m_aa.m_iZoom) {
+        ReprojectZoomGestures(m_aa.m_iZoom, coarse);
+        while (m_aa.m_iZoom < coarse) m_aa.Zoom(CAnimAtr::ZOOM_OUT);
+        while (m_aa.m_iZoom > coarse) m_aa.Zoom(CAnimAtr::ZOOM_IN);
+        InvalidateWindow(); InvalidateSound();
+    }
+    panel->SetMapZoomScale(AreaZoomAssetScale(level, coarse));
+    // Keep a captured selection endpoint under the stationary pointer while the
+    // map transform changes. Do not synthesize motion or change gesture state.
+    if (m_zoomPointerValid && m_iMode == normal_select && !m_bPanBtnDown &&
+        (!m_selectionRawValid || m_selectionDragged)) {
+        SDL_Window* focus = SDL_GetMouseFocus();
+        SDL_Window* expected = panel->IsDetached() ? panel->GetOwnWindow() :
+            (theApp.m_gameWindow ? theApp.m_gameWindow->GetWindow() : nullptr);
+        int x = 0, y = 0;
+        SDL_GetMouseState(&x, &y);
+        if (panel->IsDetached()) y -= panel->GetTitleBarHeight();
+        else { x -= panel->GetX(); y -= panel->GetY(); }
+        if (focus && focus == expected && x == m_zoomPointer.x && y == m_zoomPointer.y) {
+            CPoint point = m_zoomPointer;
+            MapInputPoint(point);
+            UpdateSelectionRect(point);
+        }
+    }
+    // Keep the Shift-build preview aligned with the current map transform.
+    // Inspect real input state; never synthesize a mouse event or placement.
+    if (m_bBuildDrag) {
+        int x = 0, y = 0;
+        const Uint32 buttons = SDL_GetMouseState(&x, &y);
+        // The current device state can be newer than a queued button-up event.
+        // Skip the refresh when no longer held, but let ordered events finish or
+        // cancel the gesture so a pending release can still commit its preview.
+        if (m_iMode == build_loc && (buttons & SDL_BUTTON_LMASK) &&
+            (SDL_GetModState() & KMOD_SHIFT) && m_zoomPointerValid &&
+            !m_bPanBtnDown && !m_bRmbCmdDown) {
+            SDL_Window* focus = SDL_GetMouseFocus();
+            SDL_Window* expected = panel->IsDetached() ? panel->GetOwnWindow() :
+                (theApp.m_gameWindow ? theApp.m_gameWindow->GetWindow() : nullptr);
+            if (panel->IsDetached()) y -= panel->GetTitleBarHeight();
+            else { x -= panel->GetX(); y -= panel->GetY(); }
+            if (focus && focus == expected && x == m_zoomPointer.x && y == m_zoomPointer.y) {
+                CPoint point = m_zoomPointer;
+                MapInputPoint(point);
+                UpdateBuildDrag(point);
+                m_aa.m_bOverlayDirty = TRUE;
+            }
+        }
+    }
+    // Refresh passive hover/placement feedback without synthesizing mouse motion
+    // or altering an active pan, command, selection, or build-drag gesture.
+    if (m_zoomPointerValid && !m_bPanBtnDown && !m_bRmbCmdDown &&
+        !m_bBuildDrag && m_iMode != normal_select) {
+        SDL_Window* focus = SDL_GetMouseFocus();
+        SDL_Window* expected = panel->IsDetached() ? panel->GetOwnWindow() :
+            (theApp.m_gameWindow ? theApp.m_gameWindow->GetWindow() : nullptr);
+        int x = 0, y = 0;
+        SDL_GetMouseState(&x, &y);
+        if (panel->IsDetached()) y -= panel->GetTitleBarHeight();
+        else { x -= panel->GetX(); y -= panel->GetY(); }
+        if (focus && focus == expected && x == m_zoomPointer.x && y == m_zoomPointer.y) {
+            CPoint point = m_zoomPointer;
+            MapInputPoint(point);
+            UpdatePointerFeedback(0, point, false);
+            SetMouseStateAt(point);
+        }
+    }
+    if (now - m_zoomStart >= m_zoomDuration) {
+        m_zoomTarget = -1.0f; m_zoomDirection = 0;
+        CheckZoomBtns();
+    }
+}
+
+void CWndArea::ZoomIn( ) { RequestSmoothZoom(-1.0f); }
+void CWndArea::ZoomOut( ) { RequestSmoothZoom(1.0f); }
 
 void CWndArea::CheckZoomBtns( )
 {
-
-    if ( m_aa.m_iZoom <= theApp.GetZoomData( )->GetFirstZoom( ) )
-        EnableButton( IDC_AREA_ZOOM_IN, FALSE );
-    else
-        EnableButton( IDC_AREA_ZOOM_IN, TRUE );
-    if ( m_aa.m_iZoom >= NUM_ZOOM_LEVELS - 1 )
-        EnableButton( IDC_AREA_ZOOM_OUT, FALSE );
-    else
-        EnableButton( IDC_AREA_ZOOM_OUT, TRUE );
+    float level = (float)m_aa.m_iZoom;
+    if (m_aa.m_sdlPanel)
+        level -= std::log2(m_aa.m_sdlPanel->GetMapZoomScale());
+    EnableButton(IDC_AREA_ZOOM_IN, level > theApp.GetZoomData()->GetFirstZoom() + 0.00001f);
+    EnableButton(IDC_AREA_ZOOM_OUT, level < NUM_ZOOM_LEVELS - 1 - 0.00001f);
 }
 
 void CWndArea::TurnClock( )
@@ -4167,6 +4411,7 @@ void CWndArea::RotateBuildDir( int iStep )
     CPoint pt;
     ::GetCursorPos( &pt );
     ScreenToClient( &pt );
+        MapInputPoint(pt);
     OnMouseMove( 0, pt );
 }
 
@@ -4673,6 +4918,16 @@ void CWndArea::OnLButtonUp( UINT nFlags, CPoint point )
 
         hex = ToBuildUL( hex );
 
+        // A stationary pointer can map to a new hex while zoom animates, so the
+        // hover's cached verdict may describe a different site. Recheck the
+        // release site for a one-site Shift drag before its legacy found gate.
+        if ( bQueueBuild && m_bBuildDrag && !bDragBuild )
+        {
+            CBuildVerdict releaseVerdict;
+            BuildSiteVerdict( hex, m_iBuild, GetBuildDir( ), TRUE, releaseVerdict );
+            m_iFound = releaseVerdict.m_iFound;
+        }
+
         // make sure not on water or another city. A DRAG skips its unbuildable sites one by
         // one instead of failing as a whole - the hex under the cursor at the release is
         // often past the last site that fits, and the sites behind it are still good.
@@ -4809,6 +5064,10 @@ void CWndArea::OnLButtonUp( UINT nFlags, CPoint point )
     // selecting unit(s) — the LMB is selection ONLY now: the command half
     // (move/attack/load/unload/repair) lives on the right button (DoCommandAt).
     case normal_select: {
+        // The release can arrive after zoom moved the endpoint without a motion event.
+        CRect client;
+        GetClientRect(&client);
+        if (!m_bPanBtnDown && IsSelectionDrag(point) && client.PtInRect(point)) UpdateSelectionRect(point);
         m_iMode = normal;
 
         // The box-select marquee (GPU/split path) is drawn into m_dibSprite while
@@ -4826,8 +5085,7 @@ void CWndArea::OnLButtonUp( UINT nFlags, CPoint point )
         // and that mode is only set for crane + repairable/constructing target
         // (see SetMouseState steps -2/-1). Gate on a click, not a drag-select.
         {
-            BOOL bDragSel = ( abs( point.x - m_ptLMB.x ) >= theMap.HexWid( m_aa.m_iZoom ) / 2 ) ||
-                            ( abs( point.y - m_ptLMB.y ) >= theMap.HexHt( m_aa.m_iZoom ) / 2 );
+            BOOL bDragSel = IsSelectionDrag(point);
             if ( ( m_uMouseMode == lmb_repair_bldg ) && !bDragSel )
             {
                 DoCommandAt( nFlags, point );   // dispatches the crane repair/build
@@ -4856,8 +5114,7 @@ void CWndArea::OnLButtonUp( UINT nFlags, CPoint point )
         }
 
         // step 2 - if we dragged then we are selecting
-        if ( ( abs( point.x - m_ptLMB.x ) >= theMap.HexWid( m_aa.m_iZoom ) / 2 ) ||
-             ( abs( point.y - m_ptLMB.y ) >= theMap.HexHt( m_aa.m_iZoom ) / 2 ) )
+        if ( IsSelectionDrag(point) )
         {
             if ( ( nFlags & MK_SHIFT ) == 0 )
             {
@@ -5234,6 +5491,7 @@ void CWndArea::BuildOn( int iIndex )
     CPoint point;
     ::GetCursorPos( &point );
     ScreenToClient( &point );
+        MapInputPoint(point);
     OnMouseMove( 0, point );
 }
 
@@ -6789,7 +7047,15 @@ void CWndArea::SetButtonState( )
 
 void CWndArea::SetMouseState( )
 {
+    CPoint point;
+    ::GetCursorPos(&point);
+    ScreenToClient(&point);
+    MapInputPoint(point);
+    SetMouseStateAt(point);
+}
 
+void CWndArea::SetMouseStateAt(CPoint point)
+{
     static int iNum = 0;
     if ( iNum != 0 )
     {
@@ -6827,10 +7093,7 @@ void CWndArea::SetMouseState( )
         return;
 
     case repair_bldg: {
-        CPoint pt;
-        ::GetCursorPos( &pt );
-        ScreenToClient( &pt );
-        CHexCoord hex = m_aa.WindowToHex( pt );
+        CHexCoord hex = m_aa.WindowToHex( point );
         hex.Wrap( );
         CBuilding* pBldg = theBuildingHex._GetBuilding( hex );
         if ( ( pBldg != NULL ) && ( pBldg->GetOwner( )->IsMe( ) ) &&
@@ -6850,15 +7113,12 @@ void CWndArea::SetMouseState( )
         return;
     }
 
-    // get the mouse position
-    CPoint pt;
-    ::GetCursorPos( &pt );
-    ScreenToClient( &pt );
+    // The caller supplies a point already mapped into map coordinates.
+    CPoint pt = point;
 
     // if we are selecting - that has absolute pri
     if ( m_iMode == normal_select )
-        if ( ( abs( pt.x - m_ptLMB.x ) >= theMap.HexWid( m_aa.m_iZoom ) / 2 ) ||
-             ( abs( pt.y - m_ptLMB.y ) >= theMap.HexHt( m_aa.m_iZoom ) / 2 ) )
+        if ( IsSelectionDrag(pt) )
         {
             AreaApplyCursor( m_hCurReg );
             m_uMouseMode = lmb_select;
@@ -7073,28 +7333,8 @@ void CWndArea::SetMouseState( )
 
 BOOL CWndArea::OnMouseWheel( UINT nFlags, short zDelta, CPoint pt )
 {
-    // accumulate wheel deltas; require two notches (2 * WHEEL_DELTA) to trigger a zoom
-    s_areaWheelAccum += (int)zDelta;
-
-    const int needed = 2 * WHEEL_DELTA;
-
-    if ( s_areaWheelAccum >= needed )
-    {
-        // scroll in by 2 clicks => zoom in
-        s_areaWheelAccum = 0;
-        ZoomIn( );
-        return TRUE;  // handled
-    }
-    else if ( s_areaWheelAccum <= -needed )
-    {
-        // scroll out by 2 clicks => zoom out
-        s_areaWheelAccum = 0;
-        ZoomOut( );
-        return TRUE;  // handled
-    }
-
-    // not enough accumulation yet; let base class handle any default behavior
-    return CWndAnim::OnMouseWheel( nFlags, zDelta, pt );
+    RequestSmoothZoom(-(float)zDelta / WHEEL_DELTA);
+    return TRUE;
 }
 
 void CWndArea::OnKeyUp( UINT nChar, UINT nRepCnt, UINT nFlags )

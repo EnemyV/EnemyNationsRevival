@@ -182,6 +182,7 @@ protected:
 	DWORD					m_dwLastRadarDraw{};	// last time the static minimap background was baked
 	CDIB*					m_pdibRadarStatic{};	// cached minimap background (no unit dots) — see ReRender
 	unsigned long long		m_qwLastWalkSig{};		// inputs signature of the last bake (skip-gate, see ReRender)
+	int m_iLastBoxWidth{-1}, m_iLastBoxHeight{-1}; // exact cached pixel box dimensions
 	unsigned long long		m_qwLastViewSig{};		// VIEW signature (centre/zoom/dir/mode) of the last bake
 													// -- picks the bake CADENCE; content churn must not (see ReRender)
 	unsigned				m_uFramesSinceBake{};	// render frames since the last bake; feeds the OPTIONAL

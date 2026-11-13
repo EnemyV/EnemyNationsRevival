@@ -160,6 +160,8 @@ struct ThreadObj : EnObject {
     DWORD exitCode;
     bool finished;
     bool joined;
+    // One reference belongs to the handle and one to the running thread.
+    std::atomic<int> refs;
     // CREATE_SUSPENDED start gate.
     std::mutex gm;
     std::condition_variable gcv;
@@ -167,8 +169,25 @@ struct ThreadObj : EnObject {
     std::mutex donem;
     std::condition_variable donecv;
     ThreadObj() : EnObject(K_THREAD), tid(0), start(nullptr), param(nullptr),
-                  exitCode(0), finished(false), joined(false), suspendCount(0) {}
+                  exitCode(0), finished(false), joined(false), refs(2), suspendCount(0) {}
 };
+
+thread_local ThreadObj* g_currentThreadObj = nullptr;
+
+void releaseThreadObj(ThreadObj* t) {
+    if (t->refs.fetch_sub(1, std::memory_order_acq_rel) == 1) delete t;
+}
+
+void finishThread(void* arg) {
+    ThreadObj* t = static_cast<ThreadObj*>(arg);
+    g_currentThreadObj = nullptr;
+    {
+        std::lock_guard<std::mutex> lk(t->donem);
+        t->finished = true;
+        t->donecv.notify_all();
+    }
+    releaseThreadObj(t);
+}
 
 struct FileObj : EnObject {
     int fd;
@@ -184,6 +203,8 @@ struct FindObj : EnObject {
 
 void* thread_trampoline(void* arg) {
     ThreadObj* t = static_cast<ThreadObj*>(arg);
+    g_currentThreadObj = t;
+    pthread_cleanup_push(finishThread, t);
     // Honor CREATE_SUSPENDED: wait until ResumeThread drops the suspend count.
     {
         std::unique_lock<std::mutex> lk(t->gm);
@@ -193,13 +214,8 @@ void* thread_trampoline(void* arg) {
     {
         std::lock_guard<std::mutex> lk(t->donem);
         t->exitCode = rc;
-        t->finished = true;
-        // Notify UNDER the lock: a waiter that has seen finished==true may
-        // CloseHandle (delete) the ThreadObj the moment it re-acquires donem,
-        // so nothing here may touch *t after the guard releases. Notifying
-        // outside the lock raced exactly that delete.
-        t->donecv.notify_all();
     }
+    pthread_cleanup_pop(1);
     return nullptr;
 }
 
@@ -300,7 +316,8 @@ extern "C" BOOL CloseHandle(HANDLE h) {
         case EnObject::K_THREAD: {
             ThreadObj* t = static_cast<ThreadObj*>(o);
             if (t->tid && !t->joined) { pthread_detach(t->tid); t->joined = true; }
-            break;
+            releaseThreadObj(t);
+            return TRUE;
         }
         case EnObject::K_FILE: {
             FileObj* f = static_cast<FileObj*>(o);
@@ -374,7 +391,13 @@ extern "C" BOOL SetThreadPriority(HANDLE, int) { return TRUE; }   // best-effort
 extern "C" int  GetThreadPriority(HANDLE)      { return THREAD_PRIORITY_NORMAL; }
 extern "C" DWORD GetCurrentThreadId(void)      { return (DWORD)(uintptr_t)pthread_self(); }
 extern "C" HANDLE GetCurrentThread(void)       { return (HANDLE)(uintptr_t)pthread_self(); }
-extern "C" void ExitThread(DWORD code)         { pthread_exit((void*)(uintptr_t)code); }
+extern "C" void ExitThread(DWORD code) {
+    if (g_currentThreadObj) {
+        std::lock_guard<std::mutex> lk(g_currentThreadObj->donem);
+        g_currentThreadObj->exitCode = code;
+    }
+    pthread_exit((void*)(uintptr_t)code);
+}
 extern "C" BOOL TerminateThread(HANDLE h, DWORD) {
     EnObject* o = static_cast<EnObject*>(h);
     if (!o || o->kind != EnObject::K_THREAD) return FALSE;
@@ -386,6 +409,7 @@ extern "C" BOOL GetExitCodeThread(HANDLE h, LPDWORD code) {
     EnObject* o = static_cast<EnObject*>(h);
     if (!o || o->kind != EnObject::K_THREAD) return FALSE;
     ThreadObj* t = static_cast<ThreadObj*>(o);
+    std::lock_guard<std::mutex> lk(t->donem);
     if (code) *code = t->finished ? t->exitCode : 0x103 /*STILL_ACTIVE*/;
     return TRUE;
 }

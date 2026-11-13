@@ -154,6 +154,12 @@ public:
     // The condition under which RenderDetached composites from the sprite layer and
     // never reads m_surface. Defined in the .cpp so the header need not pull in SDL2Terrain.h.
     bool PresentsGpuTerrain() const;
+    bool CanSmoothZoom();
+    bool EnsureZoomOverlay(SDL_Surface* source);
+    SDL_Surface* GetSoftwareMapSurface(bool refresh = false);
+    void SetMapZoomScale(float scale) { m_mapZoomScale = scale; if (scale <= 1.0f) m_zoomPresentationFailed = false; SetDirty(); }
+    float GetMapZoomScale() const { return m_mapZoomScale; }
+    float GetPresentedMapZoomScale() const { return m_zoomPresentationFailed ? 1.0f : m_mapZoomScale; }
     DWORD GetLastRenderMs() const { return m_lastRenderMs; }
 
     // T2: the area panel hands us its CAnimAtr so PresentOwn can draw the GPU
@@ -303,6 +309,11 @@ private:
     // Unlike the window backbuffer it survives across frames, so static content can be
     // left untouched and only changed regions redrawn. NULL unless g_enGpuDirty. Sized
     // with m_ownBackW/H (renderer output) in EnsureOwnBack.
+    float m_mapZoomScale = 1.0f;
+    SDL_Surface* m_zoomOverlay = nullptr;
+    SDL_Surface* m_nativeMapSurface = nullptr;
+    bool m_zoomPresentationFailed = false;
+    SDL_Texture* m_zoomOverlayTex = nullptr;
     struct SDL_Texture*  m_contentRT   = nullptr;
     int m_ownBackW = 0, m_ownBackH = 0;
     const class CAnimAtr* m_terrainAA = nullptr;  // T2: area-map view, else null

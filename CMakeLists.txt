@@ -138,8 +138,7 @@ if (MSVC)
     add_subdirectory(tools/vdmplay/iserve_headless)
 endif ()
 
-# Headless tests (BUILD_TESTING, on by default). Script-only: they add no
-# build targets and never change what the game build produces.
+# Headless tests (BUILD_TESTING, on by default). They do not change the game binary.
 include(CTest)
 if (BUILD_TESTING)
     add_subdirectory(tests)

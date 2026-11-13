@@ -2,6 +2,7 @@
 #include "en_logpath.h"   // EnLogPath - logs to the launch dir, not the exe dir
 #include "en_hangdump.h"   // EnHangHeartbeat() - hang-watchdog liveness beat
 #include "GameWindow.h"
+#include "controller_zoom_focus.h"
 #include "framecap.h"   // #45 frame-capture debug mode
 #include "SDL2UI.h"
 #include "lastplnt.h"
@@ -623,6 +624,7 @@ bool GameWindow::InitializeSDL() {
         return false;
     }
 
+    m_controllerZoom.init();
     LogToFile("SDL initialized");
 
     std::string sizeStr = std::string("Window size: ") + std::to_string(m_width) + "x" + std::to_string(m_height);
@@ -709,6 +711,7 @@ bool GameWindow::InitializeSDL() {
 
     if (!m_window) {
         LogToFile(std::string("ERROR: SDL_CreateWindow failed: ") + SDL_GetError());
+        m_controllerZoom.close();
         SDL_Quit();
         return false;
     }
@@ -929,6 +932,7 @@ void GameWindow::PresentSurface(const SDL_Rect* dirty) {
 
 void GameWindow::Cleanup() {
     LogToFile("Cleaning up GameWindow...");
+    m_controllerZoom.close();
 
     // Destroy compositor before window (it holds SDL surfaces)
     m_compositor.reset();
@@ -1047,6 +1051,10 @@ bool GameWindow::PollEvents() {
         return false;
     }
     m_pollingEvents = true;
+    if (m_controllerZoom.enabled()) {
+        SDL_PumpEvents();
+        m_controllerZoom.reconcile();
+    }
     // #47 / Cluster-A global capture safety net (mac2) — complements the per-drag-site
     // local heal in SDL2UI.cpp/SDL2Panel.cpp (@c49873f7). A missed SDL_MOUSEBUTTONUP can
     // leave an OS mouse-capture (SDL_CaptureMouse(TRUE), set by a title-bar/panel drag)
@@ -1155,13 +1163,39 @@ bool GameWindow::PollEvents() {
             if (m_compositor) m_compositor->ResetPresentationResources();
         }
 
+        // Controller events have no window ID; only the focused map may receive zoom.
+        extern bool EnNetIsTearingDown();
+        if (m_controllerZoom.enabled()) {
+            const bool needsTarget = ControllerZoomNeedsTarget(
+                event.type == SDL_CONTROLLERBUTTONDOWN,
+                event.type == SDL_CONTROLLERBUTTONDOWN &&
+                    (event.cbutton.button == SDL_CONTROLLER_BUTTON_LEFTSHOULDER ||
+                     event.cbutton.button == SDL_CONTROLLER_BUTTON_RIGHTSHOULDER));
+            const bool eligible = needsTarget && !EnNetIsTearingDown() &&
+                !theApp.IsWorldTearingDown() && theApp.AmInGame() && m_modalDialogDepth == 0;
+            CWndArea* top = eligible ? theAreaList.GetTop() : nullptr;
+            ControllerZoomFocusSelection selection(eligible ? SDL_GetKeyboardFocus() : nullptr, m_window, top, eligible);
+            if (eligible) {
+                POSITION pos = theAreaList.GetHeadPosition();
+                while (pos != NULL) {
+                    CWndArea* area = theAreaList.GetNext(pos);
+                    SDL2Panel* panel = area ? area->GetAA().m_sdlPanel : nullptr;
+                    if (panel) selection.consider(area, panel->GetOwnWindow(),
+                                                  panel->IsDetached(), panel->IsVisible());
+                }
+            }
+            CWndArea* zoomArea = (CWndArea*)selection.result();
+            // Even blocked events update button/device state in the existing debouncer.
+            int controllerZoom = m_controllerZoom.event(event, zoomArea != nullptr);
+            if (controllerZoom) zoomArea->RequestSmoothZoom((float)controllerZoom);
+        }
+
         // Do NOT dispatch gameplay input while the network session is tearing down.
         // CNetApi::Close/CloseSession call BaseYield() to drain messages, which re-enters
         // this loop; a queued mouse move then routes into unit hit-testing over sprite
         // state the teardown is dismantling -> SIGSEGV (the disconnect-path crash behind
         // "the game froze when a player exited"). We still drain the SDL queue (and honor
         // SDL_QUIT above) — only input dispatch into the closing game is suppressed.
-        extern bool EnNetIsTearingDown();
         if (EnNetIsTearingDown() &&
             (event.type == SDL_MOUSEMOTION   || event.type == SDL_MOUSEBUTTONDOWN ||
              event.type == SDL_MOUSEBUTTONUP || event.type == SDL_MOUSEWHEEL      ||

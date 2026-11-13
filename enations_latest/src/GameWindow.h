@@ -5,6 +5,7 @@
 #include <vector>
 #include <SDL.h>
 #include "SDL2DisplayMetrics.h"
+#include "controller_zoom.h"
 #include "../input/InputHandler.h"
 
 union SDL_Event;
@@ -44,6 +45,8 @@ public:
      * Check if window is valid
      */
     bool IsValid() const { return m_window != nullptr; }
+    void EnterModalDialog() { ++m_modalDialogDepth; }
+    void LeaveModalDialog() { if (m_modalDialogDepth > 0) --m_modalDialogDepth; }
 
     /**
      * Process all pending SDL events.
@@ -339,6 +342,8 @@ private:
     // (Re)create the back-buffer surface + texture to match the renderer output
     // size. No-op if size unchanged. Renderer mode only.
     bool EnsureBackBuffer();
+    ControllerZoom m_controllerZoom;
+    unsigned m_modalDialogDepth = 0;
     bool m_pollingEvents = false;  // re-entrancy guard for PollEvents()
     bool m_appActive = true;       // app-level focus (any of our windows focused)
     // macOS: window is sized/positioned to the display's USABLE bounds, so it does NOT

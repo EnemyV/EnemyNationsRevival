@@ -239,7 +239,11 @@ void myThreadClose( THREADEXITFUNC fnExit ) {
                         // exited; leak any straggler rather than risk a heap deadlock.
                         // WaitForSingleObject(h,0) is a non-blocking poll, so it can't
                         // deadlock on cs (a stuck worker can't exit while we hold it).
-                        if ( WaitForSingleObject( pThrd->m_hThread, 0 ) == WAIT_OBJECT_0 )
+                        // Workers decrement iThrdsLeft just before ExitThread;
+                        // allow the final handle notification to finish once all
+                        // workers have left the protected AI code.
+                        const DWORD waitMs = iThrdsLeft <= 0 ? 100 : 0;
+                        if ( WaitForSingleObject( pThrd->m_hThread, waitMs ) == WAIT_OBJECT_0 )
                             delete pThrd;   // confirmed gone -> safe to free
                         else {
                             iLeaked++;      // leak it (no terminate, no delete) -- a tiny

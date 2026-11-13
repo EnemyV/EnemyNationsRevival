@@ -41,6 +41,7 @@ public:
     static void FlushRenderQueue();
 
 private:
+    friend class SDL2Panel;  // Map-only copy for software zoom presentation.
     // Shared helper: blit a CAnimAtr's terrain DIB (m_dibwnd) to an SDL surface.
     static bool BlitDIBToSurface(const CAnimAtr* aa, struct SDL_Surface* dst,
                                   int dstX = 0, int dstY = 0);

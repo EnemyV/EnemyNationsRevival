@@ -155,7 +155,11 @@ set(enations_sources
         ../../input/UIButtonListener.cpp
         network/davenet.cpp
         network/sockets.cpp
+        PerfHarness.cpp
+        PerfHarnessGame.cpp
 )
+
+set_source_files_properties(PerfHarness.cpp PROPERTIES SKIP_PRECOMPILE_HEADERS ON)
 
 # ---------------------------------------------------------------------------
 # Linux source-list adjustments:

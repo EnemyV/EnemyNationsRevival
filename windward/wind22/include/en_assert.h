@@ -27,17 +27,22 @@
 #include <dlfcn.h>
 #endif
 
-// Total number of assert firings this run (exposed as a perf gauge / for triage).
+// Legacy total includes both assertion and removed-trap events.
 // selectany folds the duplicate header definitions to one; gcc uses weak.
 #ifdef _WIN32
 extern "C" __declspec( selectany ) volatile long g_enAssertFires = 0;
+extern "C" __declspec( selectany ) volatile long g_enInvariantFires = 0;
+extern "C" __declspec( selectany ) volatile long g_enTrapRemovedFires = 0;
 #else
 extern "C" __attribute__(( weak )) volatile long g_enAssertFires = 0;
+extern "C" __attribute__(( weak )) volatile long g_enInvariantFires = 0;
+extern "C" __attribute__(( weak )) volatile long g_enTrapRemovedFires = 0;
 #endif
 
 inline void EnAssertFire( const char* expr, const char* file, int line )
 {
     InterlockedIncrement( &g_enAssertFires );
+    InterlockedIncrement( &g_enInvariantFires );
 
     // Dedup per call-site so an assert inside a per-frame loop doesn't flood
     // the log. Function-local statics in an inline function are ODR-merged to
@@ -65,6 +70,9 @@ inline void EnAssertFire( const char* expr, const char* file, int line )
     char buf[600];
     _snprintf_s( buf, sizeof( buf ), _TRUNCATE, "[ASSERT-IGNORED] %s  (%s:%d)\n", expr ? expr : "?", file, line );
     OutputDebugStringA( buf );
+#ifdef _WIN32
+    std::fputs( buf, stderr );
+#endif
 }
 
 // Evaluates expr exactly once; non-fatal. Usable in statement context.
@@ -157,6 +165,7 @@ inline void EnAssertValidObj( T* pOb, const char* file, int line )
 inline void EnTrapRemovedLog( const char* msg, const char* file, int line )
 {
     InterlockedIncrement( &g_enAssertFires );
+    InterlockedIncrement( &g_enTrapRemovedFires );
 
     enum { MAXSITES = 1024 };
     static const char* seenFile[MAXSITES] = {};

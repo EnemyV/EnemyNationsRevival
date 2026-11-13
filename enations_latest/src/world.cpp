@@ -14,6 +14,7 @@
 #include "lastplnt.h"
 #include "error.h"
 #include "Perf.h"   // radar render profiling + O(units) minimap
+#include "minimap_zoom_box.h"
 #include "radarbake.h"   // RadarShouldBake - pure bake-cadence decision (table-tested)
 #include "area.h"
 #include "icons.h"
@@ -1823,6 +1824,24 @@ void CWndWorld::ReRender( )
         }
     }
 
+    // Area/map backing may not exist yet. Retain dirty state until ready.
+    if (m_pdibGround0 == NULL || m_pWndArea == NULL) {
+        m_bUpdate = TRUE;
+        return;
+    }
+
+    int boxWidth = 0, boxHeight = 0;
+    if (m_pWndArea) {
+        CRect boxRect; m_pWndArea->GetClientRect(&boxRect);
+        const int zoom = m_pWndArea->GetAA().m_iZoom;
+        SDL2Panel* panel = m_pWndArea->GetAA().m_sdlPanel;
+        const float scale = panel ? panel->GetPresentedMapZoomScale() : 1.0f;
+        boxWidth = MinimapZoomBoxSpan(m_cx, boxRect.Width(), CGameMap::HexWid(zoom) << theMap.GetSideShift(), scale);
+        boxHeight = MinimapZoomBoxSpan(m_cy, boxRect.Height(), CGameMap::HexHt(zoom) << theMap.GetSideShift(), scale);
+    }
+    const bool boxChanged = boxWidth != m_iLastBoxWidth || boxHeight != m_iLastBoxHeight;
+    if (boxChanged) m_bUpdate = TRUE;
+
     // only repaint if dirty
     if ( !m_bUpdate )
         return;
@@ -1863,6 +1882,7 @@ void CWndWorld::ReRender( )
     unsigned long long walkSig = 0;
     unsigned long long viewSig = 0;
     bool bCtrMoved = false;
+
     // #4 (minimap/world-map lag on pan/zoom): the world map was EXCLUDED from this
     // input-detection by the radar-only gate, so it never noticed a center/zoom/dir
     // change and only re-walked on the blind 1500ms timer = the reported 1-2s lag.
@@ -1903,7 +1923,7 @@ void CWndWorld::ReRender( )
         // overlapping bit ranges, so a pan could in principle collide, and scroll-follow
         // (live dots sliding against a stale background) is the one case that must not miss.
         bCtrMoved = ( ctr.x != m_ptLastBakeCtr.x || ctr.y != m_ptLastBakeCtr.y
-                      || viewSig != m_qwLastViewSig );
+                      || viewSig != m_qwLastViewSig || boxChanged );
     }
     // SCROLL-FOLLOW vs in-place throttle. The radar image is anchored to the area-view
     // CENTRE: scrolling shifts the whole background, but the LIVE unit dots are drawn at
@@ -1926,7 +1946,7 @@ void CWndWorld::ReRender( )
     // bCtrMoved now means "the VIEW moved" and nothing else, so the two branches below
     // are the ones the surrounding comments describe.
     const bool bRebuildBg = RadarShouldBake( bCtrMoved,                          // the VIEW moved
-                                             walkSig != m_qwLastWalkSig,         // content changed (skip-gate)
+                                             (walkSig != m_qwLastWalkSig || boxChanged), // content changed (skip-gate)
                                              (unsigned)( dwRadarNow - m_dwLastRadarDraw ),
                                              m_uFramesSinceBake,
                                              kRadarBakeMovingMs,
@@ -2309,54 +2329,10 @@ void CWndWorld::ReRender( )
     }
 #endif
 
-    // draw a square showing the Area Window
-    CRect rect;
-    m_pWndArea->GetClientRect( &rect );
-
-    int _iZoom    = m_pWndArea->GetAA( ).m_iZoom;
-    int iWid      = ( m_cx * rect.Width( ) ) / ( CGameMap::HexWid( _iZoom ) << theMap.GetSideShift( ) ) + 2;
-    int iWidBytes = ptrthebltformat->GetBytesPerPixel( ) * iWid;
-    if ( iWid > m_cx )
-        iWid = m_cx;
-    int iHt = ( m_cy * rect.Height( ) ) / ( CGameMap::HexHt( _iZoom ) << theMap.GetSideShift( ) ) + 2;
-    if ( iHt > m_cy )
-        iHt = m_cy;
-
-    BYTE* pDib = dibits + pdib->GetOffset( ( m_cx - iWid ) / 2, ( m_cy - iHt ) / 2 );
-#ifdef BUGBUG
-    if ( pdib->IsTopDown( ) )
-        pDib = dibits + pdib->GetPitch( ) * ( m_cy - iHt ) / 2;
-    else
-        pDib = dibits + pdib->GetPitch( ) * ( m_cy - 1 - ( m_cy - iHt ) / 2 );
-    pDib += ptrthebltformat->GetBytesPerPixel( ) * ( m_cx - iWid ) / 2;
-#endif
-
-    int iSkipBytes;
-
-    iSkipBytes = pdib->GetDirPitch( ) - iWidBytes;
-
-    iHt -= 2;
-    if ( iHt < 0 )
-        iHt = 0;
-
-    // draw top of the viewbox (area showing what the main/selected window can see)
-    for ( int iOn = 0; iOn < iWid; iOn++, pDib += iBytesPerPixel ) ( *fnSetPixel )( pDib, m_clrLocation );
-
-    pDib += iSkipBytes;
-    // Draw sides of the box
-    while ( iHt-- )
-    {
-        ( *fnSetPixel )( pDib, m_clrLocation );
-
-        pDib += iWidBytes;
-
-        ( *fnSetPixel )( pDib, m_clrLocation );
-
-        pDib += iSkipBytes;
-    }
-
-    // Draw bottom line of hte box
-    for ( int iOn = 0; iOn < iWid; iOn++, pDib += iBytesPerPixel ) ( *fnSetPixel )( pDib, m_clrLocation );
+    // Draw a clipped border; GetOffset handles top-down and bottom-up DIBs.
+    MinimapZoomBoxBorder(m_cx, m_cy, boxWidth, boxHeight, [&](int x, int y) {
+        (*fnSetPixel)(dibits + pdib->GetOffset(x, y), m_clrLocation);
+    });
 
     // when anyone zeros it'll get set again
     m_bBldgHit = NULL;
@@ -2371,6 +2347,7 @@ void CWndWorld::ReRender( )
         m_dibwnd.GetDIB( )->BitBlt( m_pdibRadarStatic, m_dibwnd.GetDIB( )->GetRect( ), CPoint( 0, 0 ) );
         m_dwLastRadarDraw = dwRadarNow;
         m_qwLastWalkSig   = walkSig;   // inputs this bake rendered (skip-gate, see above)
+        m_iLastBoxWidth = boxWidth; m_iLastBoxHeight = boxHeight;
         m_qwLastViewSig   = viewSig;   // view this bake rendered (cadence pick, see above)
         m_uFramesSinceBake = 0;        // restart the frame floor (see above)
         if ( m_pWndArea != NULL )      // centre this bake is anchored to (scroll-follow)

@@ -1,4 +1,5 @@
 #include "RenderingAdapter.h"
+#include "dib_surface.h"
 #include "en_logpath.h"   // EnLogPath - logs to the launch dir, not the exe dir
 #include "GameWindow.h"
 #include "SDL2Panel.h"
@@ -124,7 +125,6 @@ bool RenderingAdapter::BlitCDIBToSurface(CDIB* pDib, SDL_Surface* dst,
     // Fallback path: non-SDL-backed CDIB (DDraw etc.). Lock bits, wrap in a
     // throwaway SDL surface, blit, free. Live default until Stage 3 flips
     // CalcBltMethod; after Stage 3 + 4 this fallback should rarely run.
-    int bytesPerPixel = pDib->GetBytesPerPixel();
     int pitch         = pDib->GetPitch();
     int bitsPerPixel  = pDib->GetBitsPerPixel();
 
@@ -136,22 +136,26 @@ bool RenderingAdapter::BlitCDIBToSurface(CDIB* pDib, SDL_Surface* dst,
     if (!pDibPixels)
         return false;
 
-    SDL_Surface* dibSurface = nullptr;
-
-    if (bytesPerPixel == 3 || bytesPerPixel == 4) {
-        // Windows DIB: BGR(X) format
-        Uint32 bmask = 0x000000FF;
-        Uint32 gmask = 0x0000FF00;
-        Uint32 rmask = 0x00FF0000;
-        Uint32 amask = 0;  // No alpha — opaque
-        dibSurface = SDL_CreateRGBSurfaceFrom(
-            pDibPixels, dibWidth, dibHeight, bitsPerPixel, pitch,
-            rmask, gmask, bmask, amask);
-    } else {
-        dibSurface = SDL_CreateRGBSurfaceFrom(
-            pDibPixels, dibWidth, dibHeight, bitsPerPixel, pitch,
-            0, 0, 0, 0);
+    const BITMAPINFO256* info = pDib->GetBitmapInfo();
+    SDL_Color palette[256];
+    const SDL_Color* colors = nullptr;
+    unsigned int paletteCount = 0;
+    if (bitsPerPixel == 8) {
+        // BITMAPINFO256 owns a fixed 256-entry array. A zero biClrUsed means
+        // all 256 entries; reject values beyond the actual allocation.
+        paletteCount = info->hdr.biClrUsed ? info->hdr.biClrUsed : 256;
+        if (paletteCount > 256) return false;
+        for (unsigned int i = 0; i < paletteCount; ++i) {
+            palette[i] = { info->rgb[i].rgbRed, info->rgb[i].rgbGreen, info->rgb[i].rgbBlue, 255 };
+        }
+        colors = palette;
     }
+    // The adapter finishes the blit before returning, so the thread-local
+    // storage cannot be reused while SDL still reads it.
+    static thread_local std::vector<Uint8> rowScratch;
+    SDL_Surface* dibSurface = EnWrapNativeDib(pDibPixels, dibWidth, dibHeight, bitsPerPixel,
+                                              pitch, pDib->IsTopDown() != FALSE, colors, paletteCount,
+                                              info->hdr.biCompression, info->hdr.biSizeImage, rowScratch);
 
     if (!dibSurface)
         return false;

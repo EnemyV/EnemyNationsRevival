@@ -4,6 +4,7 @@
 #include "enprobes.h"   // EN_GAMEPLAY_PROBES
 
 #include "SDL2Panel.h"
+#include "RenderingAdapter.h"
 #include "SDL2UiCanvas.h"
 #include "framecap.h"   // #45 frame-capture debug mode
 #include "GameWindow.h"
@@ -248,6 +249,7 @@ SDL2Panel::SDL2Panel(const std::string& name, int x, int y, int w, int h, int zO
 
 SDL2Panel::~SDL2Panel() {
     DestroyOwnWindow();
+    if (m_nativeMapSurface) SDL_FreeSurface(m_nativeMapSurface);
     FreeSurface();
 }
 
@@ -332,6 +334,8 @@ void SDL2Panel::FreeSurface() {
     }
 }
 
+static void BlitZoomedMap(SDL_Surface*, SDL_Surface*, SDL_Rect, float);
+
 void SDL2Panel::Render(SDL_Surface* windowSurface) {
     if (!m_visible || !m_surface || !windowSurface)
         return;
@@ -340,13 +344,25 @@ void SDL2Panel::Render(SDL_Surface* windowSurface) {
     if (m_ownWindow)
         return;
 
+    SDL_Surface* map = m_mapZoomScale > 1.0f ? GetSoftwareMapSurface(true) : nullptr;
+    if (m_mapZoomScale > 1.0f && !map) { m_zoomPresentationFailed = true; SetDirty(); return; }
+
     // Render title bar if movable
     if (m_movable)
         DrawTitleBar(windowSurface, m_x, m_y - GetTitleBarHeight(), m_width);
 
     // Blit content
     SDL_Rect dstRect = { m_x, m_y, m_width, m_height };
-    EnUiCanvas::BlitScaled(m_surface, nullptr, windowSurface, &dstRect);
+    if (map) {
+        BlitZoomedMap(map, windowSurface, dstRect, m_mapZoomScale);
+        if (m_bottomChromePanel && m_bottomChromePanel->GetSurface()) {
+            int barH = m_bottomChromePanel->GetHeight();
+            SDL_Rect bar = { m_x, m_y + m_height - barH, m_width, barH };
+            EnUiCanvas::BlitScaled(m_bottomChromePanel->GetSurface(), nullptr, windowSurface, &bar);
+        }
+    } else {
+        EnUiCanvas::BlitScaled(m_surface, nullptr, windowSurface, &dstRect);
+    }
 
     // Draw border if movable/resizable. Use the ornate Enemy Nations GOLD frame
     // — the SAME art the detached panels draw (RenderOwn ~line 1229) — so the
@@ -1250,6 +1266,8 @@ void SDL2Panel::DestroyOwnRenderer() {
         SDL2Sprites::ReleaseRenderer(m_ownRenderer);
     }
     if (m_contentRT)  { SDL_DestroyTexture(m_contentRT);  m_contentRT = nullptr; }
+    if (m_zoomOverlayTex) { SDL_DestroyTexture(m_zoomOverlayTex); m_zoomOverlayTex = nullptr; }
+    if (m_zoomOverlay) { SDL_FreeSurface(m_zoomOverlay); m_zoomOverlay = nullptr; }
     if (m_ownBackTex) { SDL_DestroyTexture(m_ownBackTex); m_ownBackTex = nullptr; }
     if (m_ownBack)    { EnUiCanvas::FreeSurface(m_ownBack);       m_ownBack = nullptr; }
     if (m_ownRenderer){ SDL_DestroyRenderer(m_ownRenderer); m_ownRenderer = nullptr; }
@@ -1279,7 +1297,7 @@ SDL_Surface* SDL2Panel::EnsureOwnBack() {
     SDL_SetTextureBlendMode(m_ownBackTex, SDL_BLENDMODE_BLEND);
     // Item 5: persistent content RT (terrain+sprites). Lazily created only when the
     // dirty-rect path is enabled; opaque (the terrain clears it each (re)build).
-    if (GpuDirtyEnabled() || m_displayMetrics.densityX != 1 || m_displayMetrics.densityY != 1) {
+    if (m_terrainAA || GpuDirtyEnabled() || m_displayMetrics.densityX != 1 || m_displayMetrics.densityY != 1) {
         int logicalW, logicalH; SDL_GetWindowSize(m_ownWindow, &logicalW, &logicalH);
         m_contentRT = SDL_CreateTexture(m_ownRenderer, SDL_PIXELFORMAT_ARGB8888,
                                         SDL_TEXTUREACCESS_TARGET, logicalW, logicalH);
@@ -1291,6 +1309,7 @@ SDL_Surface* SDL2Panel::EnsureOwnBack() {
 }
 
 void SDL2Panel::ResetPresentationResources() {
+    if (m_zoomOverlayTex) { SDL_DestroyTexture(m_zoomOverlayTex); m_zoomOverlayTex = nullptr; }
     if (m_contentRT) { SDL_DestroyTexture(m_contentRT); m_contentRT = nullptr; }
     if (m_ownBackTex) { SDL_DestroyTexture(m_ownBackTex); m_ownBackTex = nullptr; }
     if (m_ownBack) { EnUiCanvas::FreeSurface(m_ownBack); m_ownBack = nullptr; }
@@ -1311,7 +1330,8 @@ void SDL2Panel::PresentOwn() {
         // instead of straight to the window backbuffer. Behaviour is identical here (we
         // still full-redraw each frame, +1 RenderCopy), but it establishes the surface
         // that later stages update incrementally (static content persists across frames).
-        bool useRT = m_contentRT != nullptr;
+        bool useRT = m_contentRT && (m_mapZoomScale > 1.0f || GpuDirtyEnabled() ||
+                                     m_displayMetrics.densityX != 1 || m_displayMetrics.densityY != 1);
         SDL_Texture* prevTarget = nullptr;
         if (useRT) {
             prevTarget = SDL_GetRenderTarget(m_ownRenderer);
@@ -1334,12 +1354,38 @@ void SDL2Panel::PresentOwn() {
         CPoint ul = m_terrainAA->GetUL();
         { Perf::ScopeCounter _cs( "p.sprites" );
           SDL2Sprites::Submit(m_ownRenderer, ul.x, ul.y, m_width, m_height); }
+        // During a transition the CPU map overlay must travel with the terrain,
+        // while the title, frame and button bar remain at their normal size.
+        if (useRT && m_mapZoomScale > 1.0f) {
+            SDL_Surface* spriteSurf = m_terrainAA->GetSpriteLayerSurface();
+            if (spriteSurf) {
+                SDL_SetColorKey(spriteSurf, SDL_TRUE, SDL_MapRGB(spriteSurf->format, 255, 0, 255));
+                EnsureZoomOverlay(spriteSurf);
+                if (m_zoomOverlay && m_zoomOverlayTex) {
+                    SDL_FillRect(m_zoomOverlay, nullptr, 0);
+                    SDL_BlitSurface(spriteSurf, nullptr, m_zoomOverlay, nullptr);
+                    SDL_UpdateTexture(m_zoomOverlayTex, nullptr, m_zoomOverlay->pixels, m_zoomOverlay->pitch);
+                    SDL_RenderCopy(m_ownRenderer, m_zoomOverlayTex, nullptr, nullptr);
+                }
+            }
+        }
         SDL_RenderSetViewport(m_ownRenderer, nullptr);
 
         // Copy the persistent content RT to the window backbuffer before the overlay.
         if (useRT) {
             SDL_SetRenderTarget(m_ownRenderer, prevTarget);
-            SDL_RenderCopy(m_ownRenderer, m_contentRT, nullptr, nullptr);
+            if (m_mapZoomScale > 1.0f) {
+                SDL_Rect src = { 0, tbH, m_width, m_height };
+                SDL_Rect viewport = { 0, tbH, m_width, m_height };
+                SDL_RenderSetViewport(m_ownRenderer, &viewport);
+                SDL_FRect dst = { (1.0f - m_mapZoomScale) * m_width * 0.5f,
+                                  (1.0f - m_mapZoomScale) * m_height * 0.5f,
+                                  m_width * m_mapZoomScale, m_height * m_mapZoomScale };
+                SDL_RenderCopyF(m_ownRenderer, m_contentRT, &src, &dst);
+                SDL_RenderSetViewport(m_ownRenderer, nullptr);
+            } else {
+                SDL_RenderCopy(m_ownRenderer, m_contentRT, nullptr, nullptr);
+            }
         }
 
         // Overlay: m_ownBack = sprites (opaque) + chrome (opaque), content
@@ -1404,6 +1450,74 @@ bool SDL2Panel::PresentsGpuTerrain() const {
     return HasGpuTerrain() && SDL2Terrain::IsLoaded();
 }
 
+SDL_Surface* SDL2Panel::GetSoftwareMapSurface(bool refresh) {
+    if (!m_terrainAA || m_terrainAA->UseSplitLayer()) return nullptr;
+    CDIB* dib = m_terrainAA->m_dibwnd.GetDIB();
+    if (!dib) return nullptr;
+    if (SDL_Surface* surface = dib->GetSDLSurface()) return surface;
+
+    // Native Windows DIBs have no SDL backing. Reuse a map-only SDL surface and
+    // copy through the existing DIB adapter, which locks and converts its bits.
+    int w = dib->GetWidth(), h = dib->GetHeight();
+    if (w <= 0 || h <= 0 || dib->GetPitch() <= 0) return nullptr;
+    if (m_nativeMapSurface && (m_nativeMapSurface->w != w || m_nativeMapSurface->h != h)) {
+        SDL_FreeSurface(m_nativeMapSurface);
+        m_nativeMapSurface = nullptr;
+    }
+    bool created = !m_nativeMapSurface;
+    if (created)
+        m_nativeMapSurface = SDL_CreateRGBSurfaceWithFormat(0, w, h, 32, SDL_PIXELFORMAT_ARGB8888);
+    if (!m_nativeMapSurface) return nullptr;
+    if ((created || refresh) && !RenderingAdapter::BlitDIBToSurface(m_terrainAA, m_nativeMapSurface, 0, 0)) {
+        SDL_FreeSurface(m_nativeMapSurface);
+        m_nativeMapSurface = nullptr;
+        return nullptr;
+    }
+    return m_nativeMapSurface;
+}
+
+bool SDL2Panel::EnsureZoomOverlay(SDL_Surface* source) {
+    if (!source || !m_ownRenderer) return false;
+    if (m_zoomOverlay && m_zoomOverlayTex && m_zoomOverlay->w == source->w &&
+        m_zoomOverlay->h == source->h) return true;
+    if (m_zoomOverlayTex) SDL_DestroyTexture(m_zoomOverlayTex);
+    if (m_zoomOverlay) SDL_FreeSurface(m_zoomOverlay);
+    m_zoomOverlayTex = nullptr; m_zoomOverlay = nullptr;
+    m_zoomOverlay = SDL_CreateRGBSurfaceWithFormat(0, source->w, source->h, 32, SDL_PIXELFORMAT_ARGB8888);
+    if (m_zoomOverlay)
+        m_zoomOverlayTex = SDL_CreateTexture(m_ownRenderer, SDL_PIXELFORMAT_ARGB8888,
+                                            SDL_TEXTUREACCESS_STREAMING, source->w, source->h);
+    if (!m_zoomOverlay || !m_zoomOverlayTex) {
+        if (m_zoomOverlayTex) SDL_DestroyTexture(m_zoomOverlayTex);
+        if (m_zoomOverlay) SDL_FreeSurface(m_zoomOverlay);
+        m_zoomOverlayTex = nullptr; m_zoomOverlay = nullptr;
+        return false;
+    }
+    SDL_SetTextureBlendMode(m_zoomOverlayTex, SDL_BLENDMODE_BLEND);
+    return true;
+}
+
+bool SDL2Panel::CanSmoothZoom() {
+    if (m_zoomPresentationFailed) return false;
+    if (PresentsGpuTerrain()) {
+        // A resize/reset drops the content target; re-create it before deciding
+        // that the transition cannot continue.
+        if (!m_contentRT && !EnsureOwnBack()) return false;
+        return m_contentRT && EnsureZoomOverlay(m_terrainAA->GetSpriteLayerSurface());
+    }
+    return GetSoftwareMapSurface() != nullptr;
+}
+
+// The software DIB contains only map content. Crop around the view centre and
+// stretch it into the viewport; chrome is then drawn at its normal size.
+static void BlitZoomedMap(SDL_Surface* map, SDL_Surface* output, SDL_Rect dst, float scale) {
+    int w = (std::max)(1, (int)std::lround(map->w / scale));
+    int h = (std::max)(1, (int)std::lround(map->h / scale));
+    SDL_Rect src = { (map->w - w) / 2, (map->h - h) / 2, w, h };
+    EnUiCanvas::BlitScaled(map, &src, output, &dst);
+}
+
+
 void SDL2Panel::RenderDetached() {
     if (!m_ownWindow || !m_visible || !m_surface)
         return;
@@ -1448,6 +1562,10 @@ void SDL2Panel::RenderDetached() {
     // content area stays transparent so the GPU terrain mesh (drawn in
     // PresentOwn, underneath) shows through.
     bool bGpuTerrain = PresentsGpuTerrain();
+    if (bGpuTerrain && m_mapZoomScale > 1.0f &&
+        (!m_contentRT || !EnsureZoomOverlay(m_terrainAA->GetSpriteLayerSurface()))) {
+        m_zoomPresentationFailed = true; SetDirty(); return;
+    }
 
     SDL_Rect dstRect = { 0, (int)std::lround(tbH * m_displayMetrics.densityY),
                         W, H - (int)std::lround(tbH * m_displayMetrics.densityY) };
@@ -1455,7 +1573,7 @@ void SDL2Panel::RenderDetached() {
         Perf::ScopeCounter _cof( "p.ovlfill" );        // MEASURE: full-window CPU overlay fill+blit
         EnUiCanvas::FillRect(winSurf, nullptr, 0x00000000);   // transparent
         SDL_Surface* spriteSurf = m_terrainAA->GetSpriteLayerSurface();
-        if (spriteSurf) {
+        if (spriteSurf && m_mapZoomScale <= 1.0f) {
             SDL_SetColorKey(spriteSurf, SDL_TRUE,
                             SDL_MapRGB(spriteSurf->format, 255, 0, 255));
             EnUiCanvas::BlitScaled(spriteSurf, nullptr, winSurf, &dstRect);  // legacy map viewport
@@ -1480,7 +1598,18 @@ void SDL2Panel::RenderDetached() {
     } else {
         // Clear background, then the full CPU composite (terrain+sprites).
         EnUiCanvas::FillRect(winSurf, nullptr, SDL_MapRGB(winSurf->format, 0, 0, 0));
-        EnUiCanvas::BlitScaled(m_surface, nullptr, winSurf, &dstRect);
+        SDL_Surface* map = m_mapZoomScale > 1.0f ? GetSoftwareMapSurface(true) : nullptr;
+        if (m_mapZoomScale > 1.0f && !map) { m_zoomPresentationFailed = true; SetDirty(); return; }
+        if (map) {
+            BlitZoomedMap(map, winSurf, dstRect, m_mapZoomScale);
+            if (m_bottomChromePanel && m_bottomChromePanel->GetSurface()) {
+                int barH = (int)std::lround(m_bottomChromePanel->GetHeight() * m_displayMetrics.densityY);
+                SDL_Rect bar = { 0, H - barH, W, barH };
+                EnUiCanvas::BlitScaled(m_bottomChromePanel->GetSurface(), nullptr, winSurf, &bar);
+            }
+        } else {
+            EnUiCanvas::BlitScaled(m_surface, nullptr, winSurf, &dstRect);
+        }
     }
 
     // Purple title bar across the top (full width — drawn at the same (0,0)

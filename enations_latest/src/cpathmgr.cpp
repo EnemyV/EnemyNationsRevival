@@ -1591,6 +1591,11 @@ CCell* CPathMgr::GetLowestCost( int& iCnt )
     if ( iNum <= 0 )
         return xGetLowestCost( iCnt );
 
+    // Every bucket before this one was empty. Retain that lower bound so
+    // subsequent selections do not scan the same empty prefix again. NewBoth
+    // lowers it when an insertion introduces a cheaper candidate.
+    m_iLowestBoth = (int)( ppCellOn - m_acBoth );
+
     // we now walk the linked list returning the lowest one
     CCell *pcLowest, *pCellOn;
     pcLowest = pCellOn = *ppCellOn;
