@@ -1,5 +1,0 @@
-      24: CTcpNet::CTcpNet Entry
-
-       0: Error: 3:0:0
-       0: CTcpNet::CTcpNet After gethostbyname
-

@@ -1,6 +1,0 @@
-; vdmplayds.def : Declares the module parameters for the DLL.
-
-LIBRARY      "VDMPLAYDS"
-DESCRIPTION  'VDMPLAYDS Windows Dynamic Link Library'
-
-EXPORTS

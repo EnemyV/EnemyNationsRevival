@@ -467,14 +467,12 @@ target_include_directories(enations PUBLIC
        ./cmakeBuild/tools
        ../../windward/wind22/include
        ../../rendering/
-       ../rendering/
 )
 
 if (MSVC)
     target_include_directories(enations PUBLIC
            ../../tools/sdl2/SDL2-2.30.12/include
            ../../tools/sdl2/SDL2_ttf-2.22.0/include
-           ../../tools/sdl2/glew-2.2.0/include
     )
 
     target_link_libraries(enations PUBLIC
@@ -688,15 +686,15 @@ endif ()
 # Stage the intro/logo videos the menu's PlayVideo loads at runtime (assets/videos/*.mpg).
 # NOT in ENATIONS.DAT — PlayVideo reads loose files (CWD then exe dir) and silently no-ops if
 # missing, which was bug #53 "Replay Introduction does nothing". The real clips are the *_44k.mpg
-# in enations/disk/avi (the bare intro.mpg/logo.mpg there are 0-byte stubs). copy_if_different so
+# in enations_latest/assets/videos (moved from the retired enations/disk/avi). copy_if_different so
 # the 18MB intro only copies once. Cross-platform (POSIX needs them too once paths are forward-slash).
 add_custom_command(TARGET enations POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E make_directory "$<TARGET_FILE_DIR:enations>/assets/videos"
     COMMAND ${CMAKE_COMMAND} -E copy_if_different
-        "${CMAKE_CURRENT_SOURCE_DIR}/../../enations/disk/avi/intro_44k.mpg"
+        "${CMAKE_CURRENT_SOURCE_DIR}/../assets/videos/intro_44k.mpg"
         "$<TARGET_FILE_DIR:enations>/assets/videos/intro.mpg"
     COMMAND ${CMAKE_COMMAND} -E copy_if_different
-        "${CMAKE_CURRENT_SOURCE_DIR}/../../enations/disk/avi/logo_44k.mpg"
+        "${CMAKE_CURRENT_SOURCE_DIR}/../assets/videos/logo_44k.mpg"
         "$<TARGET_FILE_DIR:enations>/assets/videos/logo.mpg"
     # App icon for the macOS Dock (res/main.ico's 32x32 converted to PNG; a bare
     # Mach-O binary otherwise gets the generic exec icon — GameWindow sets it at

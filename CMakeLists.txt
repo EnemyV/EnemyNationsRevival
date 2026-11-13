@@ -128,7 +128,7 @@ if (MSVC)
     ###############################
     # ISERVE.exe (legacy 32-bit MFC GUI — frozen)
     ###############################
-    add_subdirectory(tools/vdmplay/iserve)
+    add_subdirectory(tools/vdmplay/ISERVE)
 
     ###############################
     # iserve_headless.exe (Windows headless registration server — no MFC, console)

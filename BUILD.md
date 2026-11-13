@@ -52,8 +52,7 @@ cd EnemyNationsRevival
 ```
 
 The repo root holds the top-level `CMakeLists.txt`. The live game code is in
-**`enations_latest/src/`** (other `enations/src*` trees are read-only historical snapshots,
-don't build those).
+**`enations_latest/src/`**. The old `enations/` snapshot was removed in 017; it is still in git history.
 
 ---
 
