@@ -286,6 +286,7 @@ static LRESULT CALLBACK SdlCbtFilterHook(int nCode, WPARAM wParam, LPARAM lParam
 // Defined below, next to the other hand-rolled objc helpers (the objc headers' BOOL
 // collides with the win32 shim, so this file talks to the runtime by hand).
 static void DisableMacWindowShadow(SDL_Window* win);
+static void KeepMacWindowOnItsSpace(SDL_Window* win);
 #endif
 
 SDL_Window* GameWindow::CreateSDLWindow(const char* title, int x, int y, int w, int h, Uint32 flags) {
@@ -316,8 +317,10 @@ SDL_Window* GameWindow::CreateSDLWindow(const char* title, int x, int y, int w, 
     // (operator: "the shadows of the windows was too strong"). Drop them for our own
     // child windows; the main window is created directly in Create() and is unaffected.
     // EN_MAC_WINDOW_SHADOWS=1 restores them.
-    if (win)
+    if (win) {
         DisableMacWindowShadow(win);
+        KeepMacWindowOnItsSpace(win);
+    }
 #endif
     ApplyAppIcon(win);
 #ifdef _WIN32
@@ -376,6 +379,26 @@ static void DisableMacWindowShadow(SDL_Window* win) {
     // as SetMacDockIcon / HideMacDockBar below.
     auto sendB = (void (*)(void*, void*, bool))objc_msgSend;
     sendB(nswin, sel_registerName("setHasShadow:"), false);
+}
+
+// Keep a game window on the Space it was opened on. AppKit gives every window whose
+// level is not NSNormalWindowLevel the Transient collection behavior by default
+// ("floats in spaces, hidden by expose", NSWindow.h), and SDL sets none while
+// SDL_HINT_VIDEO_MAC_FULLSCREEN_SPACES is 0. Our ALWAYS_ON_TOP (floating) panels and
+// dialogs, and the main window while it is key at shielding level, therefore floated
+// onto whatever desktop the user swiped to. Managed ties each window to its own Space
+// (per display when displays have separate Spaces) without changing its level or
+// position, so the panels still overlay the game and can live on another monitor.
+static void KeepMacWindowOnItsSpace(SDL_Window* win) {
+    SDL_SysWMinfo wm; SDL_VERSION(&wm.version);
+    if (!win || !SDL_GetWindowWMInfo(win, &wm)) return;
+    void* nswin = wm.info.cocoa.window;
+    if (!nswin) return;
+    auto getUL = (unsigned long (*)(void*, void*))objc_msgSend;
+    auto setUL = (void (*)(void*, void*, unsigned long))objc_msgSend;
+    const unsigned long cb = getUL(nswin, sel_registerName("collectionBehavior"));
+    enum : unsigned long { kManaged = 1UL << 2, kTransient = 1UL << 3, kStationary = 1UL << 4 };
+    setUL(nswin, sel_registerName("setCollectionBehavior:"), (cb & ~(kTransient | kStationary)) | kManaged);
 }
 
 // Lift ONE of our borderless child windows one step ABOVE the band the detached
@@ -710,6 +733,11 @@ bool GameWindow::InitializeSDL() {
         m_width, m_height,
         winFlags
     );
+#ifdef __APPLE__
+    // The main window too: it sits at shielding level while it has focus (SDL's
+    // fullscreen mouse-grab path), which would make it Transient as well.
+    KeepMacWindowOnItsSpace(m_window);
+#endif
 
 #ifdef _WIN32
     // Remove our temporary hook — MFC hooks resume normal operation
