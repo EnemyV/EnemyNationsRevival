@@ -596,6 +596,16 @@ static bool MacBarsHidden() {
     return (options & ((1UL << 1) | (1UL << 3))) == ((1UL << 1) | (1UL << 3));
 }
 
+// True while AppKit considers this process the active app. The bars are supposed to
+// come back when the user leaves the game (swipe to another Space, Cmd-Tab), and
+// SDL keyboard focus lags that by our grace period, so the self-heal must ask AppKit.
+static bool MacAppIsActive() {
+    auto send0 = (void* (*)(void*, void*))objc_msgSend;
+    auto sendBRet = (bool (*)(void*, void*))objc_msgSend;
+    void* app = send0(objc_getClass("NSApplication"), sel_registerName("sharedApplication"));
+    return app && sendBRet(app, sel_registerName("isActive"));
+}
+
 // Counterpart of HideMacDockBar: hand the Dock and menu bar back to the system
 // (NSApplicationPresentationDefault). Needed before miniaturizing — see MinimizeAll.
 static void ShowMacDockBar() {
@@ -1349,7 +1359,9 @@ bool GameWindow::PollEvents() {
         const bool minimizeInFlight =
             (m_window && (SDL_GetWindowFlags(m_window) & SDL_WINDOW_MINIMIZED))
             || nowMs < m_suppressGroupRestoreMs;
-        if (!minimizeInFlight && (nowMs - m_macBarCheckMs) >= 1000) {
+        // Re-hiding calls activateIgnoringOtherApps:, so doing it while the user is
+        // leaving the game yanks focus back and they can never swipe away.
+        if (!minimizeInFlight && MacAppIsActive() && (nowMs - m_macBarCheckMs) >= 1000) {
             m_macBarCheckMs = nowMs;
             if (!MacBarsHidden()) {
                 LogToFile("MAC_DISPLAY_CHECK: DRIFT dock/menu bar visible over the game, re-applying hide");
