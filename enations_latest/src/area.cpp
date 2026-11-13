@@ -1817,9 +1817,94 @@ void CWndArea::PanByPixels( int dxPix, int dyPix )
     m_bUpdateAll = TRUE;
 }
 
+static int ArrowBit( SDL_Scancode sc )
+{
+    switch ( sc )
+    {
+    case SDL_SCANCODE_LEFT:  return 1;
+    case SDL_SCANCODE_RIGHT: return 2;
+    case SDL_SCANCODE_UP:    return 4;
+    case SDL_SCANCODE_DOWN:  return 8;
+    default:                 return 0;
+    }
+}
+
+void CWndArea::ArrowScrollKey( SDL_Scancode sc, bool down )
+{
+    const int bit = ArrowBit( sc );
+    if ( !bit )
+        return;
+    if ( !down )
+    {
+        m_arrowHeld &= ~bit;
+        return;
+    }
+    m_arrowHeld |= bit;
+    CRect rect;
+    GetClientRect( &rect );
+    // A tap glides the same quarter screen the old instant step jumped.
+    if ( bit == 1 ) m_arrowRemX -= rect.Width( ) / 4.0f;
+    if ( bit == 2 ) m_arrowRemX += rect.Width( ) / 4.0f;
+    if ( bit == 4 ) m_arrowRemY -= rect.Height( ) / 4.0f;
+    if ( bit == 8 ) m_arrowRemY += rect.Height( ) / 4.0f;
+    m_arrowLastMs = timeGetTime( );
+    m_bUpdateAll = TRUE;   // wake the render loop so UpdateArrowScroll runs
+}
+
+void CWndArea::UpdateArrowScroll( )
+{
+    if ( !m_arrowHeld && m_arrowRemX == 0.0f && m_arrowRemY == 0.0f )
+        return;
+
+    // A key released while another app or window had focus never sends KEYUP to us;
+    // SDL clears its keyboard state on focus loss, so trust that over our bits.
+    const Uint8* ks = SDL_GetKeyboardState( nullptr );
+    if ( !ks[SDL_SCANCODE_LEFT] )  m_arrowHeld &= ~1;
+    if ( !ks[SDL_SCANCODE_RIGHT] ) m_arrowHeld &= ~2;
+    if ( !ks[SDL_SCANCODE_UP] )    m_arrowHeld &= ~4;
+    if ( !ks[SDL_SCANCODE_DOWN] )  m_arrowHeld &= ~8;
+
+    const unsigned int now = timeGetTime( );
+    float dt = ( now - m_arrowLastMs ) / 1000.0f;
+    m_arrowLastMs = now;
+    if ( dt <= 0.0f ) { m_bUpdateAll = TRUE; return; }
+    if ( dt > 0.1f ) dt = 0.1f;   // a stalled frame must not teleport the view
+
+    CRect rect;
+    GetClientRect( &rect );
+    // Exponential glide: each frame covers 1 - e^(-dt/tau) of the remaining distance.
+    // While held, the remaining distance is topped up to speed * tau, which makes
+    // the steady-state speed exactly `speed` (one screen per second).
+    const float tau = 0.06f;
+    const float speedX = (float)rect.Width( ), speedY = (float)rect.Height( );
+    const int hx = ( ( m_arrowHeld & 2 ) ? 1 : 0 ) - ( ( m_arrowHeld & 1 ) ? 1 : 0 );
+    const int hy = ( ( m_arrowHeld & 8 ) ? 1 : 0 ) - ( ( m_arrowHeld & 4 ) ? 1 : 0 );
+    if ( hx ) { const float want = hx * speedX * tau; if ( hx > 0 ? m_arrowRemX < want : m_arrowRemX > want ) m_arrowRemX = want; }
+    if ( hy ) { const float want = hy * speedY * tau; if ( hy > 0 ? m_arrowRemY < want : m_arrowRemY > want ) m_arrowRemY = want; }
+
+    const float k = 1.0f - std::exp( -dt / tau );
+    const float stepX = m_arrowRemX * k, stepY = m_arrowRemY * k;
+    m_arrowRemX -= stepX;
+    m_arrowRemY -= stepY;
+    m_arrowFracX += stepX;
+    m_arrowFracY += stepY;
+    const int dx = (int)m_arrowFracX, dy = (int)m_arrowFracY;
+    m_arrowFracX -= dx;
+    m_arrowFracY -= dy;
+    if ( !hx && std::fabs( m_arrowRemX ) < 0.5f ) { m_arrowRemX = 0.0f; m_arrowFracX = 0.0f; }
+    if ( !hy && std::fabs( m_arrowRemY ) < 0.5f ) { m_arrowRemY = 0.0f; m_arrowFracY = 0.0f; }
+
+    if ( dx || dy )
+        PanByPixels( dx, dy );
+    if ( m_arrowHeld || m_arrowRemX != 0.0f || m_arrowRemY != 0.0f )
+        m_bUpdateAll = TRUE;   // keep the frames coming until the glide settles
+}
+
 void CWndArea::ReRender( )
 {
     Perf::ScopeCounter _crr( "rr.area" );   // PROFILE: area-map ReRender cost (r.inval split)
+
+    UpdateArrowScroll( );
 
     CDIB* pdib = m_aa.m_dibwnd.GetDIB( );
     CRect rect;
@@ -3732,7 +3817,6 @@ int CWndArea::OnCreate( LPCREATESTRUCT lpCreateStruct )
 #else
                     float delta = (float)event.wheel.y;
 #endif
-                    if (event.wheel.direction == SDL_MOUSEWHEEL_FLIPPED) delta = -delta;
                     if (std::isfinite(delta) && delta != 0.0f) pThis->RequestSmoothZoom(-delta);
                     return true;
                 }
@@ -3788,10 +3872,12 @@ int CWndArea::OnCreate( LPCREATESTRUCT lpCreateStruct )
                     // Simulate MFC accelerator commands that arrow keys
                     // and letter keys would normally trigger
                     switch (vk) {
-                    case VK_LEFT:   pThis->CurLeft(); return true;
-                    case VK_RIGHT:  pThis->CurRight(); return true;
-                    case VK_UP:     pThis->CurUp(); return true;
-                    case VK_DOWN:   pThis->CurDown(); return true;
+                    case VK_LEFT:
+                    case VK_RIGHT:
+                    case VK_UP:
+                    case VK_DOWN:
+                        if (!event.key.repeat) pThis->ArrowScrollKey(sc, true);
+                        return true;
                     case VK_ESCAPE: pThis->OnDeselect(); return true;
                     case VK_HOME:   pThis->CenterUnit(); return true;   // IDA_CENTER: center on selection, or rocket if none
                     case VK_DELETE: pThis->DestroyUnit(); return true;
@@ -3807,6 +3893,7 @@ int CWndArea::OnCreate( LPCREATESTRUCT lpCreateStruct )
                     }
                 }
                 case SDL_KEYUP: {
+                    pThis->ArrowScrollKey(event.key.keysym.scancode, false);
                     UINT vk = SDLKeyToVK(event.key.keysym.scancode);
                     if (vk) pThis->OnKeyUp(vk, 1, 0);
                     return vk != 0;

@@ -162,6 +162,14 @@ public:
     bool IsZoomAnimating() const { return m_zoomDirection != 0; }
     float GetZoomVisualLevel() const;
     void UpdateSmoothZoom();
+    // Smooth arrow-key scrolling: a tap glides a quarter screen (the original step),
+    // a hold scrolls continuously and eases to a stop on release.
+    void ArrowScrollKey(SDL_Scancode sc, bool down);
+    void UpdateArrowScroll();
+    unsigned char m_arrowHeld = 0;      // bit 0 L, 1 R, 2 U, 3 D
+    float m_arrowRemX = 0.0f, m_arrowRemY = 0.0f;   // pixels still to glide
+    float m_arrowFracX = 0.0f, m_arrowFracY = 0.0f; // sub-pixel carry
+    unsigned int m_arrowLastMs = 0;
     void MapInputPoint(CPoint& point) const;
     void ReprojectZoomGestures(int oldZoom, int newZoom);
     float m_zoomTarget = -1.0f;
