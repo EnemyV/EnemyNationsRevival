@@ -4,6 +4,7 @@
 #include "enprobes.h"   // EN_GAMEPLAY_PROBES
 
 #include "SDL2Panel.h"
+#include "SDL2UiCanvas.h"
 #include "framecap.h"   // #45 frame-capture debug mode
 #include "GameWindow.h"
 #include "SDL2CreateStatus.h"  // GetCreateStatus()->IsVisible() — defer panel show during load
@@ -86,7 +87,7 @@ static const SDL_Color BtnDk       = {  64,  64,  64, 255 };  // outer bottom/ri
 static const SDL_Color BtnGlyph    = {   0,   0,   0, 255 };
 
 static void FillRectP(SDL_Surface* dst, SDL_Rect r, SDL_Color c) {
-    SDL_FillRect(dst, &r, SDL_MapRGB(dst->format, c.r, c.g, c.b));
+    EnUiCanvas::FillRect(dst, &r, SDL_MapRGB(dst->format, c.r, c.g, c.b));
 }
 
 // Horizontal left→right gradient fill (one 1px column per step).
@@ -98,7 +99,7 @@ static void FillGradientH(SDL_Surface* dst, SDL_Rect r, SDL_Color l, SDL_Color r
         Uint8 cg = (Uint8)(l.g + (rgt.g - l.g) * t);
         Uint8 cb = (Uint8)(l.b + (rgt.b - l.b) * t);
         SDL_Rect col = { r.x + i, r.y, 1, r.h };
-        SDL_FillRect(dst, &col, SDL_MapRGB(dst->format, cr, cg, cb));
+        EnUiCanvas::FillRect(dst, &col, SDL_MapRGB(dst->format, cr, cg, cb));
     }
 }
 
@@ -189,7 +190,7 @@ static void DrawCaptionButton(SDL_Surface* dst, SDL_Rect b, int glyph, bool pres
         SDL_Rect d   = { b.x + (b.w - WINBTN_GLYPH) / 2,
                          b.y + (b.h - WINBTN_GLYPH) / 2,
                          WINBTN_GLYPH, WINBTN_GLYPH };
-        SDL_BlitSurface(s_winBtn, &src, dst, &d);
+        EnUiCanvas::BlitSurface(s_winBtn, &src, dst, &d);
         return;
     }
 
@@ -211,21 +212,21 @@ static void DrawCaptionButton(SDL_Surface* dst, SDL_Rect b, int glyph, bool pres
     int cy = b.y + b.h / 2;
     if (glyph == 1) {            // minimize: short bar at the bottom (Win95)
         SDL_Rect bar = { cx - 3, cy + 3, 7, 2 };
-        SDL_FillRect(dst, &bar, g);
+        EnUiCanvas::FillRect(dst, &bar, g);
     } else if (glyph == 2) {     // maximize: window box with a thick title edge
         int x0 = cx - 5, y0 = cy - 4, x1 = cx + 5, y1 = cy + 4;
         SDL_Rect top = { x0, y0, x1 - x0, 2 };               // title bar (thick)
         SDL_Rect lft = { x0, y0, 1, y1 - y0 };
         SDL_Rect rgt = { x1 - 1, y0, 1, y1 - y0 };
         SDL_Rect bot = { x0, y1 - 1, x1 - x0, 1 };
-        SDL_FillRect(dst, &top, g); SDL_FillRect(dst, &lft, g);
-        SDL_FillRect(dst, &rgt, g); SDL_FillRect(dst, &bot, g);
+        EnUiCanvas::FillRect(dst, &top, g); EnUiCanvas::FillRect(dst, &lft, g);
+        EnUiCanvas::FillRect(dst, &rgt, g); EnUiCanvas::FillRect(dst, &bot, g);
     } else if (glyph == 3) {     // close: an X (Win95 — two clean diagonals)
         for (int i = -3; i <= 3; i++) {
             SDL_Rect p1 = { cx - 3 + (i + 3), cy + i, 2, 1 };
             SDL_Rect p2 = { cx - 3 + (i + 3), cy - i, 2, 1 };
-            SDL_FillRect(dst, &p1, g);
-            SDL_FillRect(dst, &p2, g);
+            EnUiCanvas::FillRect(dst, &p1, g);
+            EnUiCanvas::FillRect(dst, &p2, g);
         }
     }
 }
@@ -257,7 +258,8 @@ void SDL2Panel::CreateSurface() {
     }
 
     SDL_Surface* fresh = SDL_CreateRGBSurface(
-        0, m_width, m_height, 32,
+        0, m_uiScaled ? (int)std::lround(m_width * m_displayMetrics.densityX) : m_width,
+           m_uiScaled ? (int)std::lround(m_height * m_displayMetrics.densityY) : m_height, 32,
         0x00FF0000, 0x0000FF00, 0x000000FF, 0);
 
     if (!fresh) {
@@ -272,15 +274,60 @@ void SDL2Panel::CreateSurface() {
     // next real repaint, so the resize looks smooth instead of strobing black.
     if (m_surface) {
         SDL_SetSurfaceBlendMode(m_surface, SDL_BLENDMODE_NONE);
-        SDL_BlitSurface(m_surface, nullptr, fresh, nullptr);
-        SDL_FreeSurface(m_surface);
+        EnUiCanvas::BlitSurface(m_surface, nullptr, fresh, nullptr);
+        EnUiCanvas::FreeSurface(m_surface);
     }
     m_surface = fresh;
 }
 
+void SDL2Panel::RefreshDisplayMetrics() {
+    if (m_suppressSync) return;
+    SDL2DisplayMetrics next = m_displayMetrics;
+    if (m_uiParent) next = m_uiParent->m_displayMetrics;
+    else if (m_ownWindow) next.Refresh(m_ownWindow, m_ownRenderer);
+    else if (m_hostGameWindow) next = m_hostGameWindow->GetDisplayMetrics();
+    if (!next.valid) return;
+    const int oldTitle = GetTitleBarHeight();
+    const bool changed = !m_displayMetrics.valid || std::abs(next.pixelScale - m_displayMetrics.pixelScale) > 0.001 ||
+        std::abs(next.densityX - m_displayMetrics.densityX) > 0.001 || std::abs(next.densityY - m_displayMetrics.densityY) > 0.001;
+    m_displayMetrics = next;
+    if (m_ownWindow) {
+        SDL_SetWindowData(m_ownWindow, "EN_resizeGrip", (void*)(intptr_t)(Chrome(RESIZE_BORDER + 2) + 1));
+        SDL_SetWindowData(m_ownWindow, "EN_titleBarHeight", (void*)(intptr_t)GetTitleBarHeight());
+        SDL_SetWindowData(m_ownWindow, "EN_titleButtonsWidth", (void*)(intptr_t)Chrome(3 * TITLE_BTN_W + 5));
+    }
+    if (!changed) return;
+    if (m_uiScaled) {
+        const double scale = next.WindowScaleY();
+        const bool toolbar = m_name == "toolbar";
+        if (!toolbar && !m_uiParent) m_width = std::max(MIN_WIDTH, (int)std::lround(m_uiDesignWidth * next.WindowScaleX()));
+        m_height = std::max(1, (int)std::lround(m_uiDesignHeight * scale));
+        if (toolbar && m_hostGameWindow) m_y = m_hostGameWindow->GetHeight() - m_height;
+        if (m_uiParent) {
+            m_width = m_uiParent->m_width;
+            m_x = m_uiParent->m_x; m_y = m_uiParent->m_y + m_uiParent->m_height - m_height;
+        }
+        if (m_ownWindow) {
+            SDL_SetWindowSize(m_ownWindow, m_width, m_height + GetTitleBarHeight());
+            EnDpi::ClampWindow(m_ownWindow);
+            int w, h; SDL_GetWindowSize(m_ownWindow, &w, &h);
+            m_width = w; m_height = std::max(1, h - GetTitleBarHeight());
+        }
+        CreateSurface();
+        InvokeResizeCallback(m_width, m_height);
+    } else if (m_ownWindow && oldTitle != GetTitleBarHeight()) {
+        // Map content uses the existing projection resolution; only its chrome grows.
+        SDL_SetWindowSize(m_ownWindow, m_width, m_height + GetTitleBarHeight());
+    }
+    if (!m_uiScaled && (m_name == "world" || m_name == "radar")) InvokeResizeCallback(m_width, m_height);
+    if (m_ownWindow) OnOwnWindowMoved();
+    else InvokeMoveCallback();
+    SetDirty();
+}
+
 void SDL2Panel::FreeSurface() {
     if (m_surface) {
-        SDL_FreeSurface(m_surface);
+        EnUiCanvas::FreeSurface(m_surface);
         m_surface = nullptr;
     }
 }
@@ -295,11 +342,11 @@ void SDL2Panel::Render(SDL_Surface* windowSurface) {
 
     // Render title bar if movable
     if (m_movable)
-        DrawTitleBar(windowSurface, m_x, m_y - TITLE_BAR_HT, m_width);
+        DrawTitleBar(windowSurface, m_x, m_y - GetTitleBarHeight(), m_width);
 
     // Blit content
     SDL_Rect dstRect = { m_x, m_y, m_width, m_height };
-    SDL_BlitSurface(m_surface, nullptr, windowSurface, &dstRect);
+    EnUiCanvas::BlitScaled(m_surface, nullptr, windowSurface, &dstRect);
 
     // Draw border if movable/resizable. Use the ornate Enemy Nations GOLD frame
     // — the SAME art the detached panels draw (RenderOwn ~line 1229) — so the
@@ -324,31 +371,35 @@ void SDL2Panel::Render(SDL_Surface* windowSurface) {
     m_dirty = false;
 }
 
-// Lazily cached font for title bars
-static TTF_Font* GetTitleFont() {
-    static TTF_Font* s_font = nullptr;
-    static bool s_tried = false;
-    if (s_tried) return s_font;
-    s_tried = true;
-    const char* paths[] = {
-        "/System/Library/Fonts/Supplemental/Arial.ttf", "/System/Library/Fonts/Supplemental/Times New Roman.ttf", "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", "C:\\Windows\\Fonts\\arial.ttf",
-        "C:\\Windows\\Fonts\\tahoma.ttf",
-        "C:\\Windows\\Fonts\\segoeui.ttf",
-        nullptr
-    };
-    for (int i = 0; paths[i]; i++) {
-        s_font = EnOpenUiFont(paths[i], 12);
-        if (s_font) break;
+void SDL2Panel::RenderNativeUi(SDL_Surface* output) {
+    if (!m_surface || !output || !m_visible || !m_uiScaled || m_ownWindow) return;
+    SDL_Rect dst = { (int)std::lround(m_x * m_displayMetrics.densityX),
+                     (int)std::lround(m_y * m_displayMetrics.densityY),
+                     (int)std::lround(m_width * m_displayMetrics.densityX),
+                     (int)std::lround(m_height * m_displayMetrics.densityY) };
+    SDL_BlitScaled(m_surface, nullptr, output, &dst);
+    if (m_movable) {
+        m_nativePaint = true;
+        DrawTitleBar(output, dst.x, dst.y - (int)std::lround(GetTitleBarHeight() * m_displayMetrics.densityY), m_width);
+        m_nativePaint = false;
     }
-    // T-0073 fallback: this list is preference-ordered for looks; if none of it
-    // exists (non-Debian distro, trimmed system) use the shared resolver so text
-    // still renders instead of the UI going blank.
-    if (!s_font)
-        s_font = TTF_OpenFont(EnResolveFontPath(), 12);
-    return s_font;
 }
 
+// Bounded by raster size, with no shared font-size mutation across windows.
+static TTF_Font* GetTitleFont() {
+    static std::unordered_map<int, TTF_Font*> fonts;
+    int size = EnUiCanvas::RasterSize(12);
+    auto it = fonts.find(size);
+    if (it != fonts.end()) return EnUiCanvas::Font(it->second);
+    TTF_Font* font = EnOpenUiFont(EnResolveFontPath(), size);
+    fonts[size] = font;
+    return EnUiCanvas::Font(font);
+}
 void SDL2Panel::DrawTitleBar(SDL_Surface* dst, int x, int y, int w) {
+    const double rasterScale = (m_ownWindow || m_nativePaint) ? m_displayMetrics.pixelScale : m_displayMetrics.WindowScaleY();
+    // Composited legacy surfaces use window pixels; detached overlays use drawable pixels.
+    EnUiCanvas::Scope canvas(dst, rasterScale, -(int)std::lround(x / rasterScale), -(int)std::lround(y / rasterScale));
+    x = 0; y = 0; w = (int)std::lround(w / m_displayMetrics.WindowScaleX());
     // Title-bar background: the original purple caption art (caption2.d24),
     // stretched across the window width. Falls back to a hand-drawn violet
     // gradient if the art is unavailable.
@@ -356,7 +407,7 @@ void SDL2Panel::DrawTitleBar(SDL_Surface* dst, int x, int y, int w) {
     EnsureGoldArt();
     if (s_caption) {
         SDL_Rect capSrc = { 0, 0, s_caption->w, s_caption->h };
-        SDL_BlitScaled(s_caption, &capSrc, dst, &tbRect);
+        EnUiCanvas::BlitScaled(s_caption, &capSrc, dst, &tbRect);
     } else {
         FillGradientH(dst, tbRect, TitleGradL, TitleGradR);
         // thin highlight along the very top of the caption
@@ -383,16 +434,16 @@ void SDL2Panel::DrawTitleBar(SDL_Surface* dst, int x, int y, int w) {
     }
     TTF_Font* font = GetTitleFont();
     if (font && !m_title.empty()) {
-        SDL_Surface* textSurf = TTF_RenderText_Blended(font, m_title.c_str(), TitleText);
+        SDL_Surface* textSurf = EnUiCanvas::Text(font, m_title.c_str(), TitleText);
         if (textSurf) {
-            SDL_Rect textDst = { textLeft, y + (TITLE_BAR_HT - textSurf->h) / 2,
-                                 textSurf->w, textSurf->h };
+            SDL_Rect textDst = { textLeft, y + (TITLE_BAR_HT - EnUiCanvas::Height(textSurf)) / 2,
+                                 EnUiCanvas::Width(textSurf), EnUiCanvas::Height(textSurf) };
             int maxTextW = (minX - 6) - textLeft;
             if (maxTextW < 0) maxTextW = 0;
             if (textDst.w > maxTextW) textDst.w = maxTextW;
             SDL_Rect textSrc = { 0, 0, textDst.w, textDst.h };
-            SDL_BlitSurface(textSurf, &textSrc, dst, &textDst);
-            SDL_FreeSurface(textSurf);
+            EnUiCanvas::BlitSurface(textSurf, &textSrc, dst, &textDst);
+            EnUiCanvas::FreeSurface(textSurf);
         }
     }
 }
@@ -400,18 +451,18 @@ void SDL2Panel::DrawTitleBar(SDL_Surface* dst, int x, int y, int w) {
 // Which caption button is at (sx, sy), in the same coordinate frame as m_x/m_y.
 int SDL2Panel::HitTestTitleButton(int sx, int sy) const {
     if (!m_movable) return TB_BTN_NONE;
-    int tbY = m_y - GetTitleBarHeight();
-    int byTop = tbY + (TITLE_BAR_HT - TITLE_BTN_H) / 2;
-    if (sy < byTop || sy >= byTop + TITLE_BTN_H) return TB_BTN_NONE;
-    int closeX = m_x + m_width - 2 - TITLE_BTN_W;
-    int maxX   = closeX - 1 - TITLE_BTN_W;
-    int minX   = maxX   - 1 - TITLE_BTN_W;
-    if (sx >= closeX && sx < closeX + TITLE_BTN_W) return TB_BTN_CLOSE;
-    if (sx >= maxX   && sx < maxX   + TITLE_BTN_W) return TB_BTN_MAX;
-    if (sx >= minX   && sx < minX   + TITLE_BTN_W) return TB_BTN_MIN;
+    const int x = LayoutLocalX(sx - m_x);
+    const int y = LayoutLocalY(sy - (m_y - GetTitleBarHeight()));
+    const int w = (int)std::lround(m_width / m_displayMetrics.WindowScaleX());
+    const int byTop = (TITLE_BAR_HT - TITLE_BTN_H) / 2;
+    if (y < byTop || y >= byTop + TITLE_BTN_H) return TB_BTN_NONE;
+    const int closeX = w - 2 - TITLE_BTN_W;
+    const int maxX = closeX - 1 - TITLE_BTN_W, minX = maxX - 1 - TITLE_BTN_W;
+    if (x >= closeX && x < closeX + TITLE_BTN_W) return TB_BTN_CLOSE;
+    if (x >= maxX && x < maxX + TITLE_BTN_W) return TB_BTN_MAX;
+    if (x >= minX && x < minX + TITLE_BTN_W) return TB_BTN_MIN;
     return TB_BTN_NONE;
 }
-
 int SDL2Panel::HitTestResize(int screenX, int screenY) const {
     if (!m_resizable) return 0;
 
@@ -421,8 +472,8 @@ int SDL2Panel::HitTestResize(int screenX, int screenY) const {
 
     // Resize zones straddle the panel edge: half inside, half outside.
     // This keeps them reachable even when the panel is against a screen edge.
-    int halfIn  = RESIZE_BORDER / 2;
-    int halfOut = RESIZE_BORDER - halfIn;
+    int halfIn  = Chrome(RESIZE_BORDER) / 2;
+    int halfOut = Chrome(RESIZE_BORDER) - halfIn;
 
     bool onLeft   = (screenX >= m_x    - halfOut && screenX < m_x    + halfIn);
     bool onRight  = (screenX >= right  - halfIn  && screenX < right  + halfOut);
@@ -516,7 +567,7 @@ bool SDL2Panel::HandleEvent(SDL_Event& event) {
                       screenY >= m_y && screenY < m_y + m_height);
     bool inTitleBar = false;
     if (m_movable) {
-        int tbY = m_y - TITLE_BAR_HT;
+        int tbY = m_y - GetTitleBarHeight();
         inTitleBar = (screenX >= m_x && screenX < m_x + m_width &&
                       screenY >= tbY && screenY < m_y);
     }
@@ -615,6 +666,10 @@ bool SDL2Panel::HandleEvent(SDL_Event& event) {
     if (inContent) {
         int localX = screenX - m_x;
         int localY = screenY - m_y;
+        if (m_uiScaled) {
+            localX = SDL2DisplayMetrics::InverseEdge(localX * m_displayMetrics.densityX, m_displayMetrics.pixelScale);
+            localY = SDL2DisplayMetrics::InverseEdge(localY * m_displayMetrics.densityY, m_displayMetrics.pixelScale);
+        }
 
         if (m_eventCallback)
             return m_eventCallback(event, localX, localY);
@@ -633,7 +688,7 @@ bool SDL2Panel::HitTest(int screenX, int screenY) const {
 
     // Title bar
     if (m_movable) {
-        int tbY = m_y - TITLE_BAR_HT;
+        int tbY = m_y - GetTitleBarHeight();
         if (screenX >= m_x && screenX < m_x + m_width &&
             screenY >= tbY && screenY < m_y)
             return true;
@@ -731,7 +786,7 @@ void SDL2Panel::OnOwnWindowMoved() {
 
 void SDL2Panel::Invalidate() {
     if (m_surface) {
-        SDL_FillRect(m_surface, nullptr, SDL_MapRGB(m_surface->format, 0, 0, 0));
+        EnUiCanvas::FillRect(m_surface, nullptr, SDL_MapRGB(m_surface->format, 0, 0, 0));
     }
     m_dirty = true;
 }
@@ -745,7 +800,7 @@ void SDL2Panel::ClampPosition(int& x, int& y) const {
         return;  // fixed panels don't need clamping
     if (x < RESIZE_BORDER)
         x = RESIZE_BORDER;
-    int minY = (m_movable ? TITLE_BAR_HT : 0) + RESIZE_BORDER;
+    int minY = GetTitleBarHeight() + RESIZE_BORDER;
     if (y < minY)
         y = minY;
 }
@@ -762,6 +817,10 @@ void SDL2Panel::SetPosition(int x, int y) {
 }
 
 void SDL2Panel::SetSize(int w, int h) {
+    if (m_uiScaled && m_displayMetrics.valid && !m_suppressSync) {
+        m_uiDesignWidth = w / m_displayMetrics.WindowScaleX();
+        m_uiDesignHeight = h / m_displayMetrics.WindowScaleY();
+    }
     if (w == m_width && h == m_height)
         return;
     m_width = w;
@@ -777,6 +836,10 @@ void SDL2Panel::SetSize(int w, int h) {
 }
 
 void SDL2Panel::SetRect(int x, int y, int w, int h) {
+    if (m_uiScaled && m_displayMetrics.valid && !m_suppressSync) {
+        m_uiDesignWidth = w / m_displayMetrics.WindowScaleX();
+        m_uiDesignHeight = h / m_displayMetrics.WindowScaleY();
+    }
     ClampPosition(x, y);
     m_x = x;
     m_y = y;
@@ -805,7 +868,25 @@ void SDL2Panel::SetRect(int x, int y, int w, int h) {
 // SDL_HITTEST_DRAGGABLE for the title bar — that hands the move to the Windows
 // modal move loop, which blocks the app's main loop and freezes rendering until
 // the drag ends. Driving the drag ourselves keeps the game rendering.
-static SDL_HitTestResult SDLCALL DetachedPanelHitTest(SDL_Window* /*win*/, const SDL_Point* /*pt*/, void* /*data*/) {
+static SDL_HitTestResult SDLCALL DetachedPanelHitTest(SDL_Window* win, const SDL_Point* pt, void* data) {
+    if (EnDpi::IsWayland()) {
+        SDL2Panel* panel = (SDL2Panel*)data;
+        int w, h; SDL_GetWindowSize(win, &w, &h);
+        int grip = panel->Chrome(SDL2Panel::RESIZE_BORDER);
+        if (panel->IsResizable()) {
+            const bool l = pt->x < grip, r = pt->x >= w - grip, t = pt->y < grip, b = pt->y >= h - grip;
+            if (t && l) return SDL_HITTEST_RESIZE_TOPLEFT;
+            if (t && r) return SDL_HITTEST_RESIZE_TOPRIGHT;
+            if (b && l) return SDL_HITTEST_RESIZE_BOTTOMLEFT;
+            if (b && r) return SDL_HITTEST_RESIZE_BOTTOMRIGHT;
+            if (l) return SDL_HITTEST_RESIZE_LEFT;
+            if (r) return SDL_HITTEST_RESIZE_RIGHT;
+            if (t) return SDL_HITTEST_RESIZE_TOP;
+            if (b) return SDL_HITTEST_RESIZE_BOTTOM;
+        }
+        if (panel->IsMovable() && pt->y < panel->GetTitleBarHeight() &&
+            pt->x < w - panel->Chrome(3 * SDL2Panel::TITLE_BTN_W + 5)) return SDL_HITTEST_DRAGGABLE;
+    }
     return SDL_HITTEST_NORMAL;
 }
 
@@ -888,6 +969,11 @@ void SDL2Panel::Detach(SDL_Window* ownerWindow) {
     // only performs drag/resize via the hit-test callback below. SKIP_TASKBAR +
     // the owner-window relationship keep it floating above the background.
     Uint32 winFlags = SDL_WINDOW_BORDERLESS | SDL_WINDOW_RESIZABLE | SDL_WINDOW_SKIP_TASKBAR;
+#ifdef __APPLE__
+    // macOS: a resizable borderless window comes back display-sized at 0,0 (the map
+    // fills the screen), so create it fixed and let our own edge code resize it.
+    winFlags &= ~SDL_WINDOW_RESIZABLE;
+#endif
     // NOTE: do NOT use SDL_WINDOW_ALWAYS_ON_TOP on Linux. On X11 it pins the panel
     // above the WHOLE desktop (it floated over the user's other apps, e.g. the
     // terminal — operator-reported). Instead we set the X11 owner relationship
@@ -940,6 +1026,11 @@ void SDL2Panel::Detach(SDL_Window* ownerWindow) {
     // extents) here — MaybeCreateOwnRenderer() below can make SDL RECREATE the
     // underlying X11 window for the GL visual, silently wiping any properties
     // set on the original one. They are applied after it instead.
+
+    // T0b: GPU present for this window if the flag is on. Before any resize
+    // callback: a callback's metrics refresh takes the window surface, and SDL
+    // 2.28+ refuses a renderer on a window that already has one.
+    MaybeCreateOwnRenderer();
 
     // If this window has been opened (and moved/sized) before, reopen it in the
     // same spot. Done before the on-monitor clamp below so a restored rect is
@@ -1012,8 +1103,6 @@ void SDL2Panel::Detach(SDL_Window* ownerWindow) {
         m_x = wx;
         m_y = wy + tbH;
     }
-
-    MaybeCreateOwnRenderer();  // T0b: GPU present for this window if the flag is on
 
 #if defined(__linux__)
     // Linux/X11 window hints — applied AFTER MaybeCreateOwnRenderer because creating
@@ -1162,7 +1251,7 @@ void SDL2Panel::DestroyOwnRenderer() {
     }
     if (m_contentRT)  { SDL_DestroyTexture(m_contentRT);  m_contentRT = nullptr; }
     if (m_ownBackTex) { SDL_DestroyTexture(m_ownBackTex); m_ownBackTex = nullptr; }
-    if (m_ownBack)    { SDL_FreeSurface(m_ownBack);       m_ownBack = nullptr; }
+    if (m_ownBack)    { EnUiCanvas::FreeSurface(m_ownBack);       m_ownBack = nullptr; }
     if (m_ownRenderer){ SDL_DestroyRenderer(m_ownRenderer); m_ownRenderer = nullptr; }
     m_ownBackW = m_ownBackH = 0;
 }
@@ -1177,7 +1266,7 @@ SDL_Surface* SDL2Panel::EnsureOwnBack() {
     if (m_ownBack && m_ownBackW == w && m_ownBackH == h)
         return m_ownBack;
     if (m_ownBackTex) { SDL_DestroyTexture(m_ownBackTex); m_ownBackTex = nullptr; }
-    if (m_ownBack)    { SDL_FreeSurface(m_ownBack);       m_ownBack = nullptr; }
+    if (m_ownBack)    { EnUiCanvas::FreeSurface(m_ownBack);       m_ownBack = nullptr; }
     if (m_contentRT)  { SDL_DestroyTexture(m_contentRT);  m_contentRT = nullptr; }
     m_ownBack = SDL_CreateRGBSurfaceWithFormat(0, w, h, 32, SDL_PIXELFORMAT_ARGB8888);
     m_ownBackTex = SDL_CreateTexture(m_ownRenderer, SDL_PIXELFORMAT_ARGB8888,
@@ -1190,14 +1279,23 @@ SDL_Surface* SDL2Panel::EnsureOwnBack() {
     SDL_SetTextureBlendMode(m_ownBackTex, SDL_BLENDMODE_BLEND);
     // Item 5: persistent content RT (terrain+sprites). Lazily created only when the
     // dirty-rect path is enabled; opaque (the terrain clears it each (re)build).
-    if (GpuDirtyEnabled()) {
+    if (GpuDirtyEnabled() || m_displayMetrics.densityX != 1 || m_displayMetrics.densityY != 1) {
+        int logicalW, logicalH; SDL_GetWindowSize(m_ownWindow, &logicalW, &logicalH);
         m_contentRT = SDL_CreateTexture(m_ownRenderer, SDL_PIXELFORMAT_ARGB8888,
-                                        SDL_TEXTUREACCESS_TARGET, w, h);
+                                        SDL_TEXTUREACCESS_TARGET, logicalW, logicalH);
         if (m_contentRT)
             SDL_SetTextureBlendMode(m_contentRT, SDL_BLENDMODE_NONE);
     }
     m_ownBackW = w; m_ownBackH = h;
     return m_ownBack;
+}
+
+void SDL2Panel::ResetPresentationResources() {
+    if (m_contentRT) { SDL_DestroyTexture(m_contentRT); m_contentRT = nullptr; }
+    if (m_ownBackTex) { SDL_DestroyTexture(m_ownBackTex); m_ownBackTex = nullptr; }
+    if (m_ownBack) { EnUiCanvas::FreeSurface(m_ownBack); m_ownBack = nullptr; }
+    m_ownBackW = m_ownBackH = 0;
+    SetDirty();
 }
 
 void SDL2Panel::PresentOwn() {
@@ -1213,7 +1311,7 @@ void SDL2Panel::PresentOwn() {
         // instead of straight to the window backbuffer. Behaviour is identical here (we
         // still full-redraw each frame, +1 RenderCopy), but it establishes the surface
         // that later stages update incrementally (static content persists across frames).
-        bool useRT = GpuDirtyEnabled() && m_contentRT != nullptr;
+        bool useRT = m_contentRT != nullptr;
         SDL_Texture* prevTarget = nullptr;
         if (useRT) {
             prevTarget = SDL_GetRenderTarget(m_ownRenderer);
@@ -1309,6 +1407,7 @@ bool SDL2Panel::PresentsGpuTerrain() const {
 void SDL2Panel::RenderDetached() {
     if (!m_ownWindow || !m_visible || !m_surface)
         return;
+    RefreshDisplayMetrics();
 
     // T0b: in renderer mode, composite into the offscreen back-buffer (sized to
     // the renderer output, which tracks the window) instead of the window surface
@@ -1323,14 +1422,19 @@ void SDL2Panel::RenderDetached() {
         if (!winSurf)
             return;
 
-        // After a manual resize SDL can hand back a window surface still sized to
-        // the OLD dimensions; clearing/blitting into it leaves the newly-exposed
-        // strip showing stale backbuffer pixels. Force a fresh surface bound to the
-        // current window size whenever they disagree.
-        int wW = 0, wH = 0;
-        SDL_GetWindowSize(m_ownWindow, &wW, &wH);
-        if (winSurf->w != wW || winSurf->h != wH) {
+        // Surface pixels may legitimately differ from SDL window coordinates, but
+        // after a manual resize SDL can hand back a surface still sized to the OLD
+        // drawable; blitting into it leaves the exposed strip stale. Rebind it
+        // whenever it disagrees with the current drawable size.
+        int pW = 0, pH = 0;
+#if SDL_VERSION_ATLEAST(2, 26, 0)
+        SDL_GetWindowSizeInPixels(m_ownWindow, &pW, &pH);
+#else
+        SDL_GetWindowSize(m_ownWindow, &pW, &pH);
+#endif
+        if (pW > 0 && pH > 0 && (winSurf->w != pW || winSurf->h != pH)) {
             SDL_DestroyWindowSurface(m_ownWindow);
+            RefreshDisplayMetrics();   // density from the rebound surface
             winSurf = SDL_GetWindowSurface(m_ownWindow);
             if (!winSurf) return;
         }
@@ -1345,15 +1449,16 @@ void SDL2Panel::RenderDetached() {
     // PresentOwn, underneath) shows through.
     bool bGpuTerrain = PresentsGpuTerrain();
 
-    SDL_Rect dstRect = { 0, tbH, m_width, m_height };
+    SDL_Rect dstRect = { 0, (int)std::lround(tbH * m_displayMetrics.densityY),
+                        W, H - (int)std::lround(tbH * m_displayMetrics.densityY) };
     if (bGpuTerrain) {
         Perf::ScopeCounter _cof( "p.ovlfill" );        // MEASURE: full-window CPU overlay fill+blit
-        SDL_FillRect(winSurf, nullptr, 0x00000000);   // transparent
+        EnUiCanvas::FillRect(winSurf, nullptr, 0x00000000);   // transparent
         SDL_Surface* spriteSurf = m_terrainAA->GetSpriteLayerSurface();
         if (spriteSurf) {
             SDL_SetColorKey(spriteSurf, SDL_TRUE,
                             SDL_MapRGB(spriteSurf->format, 255, 0, 255));
-            SDL_BlitSurface(spriteSurf, nullptr, winSurf, &dstRect);  // sprites only
+            EnUiCanvas::BlitScaled(spriteSurf, nullptr, winSurf, &dstRect);  // legacy map viewport
         }
 
         // Area button bar lives in the area panel's m_surface (it's blitted there
@@ -1364,17 +1469,18 @@ void SDL2Panel::RenderDetached() {
         if (m_bottomChromePanel) {
             SDL_Surface* barSurf = m_bottomChromePanel->GetSurface();
             if (barSurf) {
-                int barOffY = tbH + m_height - barSurf->h;
-                if (barOffY >= tbH) {
-                    SDL_Rect bd = { 0, barOffY, barSurf->w, barSurf->h };
-                    SDL_BlitSurface(barSurf, nullptr, winSurf, &bd);
+                int barHeight = (int)std::lround(m_bottomChromePanel->GetHeight() * m_displayMetrics.densityY);
+                int barOffY = H - barHeight;
+                if (barOffY >= dstRect.y) {
+                    SDL_Rect bd = { 0, barOffY, W, barHeight };
+                    EnUiCanvas::BlitScaled(barSurf, nullptr, winSurf, &bd);
                 }
             }
         }
     } else {
         // Clear background, then the full CPU composite (terrain+sprites).
-        SDL_FillRect(winSurf, nullptr, SDL_MapRGB(winSurf->format, 0, 0, 0));
-        SDL_BlitSurface(m_surface, nullptr, winSurf, &dstRect);
+        EnUiCanvas::FillRect(winSurf, nullptr, SDL_MapRGB(winSurf->format, 0, 0, 0));
+        EnUiCanvas::BlitScaled(m_surface, nullptr, winSurf, &dstRect);
     }
 
     // Purple title bar across the top (full width — drawn at the same (0,0)
@@ -1426,8 +1532,9 @@ bool SDL2Panel::HandleDetachedEvent(SDL_Event& event, int localX, int localY) {
 // _MOVED events flow back through the compositor to resize the game surface and
 // re-sync the MFC window.
 bool SDL2Panel::HandleDetachedResize(SDL_Event& event) {
+    if (EnDpi::IsWayland()) return false; // compositor-native hit test; global positions are unavailable
     if (!m_ownWindow) return false;
-    const int GRIP = SDL2Panel::RESIZE_BORDER + 2;  // a touch more forgiving than the hit-test
+    const int GRIP = Chrome(RESIZE_BORDER + 2);  // a touch more forgiving than the hit-test
 
     if (m_dResizing) {
         if (event.type == SDL_MOUSEMOTION) {
@@ -1537,6 +1644,7 @@ bool SDL2Panel::HandleDetachedResize(SDL_Event& event) {
 // Resize is checked BEFORE this (edges win), so by here an edge press has already
 // been claimed. Returns true if the event was consumed.
 bool SDL2Panel::HandleDetachedDrag(SDL_Event& event) {
+    if (EnDpi::IsWayland()) return false;
     if (!m_ownWindow) return false;
 
     if (m_dDragging) {
@@ -1567,7 +1675,7 @@ bool SDL2Panel::HandleDetachedDrag(SDL_Event& event) {
     int w = 0, h = 0;
     SDL_GetWindowSize(m_ownWindow, &w, &h);
     int tbH  = GetTitleBarHeight();
-    int grip = SDL2Panel::RESIZE_BORDER;
+    int grip = Chrome(RESIZE_BORDER);
     int px = event.button.x, py = event.button.y;
 
     // Title-bar band only, excluding the resize grips (handled earlier) and the
@@ -1577,11 +1685,11 @@ bool SDL2Panel::HandleDetachedDrag(SDL_Event& event) {
     if (tbH <= 0 || py < grip || py >= tbH || px < grip || px >= w - grip)
         return false;
     {
-        int byTop  = (tbH - SDL2Panel::TITLE_BTN_H) / 2;
-        int closeX = w - 2 - SDL2Panel::TITLE_BTN_W;
-        int minX   = closeX - 2 * (SDL2Panel::TITLE_BTN_W + 1);
-        if (py >= byTop && py < byTop + SDL2Panel::TITLE_BTN_H &&
-            px >= minX && px < closeX + SDL2Panel::TITLE_BTN_W)
+        int byTop  = (tbH - Chrome(TITLE_BTN_H)) / 2;
+        int closeX = w - 2 - Chrome(TITLE_BTN_W);
+        int minX   = closeX - 2 * (Chrome(TITLE_BTN_W) + 1);
+        if (py >= byTop && py < byTop + Chrome(TITLE_BTN_H) &&
+            px >= minX && px < closeX + Chrome(TITLE_BTN_W))
             return false;  // on a caption button — let the click reach HandleEvent
     }
 

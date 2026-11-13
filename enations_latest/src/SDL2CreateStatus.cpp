@@ -1,4 +1,5 @@
 #include "stdafx.h"
+#include "SDL2UiCanvas.h"
 #include "en_logpath.h"   // EnLogPath - logs to the launch dir, not the exe dir
 
 #include "SDL2CreateStatus.h"
@@ -72,7 +73,7 @@ namespace StatusColors {
 }
 
 static void FillRectC(SDL_Surface* dst, SDL_Rect r, SDL_Color c) {
-    SDL_FillRect(dst, &r, SDL_MapRGB(dst->format, c.r, c.g, c.b));
+    EnUiCanvas::FillRect(dst, &r, SDL_MapRGB(dst->format, c.r, c.g, c.b));
 }
 
 static void DrawBevelC(SDL_Surface* dst, SDL_Rect r, int width, SDL_Color light, SDL_Color dark) {
@@ -83,26 +84,26 @@ static void DrawBevelC(SDL_Surface* dst, SDL_Rect r, int width, SDL_Color light,
         SDL_Rect right = { r.x + r.w - 1 - i, r.y + i, 1, r.h - 2*i };
         Uint32 lc = SDL_MapRGB(dst->format, light.r, light.g, light.b);
         Uint32 dc = SDL_MapRGB(dst->format, dark.r, dark.g, dark.b);
-        SDL_FillRect(dst, &top, lc);
-        SDL_FillRect(dst, &left, lc);
-        SDL_FillRect(dst, &bottom, dc);
-        SDL_FillRect(dst, &right, dc);
+        EnUiCanvas::FillRect(dst, &top, lc);
+        EnUiCanvas::FillRect(dst, &left, lc);
+        EnUiCanvas::FillRect(dst, &bottom, dc);
+        EnUiCanvas::FillRect(dst, &right, dc);
     }
 }
 
 static void RenderTextC(SDL_Surface* dst, TTF_Font* font, const char* text,
                         SDL_Rect rect, SDL_Color color, bool centerH = true, bool centerV = true) {
     if (!font || !text || !text[0]) return;
-    SDL_Surface* textSurf = TTF_RenderText_Blended(font, text, color);
+    SDL_Surface* textSurf = EnUiCanvas::Text(font, text, color);
     if (!textSurf) return;
 
     SDL_Rect dstRect = rect;
-    if (centerH) dstRect.x += (rect.w - textSurf->w) / 2;
-    if (centerV) dstRect.y += (rect.h - textSurf->h) / 2;
-    dstRect.w = textSurf->w;
-    dstRect.h = textSurf->h;
-    SDL_BlitSurface(textSurf, nullptr, dst, &dstRect);
-    SDL_FreeSurface(textSurf);
+    if (centerH) dstRect.x += (rect.w - EnUiCanvas::Width(textSurf)) / 2;
+    if (centerV) dstRect.y += (rect.h - EnUiCanvas::Height(textSurf)) / 2;
+    dstRect.w = EnUiCanvas::Width(textSurf);
+    dstRect.h = EnUiCanvas::Height(textSurf);
+    EnUiCanvas::BlitSurface(textSurf, nullptr, dst, &dstRect);
+    EnUiCanvas::FreeSurface(textSurf);
 }
 
 SDL2CreateStatus::SDL2CreateStatus(GameWindow* gameWindow)
@@ -136,17 +137,18 @@ SDL2CreateStatus::~SDL2CreateStatus() {
         m_ownWindow = nullptr;
     }
     for (auto& pair : m_fontCache)
-        if (pair.second) TTF_CloseFont(pair.second);
+        if (pair.second) { EnUiCanvas::ForgetFont(pair.second); TTF_CloseFont(pair.second); }
     LogStatus("SDL2CreateStatus destroyed");
 }
 
 TTF_Font* SDL2CreateStatus::GetFont(int size) {
+    size = EnUiCanvas::RasterSize(size);
     if (m_fontPath.empty()) return nullptr;
     auto it = m_fontCache.find(size);
-    if (it != m_fontCache.end()) return it->second;
+    if (it != m_fontCache.end()) return EnUiCanvas::Font(it->second);
     TTF_Font* font = EnOpenUiFont(m_fontPath.c_str(), size);
     m_fontCache[size] = font;
-    return font;
+    return EnUiCanvas::Font(font);
 }
 
 void SDL2CreateStatus::Show() {
@@ -169,6 +171,9 @@ void SDL2CreateStatus::Show() {
                 | SDL_WINDOW_SKIP_TASKBAR);
 
         LogStatus(m_ownWindow ? "Created own window" : "Failed to create own window");
+        // A new window starts at baseline size: force the next metrics pass to resize it.
+        m_windowScale = 0;
+        m_displayMetrics = SDL2DisplayMetrics();
 #if defined(__linux__)
         // Transient-for the game window: Mutter focuses it silently instead of a
         // "window is ready" toast (#33) and it stacks above the game only.
@@ -346,9 +351,27 @@ void SDL2CreateStatus::Render() {
         return;
     m_lastRenderMs = now;
 
+    if (m_ownWindow) {
+        m_displayMetrics.Refresh(m_ownWindow);
+        if (!m_displayMetrics.valid) return;
+        if (std::abs(m_windowScale - m_displayMetrics.WindowScaleY()) > 0.001) {
+            m_windowScale = m_displayMetrics.WindowScaleY();
+            const int newW = m_displayMetrics.WindowX(m_dlgW), newH = m_displayMetrics.WindowY(m_dlgH);
+            SDL_SetWindowSize(m_ownWindow, newW, newH);
+            if (m_gameWindow->GetWindow()) {   // re-centre on the main window at the scaled size
+                int mainX, mainY, mainW, mainH;
+                SDL_GetWindowPosition(m_gameWindow->GetWindow(), &mainX, &mainY);
+                SDL_GetWindowSize(m_gameWindow->GetWindow(), &mainW, &mainH);
+                SDL_SetWindowPosition(m_ownWindow, mainX + (mainW - newW) / 2, mainY + (mainH - newH) / 2);
+            }
+            EnDpi::ClampWindow(m_ownWindow);
+            m_displayMetrics.Refresh(m_ownWindow);
+        }
+    }
     // Render into our own always-on-top window
     SDL_Surface* winSurface = m_ownWindow ? SDL_GetWindowSurface(m_ownWindow) : nullptr;
     if (!winSurface) return;
+    EnUiCanvas::Scope canvas(winSurface, m_displayMetrics.pixelScale);
 
     // Ensure dialog art is loaded
     SDL2Dialog::LoadDialogArt();
@@ -379,7 +402,7 @@ void SDL2CreateStatus::Render() {
     int borderSide = s_bdrV ? s_bdrV->w : 3;
 
     if (s_gold) {
-        SDL_BlitScaled(s_gold, nullptr, winSurface, &dlgRect);
+        EnUiCanvas::BlitScaled(s_gold, nullptr, winSurface, &dlgRect);
     }
     // Carved-gold frame via the shared, corner-correct routine (the old per-edge
     // loops left the same bottom-corner gaps fixed elsewhere).
@@ -390,7 +413,7 @@ void SDL2CreateStatus::Render() {
         SDL_Rect interior = { dlgRect.x + borderSide, dlgRect.y + borderTop,
                               dlgRect.w - 2 * borderSide, dlgRect.h - 2 * borderTop };
         if (s_gold)
-            SDL_BlitScaled(s_gold, nullptr, winSurface, &interior);
+            EnUiCanvas::BlitScaled(s_gold, nullptr, winSurface, &interior);
     }
 
     // Title bar: dark purple strip at top of interior
@@ -440,7 +463,7 @@ void SDL2CreateStatus::Render() {
             Uint8 gc = (Uint8)(edge.g + (center.g - edge.g) * t);
             Uint8 bc = (Uint8)(edge.b + (center.b - edge.b) * t);
             SDL_Rect col = { m_btnCancelRect.x + i, m_btnCancelRect.y, 1, m_btnCancelRect.h };
-            SDL_FillRect(winSurface, &col, SDL_MapRGB(winSurface->format, rc, gc, bc));
+            EnUiCanvas::FillRect(winSurface, &col, SDL_MapRGB(winSurface->format, rc, gc, bc));
         }
         if (m_btnPressed)
             DrawBevelC(winSurface, m_btnCancelRect, 2, StatusColors::BtnDark, StatusColors::BtnLight);
@@ -466,13 +489,16 @@ void SDL2CreateStatus::Render() {
 void SDL2CreateStatus::RenderToGameWindow() {
     if (!m_gameWindow) return;
     SDL2Compositor* comp = m_gameWindow->GetCompositor();
-    SDL_Surface*    surf = m_gameWindow->GetPresentSurface();
+    // Metrics first: a display change may destroy the window surface.
+    SDL2DisplayMetrics metrics = m_gameWindow->GetDisplayMetrics();
+    SDL_Surface*    surf = m_gameWindow->GetDrawableSurface();
     if (!comp || !surf) return;
 
     // Clean background each frame (the wallpaper) so changing messages don't smear.
     comp->RenderWallpaper(surf);
 
-    int winW = surf->w, winH = surf->h;
+    EnUiCanvas::Scope canvas(surf, metrics.pixelScale);
+    int winW = (int)std::floor(surf->w / metrics.pixelScale), winH = (int)std::floor(surf->h / metrics.pixelScale);
     SDL_Color gold  = { 225, 182, 55, 255 };
     SDL_Color shade = {  20,  16, 40, 255 };
 
@@ -502,7 +528,7 @@ bool SDL2CreateStatus::HandleEvent(const SDL_Event& event) {
     case SDL_MOUSEBUTTONDOWN:
         if (event.button.windowID != ownID) return false;
         if (event.button.button == SDL_BUTTON_LEFT) {
-            int mx = event.button.x, my = event.button.y;
+            int mx = m_displayMetrics.LayoutX(event.button.x), my = m_displayMetrics.LayoutY(event.button.y);
             if (mx >= m_btnCancelRect.x && mx < m_btnCancelRect.x + m_btnCancelRect.w &&
                 my >= m_btnCancelRect.y && my < m_btnCancelRect.y + m_btnCancelRect.h) {
                 m_btnPressed = true;
@@ -514,7 +540,7 @@ bool SDL2CreateStatus::HandleEvent(const SDL_Event& event) {
         if (event.button.windowID != ownID) return false;
         if (event.button.button == SDL_BUTTON_LEFT && m_btnPressed) {
             m_btnPressed = false;
-            int mx = event.button.x, my = event.button.y;
+            int mx = m_displayMetrics.LayoutX(event.button.x), my = m_displayMetrics.LayoutY(event.button.y);
             if (mx >= m_btnCancelRect.x && mx < m_btnCancelRect.x + m_btnCancelRect.w &&
                 my >= m_btnCancelRect.y && my < m_btnCancelRect.y + m_btnCancelRect.h) {
                 // The dialog now outlives game-start into the LetsGo tail

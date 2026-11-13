@@ -55,8 +55,8 @@ endif ()
 # ---------------------------------------------------------------------------
 if (NOT MSVC)
     find_package(PkgConfig REQUIRED)
-    pkg_check_modules(SDL2       REQUIRED IMPORTED_TARGET sdl2)
-    pkg_check_modules(SDL2_TTF   REQUIRED IMPORTED_TARGET SDL2_ttf)
+    pkg_check_modules(SDL2       REQUIRED IMPORTED_TARGET sdl2>=2.30.0)
+    pkg_check_modules(SDL2_TTF   REQUIRED IMPORTED_TARGET SDL2_ttf>=2.20.0)
     pkg_check_modules(SDL2_MIXER REQUIRED IMPORTED_TARGET SDL2_mixer)
 
     add_library(EnLinuxSDL2 INTERFACE)

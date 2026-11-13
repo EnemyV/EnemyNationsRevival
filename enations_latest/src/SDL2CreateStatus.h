@@ -2,6 +2,7 @@
 
 #include <SDL.h>
 #include <SDL_ttf.h>
+#include "SDL2DisplayMetrics.h"
 #include <string>
 #include <unordered_map>
 
@@ -76,6 +77,8 @@ private:
 
     // Own ALWAYS_ON_TOP window — created in Show(), destroyed in Hide()
     SDL_Window* m_ownWindow = nullptr;
+    SDL2DisplayMetrics m_displayMetrics;
+    double m_windowScale = 0;
 
     // Visual-redraw throttle timestamp. PER-INSTANCE (reset to 0 in Show) so a
     // freshly shown window always paints its first frame — a process-wide static

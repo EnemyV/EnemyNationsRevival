@@ -19,6 +19,7 @@
 #include "en_hangdump.h"  // hang watchdog + the shared dump-path helper
 
 #include "lastplnt.h"
+#include "SDL2DisplayMetrics.h"
 
 #include <dbghelp.h>
 #include <time.h>
@@ -81,6 +82,7 @@ extern "C" int APIENTRY WinMain( HINSTANCE hInstance,
                                  int       nCmdShow )
 {
     (void)hPrevInstance;
+    EnDpi::InitializeProcess();
     (void)lpCmdLine;
     (void)nCmdShow;
 

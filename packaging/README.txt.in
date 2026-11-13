@@ -15,6 +15,15 @@ MULTIPLAYER
   TCP/IP multiplayer is supported, and works between Windows, Linux and macOS
   builds of this same release.
 
+UI SCALING
+  Options > UI Scale offers Auto, 100%, 125%, 150%, 175%, and 200%.
+  Fixed percentages replace desktop scaling; map zoom remains independent.
+  On Linux, Auto uses the available backing/toolkit scale and falls back to
+  100% when no reliable scale is available. Choose a fixed percentage if needed.
+  Large dialogs scroll with the mouse wheel; Shift+wheel scrolls horizontally.
+  Tab moves focus and brings controls into view. OK/Cancel stay visible.
+  Existing 3.00 saves remain compatible (save-format version is unchanged).
+
 If the game reports a renderer problem, the software renderer can be selected
 from the in-game Options screen.
 

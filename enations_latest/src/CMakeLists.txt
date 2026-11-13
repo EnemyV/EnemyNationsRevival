@@ -121,6 +121,8 @@ set(enations_sources
         Perf.cpp
         Perf.h
         GameWindow.cpp
+        SDL2DisplayMetrics.cpp
+        SDL2UiCanvas.cpp
         framecap.cpp
         framecap.h
         RenderingAdapter.cpp
@@ -692,6 +694,15 @@ string(REGEX MATCH "VER_STRING[ \t]+\"([0-9]+\\.[0-9]+\\.[0-9]+)\"" _en_ver_matc
 set(EN_VERSION "${CMAKE_MATCH_1}")
 if (NOT EN_VERSION)
     message(FATAL_ERROR "packaging: could not parse VER_STRING from version.h")
+endif ()
+
+if (APPLE)
+    # Releases currently ship a standalone Mach-O binary, not an .app bundle.
+    # Embed the metadata so high-DPI support does not depend on a Finder wrapper.
+    configure_file("${CMAKE_CURRENT_SOURCE_DIR}/../../packaging/Info.plist.in"
+                   "${CMAKE_CURRENT_BINARY_DIR}/Info.plist" @ONLY)
+    set_property(TARGET enations APPEND PROPERTY LINK_OPTIONS
+        "-Wl,-sectcreate,__TEXT,__info_plist,${CMAKE_CURRENT_BINARY_DIR}/Info.plist")
 endif ()
 
 # Default wording; Windows overrides below because its exe is built /MD and

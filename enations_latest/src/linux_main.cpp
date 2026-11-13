@@ -12,6 +12,7 @@
 
 #define SDL_MAIN_HANDLED
 #include <SDL.h>
+#include "SDL2DisplayMetrics.h"
 
 #include <cstdlib>   // getenv (EN_MAC_USABLE_FULLSCREEN opt-in)
 #include <cstring>   // strrchr (exe-dir cwd anchor)
@@ -26,6 +27,7 @@ extern "C" int APIENTRY WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance,
 int main(int argc, char** argv) {
     // We own main(); tell SDL not to expect its own entry shim.
     SDL_SetMainReady();
+    EnDpi::InitializeProcess();
 
     // Capture the launch cwd BEFORE the chdir below so debug logs land where the
     // game was launched from rather than beside the exe. See en_logpath.h.

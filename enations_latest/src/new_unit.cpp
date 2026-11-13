@@ -6092,13 +6092,36 @@ CVehicle* CVehicle::Create( const CSubHex& ptHead, const CSubHex& ptTail, int iV
                             VEH_MODE iRouteMode, const CHexCoord& hexDest, DWORD dwIDBldg, int iDelay )
 {
 
-    ASSERT( ( iVeh != CTransportData::med_truck ) && ( iVeh != CTransportData::marines ) );
+    // Obsolete or out-of-range types have no sprite/data; asserts don't stop the
+    // build, so refuse here (#39).
+    if ( ( iVeh < 0 ) || ( iVeh >= theTransports.GetNumTransports( ) ) ||
+         ( iVeh == CTransportData::med_truck ) || ( iVeh == CTransportData::marines ) )
+    {
+        ASSERT( FALSE );
+        return NULL;
+    }
 
     // having problems with this
     if ( theGame._GetPlayerByPlyr( iOwner ) == NULL )
     {
         TRAP( );
         return NULL;
+    }
+
+    // Hexes already taken outside a building: drop it before allocating, so no
+    // half-made vehicle is left in the hex maps (#39). Only the player's own
+    // building case (cant_deploy below) may share a hex.
+    {
+        CSubHex ptTailChk = ptTail;
+        if ( theTransports.GetData( iVeh )->GetVehFlags( ) & CTransportData::FL1hex )
+            ptTailChk = ptHead;
+        if ( ( iDelay <= 0 ) && ( theBuildingHex._GetBuilding( ptHead ) == NULL ) &&
+             ( theBuildingHex._GetBuilding( ptTailChk ) == NULL ) &&
+             ( ( theVehicleHex.GetVehicle( ptHead ) != NULL ) || ( theVehicleHex.GetVehicle( ptTailChk ) != NULL ) ) )
+        {
+            ASSERT( FALSE );
+            return NULL;
+        }
     }
 
     // make an instance of a Vehicle
