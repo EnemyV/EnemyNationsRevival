@@ -80,11 +80,12 @@ const char GameLogFile[] = "ENations.log";
 // a save whose counter is ABOVE this build's is refused outright (BUGS #102), and a
 // counter BELOW it is read with its own layout, which is what the m_dwVer >= N field
 // gates exist to do.) Bumping VER_MINOR would refuse them all (CGame::Serialize).
+// 3.00.017: same rule; display version only (VER_RELEASE unchanged).
 #define         APP_VERSION_MAJOR                       3
 #define         APP_VERSION_MINOR                       0
-#define         APP_VERSION_PATCH                       16
-#define         VER_STRING                              "3.00.016"
-#define         RES_VER_STRING                          "3.00.016\0"
+#define         APP_VERSION_PATCH                       17
+#define         VER_STRING                              "3.00.017"
+#define         RES_VER_STRING                          "3.00.017\0"
 
 #ifdef _DEBUG
 	#define         VER_FLAGS         VS_FF_DEBUG | VS_FF_PRIVATEBUILD | VS_FF_PRERELEASE
