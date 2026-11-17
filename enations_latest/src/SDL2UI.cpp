@@ -47,6 +47,8 @@ extern "C" int vpPumpNet( int timeout_ms );
 // the operator's "z-fight/flicker". A dialog now re-asserts only when a
 // NON-dialog window of ours (map/panel/main) has climbed above it; whichever
 // sibling dialog was raised last stays on top, stably.
+unsigned g_enEditKeyGen = 0;   // bumped by every key a focused edit box receives
+
 static std::vector<SDL_Window*> s_liveDlgWindows;
 static void TrackDlgWindow(SDL_Window* w) {
     if ( w ) s_liveDlgWindows.push_back(w);
@@ -1497,6 +1499,9 @@ bool SDL2EditBox::HandleEvent(const SDL_Event& event) {
     }
 
     if (!m_focused) return false;
+
+    // Typing here stops an arrow-key map scroll that was held before this box took focus.
+    if (event.type == SDL_KEYDOWN || event.type == SDL_TEXTINPUT) ++g_enEditKeyGen;
 
     // Text input — replace selection if any
     if (event.type == SDL_TEXTINPUT) {

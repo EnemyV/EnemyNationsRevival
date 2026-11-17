@@ -170,6 +170,7 @@ public:
     float m_arrowRemX = 0.0f, m_arrowRemY = 0.0f;   // pixels still to glide
     float m_arrowFracX = 0.0f, m_arrowFracY = 0.0f; // sub-pixel carry
     unsigned int m_arrowLastMs = 0;
+    unsigned int m_arrowEditGen = 0;                 // g_enEditKeyGen when an arrow went down
     void MapInputPoint(CPoint& point) const;
     void ReprojectZoomGestures(int oldZoom, int newZoom);
     float m_zoomTarget = -1.0f;

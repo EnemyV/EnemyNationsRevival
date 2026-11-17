@@ -1544,6 +1544,23 @@ void CWndArea::GetClientRect( LPRECT lpRect ) const
 int  created = 0;
 #endif
 
+// TRUE if any mineral hex currently wears the resource overlay sprite. ResClicked is
+// the only runtime writer of CHex::resources sprites, so this is the overlay's real state.
+static BOOL MineralOverlayShown( )
+{
+    POSITION pos = theMinerals.GetStartPosition( );
+    while ( pos != NULL )
+    {
+        DWORD      dw;
+        CMinerals* pMn;
+        theMinerals.GetNextAssoc( pos, dw, pMn );
+        CHex* pHex = theMap._GetHex( CHexCoord( dw >> 16, dw & 0xFFFF ) );
+        if ( pHex && pHex->GetSprite( ) && pHex->GetSprite( )->GetID( ) == CHex::resources )
+            return TRUE;
+    }
+    return FALSE;
+}
+
 void CWndArea::Create( CMapLoc const& ml, CUnit* pUnit, BOOL bFirst )
 {
 #ifdef LOGGINGON
@@ -1655,6 +1672,11 @@ void CWndArea::Create( CMapLoc const& ml, CUnit* pUnit, BOOL bFirst )
 
     // the area map is always added at the head, everything else at the tail
     theAnimList.push_front( this );
+
+    // The resource overlay lives in the shared CHex sprites (serialized with the map),
+    // but m_bShowRes starts FALSE. Take it from the map so a loaded save showing the
+    // overlay is not treated as off (XilDiscovered would skip it and Xilitium never shows).
+    m_bShowRes = MineralOverlayShown( );
 
     // set the cursor of starting
     if ( bFirst )
@@ -1817,6 +1839,8 @@ void CWndArea::PanByPixels( int dxPix, int dyPix )
     m_bUpdateAll = TRUE;
 }
 
+extern unsigned g_enEditKeyGen;   // SDL2UI.cpp
+
 static int ArrowBit( SDL_Scancode sc )
 {
     switch ( sc )
@@ -1840,6 +1864,7 @@ void CWndArea::ArrowScrollKey( SDL_Scancode sc, bool down )
         return;
     }
     m_arrowHeld |= bit;
+    m_arrowEditGen = g_enEditKeyGen;
     CRect rect;
     GetClientRect( &rect );
     // A tap glides the same quarter screen the old instant step jumped.
@@ -1863,6 +1888,8 @@ void CWndArea::UpdateArrowScroll( )
     if ( !ks[SDL_SCANCODE_RIGHT] ) m_arrowHeld &= ~2;
     if ( !ks[SDL_SCANCODE_UP] )    m_arrowHeld &= ~4;
     if ( !ks[SDL_SCANCODE_DOWN] )  m_arrowHeld &= ~8;
+    // An edit box that took focus gets the KEYUP; stop holding once it sees typing.
+    if ( m_arrowEditGen != g_enEditKeyGen ) m_arrowHeld = 0;
 
     const unsigned int now = timeGetTime( );
     float dt = ( now - m_arrowLastMs ) / 1000.0f;
@@ -1873,14 +1900,15 @@ void CWndArea::UpdateArrowScroll( )
     CRect rect;
     GetClientRect( &rect );
     // Exponential glide: each frame covers 1 - e^(-dt/tau) of the remaining distance.
-    // While held, the remaining distance is topped up to speed * tau, which makes
-    // the steady-state speed exactly `speed` (one screen per second).
+    // While held, speed * dt is added to the remaining distance every frame; at steady
+    // state the step equals what was added, so the speed is exactly `speed` (one screen
+    // per second) at any frame rate, and the glide still eases out on release.
     const float tau = 0.06f;
     const float speedX = (float)rect.Width( ), speedY = (float)rect.Height( );
     const int hx = ( ( m_arrowHeld & 2 ) ? 1 : 0 ) - ( ( m_arrowHeld & 1 ) ? 1 : 0 );
     const int hy = ( ( m_arrowHeld & 8 ) ? 1 : 0 ) - ( ( m_arrowHeld & 4 ) ? 1 : 0 );
-    if ( hx ) { const float want = hx * speedX * tau; if ( hx > 0 ? m_arrowRemX < want : m_arrowRemX > want ) m_arrowRemX = want; }
-    if ( hy ) { const float want = hy * speedY * tau; if ( hy > 0 ? m_arrowRemY < want : m_arrowRemY > want ) m_arrowRemY = want; }
+    m_arrowRemX += hx * speedX * dt;
+    m_arrowRemY += hy * speedY * dt;
 
     const float k = 1.0f - std::exp( -dt / tau );
     const float stepX = m_arrowRemX * k, stepY = m_arrowRemY * k;
