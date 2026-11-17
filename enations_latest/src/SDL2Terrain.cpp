@@ -280,8 +280,8 @@ static bool TerrainPanStripEnabled( )
     // Default ON: when a pan crosses the cached-texture margin (same zoom/dir), scroll the
     // cached terrain/shade textures by the pan delta and re-mesh only the newly-revealed edge
     // strip instead of the whole ~56k-hex view — a small pan costs ~90ms vs ~640ms full.
-    // Set EN_PANSTRIP=0 to disable. KNOWN LIMITATION: AI terrain edits (roads) in the already-
-    // scrolled region are briefly stale until the next full rebuild (zoom/dir/large pan).
+    // Set EN_PANSTRIP=0 to disable. Terrain edits pending on a strip-pan frame are stamped
+    // into the scrolled region afterwards (base tile only, like the edit patch).
     static int s_on = -1;
     if ( s_on < 0 ) { const char* e = SDL_getenv( "EN_PANSTRIP" ); s_on = ( e && *e && *e == '0' ) ? 0 : 1; }
     return s_on != 0;
@@ -1866,11 +1866,14 @@ void SDL2Terrain::Render( SDL_Renderer* r, const CAnimAtr& aa )
     // Requires the pan to still overlap the texture (else it's a teleport → full rebuild).
     // NOTE: editsPend is NOT required false — the AI edits terrain (roads) almost every
     // frame, so requiring no-pending-edits would block incPan during all normal play. The
-    // edited hexes are absorbed by the full rebuild's gen-advance below; in the covered
-    // region they're briefly stale until the next full rebuild (acceptable; refine later).
+    // edited hexes in the newly-revealed strip are re-meshed by the loop; those in the
+    // covered region are stamped after it (incPanEdits, via the edit patch below).
     const bool panOnly = ( sigNoEdit == lastNoEdit ) && !covered && s_rt;
+    // Pending edits must be stampable afterwards (complete log, under the patch cap);
+    // otherwise take the full rebuild, which redraws everything.
     const bool incPan  = TerrainPanStripEnabled( ) && panOnly && !ulMoved &&
-                         abs( dX ) < rtW - 8 && abs( dY ) < rtH - 8;
+                         abs( dX ) < rtW - 8 && abs( dY ) < rtH - 8 &&
+                         ( !editsPend || editsOK );
     // Texture-space scroll = the pan delta (captured before dX/dY are zeroed at re-center):
     // a world hex drawn at window (Tx + dX - kMarginPx) must, after re-centering to dX'=0,
     // draw at the same window pos with new texture-local Tx' = Tx + dX. So content shifts +dX.
@@ -1951,6 +1954,7 @@ void SDL2Terrain::Render( SDL_Renderer* r, const CAnimAtr& aa )
                           && !( zoom <= 1 && s_mirZoom >= 2 );   // zoom INTO z0/z1 from a zoomed-out capture → re-capture (cheap, few hexes) to resolve feather
     const bool retainCap = TerrainRetainEnabled( ) && needRebuild && !incPan && !zoomReplay;
 
+    std::vector<unsigned> incPanEdits;                    // edits to stamp after a strip-pan (covered region)
     std::vector<unsigned>& s_memoEditQ = C.memoEditQ;     // hexes edited since last rebuild → per-hex tile-memo invalidation
     bool&                  s_memoEditOverflow = C.memoEditOverflow;
 
@@ -1986,6 +1990,17 @@ void SDL2Terrain::Render( SDL_Renderer* r, const CAnimAtr& aa )
                               g_enEditedHexes.end( ) );
       if ( retainCap ) { g_enMeshEdits.clear( ); g_enMeshEditSet.clear( ); g_enMeshEditOverflow = false;
                          g_enMeshEditAnchor = &C; } }   // replay re-apply list now anchored to THIS ctx's capture
+    // A strip-pan re-meshes only the revealed strip, so edits pending now would be lost
+    // in the scrolled (covered) region once the cursor jumps to genTop: a researched
+    // copper deposit or a new road stayed hidden until the next full rebuild. Keep this
+    // slice and stamp it after the strip (see the edit patch below).
+    if ( incPan )
+    { std::lock_guard<std::mutex> lk( g_enEditMutex );
+      unsigned haveTop = g_enEditBaseGen + (unsigned)g_enEditedHexes.size( );
+      unsigned top     = __min( haveTop, genTop );
+      if ( s_builtEditGen >= g_enEditBaseGen && top > s_builtEditGen )
+          incPanEdits.assign( g_enEditedHexes.begin( ) + ( s_builtEditGen - g_enEditBaseGen ),
+                              g_enEditedHexes.begin( ) + ( top - g_enEditBaseGen ) ); }
     // Advance MY cursor to genTop — the SAME gen s_sig encodes. (The old live re-read
     // here could bake a residue into the baseSame comparison whenever an edit landed
     // mid-rebuild; edits after genTop stay pending and patch in next frame.)
@@ -3001,7 +3016,7 @@ void SDL2Terrain::Render( SDL_Renderer* r, const CAnimAtr& aa )
     // / shade staleness on the few changed hexes; fog positions are stable + re-sampled
     // separately). Texture pos = window pos - pan(dX,dY) + margin(offX,offY). This is what
     // turns a combat-crater / road / building / rocket edit from an ~850ms freeze into ~ms.
-    if ( doPatch )
+    if ( doPatch || !incPanEdits.empty( ) )
     {
         Perf::ScopeCounter _cp( "t.patch" );
         SDL_Texture* pt = SDL_GetRenderTarget( r );
@@ -3017,6 +3032,9 @@ void SDL2Terrain::Render( SDL_Renderer* r, const CAnimAtr& aa )
         // is the gen this ctx's cursor advances to below.
         std::vector<unsigned> edited;
         unsigned patchedTo = s_builtEditGen;
+        if ( !doPatch )
+            edited.swap( incPanEdits );   // strip-pan: cursor already advanced by the rebuild
+        else
         { std::lock_guard<std::mutex> lk( g_enEditMutex );
           unsigned haveTop = g_enEditBaseGen + (unsigned)g_enEditedHexes.size( );
           if ( s_builtEditGen >= g_enEditBaseGen && haveTop > s_builtEditGen )
@@ -3099,6 +3117,17 @@ void SDL2Terrain::Render( SDL_Renderer* r, const CAnimAtr& aa )
                   }
                 if ( !placed ) continue;   // genuinely off-texture
             }
+            if ( !doPatch )
+            {
+                // Strip-pan: the loop re-meshed every hex not fully inside the covered rect
+                // (with feather); stamp only the ones it skipped.
+                int qmnx = INT_MAX, qmny = INT_MAX, qmxx = INT_MIN, qmxy = INT_MIN;
+                for ( int i = 0; i < 4; ++i )
+                { qmnx = __min( qmnx, pts[i].x ); qmxx = __max( qmxx, pts[i].x );
+                  qmny = __min( qmny, pts[i].y ); qmxy = __max( qmxy, pts[i].y ); }
+                if ( !( qmnx >= covX0 && qmxx <= covX1 && qmny >= covY0 && qmxy <= covY1 ) )
+                    continue;
+            }
             if ( bAnim )
             {
                 // Restore the live-layer hole: overwrite the diamond with transparent black.
@@ -3129,6 +3158,7 @@ void SDL2Terrain::Render( SDL_Renderer* r, const CAnimAtr& aa )
         }
         SDL_SetRenderTarget( r, pt );
         SDL_RenderSetViewport( r, &vp );
+        if ( doPatch ) {
         s_builtEditGen = patchedTo;   // cursor: exactly the log entries stamped above
         // CRITICAL: keep s_sig's edit-gen bits in sync with s_builtEditGen. baseSame is
         // tested next frame as ( sigNoEdit == lastNoEdit ), where
@@ -3139,6 +3169,7 @@ void SDL2Terrain::Render( SDL_Renderer* r, const CAnimAtr& aa )
         // rebuild after EVERY edit (the ~1fps zoomed-out stutter). Re-encode s_sig with
         // the pure base (sigNoEdit) XOR the new built edit-gen so next frame matches.
         s_sig = sigNoEdit ^ ( (uint64_t)s_builtEditGen << 40 );
+        }
         // (no clear — the log is multi-reader and trimmed at the end of Render; edits the
         //  sim pushed after patchedTo stay pending and are handled next frame)
     }
