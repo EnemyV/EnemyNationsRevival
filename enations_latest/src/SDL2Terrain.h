@@ -10,6 +10,7 @@
 #include <string>
 #include <unordered_map>
 #include <cstdint>
+#include "EnTerrain.h"   // enterrain: tile set, tile rules, projection (shared with terraintester)
 
 struct SDL_Renderer;
 struct SDL_Texture;
@@ -26,17 +27,10 @@ class SDL2Terrain
 {
     friend struct SDL2TerrainRCtx;
 public:
-    static const int NUM_ZOOMS = 4;   // z0=128x64 .. z3=16x8 (per terrainbake)
+    static const int NUM_ZOOMS = enterrain::NUM_ZOOMS;   // z0=128x64 .. z3=16x8 (per terrainbake)
 
     // One baked tile at all zoom sizes, plus the render flags from its type.
-    struct Tile
-    {
-        SDL_Texture* tex[NUM_ZOOMS] = { nullptr, nullptr, nullptr, nullptr };
-        int          w = 0, h = 0;    // native (z0) size
-        bool         shade       = false;
-        bool         drawVert    = false;
-        bool         transparent = false;
-    };
+    typedef enterrain::Tile Tile;
 
     // Load every baked PNG into textures owned by this renderer. Searches the
     // known asset locations (see .cpp). Idempotent; returns tiles loaded (0 =
@@ -94,13 +88,8 @@ public:
     static const Tile* TileForHex( CHex* phex, int iDir );
 
 private:
-    static std::unordered_map<std::string, Tile> s_tiles;  // key: type_variant_stem
-    static std::unordered_map<std::string, const Tile*> s_byType;       // type → representative
-    static std::unordered_map<std::string, const Tile*> s_byTypeVar;    // "type_variant" → tile (prefers aa dir)
+    // (the tile set itself is enterrain::TileSet s_tileSet in the .cpp)
     static SDL_Renderer*                          s_renderer;
     static bool                                   s_loaded;
     static bool                                   s_anyLoaded;   // any renderer ever loaded (renderer-agnostic gate)
-
-    static std::string MakeKey( const std::string& type, int variant,
-                                const std::string& stem );
 };

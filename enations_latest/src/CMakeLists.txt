@@ -478,6 +478,7 @@ if (MSVC)
     target_link_libraries(enations PUBLIC
             vdmplay
             wind22
+            enterrain
             wing32.lib
             # NOTE: no bare vdmplay.lib here — the `vdmplay` target above already
             # links the import lib from THIS build tree. The bare name only ever
@@ -497,6 +498,7 @@ else ()
     # multiplayer is stubbed, so neither vdmplay nor Netapi32 is linked.
     target_link_libraries(enations PUBLIC
             wind22
+            enterrain       # GPU terrain core (enterrain/), shared with tools/terraintester
             vdmplay_posix   # ported vp* TCP MP engine (replaces vdmplay_stubs.cpp)
             EnLinuxSDL2
             )

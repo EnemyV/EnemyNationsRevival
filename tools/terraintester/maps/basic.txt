@@ -1,0 +1,38 @@
+# basic: land variants, hills/mountain heights, forest, fields stages,
+# a lake, a river (shores from the worldgen pass), a road crossing it (auto facings),
+# city, resources.
+size 16 16
+types
+u0    u1    u2    u3    u4    p7    p2    v0    p0    h1    h2    h3    h4    h5    h6    h7
+u1    u2    u3    u4    u5    p4    p7    v0    p5    h2    h3    m4    m5    m6    h7    h0
+u2    u3    u4    u5    u6    p1    p4    v0    p2    h3    h4    m5    m6    m7    h0    h1
+u3    u4    u5    u6    u7    p6    p1    v0    p7    h4    h5    m6    m7    m0    h1    h2
+u4    u5    u6    u7    u0    C4    p6    v0    p4    h5    h6    h7    h0    h1    h2    h3
+p1    p4    p7    p2    p5    C5    p3    v0    p1    h6    h7    h0    h1    h2    h3    h4
+p6    f     f     f     p2    C6    p0    v0    p6    p1    p4    p7    p2    p5    p0    p3
+p3    f     f     f     p7    p2    p5    v0    p3    p6    p1    p4    p7    p2    p5    p0
+r     r     r     r     r     r     r     r     r     r     r     r     r     r     r     r
+p5    p0    p3    p6    p1    p4    p7    v0    p5    p0    p3    p6    p1    p4    p7    p2
+d4    d5    d6    d7    d0    d1    F0/0  v0    F0/2  p5    p0    p3    p6    p1    p4    p7
+d6    d7    d0    d1    d2    d3    F0/0  F0/1  F0/2  p2    l0    l0    l0    l0    p1    p4
+d0    d1    d2    d3    d4    d5    F0/0  F0/1  F0/2  p7    l0    l0    l0    l0    p6    p1
+d2    d3    d4    d5    d6    d7    p3    p6    p1    p4    l0    l0    l0    l0    p3    p6
+d4    d5    d6    d7    d0    d1    p0    p3    R0    R1    l0    l0    l0    l0    p0    p3
+d6    d7    d0    d1    d2    d3    p5    p0    p3    p6    p1    p4    p7    p2    p5    p0
+alts
+ 22  22  22  22  22  20  20  16  20  26  32  32  32  32  32  26
+ 22  22  22  22  22  20  20  16  20  26  32  40  40  40  32  26
+ 22  22  22  22  22  20  20  16  20  26  32  40  44  40  32  26
+ 22  22  22  22  22  20  20  16  20  26  32  40  40  40  32  26
+ 22  22  22  22  22  20  20  16  20  26  32  32  32  32  32  26
+ 20  20  20  20  20  20  20  16  20  26  26  26  26  26  26  26
+ 20  20  20  20  20  20  20  16  20  20  20  20  20  20  20  20
+ 20  20  20  20  20  20  20  16  20  20  20  20  20  20  20  20
+ 20  20  20  20  20  20  20  16  20  20  20  20  20  20  20  20
+ 20  20  20  20  20  20  20  16  20  20  20  20  20  20  20  20
+ 20  20  20  20  20  20  20  16  20  20  20  20  20  20  20  20
+ 20  20  20  20  20  20  20  20  20  20  16  16  16  16  20  20
+ 20  20  20  20  20  20  20  20  20  20  16  16  16  16  20  20
+ 20  20  20  20  20  20  20  20  20  20  16  16  16  16  20  20
+ 20  20  20  20  20  20  20  20  20  20  16  16  16  16  20  20
+ 20  20  20  20  20  20  20  20  20  20  20  20  20  20  20  20

@@ -1,0 +1,9 @@
+# roads: road facings 0..11 (CHex::r_*) left to right on plain (explicit
+# indices override the auto facing). Rotate (, .)
+size 13 5
+types
+p0    p0    p0    p0    p0    p0    p0    p0    p0    p0    p0    p0    p0
+p0    p0    p0    p0    p0    p0    p0    p0    p0    p0    p0    p0    p0
+r0    r1    r2    r3    r4    r5    r6    r7    r8    r9    r10   r11   p0
+p0    p0    p0    p0    p0    p0    p0    p0    p0    p0    p0    p0    p0
+p0    p0    p0    p0    p0    p0    p0    p0    p0    p0    p0    p0    p0

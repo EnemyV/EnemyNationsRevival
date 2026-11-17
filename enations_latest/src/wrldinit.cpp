@@ -17,6 +17,7 @@
 #include "SDL2CreateStatus.h"
 #include "stdafx.h"
 #include "terrain.inl"
+#include "EnTerrainShore.h"   // enterrain: shoreline rules (shared with terraintester)
 
 // for MakeRiversFlow (flow-accumulation river generation)
 // NOTE: must be included before the DEBUG_NEW macro below redefines `new`
@@ -3184,653 +3185,67 @@ void CGameMap::CheckAlt( )
     }
 }
 
-// Shore-SUPPRESSION test: which neighbours must NOT be converted to coastline.
-// IsWater() is river|ocean|lake and EXCLUDES swamp — but swamp is a water-like
-// type, so the bank loops treat it as land and paint a shore band right through
-// it at river/lake↔swamp borders (the "shore between two waters" bug; rivers >>
-// lakes because they meander through swampy lowlands). Treat swamp as water for
-// the don't-shore decision only (global IsWater / CanRoad are unchanged).
-static inline BOOL IsShoreWater( const CHex* h )
+// The shoreline rules (AddCoastlines' conversion passes + AssignCoastFacings' facing
+// tiers) live in the enterrain library (enterrain/EnTerrainShore.cpp), shared with
+// tools/terraintester. This adapter exposes the map to them; every write goes through
+// the same CHex calls as before (SetType's force-store / slope retype, SetAlt, the lr
+// unit flag as worldgen scratch, theTerrain.GetSprite for the coast sprite).
+class CGameMapShoreGrid : public enterrain::ShoreGrid
 {
-    return h->IsWater( ) || ( h->GetType( ) == CHex::swamp );
-}
+public:
+    explicit CGameMapShoreGrid( CGameMap& m ) : m_map( m ) {}
+    int  Width( ) const override { return m_map.Get_eX( ); }
+    int  Height( ) const override { return m_map.Get_eY( ); }
+    int  Type( int x, int y ) const override { return Hex( x, y )->GetType( ); }
+    void SetType( int x, int y, int t ) override { Hex( x, y )->SetType( t ); }
+    int  Alt( int x, int y ) const override { return Hex( x, y )->GetAlt( ); }
+    void SetAlt( int x, int y, int a ) override { Hex( x, y )->SetAlt( a ); }
+    bool Mark( int x, int y ) const override { return ( Hex( x, y )->GetUnits( ) & CHex::lr ) != 0; }
+    void SetMark( int x, int y ) override { Hex( x, y )->OrUnits( CHex::lr ); }
+    void ClearMark( int x, int y ) override { Hex( x, y )->NandUnits( CHex::lr ); }
+    int  CoastIndex( int x, int y ) const override
+    {
+        CHex* p = Hex( x, y );
+        return ( p->m_psprite != NULL && p->m_psprite->GetID( ) == CHex::coastline )
+                   ? p->m_psprite->GetIndex( ) : -1;
+    }
+    bool SetCoastIndex( int x, int y, int index ) override
+    {
+        CHex* p = Hex( x, y );
+        CTerrainSprite* pNew = theTerrain.GetSprite( CHex::coastline, index );
+        if ( pNew != NULL && pNew != p->m_psprite )
+        {
+            p->m_psprite = pNew;
+            return true;
+        }
+        return false;
+    }
+
+private:
+    CHex* Hex( int x, int y ) const { return m_map._GetHex( x, y ); }   // x/y already wrapped
+    CGameMap& m_map;
+};
 
 // For oceans (& lakes) we use the water tiles so it stays flat.
-// For rivers we surround the existing tiles and lower the river altitude
+// For rivers we surround the existing tiles and lower the river altitude.
+// (Rules: enterrain::AddCoastlines.)
 void CGameMap::AddCoastlines( )
 {
-
-    int lTotal = m_eX * m_eY;
-
-    // first we drop all river hexes (all 4 corners) by 1, but not below sea_level
-    CHexCoord _hex( 0, 0 );
-    CHex*     pHex = m_pHex;
-    for ( int lOn = 0; lOn < lTotal; lOn++ )
-    {
-        // oceans (and lakes) we convert the edge water
-        if ( pHex->GetType( ) == CHex::river )
-        {
-            if ( !( pHex->GetUnits( ) & CHex::lr ) )
-                if ( pHex->GetAlt( ) > CHex::sea_level )
-                    pHex->SetAlt( pHex->GetAlt( ) - 1 );
-
-            // above
-            // NOTE: these guards tested pHex (the river hex, which never gets the
-            // lr flag) instead of pHexTest — so a bank hex bordering N river hexes
-            // was lowered up to 3 times, notching the banks. Test the bank hex.
-            CHex* pHexTest = theMap.GetHex( _hex.X( ), _hex.Y( ) - 1 );
-            if ( ( !pHexTest->IsWater( ) ) && ( !( pHexTest->GetUnits( ) & CHex::lr ) ) )
-                if ( pHexTest->GetAlt( ) > CHex::sea_level + 1 )
-                {
-                    pHexTest->SetAlt( pHexTest->GetAlt( ) - 1 );
-                    pHexTest->OrUnits( CHex::lr );
-                }
-
-            // upper right
-            pHexTest = theMap.GetHex( _hex.X( ) + 1, _hex.Y( ) - 1 );
-            if ( ( !pHexTest->IsWater( ) ) && ( !( pHexTest->GetUnits( ) & CHex::lr ) ) )
-                if ( pHexTest->GetAlt( ) > CHex::sea_level + 1 )
-                {
-                    pHexTest->SetAlt( pHexTest->GetAlt( ) - 1 );
-                    pHexTest->OrUnits( CHex::lr );
-                }
-
-            // right
-            pHexTest = theMap.GetHex( _hex.X( ) + 1, _hex.Y( ) );
-            if ( ( !pHexTest->IsWater( ) ) && ( !( pHexTest->GetUnits( ) & CHex::lr ) ) )
-                if ( pHexTest->GetAlt( ) > CHex::sea_level + 1 )
-                {
-                    pHexTest->SetAlt( pHexTest->GetAlt( ) - 1 );
-                    pHexTest->OrUnits( CHex::lr );
-                }
-        }
-
-        pHex++;
-        _hex.X( ) += 1;
-        if ( _hex.X( ) >= m_eX )
-        {
-            _hex.X( ) = 0;
-            _hex.Y( ) += 1;
-        }
-    }
-
-    // turn off lr
-    pHex = m_pHex;
-    for ( int lOn = 0; lOn < lTotal; lOn++ )
-    {
-        pHex->NandUnits( CHex::lr );
-        pHex++;
-    }
-
-    // ORIGIN TRACKING for the facing pass below: in a tight corner (1-wide channel,
-    // narrow mouth) EVERY water hex of the passage becomes coastline, so the facing
-    // pass sees no IsWater() neighbor at all and falls into the inside-corner
-    // (mostly-land) fallback table — painting land art over what is really a water
-    // channel, and "island" for the straits it declares impossible. Remember which
-    // coastline hexes started as WATER so the facing pass can treat them as wet.
-    unsigned char* pbWasWater = new unsigned char[lTotal];
-    memset( pbWasWater, 0, lTotal );
-
-    // set coastlines
-    _hex = CHexCoord( 0, 0 );
-    pHex = m_pHex;
-    for ( int lOn = 0; lOn < lTotal; lOn++ )
-    {
-        // oceans (and lakes) we convert the edge water
-        if ( pHex->GetType( ) == CHex::ocean )
-        {
-            // River/lake MOUTH: an ocean hex that touches another water body must stay
-            // open water. At a narrow mouth the banks' land sits diagonally beside every
-            // ocean hex in the gap, so the land test below would convert the whole gap to
-            // coastline — a shore WALL between the river and the sea ("there shouldn't be
-            // shores between river/ocean"). The river's own banks (river rule below)
-            // already carry the land-side shore art at the mouth.
-            BOOL bMouth = FALSE;
-            for ( int x = -1; x <= 1 && !bMouth; x++ )
-                for ( int y = -1; y <= 1 && !bMouth; y++ )
-                {
-                    int iNType = theMap.GetHex( _hex.X( ) + x, _hex.Y( ) + y )->GetType( );
-                    if ( iNType == CHex::river || iNType == CHex::lake )
-                        bMouth = TRUE;
-                }
-            if ( bMouth )
-            {
-                // the gap stays open water, but its LAND banks still need a
-                // shore band (the carve-out alone left hard land/water edges
-                // around the mouth) — convert them like the river rule below
-                for ( int x = -1; x <= 1; x++ )
-                    for ( int y = -1; y <= 1; y++ )
-                    {
-                        CHex* pHexTest = theMap.GetHex( _hex.X( ) + x, _hex.Y( ) + y );
-                        if ( ( !IsShoreWater( pHexTest ) ) && ( pHexTest->GetType( ) != CHex::coastline ) )
-                            pHexTest->SetType( CHex::coastline );
-                    }
-            }
-            else
-            for ( int x = -1; x <= 1; x++ )
-                for ( int y = -1; y <= 1; y++ )
-                {
-                    CHex* pHexTest = theMap.GetHex( _hex.X( ) + x, _hex.Y( ) + y );
-                    if ( ( !IsShoreWater( pHexTest ) ) && ( pHexTest->GetType( ) != CHex::coastline ) )
-                    {
-                        pHex->SetType( CHex::coastline );
-                        pbWasWater[lOn] = 1;
-                        goto IsCoast;
-                    }
-                }
-        }
-
-        // rivers we put riverbanks around the outside of water
-        // (lakes too: MakeRiversFlow creates lake hexes BEFORE this pass, unlike
-        // MakeLakes' ocean->lake relabel which inherits ocean's coastline)
-        if ( ( pHex->GetType( ) == CHex::river ) || ( pHex->GetType( ) == CHex::lake ) )
-            for ( int x = -1; x <= 1; x++ )
-                for ( int y = -1; y <= 1; y++ )
-                {
-                    CHex* pHexTest = theMap.GetHex( _hex.X( ) + x, _hex.Y( ) + y );
-                    if ( ( !IsShoreWater( pHexTest ) ) && ( pHexTest->GetType( ) != CHex::coastline ) )
-                        pHexTest->SetType( CHex::coastline );
-                }
-
-    IsCoast:
-        pHex++;
-        _hex.X( ) += 1;
-        if ( _hex.X( ) >= m_eX )
-        {
-            _hex.X( ) = 0;
-            _hex.Y( ) += 1;
-        }
-    }
-
-    // we now have a bunch of possibilities where we don't have appropiate art
-    // so we walk through again and create additional coastline as needed
-    // WE DO THIS TWICE BECAUSE PLACING COASTLINE MAY MAKE ANOTHER PREVIOUS HEX CHANGED
-    for ( int iTest = 0; iTest < 2; iTest++ )
-    {
-        _hex = CHexCoord( 0, 0 );
-        pHex = m_pHex;
-        for ( int lOn = 0; lOn < lTotal; lOn++ )
-        {
-            if ( pHex->GetType( ) == CHex::coastline )
-            {
-                // for any side we have water on, we need coastline or water on the adjoining sides
-                //  (set to coastline if it's land). We just blast coastline instead of testing for it.
-
-                CHex* pHexAbove = theMap.GetHex( _hex.X( ), _hex.Y( ) - 1 );
-                CHex* pHexRight = theMap.GetHex( _hex.X( ) + 1, _hex.Y( ) );
-                CHex* pHexBelow = theMap.GetHex( _hex.X( ), _hex.Y( ) + 1 );
-                CHex* pHexLeft  = theMap.GetHex( _hex.X( ) - 1, _hex.Y( ) );
-
-                // above & below
-                if ( ( pHexAbove->IsWater( ) ) || ( pHexBelow->IsWater( ) ) )
-                {
-                    // check left and right
-                    if ( !IsShoreWater( pHexLeft ) )
-                        pHexLeft->SetType( CHex::coastline );
-                    if ( !IsShoreWater( pHexRight ) )
-                        pHexRight->SetType( CHex::coastline );
-                }
-
-                // left & right
-                if ( ( pHexLeft->IsWater( ) ) || ( pHexRight->IsWater( ) ) )
-                {
-                    // check left and right
-                    if ( !IsShoreWater( pHexAbove ) )
-                        pHexAbove->SetType( CHex::coastline );
-                    if ( !IsShoreWater( pHexBelow ) )
-                        pHexBelow->SetType( CHex::coastline );
-                }
-            }
-
-            pHex++;
-            _hex.X( ) += 1;
-            if ( _hex.X( ) >= m_eX )
-            {
-                _hex.X( ) = 0;
-                _hex.Y( ) += 1;
-            }
-        }
-    }
-
-    // [shore v3] Worldgen pass: DETECT + heal coastline WALLS through water — a
-    // `coastline` hex that splits two WATER areas instead of separating water from
-    // land (operator repro: lake|coastline|river AND lake|coastline|lake). The ocean
-    // loop's bMouth handles ocean mouths; the river/lake bank loop + corner-fill leave
-    // these. We look ONLY at the 4 ORTHOGONAL neighbours (counting DIAGONALS turned a
-    // normal river bank next to a diagonal lake into water and marched the lake up the
-    // river — reverted), and MARK-then-APPLY in one sweep (a converted wall can't
-    // cascade into a neighbouring bank). A coastline hex is a wall if:
-    //   (a) its orthogonal neighbours hold >=2 DIFFERENT open-water types (lake/river/
-    //       ocean junction — catches OPPOSITE and CORNER), OR
-    //   (b) LAKE on an OPPOSITE pair (above&below, or left&right) — a same-body lake
-    //       neck. Deliberately LAKE-only (same test on OCEAN would eat ocean coves/
-    //       straits — a prior regression) and OPPOSITE-pairs-only (spares concave
-    //       lake-bay corners, which are perpendicular, not opposite).
-    // Heal: convert to water (lake if any lake nbr, else river) at sea level so it
-    // draws flat; SetType(river|lake) force-stores. NO re-shore (embedding land-height
-    // tiles in water caused altitude-spike chevrons — reverted).
-    {
-        unsigned char* pbWall = new unsigned char[lTotal];
-        memset( pbWall, 0, lTotal );
-
-        _hex = CHexCoord( 0, 0 );
-        pHex = m_pHex;
-        for ( int lOn = 0; lOn < lTotal; lOn++ )
-        {
-            if ( pHex->GetType( ) == CHex::coastline )
-            {
-                CHex* pAbove = theMap.GetHex( _hex.X( ),     _hex.Y( ) - 1 );
-                CHex* pBelow = theMap.GetHex( _hex.X( ),     _hex.Y( ) + 1 );
-                CHex* pLeft  = theMap.GetHex( _hex.X( ) - 1, _hex.Y( )     );
-                CHex* pRight = theMap.GetHex( _hex.X( ) + 1, _hex.Y( )     );
-                CHex* aOrtho[4] = { pAbove, pBelow, pLeft, pRight };
-
-                // (a) >=2 distinct open-water types among the 4 orthogonal neighbours
-                int  iWaterType = -1;
-                BOOL bTwoTypes  = FALSE;
-                for ( int n = 0; n < 4; n++ )
-                {
-                    if ( !aOrtho[n]->IsWater( ) )
-                        continue;
-                    int iType = aOrtho[n]->GetType( );
-                    if ( iWaterType < 0 )
-                        iWaterType = iType;
-                    else if ( iType != iWaterType )
-                        bTwoTypes = TRUE;
-                }
-
-                // (b) same-type LAKE neck: lake on an opposite orthogonal pair
-                BOOL bLakeNeck =
-                    ( ( pAbove->GetType( ) == CHex::lake ) && ( pBelow->GetType( ) == CHex::lake ) ) ||
-                    ( ( pLeft->GetType( )  == CHex::lake ) && ( pRight->GetType( ) == CHex::lake ) );
-
-                if ( bTwoTypes || bLakeNeck )
-                    pbWall[lOn] = 1;
-            }
-
-            pHex++;
-            _hex.X( ) += 1;
-            if ( _hex.X( ) >= m_eX )
-            {
-                _hex.X( ) = 0;
-                _hex.Y( ) += 1;
-            }
-        }
-
-        // apply (separate sweep -> decisions used ORIGINAL types, no cascade)
-        _hex = CHexCoord( 0, 0 );
-        pHex = m_pHex;
-        for ( int lOn = 0; lOn < lTotal; lOn++ )
-        {
-            if ( pbWall[lOn] )
-            {
-                BOOL bLake = FALSE;
-                for ( int dy = -1; dy <= 1; dy++ )
-                    for ( int dx = -1; dx <= 1; dx++ )
-                        if ( theMap.GetHex( _hex.X( ) + dx, _hex.Y( ) + dy )->GetType( ) == CHex::lake )
-                            bLake = TRUE;
-                pHex->SetType( bLake ? CHex::lake : CHex::river );
-                if ( pHex->GetAlt( ) > CHex::sea_level )
-                    pHex->SetAlt( CHex::sea_level );   // draw flat as water
-            }
-
-            pHex++;
-            _hex.X( ) += 1;
-            if ( _hex.X( ) >= m_eX )
-            {
-                _hex.X( ) = 0;
-                _hex.Y( ) += 1;
-            }
-        }
-
-        delete[] pbWall;
-    }
-
-    // one last time through changing. We can have coastline tiles that don't touch
-    // water even on a diaganol. This we turn back to plains
-    _hex = CHexCoord( 0, 0 );
-    pHex = m_pHex;
-    for ( int lOn = 0; lOn < lTotal; lOn++ )
-    {
-        if ( pHex->GetType( ) == CHex::coastline )
-        {
-            for ( int x = -1; x <= 1; x++ )
-                for ( int y = -1; y <= 1; y++ )
-                {
-                    CHex* pHexTest = theMap.GetHex( _hex.X( ) + x, _hex.Y( ) + y );
-                    if ( pHexTest->IsWater( ) )
-                        goto HaveWater;
-                }
-            // ok, we're clean
-            if ( pHex->GetAlt( ) <= CHex::sea_level )
-                pHex->SetAlt( CHex::sea_level + 1 );
-            pHex->SetType( CHex::plain );
-            // BUGBUG			pHex->InitType ();
-        }
-
-    HaveWater:
-        pHex++;
-        _hex.X( ) += 1;
-        if ( _hex.X( ) >= m_eX )
-        {
-            _hex.X( ) = 0;
-            _hex.Y( ) += 1;
-        }
-    }
-
-    // now assign sprites
-    AssignCoastFacings( pbWasWater, FALSE );
-
-    delete[] pbWasWater;
+    CGameMapShoreGrid grid( *this );
+    enterrain::AddCoastlines( grid );
 }
 
 
-// Assign coastline sprite facings from the 4-neighbor configuration.
-// pbWasWater[off]=1 marks coastline hexes that were WATER before AddCoastlines
-// converted them. At worldgen this is tracked exactly; on load RefitCoastFacings
-// rebuilds it from altitude so old saves get correct shores too.
-//
-// Three-tier decision:
-//  1. REAL open-water neighbors decide (original 1996 behavior), plus shapes
-//     for the masks 1996 declared "impossible" — they DO occur (bank tongue
-//     between river and sea, narrow mouths).
-//  2. No real water but this hex was water and has water-origin coastline
-//     neighbors: it is part of a tight passage whose ENTIRE channel converted
-//     to coastline. Face along the channel; elbow-vs-inner-corner is
-//     disambiguated by the inside diagonal.
-//  3. Original coastline-neighbor fallback (land-origin inside corners).
-//
-// bKeepGroup keeps each hex's ocean/lake/river art group from its stored
-// facing (load refit — MakeLakes' lake relabel happened post-gen and must not
-// be undone); at worldgen the group is derived (lake patched later).
+// Assign coastline sprite facings from the 4-neighbor configuration (rules:
+// enterrain::AssignCoastFacings - three tiers: real water, tight water-origin
+// passages, 1996 inside-corner fallback). pbWasWater[off]=1 marks coastline hexes
+// that were WATER before AddCoastlines converted them; RefitCoastFacings rebuilds it
+// from altitude on load. bKeepGroup keeps each hex's stored ocean/lake/river art group.
 // Returns the number of hexes whose sprite changed.
 int CGameMap::AssignCoastFacings( const unsigned char* pbWasWater, BOOL bKeepGroup )
 {
-    int lTotal   = m_eX * m_eY;
-    int nChanged = 0;
-
-    // "wet" = real water OR a coastline hex that was water before conversion.
-    // Without the latter, the hexes of a tight passage read as land on every
-    // side and pick inside-corner art — grass painted over the channel.
-    auto wet = [&]( CHex* p ) -> bool {
-        return p->IsWater( ) ||
-               ( p->GetType( ) == CHex::coastline && pbWasWater[theMap.GetHexOffPub( p )] );
-    };
-
-    CHexCoord _hex( 0, 0 );
-    CHex*     pHex = m_pHex;
-    for ( int lOn = 0; lOn < lTotal; lOn++ )
-    {
-        if ( pHex->GetType( ) == CHex::coastline )
-        {
-            // we now get a 4-bit number (0 - 15) for water & coastline neighbors
-            int iWater = 0, iWet = 0, iCoast = 0, iTyp = OCEAN_COAST_OFF;
-            BOOL bAnyRiver = FALSE, bAnyOpen = FALSE;   // [shore-arttype] see below
-
-            CHex* apN[4];
-            apN[0] = theMap.GetHex( _hex.X( ), _hex.Y( ) - 1 );    // above (bit 1)
-            apN[1] = theMap.GetHex( _hex.X( ) + 1, _hex.Y( ) );    // right (bit 2)
-            apN[2] = theMap.GetHex( _hex.X( ), _hex.Y( ) + 1 );    // below (bit 4)
-            apN[3] = theMap.GetHex( _hex.X( ) - 1, _hex.Y( ) );    // left  (bit 8)
-            for ( int iN = 0; iN < 4; iN++ )
-            {
-                if ( apN[iN]->IsWater( ) )
-                {
-                    if ( apN[iN]->GetType( ) == CHex::river )
-                        bAnyRiver = TRUE;
-                    else                                   // ocean or lake = "open" water
-                        bAnyOpen = TRUE;
-                    iWater |= 1 << iN;
-                    iWet   |= 1 << iN;
-                }
-                else if ( apN[iN]->GetType( ) == CHex::coastline )
-                {
-                    iCoast |= 1 << iN;
-                    if ( pbWasWater[theMap.GetHexOffPub( apN[iN] )] )
-                        iWet |= 1 << iN;
-                }
-            }
-
-            // [shore-arttype] Pick the coast ART GROUP from the OPEN water it borders,
-            // not "any river neighbour wins". A coastline that orthogonally touches
-            // ocean/lake must wear OPEN-water shore art even when a river also feeds the
-            // same junction; only use river-bank art when river is the ONLY water type
-            // bordering. Previously a river mouth flowing into the sea painted river-bank
-            // art against open ocean (operator: river->ocean junction renders the wrong
-            // shore). The facing (iWater) was already type-agnostic; only the texture
-            // group discriminated by type. (Lake coasts are relabelled later by MakeLakes
-            // and preserved on refit via bKeepGroup, so leaving them as ocean here is safe.)
-            if ( bAnyRiver && !bAnyOpen )
-                iTyp = RIVER_COAST_OFF;
-
-            // TIER 1: if we have REAL water on any border then water decides
-            int iIndex = CHex::island;
-            if ( iWater != 0 )
-            {
-            switch ( iWater )
-            {
-            case 1:  // water above
-                iIndex = CHex::land_dn;
-                break;
-            case 2:  // water right
-                iIndex = CHex::land_lf;
-                break;
-            case 3:  // water above & right
-                iIndex = CHex::land_ll;
-                break;
-            case 4:  // water below
-                iIndex = CHex::land_up;
-                break;
-            case 6:  // water right & below
-                iIndex = CHex::land_ul;
-                break;
-            case 8:  // water left
-                iIndex = CHex::land_rt;
-                break;
-            case 9:  // water above & left
-                iIndex = CHex::land_lr;
-                break;
-            case 12:  // water below & left
-                iIndex = CHex::land_ur;
-                break;
-
-            // 1996 declared these masks "impossible" and stamped island art on all
-            // of them — but a 1-wide channel produces exactly these (water on
-            // opposite sides). No strait art exists, so show the bank transition
-            // toward the land side(s); the seam to the far bank feathers at render.
-            case 5:   // water above & below — land left & right (strait)
-                iIndex = CHex::land_rt;
-                break;
-            case 7:   // water above, right, & below — land LEFT only
-                iIndex = CHex::land_lf;
-                break;
-            case 10:  // water left & right — land above & below (strait)
-                iIndex = CHex::land_up;
-                break;
-            case 11:  // water above, right, & left — land BELOW only
-                iIndex = CHex::land_dn;
-                break;
-            case 13:  // water above, below, & left — land RIGHT only
-                iIndex = CHex::land_rt;
-                break;
-            case 14:  // water right, below, & left — land ABOVE only
-                iIndex = CHex::land_up;
-                break;
-
-            case 15:  // wet on all 4 sides
-                // A land-origin hex here is a true 1-hex island. A WATER-origin hex
-                // only borders land diagonally — island art would drop a land blob
-                // into open water; kiss that corner with quarter-land art instead.
-                iIndex = CHex::island;
-                if ( pbWasWater[lOn] )
-                {
-                    CHex* pDiag = theMap.GetHex( _hex.X( ) - 1, _hex.Y( ) - 1 );
-                    if ( !wet( pDiag ) )
-                        iIndex = CHex::land_ul;
-                    else if ( !wet( theMap.GetHex( _hex.X( ) + 1, _hex.Y( ) - 1 ) ) )
-                        iIndex = CHex::land_ur;
-                    else if ( !wet( theMap.GetHex( _hex.X( ) + 1, _hex.Y( ) + 1 ) ) )
-                        iIndex = CHex::land_lr;
-                    else if ( !wet( theMap.GetHex( _hex.X( ) - 1, _hex.Y( ) + 1 ) ) )
-                        iIndex = CHex::land_ll;
-                }
-                break;
-
-            }
-            }
-            else if ( pbWasWater[lOn] && iWet != 0 )
-            {
-                // TIER 2: no real water touching, but this hex WAS water and is
-                // part of a tight passage whose entire channel converted to
-                // coastline. Face along the channel.
-
-                // the river art group still applies if the passage hugs a river
-                for ( int x = -1; x <= 1 && iTyp == OCEAN_COAST_OFF; x++ )
-                    for ( int y = -1; y <= 1; y++ )
-                        if ( theMap.GetHex( _hex.X( ) + x, _hex.Y( ) + y )->GetType( ) == CHex::river )
-                        {
-                            iTyp = RIVER_COAST_OFF;
-                            break;
-                        }
-
-                switch ( iWet )
-                {
-                case 1:  iIndex = CHex::land_dn; break;   // dead-end stub openings
-                case 2:  iIndex = CHex::land_lf; break;
-                case 4:  iIndex = CHex::land_up; break;
-                case 8:  iIndex = CHex::land_rt; break;
-
-                case 5:  iIndex = CHex::land_rt; break;   // strait (1-wide channel)
-                case 10: iIndex = CHex::land_up; break;
-
-                case 7:  iIndex = CHex::land_lf; break;   // T-junction: land 1 side
-                case 11: iIndex = CHex::land_dn; break;
-                case 13: iIndex = CHex::land_rt; break;
-                case 14: iIndex = CHex::land_up; break;
-
-                // adjacent pair = an elbow. The inside diagonal disambiguates:
-                // wet = inner corner of a wide water body (keep the original
-                // inside-corner art), dry = a 1-wide channel turning around a
-                // bank corner (mostly-water art, land kissing the outer corner).
-                case 3:   // wet above & right
-                    iIndex = wet( theMap.GetHex( _hex.X( ) + 1, _hex.Y( ) - 1 ) )
-                                 ? CHex::water_ur : CHex::land_ll;
-                    break;
-                case 6:   // wet right & below
-                    iIndex = wet( theMap.GetHex( _hex.X( ) + 1, _hex.Y( ) + 1 ) )
-                                 ? CHex::water_lr : CHex::land_ul;
-                    break;
-                case 9:   // wet above & left
-                    iIndex = wet( theMap.GetHex( _hex.X( ) - 1, _hex.Y( ) - 1 ) )
-                                 ? CHex::water_ul : CHex::land_lr;
-                    break;
-                case 12:  // wet below & left
-                    iIndex = wet( theMap.GetHex( _hex.X( ) - 1, _hex.Y( ) + 1 ) )
-                                 ? CHex::water_ll : CHex::land_ur;
-                    break;
-
-                case 15:  // wet all around: land only on a diagonal — kiss it
-                    iIndex = CHex::island;
-                    if ( !wet( theMap.GetHex( _hex.X( ) - 1, _hex.Y( ) - 1 ) ) )
-                        iIndex = CHex::land_ul;
-                    else if ( !wet( theMap.GetHex( _hex.X( ) + 1, _hex.Y( ) - 1 ) ) )
-                        iIndex = CHex::land_ur;
-                    else if ( !wet( theMap.GetHex( _hex.X( ) + 1, _hex.Y( ) + 1 ) ) )
-                        iIndex = CHex::land_lr;
-                    else if ( !wet( theMap.GetHex( _hex.X( ) - 1, _hex.Y( ) + 1 ) ) )
-                        iIndex = CHex::land_ll;
-                    break;
-                }
-            }
-            else
-            {
-                // TIER 3: if no water touching it's an inside corner
-                // (original 1996 fallback, unchanged)
-
-                // see if we are a river coast
-                for ( int x = -1; x <= 1; x++ )
-                    for ( int y = -1; y <= 1; y++ )
-                    {
-                        CHex* pHexTest = theMap.GetHex( _hex.X( ) + x, _hex.Y( ) + y );
-                        if ( pHexTest->GetType( ) == CHex::river )
-                        {
-                            iTyp = RIVER_COAST_OFF;
-                            break;
-                        }
-                    }
-
-                switch ( iCoast )
-                {
-                case 3:
-                    iIndex = CHex::water_ur;
-                    break;
-                case 6:
-                    iIndex = CHex::water_lr;
-                    break;
-                case 7:  // above, right, & below
-                    iIndex = CHex::land_lf;
-                    break;
-                case 11:  // above, right, & left
-                    iIndex = CHex::land_dn;
-                    break;
-                case 12:
-                    iIndex = CHex::water_ll;
-                    break;
-                case 13:  // above, below, & left
-                    iIndex = CHex::land_rt;
-                    break;
-                case 14:  // right, below, and left
-                    iIndex = CHex::land_up;
-                    break;
-                case 9:
-                    iIndex = CHex::water_ul;
-                    break;
-
-                // error
-                default:
-                    iIndex = CHex::island;
-                    break;
-                }
-            }
-
-            // on refit keep the stored art group (ocean/lake/river): MakeLakes
-            // relabeled lake coasts after gen and that must not be undone
-            BOOL bAssign = TRUE;
-            if ( bKeepGroup )
-            {
-                int F = ( pHex->m_psprite != NULL &&
-                          pHex->m_psprite->GetID( ) == CHex::coastline )
-                            ? pHex->m_psprite->GetIndex( ) : -1;
-                if ( F >= 0 && F <= 38 )
-                    iTyp = ( F / 13 ) * 13;
-                else
-                    bAssign = FALSE;    // overlay/unknown sprite: leave it alone
-            }
-
-            // assign the sprite
-            if ( bAssign )
-            {
-                CTerrainSprite* pNew = theTerrain.GetSprite( CHex::coastline, iTyp + iIndex );
-                if ( pNew != NULL && pNew != pHex->m_psprite )
-                {
-                    pHex->m_psprite = pNew;
-                    nChanged++;
-                }
-                if ( pHex->GetAlt( ) < CHex::sea_level )  // if cause of riverbanks
-                    pHex->SetAlt( CHex::sea_level );
-            }
-        }
-
-        pHex++;
-        _hex.X( ) += 1;
-        if ( _hex.X( ) >= m_eX )
-        {
-            _hex.X( ) = 0;
-            _hex.Y( ) += 1;
-        }
-    }
-
-    return nChanged;
+    CGameMapShoreGrid grid( *this );
+    return enterrain::AssignCoastFacings( grid, pbWasWater, bKeepGroup != FALSE );
 }
 
 

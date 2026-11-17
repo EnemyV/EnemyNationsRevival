@@ -76,10 +76,22 @@ if (NOT MSVC)
 endif ()
 
 ###############################
+# enterrain.lib  (GPU terrain core: shared by enations and terraintester)
+###############################
+
+add_subdirectory(enterrain)
+
+###############################
 # enations.exe   (game — built on every platform)
 ###############################
 
 add_subdirectory(enations_latest/src)
+
+###############################
+# terraintester  (standalone terrain render tool on enterrain — every platform)
+###############################
+
+add_subdirectory(tools/terraintester)
 
 ###############################
 # wind22.lib     (support library — built on every platform)

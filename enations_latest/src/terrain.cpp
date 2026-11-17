@@ -18,6 +18,8 @@
 #include "lastplnt.h"
 #include "minerals.h"
 #include "stdafx.h"
+#include "EnTerrain.h"   // enterrain: hex projection math shared with terraintester
+#include "EnTerrainShore.h"   // enterrain::RoadFacing
 #include "enprobes.h"   // probe gates - was relying on a transitive include
 #include "en_logpath.h"   // EnLogPath - probe log must land where the other logs do
 #include "SDL2Panel.h"
@@ -528,30 +530,17 @@ void CHexCoordColumnIter::ToPrev( )
 //---------------------------------------------------------------------------
 CViewHexCoord::CViewHexCoord( const CHexCoord& hexcoord )
 {
-    switch ( xiDir )
+    // Math shared with the enterrain library (terraintester): enterrain::MapToViewHex.
+    // xiDir outside 0..3: no assignment, just the shift, as the original switch did.
+    if ( xiDir < 0 || xiDir > 3 )
     {
-    case 0:
-        x = hexcoord.X( ) + hexcoord.Y( );
-        y = -hexcoord.X( ) + hexcoord.Y( );
-        break;
-
-    case 1:
-        x = -hexcoord.X( ) + hexcoord.Y( );
-        y = -hexcoord.X( ) - hexcoord.Y( );
-        break;
-
-    case 2:
-        x = -hexcoord.X( ) - hexcoord.Y( );
-        y = hexcoord.X( ) - hexcoord.Y( );
-        break;
-
-    case 3:
-        x = hexcoord.X( ) - hexcoord.Y( );
-        y = hexcoord.X( ) + hexcoord.Y( );
-        break;
+        x >>= 1;
+        return;
     }
-
-    x >>= 1;
+    int vx, vy;
+    enterrain::MapToViewHex( hexcoord.X( ), hexcoord.Y( ), xiDir, vx, vy );
+    x = vx;
+    y = vy;
 }
 
 //---------------------------------------------------------------------------
@@ -562,37 +551,14 @@ CViewHexCoord::CViewHexCoord( const CHexCoord& hexcoord )
 CHexCoord::CHexCoord( const CViewHexCoord& viewhexcoord,
                       BOOL                 bRight )  // Jog right or left (from center hex)
 {
-    int iY1 = viewhexcoord.y + !bRight;
-    int iY2 = viewhexcoord.y + bRight;
-
-    iY1 >>= 1;
-    iY2 >>= 1;
-
-    int iX = viewhexcoord.x;
-
-    switch ( xiDir )
-    {
-    case 0:
-        m_iX = iX - iY1;
-        m_iY = iX + iY2;
-        break;
-
-    case 1:
-        m_iX = -iX - iY2;
-        m_iY = iX - iY1;
-        break;
-
-
-    case 2:
-        m_iX = -iX + iY1;
-        m_iY = -iX - iY2;
-        break;
-
-    case 3:
-        m_iX = iX + iY2;
-        m_iY = -iX + iY1;
-        break;
-    }
+    // Math shared with the enterrain library (terraintester): enterrain::ViewHexToMap.
+    // xiDir outside 0..3 leaves m_iX/m_iY untouched, as the original switch did.
+    if ( xiDir < 0 || xiDir > 3 )
+        return;
+    int hx, hy;
+    enterrain::ViewHexToMap( viewhexcoord.x, viewhexcoord.y, bRight != FALSE, xiDir, hx, hy );
+    m_iX = hx;
+    m_iY = hy;
 }
 
 //---------------------------------------------------------------------------
@@ -2427,19 +2393,13 @@ CAnimAtr::WorldToViewContent( const CMapLoc3D& maploc3d ) const
 CPoint
 CAnimAtr::WorldToViewContent( const CMapLoc3D& maploc3d, int iDir ) const
 {
-    int iNewX = 0, iNewY = 0;
-
-    switch ( iDir )
-    {
-    case 0: iNewX =  maploc3d.x + maploc3d.y; iNewY = ( -maploc3d.x + maploc3d.y ) >> 1; break;
-    case 1: iNewX = -maploc3d.x + maploc3d.y; iNewY = ( -maploc3d.x - maploc3d.y ) >> 1; break;
-    case 2: iNewX = -maploc3d.x - maploc3d.y; iNewY = (  maploc3d.x - maploc3d.y ) >> 1; break;
-    case 3: iNewX =  maploc3d.x - maploc3d.y; iNewY = (  maploc3d.x + maploc3d.y ) >> 1; break;
-    default: TRAP( );
-    }
+    if ( iDir < 0 || iDir > 3 ) TRAP( );
 
     Fixed fixY = maploc3d.m_fixZ << TERRAIN_HT_SHIFT;
-    iNewY -= fixY.Round( );
+
+    // Projection math shared with the enterrain library (terraintester).
+    int iNewX, iNewY;
+    enterrain::WorldToContent( maploc3d.x, maploc3d.y, fixY.Round( ), iDir, iNewX, iNewY );
 
     return CPoint( iNewX, iNewY );   // NO >> m_iZoom (zoom applied later as a scale)
 }
@@ -2458,12 +2418,10 @@ CAnimAtr::MapToContentHex( const CHexCoord& hexcoord, CPoint aptHex[4] ) const
 void
 CAnimAtr::MapToContentHex( const CHexCoord& hexcoord, CPoint aptHex[4], int iDir ) const
 {
-    static int xaaiIndex[4][4] = { { 0, 1, 2, 3 }, { 3, 0, 1, 2 }, { 2, 3, 0, 1 }, { 1, 2, 3, 0 } };
-
     CMapLoc3D amaploc3d[4];
     hexcoord.GetWorldHex( amaploc3d );
 
-    int* pi = xaaiIndex[iDir & 3];
+    const int* pi = enterrain::kCornerSlot[iDir & 3];   // == the original xaaiIndex
     for ( int i = 0; i < 4; ++i ) aptHex[*pi++] = WorldToViewContent( amaploc3d[i], iDir & 3 );
 }
 
@@ -2781,53 +2739,12 @@ void CHex::ChangeToRoad( CHexCoord& hex, BOOL bCallNext, BOOL bForce )
                 iType |= 8;
     }
 
-    int iIndex;
-    switch ( iType )
-    {
-        // case 0 - default
-
-    case 0x1:  // above
-    case 0x8:  // below
-    case 0x9:  // above & below
-        iIndex = CHex::r_vert;
-        break;
-    case 0x2:  // left
-    case 0x4:  // right
-    case 0x6:  // laft & right
-        iIndex = CHex::r_horz;
-        break;
-
-    case 0x3:  // L lr
-        iIndex = CHex::r_l_lr;
-        break;
-    case 0x5:  // L ll
-        iIndex = CHex::r_l_ll;
-        break;
-    case 0xA:  // L lr
-        iIndex = CHex::r_l_ur;
-        break;
-    case 0xC:  // L ul
-        iIndex = CHex::r_l_ul;
-        break;
-
-    case 0x7:  // T down
-        iIndex = CHex::r_t_dn;
-        break;
-    case 0xB:  // T right
-        iIndex = CHex::r_t_rt;
-        break;
-    case 0xD:  // T left
-        iIndex = CHex::r_t_lf;
-        break;
-    case 0xE:  // T up
-        iIndex = CHex::r_t_up;
-        break;
-
-    // case 0xF
-    default:  // no neighbors (0), all neighbors (0xF), bugs
-        iIndex = CHex::r_x;
-        break;
-    }
+    // Facing from the 4-neighbour mask (1 above, 2 left, 4 right, 8 below): the rule
+    // lives in enterrain::RoadFacing (shared with terraintester).
+    static_assert( CHex::r_horz == 0 && CHex::r_vert == 1 && CHex::r_t_up == 2 && CHex::r_t_rt == 3 &&
+                   CHex::r_t_dn == 4 && CHex::r_t_lf == 5 && CHex::r_l_ur == 6 && CHex::r_l_lr == 7 &&
+                   CHex::r_l_ll == 8 && CHex::r_l_ul == 9 && CHex::r_x == 10, "road facings (enterrain::RoadFacing)" );
+    int iIndex = enterrain::RoadFacing( iType );
 
     // set the new sprite
     m_psprite = theTerrain.GetSprite( CHex::road, iIndex );

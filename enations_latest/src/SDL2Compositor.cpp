@@ -384,7 +384,7 @@ void SDL2Compositor::Composite() {
     // still repaints correctly. RenderDetached() clears the flag.
     // Animated water needs the GPU-terrain window re-rendered when its WAVE FRAME
     // changes — but only THEN, not every frame. The wave advances every 6 game-
-    // frames (the engine's water Time()=6; see SDL2Terrain::WaterFrameLetter), so
+    // frames (the engine's water Time()=6; see enterrain::WaterFrameLetter), so
     // forcing a full mesh rebuild every frame (esp. zoomed out, ~20k hexes) tanked
     // the FPS for no visible gain. Re-render at the wave rate (~4×/s) instead.
     static unsigned s_lastWaterTick = ~0u;

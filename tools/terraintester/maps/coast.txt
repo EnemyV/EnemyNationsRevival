@@ -1,0 +1,14 @@
+# coast: coastline facings 0..38 (row-major, every other cell) on ocean.
+# A reference sheet of the art, so the shore pass is off.
+shore manual
+size 21 9
+types
+o0    o0    o0    o0    o0    o0    o0    o0    o0    o0    o0    o0    o0    o0    o0    o0    o0    o0    o0    o0    o0
+o0    c0    o0    c1    o0    c2    o0    c3    o0    c4    o0    c5    o0    c6    o0    c7    o0    c8    o0    c9    o0
+o0    o0    o0    o0    o0    o0    o0    o0    o0    o0    o0    o0    o0    o0    o0    o0    o0    o0    o0    o0    o0
+o0    c10   o0    c11   o0    c12   o0    c13   o0    c14   o0    c15   o0    c16   o0    c17   o0    c18   o0    c19   o0
+o0    o0    o0    o0    o0    o0    o0    o0    o0    o0    o0    o0    o0    o0    o0    o0    o0    o0    o0    o0    o0
+o0    c20   o0    c21   o0    c22   o0    c23   o0    c24   o0    c25   o0    c26   o0    c27   o0    c28   o0    c29   o0
+o0    o0    o0    o0    o0    o0    o0    o0    o0    o0    o0    o0    o0    o0    o0    o0    o0    o0    o0    o0    o0
+o0    c30   o0    c31   o0    c32   o0    c33   o0    c34   o0    c35   o0    c36   o0    c37   o0    c38   o0    o0    o0
+o0    o0    o0    o0    o0    o0    o0    o0    o0    o0    o0    o0    o0    o0    o0    o0    o0    o0    o0    o0    o0

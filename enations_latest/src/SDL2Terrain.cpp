@@ -2,6 +2,8 @@
 #include "en_logpath.h"   // EnLogPath - logs to the launch dir, not the exe dir
 #include "enprobes.h"   // EN_GAMEPLAY_PROBES
 #include "SDL2Terrain.h"
+#include "EnTerrainLayers.h"   // enterrain: water layer + blend bands (shared with terraintester)
+#include "EnTerrainShore.h"    // enterrain::CoastDisplay: render-only shore fix (shoals)
 #include "base.h"      // CAnimAtr, CViewHexCoord, CHexCoord
 #include "terrain.h"   // CHex, theMap
 #include "terrain.inl"
@@ -18,9 +20,6 @@
 #include <utility>         // std::swap (incl. the array overload)
 #include <unordered_set>   // g_enMeshEditSet — dedup the retained-mesh edit list
 #include <mutex>      // g_enEditedHexes is touched by sim AND render threads
-#define STB_IMAGE_IMPLEMENTATION
-#define STBI_ONLY_PNG
-#include "thirdparty/stb_image.h"
 
 #include <fstream>
 #include <cstdlib>
@@ -40,26 +39,27 @@
 #pragma optimize( "gt", on )
 #endif
 
-std::unordered_map<std::string, SDL2Terrain::Tile> SDL2Terrain::s_tiles;
-std::unordered_map<std::string, const SDL2Terrain::Tile*> SDL2Terrain::s_byType;
-std::unordered_map<std::string, const SDL2Terrain::Tile*> SDL2Terrain::s_byTypeVar;
 SDL_Renderer* SDL2Terrain::s_renderer = nullptr;
 bool          SDL2Terrain::s_loaded   = false;
 bool          SDL2Terrain::s_anyLoaded = false;
 
-// CHex terrain-type enum (terrain.h) → baked tile type name. forest has no
-// terrain art (trees are sprites) → empty = no tile.
-static const char* const kTypeName[] = {
-    "city", "desert", "", "lake", "hill", "mountain", "ocean", "plain",
-    "river", "road", "rough", "swamp", "coastline", "fields", "resources"
-};
-static const int kNumTypeNames = (int)( sizeof( kTypeName ) / sizeof( kTypeName[0] ) );
+// The baked tile set + tile rules live in the enterrain library (enterrain/EnTerrain.h),
+// shared with tools/terraintester. This TU adapts CHex/theMap/CAnimAtr onto it.
+// s_tileSet is the CURRENT renderer's set (swapped per renderer, see SDL2TerrainRCtx).
+static enterrain::TileSet s_tileSet;
+static const int kNumTypeNames = enterrain::TerrNumTypes;
 
-// Integer-indexed [type][variant] → representative tile, mirroring s_byTypeVar but
-// without the per-lookup std::string construction + hash. The general (non-road/
-// coast/water) path in TileForHex is the hot loop (called for every hex AND its 4
-// feather neighbours); the string-keyed map made it ~15 us/hex. Built in Load().
-static std::vector<const SDL2Terrain::Tile*> s_typeVarPtr[kNumTypeNames];
+// enterrain::TerrainType mirrors CHex's terrain enum; the library's rules key on it.
+static_assert( (int)enterrain::TerrCity == (int)CHex::city && (int)enterrain::TerrForest == (int)CHex::forest &&
+               (int)enterrain::TerrLake == (int)CHex::lake && (int)enterrain::TerrOcean == (int)CHex::ocean &&
+               (int)enterrain::TerrRiver == (int)CHex::river && (int)enterrain::TerrRoad == (int)CHex::road &&
+               (int)enterrain::TerrSwamp == (int)CHex::swamp && (int)enterrain::TerrCoastline == (int)CHex::coastline &&
+               (int)enterrain::TerrFields == (int)CHex::fields && (int)enterrain::TerrResources == (int)CHex::resources &&
+               (int)enterrain::TerrNumTypes == (int)CHex::num_types,
+               "enterrain::TerrainType must match CHex terrain types" );
+static_assert( enterrain::RoadX == CHex::r_x && enterrain::RoadPath == CHex::r_path, "road facings" );
+static_assert( enterrain::SeaLevel == CHex::sea_level, "sea level" );
+static_assert( enterrain::HexHt == MAX_HEX_HT && enterrain::TerrainHtShift == TERRAIN_HT_SHIFT, "hex geometry" );
 
 // Bumped on every (re)Load so the terrain mesh cache (keyed partly by this) is
 // invalidated when textures are recreated — otherwise a stale cache could
@@ -184,13 +184,7 @@ static inline void VbRecycle( std::vector<SDL_Vertex>& vb )
 // one zoom must not drop the hex: that was the "black diamond" bug (the hex was culled
 // from BOTH the cached terrain texture and the live water layer, leaving the backdrop —
 // black — showing through a diamond-shaped hole).
-static inline SDL_Texture* TileTexAnyZoom( const SDL2Terrain::Tile* t, int zoom )
-{
-    if ( !t ) return nullptr;
-    SDL_Texture* tex = t->tex[zoom];
-    for ( int z = 0; !tex && z < SDL2Terrain::NUM_ZOOMS; ++z ) tex = t->tex[z];
-    return tex;
-}
+using enterrain::TileTexAnyZoom;
 
 static std::vector<int> s_quadIdx;
 static const int* QuadIndices( int nQuads )
@@ -306,43 +300,8 @@ static bool TerrainPanStripEnabled( )
 // correct R127/B255 premultiplied; d3d9/d3d11/d3d12/opengl/gles2 all accept the
 // custom mode. Fall back to plain BLEND if a backend refuses (SDL's software
 // renderer — which never runs the GPU terrain path).
-static void SetPremulBlend( SDL_Texture* t )
-{
-    if ( !t ) return;
-    SDL_BlendMode pm = SDL_ComposeCustomBlendMode(
-        SDL_BLENDFACTOR_ONE, SDL_BLENDFACTOR_ONE_MINUS_SRC_ALPHA, SDL_BLENDOPERATION_ADD,
-        SDL_BLENDFACTOR_ONE, SDL_BLENDFACTOR_ONE_MINUS_SRC_ALPHA, SDL_BLENDOPERATION_ADD );
-    if ( SDL_SetTextureBlendMode( t, pm ) != 0 )
-        SDL_SetTextureBlendMode( t, SDL_BLENDMODE_BLEND );
-}
+using enterrain::SetPremulBlend;   // (moved to enterrain; see EnTerrainLayers.cpp)
 
-static int TypeNameToInt( const std::string& n )
-{
-    for ( int i = 0; i < kNumTypeNames; ++i )
-        if ( n == kTypeName[i] ) return i;
-    return -1;
-}
-
-// Road facing (CHex::r_*) → (base source-dir, rotation). MakeRotated permutes
-// the 4 direction views, so a rotated facing = the base road art shown from
-// view (m_iDir - rot) mod 4. Base road sprites load at engine indices 0,2,6,10,11
-// ↔ source road dirs 0,1,2,3,4 (sprtinit.cpp:114-120, ChangeToRoad:2574).
-static const int kRoadSrcDir[12] = { 0, 0, 1, 1, 1, 1, 2, 2, 2, 2, 3, 4 };
-// Corner facings (6-9 = r_l_*) come out 90° rotated vs straights/T (the corner
-// base art orientation differs), so they carry an extra +1 quarter-turn.
-static const int kRoadRot[12]    = { 0, 1, 0, 1, 2, 3, 1, 2, 3, 0, 0, 0 };
-static const char* const kDirPrefix[4] = { "aa", "ac", "ae", "ag" };
-
-// Coastline facing (0-38) → (source coastlne dir 0-11, rotation). Base sprites
-// load at indices 0,4,8,12,13,17,21,25,26,30,34,38 ← coastlne/0..11 (TERRAIN.MIF),
-// with MakeRotated filling the gaps (sprtinit.cpp:123-151). Coastline tiles are
-// single-shape per dir at damage "a"; not bDrawVert, not shaded.
-static const int kCoastSrcDir[39] = {
-    0, 0, 0, 0,  1, 1, 1, 1,  2, 2, 2, 2,  3,  4, 4, 4, 4,  5, 5, 5, 5,
-    6, 6, 6, 6,  7,  8, 8, 8, 8,  9, 9, 9, 9,  10, 10, 10, 10,  11 };
-static const int kCoastRot[39] = {
-    0, 1, 2, 3,  0, 1, 2, 3,  0, 1, 2, 3,  0,  0, 1, 2, 3,  0, 1, 2, 3,
-    0, 1, 2, 3,  0,  0, 1, 2, 3,  0, 1, 2, 3,  0, 1, 2, 3,  0 };
 
 static void LogTerrain( const std::string& msg )
 {
@@ -355,23 +314,6 @@ static void LogTerrain( const std::string& msg )
 #endif
 }
 
-// terrain type render flags (mirror tools/terrainbake + terrain.cpp CHex::Draw).
-static bool TypeShade( const std::string& t )
-{
-    return !( t == "river" || t == "coastline" || t == "swamp" ||
-              t == "ocean" || t == "resources" || t == "lake" );
-}
-static bool TypeDrawVert( const std::string& t ) { return t == "road" || t == "resources"; }
-static bool TypeTransparent( const std::string& t )
-{
-    return t == "road" || t == "coastline" || t == "river" || t == "resources";
-}
-
-std::string SDL2Terrain::MakeKey( const std::string& type, int variant,
-                                  const std::string& stem )
-{
-    return type + "_" + std::to_string( variant ) + "_" + stem;
-}
 
 // Candidate locations for the baked PNG set, relative to the run dir (the game's
 // CWD is d:\Enemy Nations) and the dev tree. First hit wins.
@@ -427,92 +369,26 @@ static std::string FindAssetDir()
     return std::string();
 }
 
-// Filename convention from terrainbake: <type>_<variant>_<stem>_z<n>.png
-// e.g. "plain_0_aa010000_z0.png", "coastline_0_ac00h000_z3.png". type and stem
-// contain no underscores, so 4 underscore fields split cleanly.
-static bool ParseName( const std::string& name, std::string& type, int& variant,
-                       std::string& stem, int& zoom )
-{
-    size_t p1 = name.find( '_' );
-    size_t p2 = ( p1 == std::string::npos ) ? p1 : name.find( '_', p1 + 1 );
-    size_t p3 = ( p2 == std::string::npos ) ? p2 : name.find( '_', p2 + 1 );
-    if ( p1 == std::string::npos || p2 == std::string::npos || p3 == std::string::npos )
-        return false;
-
-    type           = name.substr( 0, p1 );
-    std::string sV = name.substr( p1 + 1, p2 - p1 - 1 );
-    stem           = name.substr( p2 + 1, p3 - p2 - 1 );  // full source stem
-    std::string sZ = name.substr( p3 + 1 );               // "z<n>"
-
-    if ( stem.empty() || sZ.size() < 2 || sZ[0] != 'z' )
-        return false;
-
-    variant = atoi( sV.c_str() );
-    zoom    = atoi( sZ.c_str() + 1 );
-    return zoom >= 0 && zoom < SDL2Terrain::NUM_ZOOMS;
-}
-
-static SDL_Texture* LoadPng( SDL_Renderer* r, const std::string& path, int& outW, int& outH )
-{
-    int w = 0, h = 0, comp = 0;
-    stbi_uc* px = stbi_load( path.c_str(), &w, &h, &comp, 4 );  // force RGBA
-    if ( !px )
-        return nullptr;
-
-    // stb gives tightly-packed RGBA bytes → SDL_PIXELFORMAT_ABGR8888 (LE byte
-    // order R,G,B,A). Upload to a static texture; alpha-blend for the keyed
-    // overlay types; nearest sampling for T2 parity (bilinear comes at T3).
-    SDL_Texture* tex = SDL_CreateTexture( r, SDL_PIXELFORMAT_ABGR8888,
-                                          SDL_TEXTUREACCESS_STATIC, w, h );
-    if ( tex )
-    {
-        SDL_UpdateTexture( tex, nullptr, px, w * 4 );
-        SDL_SetTextureBlendMode( tex, SDL_BLENDMODE_BLEND );
-        // NEAREST sampling: the tile art is an iso DIAMOND inscribed in a square, so
-        // the square's corners hold non-tile pixels. Bilinear filtering at the diamond
-        // EDGES samples those corner pixels and bleeds them in → the visible seams
-        // between tiles. Nearest samples only the exact texel (no cross-edge bleed),
-        // matching the original 1996 look, which abutted tiles seamlessly.
-        SDL_SetTextureScaleMode( tex, SDL_ScaleModeNearest );
-        outW = w; outH = h;
-    }
-    stbi_image_free( px );
-    return tex;
-}
 void SDL2Terrain::Unload()
 {
-    for ( auto& kv : s_tiles )
-        for ( SDL_Texture* t : kv.second.tex )
-            if ( t ) SDL_DestroyTexture( t );
-    s_tiles.clear();
-    s_byType.clear();
-    s_byTypeVar.clear();
-    for ( int i = 0; i < kNumTypeNames; ++i ) s_typeVarPtr[i].clear();
+    s_tileSet.Unload();
     s_renderer = nullptr;
     s_loaded   = false;
 }
 
 const SDL2Terrain::Tile* SDL2Terrain::GetDefaultForType( const std::string& type )
 {
-    auto it = s_byType.find( type );
-    return it == s_byType.end() ? nullptr : it->second;
+    return s_tileSet.GetDefaultForType( type );
 }
 
 const SDL2Terrain::Tile* SDL2Terrain::Get( const std::string& type, int variant,
                                            const std::string& stem )
 {
-    auto it = s_tiles.find( MakeKey( type, variant, stem ) );
-    return it == s_tiles.end() ? nullptr : &it->second;
+    return s_tileSet.Get( type, variant, stem );
 }
 
-// T4: continuous slope brightness for one triangle, matching the engine's
-// CSpriteDIB::TerrainGetShadeIndex (sprite.cpp:378) but WITHOUT the 8-level
-// quantization — light from the right, SHADE_CONTRAST=14, range ~[0.6,1.3]
-// (the original Shade() lightness span). Flat ground → 1.0 (neutral).
-// Slope brightness for one triangle (engine TerrainGetShadeIndex curve, but
-// continuous). Tuned a touch brighter than the original: neutral ~1.06, a
-// higher floor (less aggressive dark dips) — user wanted brighter terrain.
-// Fog dim is applied separately by the caller.
+// T4 slope brightness per triangle: enterrain::TriBrightness (engine
+// TerrainGetShadeIndex curve, continuous). Fog dim is applied separately.
 static const float kFogDim = 0.58f;   // invisible (out-of-sight) hexes — dim, but
                                       // between the old too-light and too-dark (darker side)
 
@@ -525,30 +401,12 @@ static const float kFogDim = 0.58f;   // invisible (out-of-sight) hexes — dim,
 static const int kFogSlotInv[4][4] =
     { { 0, 1, 2, 3 }, { 1, 2, 3, 0 }, { 2, 3, 0, 1 }, { 3, 0, 1, 2 } };
 
-static float TriBrightness( int z0, int z1, int z2, int z3, bool left )
-{
-    const int SC = 14;
-    int iDY1, iDY2, kk;
-    if ( left )  { iDY1 = SC * ( z3 - z0 ); iDY2 = SC * ( z1 - z0 ); kk = -iDY1 - iDY2 + 128; }
-    else         { iDY1 = SC * ( z1 - z2 ); iDY2 = SC * ( z3 - z2 ); kk =  iDY1 + iDY2 + 128; }
-
-    float shadeF;
-    if ( kk < 0 )
-        shadeF = 0.0f;
-    else
-    {
-        float den = (float)( iDY1 * iDY1 + iDY2 * iDY2 + 128 * 64 );
-        shadeF = den > 0.0f ? ( (float)kk * (float)kk * 2.0f / den ) : 4.0f;
-        if ( shadeF > 7.0f ) shadeF = 7.0f;
-    }
-    float b = 1.06f + 0.09f * ( shadeF - 4.0f );    // neutral 1.06 (brighter)
-    return b < 0.80f ? 0.80f : ( b > 1.40f ? 1.40f : b );
-}
+using enterrain::TriBrightness;
 
 // Pre-resolved water animation: the frame textures for one (type,variant), looked up
 // ONCE per rebuild so the per-frame live draw is pure array indexing (no string build
 // / hash lookup per hex — that was a ~1s/frame Debug-STL hot spot).
-struct WaterAnim { const SDL2Terrain::Tile* frame[8]; int nFrames; };
+using enterrain::WaterAnim;   // { frame[8], nFrames } - enterrain/EnTerrainLayers.h
 
 // One water<->water feather band, computed once per rebuild and re-drawn LIVE each
 // frame with the NEIGHBOUR's current wave-frame texture — so lake/ocean/river seams
@@ -559,147 +417,57 @@ struct WaterBlendBand { int animIdx; CPoint p[4]; SDL_FPoint uv[4];     // p/uv 
                                                    // incPan compaction keeps a band only when its
                                                    // owner stays fully covered (must mirror the
                                                    // strip loop's skip test, not the band quad)
-static const Uint8 kWaterFeatherA = 135;   // match the land feather strength
 
-// Water wave animation: ocean/lake/coastline/river bake 8 frames (letters a-h),
-// swamp 5 (a-e). The engine animates water by drawing its terrain sprite as a
-// CSpriteView animation (DrawSimpleAnimation) that cycles those frames off the
-// game clock; the GPU path was rendering only frame 'a' (frozen). Cycle the
-// frame letter off theGame.GetFrame() so waves move again. kWaterHold = game
-// frames per wave frame (24 Hz sim → hold 3 ≈ one 8-frame cycle per second).
-static char WaterFrameLetter( int nFrames )
+// What a hex is DRAWN as: its sprite's type/index, except a coastline hex whose stored
+// facing disagrees with its neighbours' (a thin land tongue = floating land fragment):
+// enterrain::CoastDisplay re-picks the piece, or draws it as a shoal. Render only; the
+// map (and everything that plays on it) keeps the stored type and index.
+static void DisplayTypeIndex( CHex* phex, int& type, int& index )
 {
-    // Match the engine: water sprites advance one frame every Time()=6 game-frames
-    // (read live from the ocean sprite's ANIM_FRONT_1; DrawSimpleAnimation uses
-    // nHold = GetAnim(FRONT_1,0)->Time()). 8 frames * 6 = ~2 s per ripple cycle.
-    const int kWaterHold = 6;
-    int f = ( (int)theGame.GetFrame( ) / kWaterHold ) % nFrames;
-    return (char)( 'a' + f );
+    CTerrainSprite* ps = phex ? phex->GetSprite( ) : nullptr;
+    type  = ps ? ps->GetID( ) : -1;
+    index = ps ? ps->GetIndex( ) : 0;
+    if ( type != enterrain::TerrCoastline )
+        return;
+    const CHexCoord hc = phex->GetHex( );
+    auto at = [&]( int dx, int dy, int& t, int& i ) -> bool {
+        CHexCoord n( hc.X( ) + dx, hc.Y( ) + dy ); n.Wrap( );
+        CHex* p = theMap.GetHex( n );
+        CTerrainSprite* s = p ? p->GetSprite( ) : nullptr;
+        if ( !s ) return false;
+        t = s->GetID( ); i = s->GetIndex( );
+        return true;
+    };
+    int dt, di;
+    if ( enterrain::CoastDisplay( index, at, dt, di ) ) { type = dt; index = di; }
 }
 
+// Adapter: CHex -> enterrain::HexTileQuery; the tile rules live in enterrain::SelectTile.
 const SDL2Terrain::Tile* SDL2Terrain::TileForHex( CHex* phex, int iDir )
 {
     if ( !phex )
         return nullptr;
-    CTerrainSprite* psprite = phex->GetSprite( );
-    int             type    = psprite ? psprite->GetID( ) : -1;
+    int type, index;
+    DisplayTypeIndex( phex, type, index );
     if ( type < 0 || type >= kNumTypeNames )
         return nullptr;
 
-    const char* typeName = kTypeName[type];
-    if ( !typeName[0] )                                   // forest → plain ground
-        return GetDefaultForType( "plain" );
-
-    if ( type == CHex::road )
+    enterrain::HexTileQuery q;
+    q.type  = type;
+    q.index = index;
+    if ( type == CHex::fields )   // furrow rotation + grow stage are derived at draw time
     {
-        int F = psprite->GetIndex( );
-        if ( F < 0 || F > 11 ) F = CHex::r_x;
-        int srcDir  = kRoadSrcDir[F];
-        int viewDir = ( ( iDir - kRoadRot[F] ) % 4 + 4 ) % 4;
-        // The under-construction PREVIEW road (r_path) is a non-directional site overlay:
-        // only the dir-0 ("aa") variant is baked. Applying camera rotation made the rotated
-        // views miss it and fall back to GetDefaultForType — a COMPLETED road. Pin it to the
-        // dir-0 variant so the preview shows the construction graphic at every rotation.
-        if ( F == CHex::r_path ) viewDir = 0;
-        const Tile* t = Get( "road", srcDir, std::string( kDirPrefix[viewDir] ) + "010000" );
-        // Rotation-symmetric road shapes — the 4-way junction (r_x, srcDir 3) and the
-        // r_path preview (srcDir 4) — bake ONLY the "aa" view. A rotated camera
-        // (viewDir 1-3) finds no ac/ae/ag art and would fall through to the generic
-        // default road tile (the dotted-preview look) — so the 4-way junction only
-        // rendered correctly at camera dir 0. Fall back to this shape's own "aa" view
-        // first (same pattern as the coastline lookup below).
-        if ( !t ) t = Get( "road", srcDir, "aa010000" );
-        return t ? t : GetDefaultForType( "road" );
-    }
-
-    if ( type == CHex::coastline )
-    {
-        int F = psprite->GetIndex( );
-        if ( F < 0 || F > 38 ) F = 0;
-        int  srcDir  = kCoastSrcDir[F];
-        // The CAMERA term must SUBTRACT iDir (the camera rotates the world the
-        // opposite way the sprite view index advances). With (+iDir) the shore came
-        // out 180° wrong at camera dirs 1 and 3 (0/2 are self-symmetric under iDir
-        // negation, so they looked fine) — i.e. dirs 1 and 3 were swapped. Coastline
-        // is not 180°-symmetric (water on one side), so unlike straight roads the
-        // camera sign is visible. kCoastRot keeps its (+) sign (tile-rotation term).
-        int  viewDir = ( ( kCoastRot[F] - iDir ) % 4 + 4 ) % 4;
-        char fr      = WaterFrameLetter( 8 );                       // animate foam
-        std::string stem = std::string( kDirPrefix[viewDir] ) + "00" + fr + "000";
-        const Tile* t = Get( "coastline", srcDir, stem );
-        if ( !t ) t = Get( "coastline", srcDir, std::string( kDirPrefix[viewDir] ) + "00a000" );
-        // ROTATION-SYMMETRIC variants (3/7/11 — single F index, no MakeRotated gaps in
-        // the table above) ship only the "aa" view: the original draws that one view at
-        // every camera dir. Without this fallback a rotated camera (viewDir != 0) found
-        // no art at all and fell to the variant-0 default — a wrong-shaped shore.
-        if ( !t ) t = Get( "coastline", srcDir, std::string( "aa00" ) + fr + "000" );
-        if ( !t ) t = Get( "coastline", srcDir, "aa00a000" );
-        return t ? t : GetDefaultForType( "coastline" );
-    }
-
-    // Farm fields: the stored sprite is always (fields, variant 0); the visible
-    // furrow ROTATION and crop GROW STAGE are NOT in the sprite index — the engine
-    // derives them at draw time (CHex::Draw, terrain.cpp ~2517): furrow rotation =
-    // (X*2+Y)&3 (coord-based patchwork, NOT camera dir), grow stage = GetGrowStage().
-    // So the general integer-indexed path would freeze every plot at stage 0 / rot 0;
-    // rebuild the stem the same way the engine picks GetView(iViewDir, iViewDamage).
-    // Stem encoding (verified against source TGAs): first letter = stage (a/d/g =
-    // 0/1/2), second = direction (a/c/e/g = 0/1/2/3) — same dir convention as kDirPrefix.
-    if ( type == CHex::fields )
-    {
-        static const char kStageLetter[3] = { 'a', 'd', 'g' };
-        static const char kRotLetter[4]   = { 'a', 'c', 'e', 'g' };
-        int stage = phex->GetGrowStage( );
-        if ( stage < 0 ) stage = 0; else if ( stage > 2 ) stage = 2;
+        q.growStage = phex->GetGrowStage( );
         long off = theMap.GetHexOffPub( phex );
         int  eX  = theMap.Get_eX( );
-        int  hx  = eX ? (int)( off % eX ) : 0;
-        int  hy  = eX ? (int)( off / eX ) : 0;
-        int  rot = ( hx * 2 + hy ) & 3;
-        int  variant = psprite->GetIndex( );
-        std::string stem; stem += kStageLetter[stage]; stem += kRotLetter[rot]; stem += "010000";
-        const Tile* t = Get( "fields", variant, stem );
-        if ( !t ) t = Get( "fields", variant, "aa010000" );    // fallback: stage 0 / rot 0
-        return t ? t : GetDefaultForType( "fields" );
+        q.hx = eX ? (int)( off % eX ) : 0;
+        q.hy = eX ? (int)( off / eX ) : 0;
     }
-
-    // Open-water types: single direction (aa), animated frames a-h / a-e.
-    if ( type == CHex::ocean || type == CHex::lake || type == CHex::river || type == CHex::swamp )
-    {
-        int  variant = psprite->GetIndex( );
-        int  nFrames = ( type == CHex::swamp ) ? 5 : 8;
-        char fr      = WaterFrameLetter( nFrames );
-        const Tile* t = Get( typeName, variant, std::string( "aa00" ) + fr + "000" );
-        if ( !t ) t = Get( typeName, variant, "aa00a000" );        // static fallback
-        return t ? t : GetDefaultForType( typeName );
-    }
-
-    int variant = psprite->GetIndex( );
-    if ( type >= 0 && type < kNumTypeNames && variant >= 0 &&
-         variant < (int)s_typeVarPtr[type].size() && s_typeVarPtr[type][variant] )
-        return s_typeVarPtr[type][variant];            // integer-indexed (no string alloc)
-    return GetDefaultForType( typeName );
+    return enterrain::SelectTile( s_tileSet, q, iDir, (unsigned)theGame.GetFrame( ) );
 }
 
-// T5: which terrain types feather (soft-blend) at their boundaries. Matches the
-// engine's CHex::Draw exclusions EXACTLY: road / city / resources never feather.
-// Everything else (incl. fields) feathers — verified against the original; the
-// original also feathers same-type/different-variant (INOUT) and coastline IN/OUT.
-static bool Featherable( int type )
-{
-    return type >= 0 && type != CHex::road && type != CHex::city && type != CHex::resources;
-}
-
-// OPEN water (ocean/lake/river/swamp) never participates in the edge feather:
-// the coast should blend only on its TERRAIN side, not bleed into the water.
-// NOTE coastline is NOT open water — it's the land-side transition tile, so it
-// DOES feather toward its land neighbours (just not toward the ocean edge, which
-// this predicate excludes as a neighbour). Open water itself stays crisp.
-static bool IsOpenWater( int type )
-{
-    return type == CHex::ocean || type == CHex::lake ||
-           type == CHex::river || type == CHex::swamp;
-}
+using enterrain::Featherable;
+using enterrain::IsOpenWater;
 
 // ---- WHOLE-MAP FAR UNDERLAY ---------------------------------------------------------
 // A low-res render of the ENTIRE map (z3 art, down-scaled to fit a <=4096px texture),
@@ -742,15 +510,7 @@ static const SDL2Terrain::Tile* MemoTile( CHex* ph, int dir )
     return t;
 }
 
-// Tiles whose foam is ANIMATED and so must live in the live wave layer (a HOLE in
-// the cached s_rt, re-drawn into s_waterRT on each wave-tick) instead of being baked
-// statically. Open water plus the coastline (shore) tile — the latter is an opaque
-// directional tile whose foam cycles a-h just like the sea; baking it froze the foam
-// at one frame while the open ocean beside it kept moving.
-static bool IsAnimatedTile( int type )
-{
-    return IsOpenWater( type ) || type == CHex::coastline;
-}
+using enterrain::IsAnimatedTile;   // open water + coastline: live wave layer, a hole in s_rt
 
 // Build (or continue building) the whole-map far underlay for camera direction `dir`
 // (need not be the CURRENT dir — the idle prewarm builds cold directions ahead of a
@@ -1539,10 +1299,7 @@ struct FogCell { CHex* hex; CPoint c[4]; };
 struct SDL2TerrainRCtx
 {
     // ---- FILE-STATE (swapped with the globals around Render/Load) ----
-    std::unordered_map<std::string, SDL2Terrain::Tile>        tiles;
-    std::unordered_map<std::string, const SDL2Terrain::Tile*> byType;
-    std::unordered_map<std::string, const SDL2Terrain::Tile*> byTypeVar;
-    std::vector<const SDL2Terrain::Tile*> typeVarPtr[kNumTypeNames];
+    enterrain::TileSet tileSet;
     SDL_Renderer* renderer = nullptr;
     bool          loaded   = false;
     unsigned      loadGen  = 0;
@@ -1620,10 +1377,7 @@ struct SDL2TerrainRCtx
 void SDL2TerrainRCtx::swapFileState()
 {
     using std::swap;
-    swap( tiles,       SDL2Terrain::s_tiles );
-    swap( byType,      SDL2Terrain::s_byType );
-    swap( byTypeVar,   SDL2Terrain::s_byTypeVar );
-    for ( int i = 0; i < kNumTypeNames; ++i ) swap( typeVarPtr[i], s_typeVarPtr[i] );
+    tileSet.swap( s_tileSet );
     swap( renderer,    SDL2Terrain::s_renderer );
     swap( loaded,      SDL2Terrain::s_loaded );
     swap( loadGen,     s_loadGen );
@@ -1697,9 +1451,7 @@ void SDL2Terrain::ReleaseRenderer( SDL_Renderer* r )
     for ( SDL_Texture** pp : rts ) if ( *pp ) { SDL_DestroyTexture( *pp ); *pp = nullptr; }
     for ( int d = 0; d < 4; ++d ) if ( C.mapRT[d] ) { SDL_DestroyTexture( C.mapRT[d] ); C.mapRT[d] = nullptr; }
     // Tile asset textures bound to this renderer.
-    for ( auto& kv : C.tiles )
-        for ( SDL_Texture* t : kv.second.tex )
-            if ( t ) SDL_DestroyTexture( t );
+    C.tileSet.Unload( );
     s_rctx.erase( it );
 #if EN_GAMEPLAY_PROBES
     char m[96]; sprintf( m, "[REN] terrain context released for renderer %p (now %d live)",
@@ -1718,7 +1470,7 @@ int SDL2Terrain::Load( SDL_Renderer* renderer )
     SDL2TerrainRCtx& C = s_rctx[renderer];
     TerrainCtxScope _ctxScope( C );
     if ( s_loaded && s_renderer == renderer )
-        return (int)s_tiles.size();
+        return (int)s_tileSet.Size();
     if ( s_loaded )
         Unload();  // (per-ctx this can't happen — each context owns one renderer)
 
@@ -1731,90 +1483,14 @@ int SDL2Terrain::Load( SDL_Renderer* renderer )
     LogTerrain( "Loading terrain tiles from: " + dir );
 
     s_renderer = renderer;
-    int files = 0;
-
-    // Tracks the stem currently chosen for each "type_variant" representative, so
-    // the choice is deterministic (lexicographically smallest = "aa00a000" = dir
-    // aa, letter a) rather than dependent on FindFirstFile enumeration order. The
-    // engine always draws view (xiDir, damage 0) for non-field terrain
-    // (terrain.cpp CHex::Draw), i.e. letter 'a'; multi-letter types reaching the
-    // general s_byTypeVar path (river/swamp) must resolve to that 'a' tile.
-    std::unordered_map<std::string, std::string> tvStem;
-
-    WIN32_FIND_DATAA fd;
-    HANDLE h = FindFirstFileA( ( dir + "\\*.png" ).c_str(), &fd );
-    if ( h != INVALID_HANDLE_VALUE )
-    {
-        do
-        {
-            if ( fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY )
-                continue;
-
-            std::string name     = fd.cFileName;    // e.g. coastline_0_ac00h000_z2.png
-            std::string baseName = name.substr( 0, name.find_last_of( '.' ) );
-
-            std::string type, tstem;
-            int variant = 0, zoom = 0;
-            if ( !ParseName( baseName, type, variant, tstem, zoom ) )
-                continue;
-
-            int tw = 0, th = 0;
-            // stb_image's stbi_load() calls fopen() DIRECTLY (not through the Win32
-            // file shim that translates '\'→'/'), so a backslash join is a literal
-            // filename char on Linux and every tile load fails → 0 tiles → black GPU
-            // terrain. Use '/' off-Windows (Windows accepts either separator).
-#ifdef _WIN32
-            SDL_Texture* tex = LoadPng( renderer, dir + "\\" + name, tw, th );
-#else
-            SDL_Texture* tex = LoadPng( renderer, dir + "/" + name, tw, th );
-#endif
-            if ( !tex )
-            {
-                LogTerrain( "WARN: failed to load " + name );
-                continue;
-            }
-
-            Tile& tile = s_tiles[MakeKey( type, variant, tstem )];
-            tile.tex[zoom] = tex;
-            if ( zoom == 0 ) { tile.w = tw; tile.h = th; }
-            tile.shade       = TypeShade( type );
-            tile.drawVert    = TypeDrawVert( type );
-            tile.transparent = TypeTransparent( type );
-            if ( s_byType.find( type ) == s_byType.end() )
-                s_byType[type] = &tile;   // first-seen representative for first-light
-            // Per-(type,variant) representative: deterministically the tile with
-            // the lexicographically smallest stem ("aa00a000" — direction aa,
-            // letter a = the engine's damage-0 view). For single-tile types this
-            // is the exact tile; for multi-letter types on the general path
-            // (river/swamp) it pins the letter to 'a' regardless of scan order.
-            if ( zoom == 0 )
-            {
-                std::string tvKey = type + "_" + std::to_string( variant );
-                auto        stemIt = tvStem.find( tvKey );
-                if ( stemIt == tvStem.end() || tstem < stemIt->second )
-                {
-                    s_byTypeVar[tvKey] = &tile;
-                    tvStem[tvKey]      = tstem;
-                    int ti = TypeNameToInt( type );          // integer-indexed mirror
-                    if ( ti >= 0 )
-                    {
-                        if ( (int)s_typeVarPtr[ti].size() <= variant )
-                            s_typeVarPtr[ti].resize( variant + 1, nullptr );
-                        s_typeVarPtr[ti][variant] = &tile;
-                    }
-                }
-            }
-            ++files;
-        } while ( FindNextFileA( h, &fd ) );
-        FindClose( h );
-    }
+    int files = s_tileSet.LoadDir( renderer, dir, []( const std::string& m ) { LogTerrain( m ); } );
 
     s_loaded = true;
     s_anyLoaded = true;   // renderer-agnostic gate (IsLoaded)
     ++s_loadGen;   // invalidate the terrain mesh cache (textures were (re)created)
-    LogTerrain( "Loaded " + std::to_string( s_tiles.size() ) + " tiles (" +
+    LogTerrain( "Loaded " + std::to_string( s_tileSet.Size() ) + " tiles (" +
                 std::to_string( files ) + " PNGs)." );
-    return (int)s_tiles.size();
+    return (int)s_tileSet.Size();
 }
 
 void SDL2Terrain::Render( SDL_Renderer* r, const CAnimAtr& aa )
@@ -2406,101 +2082,46 @@ void SDL2Terrain::Render( SDL_Renderer* r, const CAnimAtr& aa )
     // (type<<8|variant) -> index into s_waterAnims for THIS rebuild; resolves each
     // water animation's frame textures once (string build + hash lookup happens here,
     // ~19 groups, not per-hex-per-frame).
-    std::unordered_map<int,int> waterAnimKey;
+    // Anim tables are resolved by enterrain::WaterAnimResolver (key maps live for THIS
+    // rebuild; the tables append to s_waterAnims). The wrappers keep the diagnostics.
+    enterrain::WaterAnimResolver wres( s_waterAnims );
     auto resolveWaterAnim = [&]( int wtype, int wvar ) -> int {
-        int key = ( wtype << 8 ) | ( wvar & 0xFF );
-        auto it = waterAnimKey.find( key );
-        if ( it != waterAnimKey.end( ) ) return it->second;
-        WaterAnim wa;
-        wa.nFrames = ( wtype == CHex::swamp ) ? 5 : 8;
-        const char* tn = ( wtype >= 0 && wtype < kNumTypeNames ) ? kTypeName[wtype] : "ocean";
-        int wMiss = 0;
-        for ( int f = 0; f < wa.nFrames; ++f )
-        {
-            char fr = (char)( 'a' + f );
-            const Tile* t = Get( tn, wvar, std::string( "aa00" ) + fr + "000" );
-            if ( !t ) t = Get( tn, wvar, "aa00a000" );
-            if ( !t ) ++wMiss;
-            wa.frame[f] = t;
-        }
+        enterrain::WaterAnimResolver::Miss m;
+        int idx = wres.Water( s_tileSet, wtype, wvar, &m );
         // DIAGNOSTIC (shore/water data bugs): a variant with NO art points at bad map data
         // (e.g. worldgen writing an out-of-range variant index). The bake falls back so it
         // still renders, but log what was asked for so the generation bug can be chased.
-        if ( wMiss )
+        if ( m.computed && m.nullFrames )
         {
-            Perf::CounterAdd( "rb.watermiss", wMiss );
+            Perf::CounterAdd( "rb.watermiss", m.nullFrames );
             static int s_wLogged = 0;
             if ( s_wLogged < 8 )
-            { char b[160]; sprintf_s( b, "water anim miss: type=%s variant=%d nullFrames=%d/%d", tn, wvar, wMiss, wa.nFrames ); LogTerrain( b ); ++s_wLogged; }
+            { char b[160]; sprintf_s( b, "water anim miss: type=%s variant=%d nullFrames=%d/%d", m.typeName, wvar, m.nullFrames, m.nFrames ); LogTerrain( b ); ++s_wLogged; }
         }
-        int idx = (int)s_waterAnims.size( );
-        s_waterAnims.push_back( wa );
-        waterAnimKey[key] = idx;
         return idx;
     };
 
-    // Coastline anim resolver — same WaterAnim table, but the shore is DIRECTIONAL
-    // (per-hex facing index F 0-38) so it can't be keyed on (type,variant) like open
-    // water. The camera dir is fixed for the whole rebuild, so key on F alone and bake
-    // the 8 foam frames (a-h) for that orientation. Mirrors TileForHex's coastline arm
-    // (kCoastSrcDir / kCoastRot / viewDir = kCoastRot[F] - cameraDir). Entries land in
-    // the SAME s_waterAnims vector, so the per-tick bake animates them like the sea.
-    std::unordered_map<int,int> coastAnimKey;
+    // Coastline anim: DIRECTIONAL (per-hex facing F 0-38), keyed on F (camera dir fixed
+    // for the rebuild); 8 foam frames, same table, so the bake animates the shore too.
     auto resolveCoastAnim = [&]( int F ) -> int {
-        bool clamped = ( F < 0 || F > 38 );   // out-of-range facing = bad SHORE data (worldgen/placement)
-        if ( clamped ) F = 0;
-        auto it = coastAnimKey.find( F );
-        if ( it != coastAnimKey.end( ) ) { if ( clamped ) Perf::CounterAdd( "rb.coastclamp", 1 ); return it->second; }
-        WaterAnim wa; wa.nFrames = 8;
-        int srcDir  = kCoastSrcDir[F];
-        int viewDir = ( ( kCoastRot[F] - ( aa.m_iDir & 3 ) ) % 4 + 4 ) % 4;
-        int cMiss = 0;
-        for ( int f = 0; f < 8; ++f )
-        {
-            char fr = (char)( 'a' + f );
-            std::string stem = std::string( kDirPrefix[viewDir] ) + "00" + fr + "000";
-            const Tile* t = Get( "coastline", srcDir, stem );
-            if ( !t ) t = Get( "coastline", srcDir, std::string( kDirPrefix[viewDir] ) + "00a000" );
-            // Rotation-symmetric variants (3/7/11) ship only the "aa" view — the original
-            // draws it at every camera dir. Without this, a rotated camera resolved an
-            // ALL-NULL anim for these shores → the hex's hole in s_rt had nothing under it
-            // (the "black diamond in shallow water" bug; post-wFall, a wrong open-sea fill).
-            if ( !t ) t = Get( "coastline", srcDir, std::string( "aa00" ) + fr + "000" );
-            if ( !t ) t = Get( "coastline", srcDir, "aa00a000" );
-            if ( !t ) ++cMiss;
-            wa.frame[f] = t;
-        }
+        enterrain::WaterAnimResolver::Miss m;
+        int idx = wres.Coast( s_tileSet, F, aa.m_iDir & 3, &m );
+        if ( !m.computed ) { if ( m.clamped ) Perf::CounterAdd( "rb.coastclamp", 1 ); return idx; }
         // DIAGNOSTIC (shore generation/placement bugs): a facing whose art doesn't exist
         // means the map data asked for a shore orientation the tile set doesn't have.
-        // Rendering falls back (frame 0 → open sea), but log the request for the data fix.
-        if ( cMiss || clamped )
+        if ( m.nullFrames || m.clamped )
         {
-            Perf::CounterAdd( "rb.coastmiss", __max( cMiss, 1 ) );
+            Perf::CounterAdd( "rb.coastmiss", __max( m.nullFrames, 1 ) );
             static int s_cLogged = 0;
             if ( s_cLogged < 8 )
-            { char b[160]; sprintf_s( b, "coast anim miss: F=%d%s srcDir=%d viewDir=%d nullFrames=%d/8", F, clamped ? " (CLAMPED out-of-range)" : "", srcDir, viewDir, cMiss ); LogTerrain( b ); ++s_cLogged; }
+            { char b[160]; sprintf_s( b, "coast anim miss: F=%d%s srcDir=%d viewDir=%d nullFrames=%d/8", m.clamped ? 0 : F, m.clamped ? " (CLAMPED out-of-range)" : "", m.srcDir, m.viewDir, m.nullFrames ); LogTerrain( b ); ++s_cLogged; }
         }
-        int idx = (int)s_waterAnims.size( );
-        s_waterAnims.push_back( wa );
-        coastAnimKey[F] = idx;
         return idx;
     };
 
-    // A STATIC (non-animated) neighbour tile exposed as a 1-frame "anim", so the
-    // coastline's LAND-side feather can ride the SAME s_waterBlend -> s_waterRT pipeline
-    // as its water-side blend. The shore lives in the live layer (a hole in s_rt), so its
-    // feather must bake into s_waterRT OVER the opaque coast — not into the transparent-
-    // backed s_rt, where a partial-alpha band blends toward black (the "dark fringe").
-    std::unordered_map<const Tile*,int> staticAnimKey;
-    auto resolveStaticAnim = [&]( const Tile* t ) -> int {
-        auto it = staticAnimKey.find( t );
-        if ( it != staticAnimKey.end( ) ) return it->second;
-        WaterAnim wa; wa.nFrames = 1; wa.frame[0] = t;
-        int idx = (int)s_waterAnims.size( );
-        s_waterAnims.push_back( wa );
-        staticAnimKey[t] = idx;
-        return idx;
-    };
+    // A STATIC neighbour tile as a 1-frame "anim": the coastline's LAND-side feather
+    // rides the water layer too (over the opaque coast, not s_rt's transparent hole).
+    auto resolveStaticAnim = [&]( const Tile* t ) -> int { return wres.Static( t ); };
 
     // Extend the iteration region to fill the margin band. Estimate screen px per
     // view-hex step from two probe projections, then convert kMarginPx to hexes.
@@ -2855,8 +2476,8 @@ void SDL2Terrain::Render( SDL_Renderer* r, const CAnimAtr& aa )
             rowAny = true;
             ++_hexCnt;   // PROFILE: hexes actually emitted this rebuild
 
-            CTerrainSprite* psprite = phex->GetSprite( );
-            int             type    = psprite ? psprite->GetID( ) : -1;
+            int type, dindex;   // as DRAWN (DisplayTypeIndex: shore fix / shoals)
+            DisplayTypeIndex( phex, type, dindex );
             if ( type < 0 || type >= kNumTypeNames )
                 continue;
 
@@ -2904,6 +2525,100 @@ void SDL2Terrain::Render( SDL_Renderer* r, const CAnimAtr& aa )
             // run only on a mesh REBUILD now (the pan path blits the cached texture),
             // so the smooth fog blur is affordable at every zoom.
             int  hx = hexcoord.X( ), hy = hexcoord.Y( );   // (feather below uses these)
+
+            // Adapters for the shared per-hex layer code (enterrain::EmitWaterHex /
+            // EmitFeatherHex): neighbour access over theMap + the memoized tile, and a sink
+            // that writes this TU's water-layer / feather / retained-mesh records.
+            struct HexNbr
+            {
+                int hx, hy;
+                decltype( cachedTile )& tileOf;
+                CHex* pn[4];
+                bool Get( int e, int& t, int& i )
+                {
+                    CHexCoord nhc( hx + enterrain::kNbrDX[e], hy + enterrain::kNbrDY[e] ); nhc.Wrap( );
+                    CHex* p = theMap.GetHex( nhc );
+                    pn[e] = p;
+                    if ( !p ) return false;
+                    DisplayTypeIndex( p, t, i );   // as drawn (shore fix / shoals)
+                    return true;
+                }
+                const Tile* TileOf( int e ) { return tileOf( pn[e] ); }   // memoized (once per hex/rebuild)
+            } hexNbr{ hx, hy, cachedTile, { nullptr, nullptr, nullptr, nullptr } };
+
+            struct LayerSink
+            {
+                CHex* phex; const CPoint* pts; const CPoint* cpts;
+                int minX, minY, maxX, maxY; bool retainCap;
+                std::vector<CHex*>& waterHex; std::vector<CPoint>& waterPos; std::vector<int>& waterAnimOf;
+                std::vector<WaterCell>& waterCells; std::vector<WaterBlendBand>& waterBlend;
+                std::vector<WaterBandCell>& waterBandCells; std::vector<FeatherBand>& featherBands;
+                std::vector<BaseCell>& baseCells;
+                SDL_Texture*& lastFeatTex; std::vector<SDL_Vertex>*& lastFeatVb;
+                decltype( rowFeather )& rowFeather; decltype( rowBucket )& rowBucket;
+
+                // CONTENT-space copy of a band (retained mesh; interior re-derived from content corners)
+                void ContentBand( const enterrain::EdgeBand& b, CPoint c[4] ) const
+                {
+                    const float kBand = enterrain::kBand;
+                    float fccx = ( cpts[0].x + cpts[1].x + cpts[2].x + cpts[3].x ) * 0.25f;
+                    float fccy = ( cpts[0].y + cpts[1].y + cpts[2].y + cpts[3].y ) * 0.25f;
+                    c[0] = cpts[b.c0]; c[1] = cpts[b.c1];
+                    c[2] = CPoint( (int)( cpts[b.c0].x + kBand*( fccx - cpts[b.c0].x ) ), (int)( cpts[b.c0].y + kBand*( fccy - cpts[b.c0].y ) ) );
+                    c[3] = CPoint( (int)( cpts[b.c1].x + kBand*( fccx - cpts[b.c1].x ) ), (int)( cpts[b.c1].y + kBand*( fccy - cpts[b.c1].y ) ) );
+                }
+                void WaterDiamond( int animIdx )
+                {
+                    waterHex.push_back( phex );
+                    waterPos.push_back( pts[0] ); waterPos.push_back( pts[1] );
+                    waterPos.push_back( pts[2] ); waterPos.push_back( pts[3] );
+                    waterAnimOf.push_back( animIdx );
+                    if ( retainCap )
+                        waterCells.push_back( { phex, { cpts[0], cpts[1], cpts[2], cpts[3] }, animIdx } );
+                }
+                void WaterBand( int animIdx, const enterrain::EdgeBand& b )
+                {
+                    WaterBlendBand wb;
+                    wb.animIdx = animIdx;
+                    wb.p[0] = pts[b.c0];                           wb.uv[0] = b.u0;
+                    wb.p[1] = pts[b.c1];                           wb.uv[1] = b.u1;
+                    wb.p[2] = CPoint( (int)b.i0x, (int)b.i0y );    wb.uv[2] = b.iu0;
+                    wb.p[3] = CPoint( (int)b.i1x, (int)b.i1y );    wb.uv[3] = b.iu1;
+                    wb.hexMin = CPoint( minX, minY ); wb.hexMax = CPoint( maxX, maxY );  // owner hex bbox (compaction key)
+                    waterBlend.push_back( wb );
+                    if ( retainCap )
+                    {
+                        WaterBandCell bc; bc.animIdx = animIdx;
+                        ContentBand( b, bc.c );
+                        for ( int k = 0; k < 4; ++k ) bc.uv[k] = wb.uv[k];
+                        bc.hexMin = CPoint( __min( __min( cpts[0].x, cpts[1].x ), __min( cpts[2].x, cpts[3].x ) ),
+                                            __min( __min( cpts[0].y, cpts[1].y ), __min( cpts[2].y, cpts[3].y ) ) );
+                        bc.hexMax = CPoint( __max( __max( cpts[0].x, cpts[1].x ), __max( cpts[2].x, cpts[3].x ) ),
+                                            __max( __max( cpts[0].y, cpts[1].y ), __max( cpts[2].y, cpts[3].y ) ) );
+                        waterBandCells.push_back( bc );
+                    }
+                }
+                void LandBand( const Tile* ntile, SDL_Texture* ntex, const enterrain::EdgeBand& b )
+                {
+                    SDL_Vertex v[4];   // e0,e1,n1,n0 - QuadIndices() expands to 2 tris
+                    enterrain::LandBandVerts( pts, b, v );
+                    if ( ntex != lastFeatTex ) { lastFeatVb = rowBucket( rowFeather, ntex ); lastFeatTex = ntex; }
+                    std::vector<SDL_Vertex>& fvb = *lastFeatVb;   // batched within this row
+                    if ( !fvb.capacity( ) ) VbAcquire( fvb, 256 );  // pooled capacity
+                    fvb.push_back( v[0] ); fvb.push_back( v[1] ); fvb.push_back( v[2] ); fvb.push_back( v[3] );
+                    if ( retainCap )   // the band in CONTENT space, attached to THIS hex's base cell
+                    {
+                        FeatherBand fb; fb.tile = ntile;
+                        ContentBand( b, fb.c );
+                        fb.uv[0] = b.u0; fb.uv[1] = b.u1; fb.uv[2] = b.iu0; fb.uv[3] = b.iu1;
+                        featherBands.push_back( fb );
+                        if ( !baseCells.empty( ) ) baseCells.back( ).fCount++;
+                    }
+                }
+            } layerSink{ phex, pts, cpts, minX, minY, maxX, maxY, retainCap,
+                         s_waterHex, s_waterPos, s_waterAnimOf, s_waterCells, s_waterBlend,
+                         s_waterBandCells, s_featherBands, s_baseCells,
+                         lastFeatTex, lastFeatVb, rowFeather, rowBucket };
             // PERF: the per-corner soft-fog alphas are filled by the throttle re-sample
             // (fast, precomputed neighbours) on EVERY fog update — including this rebuild
             // frame (the fog block below now re-samples on rebuild too). So skip the 9
@@ -2976,98 +2691,16 @@ void SDL2Terrain::Render( SDL_Renderer* r, const CAnimAtr& aa )
             // current frame) + its 4 corner positions (texture space). Also cache a
             // water<->water blend band toward each DIFFERING open-water neighbour, drawn
             // live (neighbour's current frame) so lake/ocean/river seams blend + sync.
-            if ( IsOpenWater( type ) )
+            // Open water: its diamond + seam bands toward each DIFFERENT open-water body,
+            // drawn live with the neighbour's frame (lake/ocean/river seams blend + sync),
+            // at ALL zooms (Bug #21). Coastline: its diamond in the live layer too, so the
+            // shore foam animates (its softening is the feather pass below).
+            // Shared code: enterrain::EmitWaterHex.
+            if ( IsAnimatedTile( type ) )
             {
                 QueryPerformanceCounter( &_pa );
-                s_waterHex.push_back( phex );
-                s_waterPos.push_back( pts[0] ); s_waterPos.push_back( pts[1] );
-                s_waterPos.push_back( pts[2] ); s_waterPos.push_back( pts[3] );
-                int thisWaterAnim = resolveWaterAnim( type, psprite->GetIndex( ) );
-                s_waterAnimOf.push_back( thisWaterAnim );
-                if ( retainCap )
-                    s_waterCells.push_back( { phex, { cpts[0], cpts[1], cpts[2], cpts[3] }, thisWaterAnim } );
-
-                static const SDL_FPoint wfuv[4] = { {0.f,0.5f}, {0.5f,0.f}, {1.f,0.5f}, {0.5f,1.f} };
-                static const int wDX[4] = { 0, 1, 0, -1 };
-                static const int wDY[4] = { -1, 0, 1, 0 };
-                static const int wSlot[4][4] = { {0,1,2,3}, {3,0,1,2}, {2,3,0,1}, {1,2,3,0} };
-                const float kBandW = 0.38f;
-                float wcx = ( pts[0].x + pts[1].x + pts[2].x + pts[3].x ) * 0.25f;
-                float wcy = ( pts[0].y + pts[1].y + pts[2].y + pts[3].y ) * 0.25f;
-                // Water<->water seam bands at ALL zooms (Bug #21). The earlier z0/z1-only
-                // gate assumed the operator's "no blending zoomed out" complaint was about
-                // LAND seams (those already feather at all zooms below) — but it was
-                // re-reported (#21, operator twice) specifically about WATER: river/ocean/
-                // lake seams must blend when zoomed OUT too, else the SAME spot blends in but
-                // not out. The cost is the 4 GetHex neighbour walks per open-water hex at
-                // REBUILD time (~250ms on a 1024 map at z3) — one-time per zoom/dir gesture,
-                // NOT per-frame, so it doesn't touch the static-frame fps goal; resolveWaterAnim
-                // is a cached lookup (no TileForHex re-resolve). Accepted for blend consistency.
-                for ( int e = 0; e < 4; ++e )
-                {
-                    CHexCoord wnhc( hx + wDX[e], hy + wDY[e] ); wnhc.Wrap( );
-                    CHex* wpn = theMap.GetHex( wnhc );
-                    if ( !wpn ) continue;
-                    CTerrainSprite* wns = wpn->GetSprite( );
-                    int wntype = wns ? wns->GetID( ) : -1;
-                    if ( !IsOpenWater( wntype ) ) continue;          // water<->water only
-                    // Skip the expensive per-neighbour TileForHex (it was ~50% of the whole
-                    // rebuild at max zoom-out): the seam-band only needs which water BODY the
-                    // neighbour is, i.e. its animation index. Same anim == same type+variant
-                    // == same tile == no seam to blend. resolveWaterAnim is a cached hash
-                    // lookup; TileForHex re-resolved road/coast/variant strings for nothing.
-                    int wnAnim = resolveWaterAnim( wntype, wns->GetIndex( ) );
-                    if ( wnAnim == thisWaterAnim ) continue;   // same water body → no band
-                    int c0 = wSlot[aa.m_iDir & 3][e];
-                    int c1 = wSlot[aa.m_iDir & 3][( e + 1 ) & 3];
-                    float i0x = pts[c0].x + kBandW * ( wcx - pts[c0].x );
-                    float i0y = pts[c0].y + kBandW * ( wcy - pts[c0].y );
-                    float i1x = pts[c1].x + kBandW * ( wcx - pts[c1].x );
-                    float i1y = pts[c1].y + kBandW * ( wcy - pts[c1].y );
-                    SDL_FPoint u0 = wfuv[c0], u1 = wfuv[c1];
-                    WaterBlendBand wbnd;
-                    wbnd.animIdx = wnAnim;
-                    wbnd.p[0] = pts[c0];                       wbnd.uv[0] = u0;
-                    wbnd.p[1] = pts[c1];                       wbnd.uv[1] = u1;
-                    wbnd.p[2] = CPoint( (int)i0x, (int)i0y );  wbnd.uv[2] = { u0.x + kBandW*(0.5f-u0.x), u0.y + kBandW*(0.5f-u0.y) };
-                    wbnd.p[3] = CPoint( (int)i1x, (int)i1y );  wbnd.uv[3] = { u1.x + kBandW*(0.5f-u1.x), u1.y + kBandW*(0.5f-u1.y) };
-                    wbnd.hexMin = CPoint( minX, minY ); wbnd.hexMax = CPoint( maxX, maxY );  // owner hex bbox (compaction key)
-                    s_waterBlend.push_back( wbnd );
-                    if ( retainCap )   // same band in CONTENT space (interior re-derived from content corners)
-                    {
-                        float wccx = ( cpts[0].x + cpts[1].x + cpts[2].x + cpts[3].x ) * 0.25f;
-                        float wccy = ( cpts[0].y + cpts[1].y + cpts[2].y + cpts[3].y ) * 0.25f;
-                        WaterBandCell bc; bc.animIdx = wnAnim;
-                        bc.c[0] = cpts[c0]; bc.uv[0] = wbnd.uv[0];
-                        bc.c[1] = cpts[c1]; bc.uv[1] = wbnd.uv[1];
-                        bc.c[2] = CPoint( (int)( cpts[c0].x + kBandW*( wccx - cpts[c0].x ) ), (int)( cpts[c0].y + kBandW*( wccy - cpts[c0].y ) ) ); bc.uv[2] = wbnd.uv[2];
-                        bc.c[3] = CPoint( (int)( cpts[c1].x + kBandW*( wccx - cpts[c1].x ) ), (int)( cpts[c1].y + kBandW*( wccy - cpts[c1].y ) ) ); bc.uv[3] = wbnd.uv[3];
-                        bc.hexMin = CPoint( __min( __min( cpts[0].x, cpts[1].x ), __min( cpts[2].x, cpts[3].x ) ),
-                                            __min( __min( cpts[0].y, cpts[1].y ), __min( cpts[2].y, cpts[3].y ) ) );
-                        bc.hexMax = CPoint( __max( __max( cpts[0].x, cpts[1].x ), __max( cpts[2].x, cpts[3].x ) ),
-                                            __max( __max( cpts[0].y, cpts[1].y ), __max( cpts[2].y, cpts[3].y ) ) );
-                        s_waterBandCells.push_back( bc );
-                    }
-                }
-                QueryPerformanceCounter( &_pb ); _accWater += _pb.QuadPart - _pa.QuadPart;
-            }
-
-            // Capture the COASTLINE shore for the live layer too (so its foam animates).
-            // Reuses the open-water diamond machinery — same parallel arrays, same fixed
-            // diamond UVs in the geometry build — but resolves a DIRECTIONAL coast anim
-            // (keyed on the hex facing F). No water<->water blend band: the shore's
-            // softening into land/sea is the FEATHER pass below (which still runs for
-            // coastline, baking thin neighbour slivers into s_rt OVER this hole).
-            if ( type == CHex::coastline )
-            {
-                QueryPerformanceCounter( &_pa );
-                s_waterHex.push_back( phex );
-                s_waterPos.push_back( pts[0] ); s_waterPos.push_back( pts[1] );
-                s_waterPos.push_back( pts[2] ); s_waterPos.push_back( pts[3] );
-                int coastAnim = resolveCoastAnim( psprite->GetIndex( ) );
-                s_waterAnimOf.push_back( coastAnim );
-                if ( retainCap )
-                    s_waterCells.push_back( { phex, { cpts[0], cpts[1], cpts[2], cpts[3] }, coastAnim } );
+                enterrain::EmitWaterHex( type, dindex, pts, aa.m_iDir & 3,
+                                         resolveWaterAnim, resolveCoastAnim, hexNbr, layerSink );
                 QueryPerformanceCounter( &_pb ); _accWater += _pb.QuadPart - _pa.QuadPart;
             }
 
@@ -3150,137 +2783,10 @@ void SDL2Terrain::Render( SDL_Renderer* r, const CAnimAtr& aa )
             // z0/z1 when the 4-neighbour resolution meant fresh TileForHex calls (~3s at max
             // zoom-out); cachedTile is now backed by the PERSISTENT per-direction memo, so the
             // neighbour lookups are warm array hits. (Re-measured 2026-06-09: see rb.feather.)
-            if ( Featherable( type ) && !IsOpenWater( type ) )
-            {
-                static const SDL_FPoint fuv[4] = { {0.f,0.5f}, {0.5f,0.f}, {1.f,0.5f}, {0.5f,1.f} };
-                static const int nbrDX[4] = { 0, 1, 0, -1 };
-                static const int nbrDY[4] = { -1, 0, 1, 0 };
-                // Camera-rotation corner permutation — MUST mirror WorldToWindowHex's
-                // xaaiIndex (terrain.cpp): world corner i → screen slot kCornerSlot[dir][i].
-                // The feather bleeds along the diamond edge shared with map-neighbour e,
-                // which is the WORLD edge (corner e, e+1) → screen slots kCornerSlot[dir][e]
-                // and [e+1]. Omitting this made the bands attach to the wrong edges at
-                // dirs 1/2/3 (the softening "broke" on rotation).
-                static const int kCornerSlot[4][4] =
-                    { { 0, 1, 2, 3 }, { 3, 0, 1, 2 }, { 2, 3, 0, 1 }, { 1, 2, 3, 0 } };
-                const Uint8  kFeatherA = 135;    // visible but not a wash (205 was too strong, 70 too faint)
-                const float  kBand     = 0.38f;  // band depth: edge → 38% toward centre
-                float cxF = ( pts[0].x + pts[1].x + pts[2].x + pts[3].x ) * 0.25f;
-                float cyF = ( pts[0].y + pts[1].y + pts[2].y + pts[3].y ) * 0.25f;
-
-                const int idxSelf = psprite->GetIndex( );
-                for ( int e = 0; e < 4; ++e )
-                {
-                    CHexCoord nhc( hx + nbrDX[e], hy + nbrDY[e] ); nhc.Wrap( );
-                    CHex* pn = theMap.GetHex( nhc );
-                    if ( !pn ) continue;
-                    CTerrainSprite* ns = pn->GetSprite( );
-                    int ntype = ns ? ns->GetID( ) : -1;
-                    if ( !Featherable( ntype ) )
-                        continue;
-                    // FAST IDENTICAL-NEIGHBOUR SKIP: same type+variant = same tile = no band
-                    // (the `ntile == tile` check below would drop it anyway, but only AFTER a
-                    // cachedTile resolve). Big uniform fields are the COMMON case, so this
-                    // skips the memo hit for most edges — the feather pass's main cost at
-                    // zoom-out (rb.feather ~200ms of a 1.1s z3 rebuild on the 1024 map).
-                    // fields excluded: its drawn tile also depends on grow stage + coord
-                    // rotation, so equal (type,index) does NOT imply the same art there.
-                    if ( ntype == type && ntype != CHex::fields && ns->GetIndex( ) == idxSelf )
-                        continue;
-                    // Coast feather model (b75d66c "coast land-side" + this session's water-side):
-                    //  - The COASTLINE tile feathers toward ALL its non-coast neighbours — LAND
-                    //    (its terrain-side shore blend) AND OPEN WATER (its water-side blend into
-                    //    the live sea). Its bands bake into s_waterRT, over the opaque animated
-                    //    coast (NOT s_rt, whose coast holes are transparent-black → dark fringe).
-                    //  - A NON-coast tile feathers land<->land only: never toward open water (the
-                    //    bright-land/dark-water seam reads as a muddy smear) and never ONTO a
-                    //    coastline neighbour (the coast feathers itself — avoids a double band and
-                    //    keeps rough/rock off the waterline).
-                    if ( type == CHex::coastline )
-                    {
-                        if ( ntype == CHex::coastline )
-                            continue;                       // coast<->coast: one continuous shore, no seam
-                    }
-                    else if ( IsOpenWater( ntype ) || ntype == CHex::coastline )
-                        continue;
-                    const Tile* ntile = cachedTile( pn );   // memoized (computed once per hex/rebuild)
-                    SDL_Texture* nftex = TileTexAnyZoom( ntile, zoom );   // mip fallback (see helper)
-                    if ( !ntile || !nftex || ntile == tile ) continue;
-
-                    int   c0 = kCornerSlot[aa.m_iDir & 3][e];
-                    int   c1 = kCornerSlot[aa.m_iDir & 3][( e + 1 ) & 3];
-                    Uint8 g0 = 255, g1 = 255;   // full bright; fog dim is the overlay
-
-                    // Inset points: a short way from each edge endpoint toward the
-                    // tile centre. Edge endpoints full alpha → inset 0 → thin band.
-                    float i0x = pts[c0].x + kBand * ( cxF - pts[c0].x );
-                    float i0y = pts[c0].y + kBand * ( cyF - pts[c0].y );
-                    float i1x = pts[c1].x + kBand * ( cxF - pts[c1].x );
-                    float i1y = pts[c1].y + kBand * ( cyF - pts[c1].y );
-                    SDL_FPoint u0 = fuv[c0], u1 = fuv[c1];
-                    SDL_FPoint iu0 = { u0.x + kBand*(0.5f-u0.x), u0.y + kBand*(0.5f-u0.y) };
-                    SDL_FPoint iu1 = { u1.x + kBand*(0.5f-u1.x), u1.y + kBand*(0.5f-u1.y) };
-
-                    // The SHORE's feather rides the WATER layer (bakes into s_waterRT, over the
-                    // opaque animated coast) — NOT s_rt, whose coast holes are transparent-black
-                    // and would darken this partial-alpha band into a black fringe. Reuses the
-                    // water-blend-band path: an OPEN-WATER neighbour blends with the LIVE sea
-                    // frame; a LAND neighbour via a 1-frame static "anim".
-                    if ( type == CHex::coastline )
-                    {
-                        WaterBlendBand cb;
-                        cb.animIdx = IsOpenWater( ntype ) ? resolveWaterAnim( ntype, ns->GetIndex( ) )
-                                                          : resolveStaticAnim( ntile );
-                        cb.p[0] = pts[c0];                       cb.uv[0] = u0;
-                        cb.p[1] = pts[c1];                       cb.uv[1] = u1;
-                        cb.p[2] = CPoint( (int)i0x, (int)i0y );  cb.uv[2] = iu0;
-                        cb.p[3] = CPoint( (int)i1x, (int)i1y );  cb.uv[3] = iu1;
-                        cb.hexMin = CPoint( minX, minY ); cb.hexMax = CPoint( maxX, maxY );  // owner hex bbox (compaction key)
-                        s_waterBlend.push_back( cb );
-                        if ( retainCap )   // shore feather band in CONTENT space (interior re-derived)
-                        {
-                            float fccx = ( cpts[0].x + cpts[1].x + cpts[2].x + cpts[3].x ) * 0.25f;
-                            float fccy = ( cpts[0].y + cpts[1].y + cpts[2].y + cpts[3].y ) * 0.25f;
-                            WaterBandCell bc; bc.animIdx = cb.animIdx;
-                            bc.c[0] = cpts[c0]; bc.uv[0] = u0;
-                            bc.c[1] = cpts[c1]; bc.uv[1] = u1;
-                            bc.c[2] = CPoint( (int)( cpts[c0].x + kBand*( fccx - cpts[c0].x ) ), (int)( cpts[c0].y + kBand*( fccy - cpts[c0].y ) ) ); bc.uv[2] = iu0;
-                            bc.c[3] = CPoint( (int)( cpts[c1].x + kBand*( fccx - cpts[c1].x ) ), (int)( cpts[c1].y + kBand*( fccy - cpts[c1].y ) ) ); bc.uv[3] = iu1;
-                            bc.hexMin = CPoint( __min( __min( cpts[0].x, cpts[1].x ), __min( cpts[2].x, cpts[3].x ) ),
-                                                __min( __min( cpts[0].y, cpts[1].y ), __min( cpts[2].y, cpts[3].y ) ) );
-                            bc.hexMax = CPoint( __max( __max( cpts[0].x, cpts[1].x ), __max( cpts[2].x, cpts[3].x ) ),
-                                                __max( __max( cpts[0].y, cpts[1].y ), __max( cpts[2].y, cpts[3].y ) ) );
-                            s_waterBandCells.push_back( bc );
-                        }
-                    }
-                    else
-                    {
-                        SDL_Vertex e0, e1, n0, n1;   // band quad = 2 tris
-                        e0.position = { (float)pts[c0].x, (float)pts[c0].y }; e0.tex_coord = u0;  e0.color = { g0, g0, g0, kFeatherA };
-                        e1.position = { (float)pts[c1].x, (float)pts[c1].y }; e1.tex_coord = u1;  e1.color = { g1, g1, g1, kFeatherA };
-                        n0.position = { i0x, i0y };                          n0.tex_coord = iu0; n0.color = { g0, g0, g0, 0 };
-                        n1.position = { i1x, i1y };                          n1.tex_coord = iu1; n1.color = { g1, g1, g1, 0 };
-
-                        SDL_Texture* ftex = nftex;
-                        if ( ftex != lastFeatTex ) { lastFeatVb = rowBucket( rowFeather, ftex ); lastFeatTex = ftex; }
-                        std::vector<SDL_Vertex>& fvb = *lastFeatVb;   // batched within this row
-                        if ( !fvb.capacity( ) ) VbAcquire( fvb, 256 );  // pooled capacity
-                        fvb.push_back( e0 ); fvb.push_back( e1 ); fvb.push_back( n1 ); fvb.push_back( n0 );   // 4 corners — QuadIndices() expands to 2 tris (same filled band)
-                        if ( retainCap )   // capture the band in CONTENT space, attached to THIS hex's base cell
-                        {
-                            float fccx = ( cpts[0].x + cpts[1].x + cpts[2].x + cpts[3].x ) * 0.25f;
-                            float fccy = ( cpts[0].y + cpts[1].y + cpts[2].y + cpts[3].y ) * 0.25f;
-                            FeatherBand fb; fb.tile = ntile;
-                            fb.c[0] = cpts[c0]; fb.uv[0] = u0;
-                            fb.c[1] = cpts[c1]; fb.uv[1] = u1;
-                            fb.c[2] = CPoint( (int)( cpts[c0].x + kBand*( fccx - cpts[c0].x ) ), (int)( cpts[c0].y + kBand*( fccy - cpts[c0].y ) ) ); fb.uv[2] = iu0;
-                            fb.c[3] = CPoint( (int)( cpts[c1].x + kBand*( fccx - cpts[c1].x ) ), (int)( cpts[c1].y + kBand*( fccy - cpts[c1].y ) ) ); fb.uv[3] = iu1;
-                            s_featherBands.push_back( fb );
-                            if ( !s_baseCells.empty( ) ) s_baseCells.back( ).fCount++;
-                        }
-                    }
-                }
-            }
+            // Shared code: enterrain::EmitFeatherHex (decision = enterrain::FeatherToward;
+            // the coastline's bands go to the water layer, others to this row's batch).
+            enterrain::EmitFeatherHex( type, dindex, tile, pts, aa.m_iDir & 3, zoom,
+                                       resolveWaterAnim, resolveStaticAnim, hexNbr, layerSink );
             QueryPerformanceCounter( &_pb ); _accFeath += _pb.QuadPart - _pa.QuadPart;
         }
 
@@ -3485,44 +2991,8 @@ void SDL2Terrain::Render( SDL_Renderer* r, const CAnimAtr& aa )
     // per-tick s_waterRT bake below just re-issues these cached arrays with the current
     // frame's texture — no per-hex CPU work. This is what removes the ~85ms/frame water
     // cost (it now runs ~4Hz as a handful of RenderGeometry calls, not 30k/frame).
-    s_waterDiamGeom.assign( s_waterAnims.size( ), {} );
-    s_waterBandGeom.assign( s_waterAnims.size( ), {} );
-    {
-        static const SDL_FPoint duv[4] = { {0.f,0.5f}, {0.5f,0.f}, {1.f,0.5f}, {0.5f,1.f} };
-        const size_t nWGeom = s_waterHex.size( );
-        for ( size_t i = 0; i < nWGeom; ++i )
-        {
-            int ai = s_waterAnimOf[i];
-            // Anim resolve can fail for odd variants (missing art / unmapped index). Skipping
-            // left the hex as a PERMANENT transparent hole in both s_rt and s_waterRT — showing
-            // whatever was behind (black after a gesture-preview frame painted the backdrop).
-            // Fall back to anim 0 (open sea) so every water hex gets SOME diamond.
-            if ( ai < 0 || ai >= (int)s_waterDiamGeom.size( ) )
-                ai = s_waterDiamGeom.empty( ) ? -1 : 0;
-            if ( ai < 0 ) continue;
-            std::vector<SDL_Vertex>& wv = s_waterDiamGeom[ai];
-            const CPoint* p = &s_waterPos[i * 4];
-            SDL_Vertex a, b, c, d;
-            a.position = { (float)p[0].x, (float)p[0].y }; a.tex_coord = duv[0]; a.color = { 255,255,255,255 };
-            b.position = { (float)p[1].x, (float)p[1].y }; b.tex_coord = duv[1]; b.color = { 255,255,255,255 };
-            c.position = { (float)p[2].x, (float)p[2].y }; c.tex_coord = duv[2]; c.color = { 255,255,255,255 };
-            d.position = { (float)p[3].x, (float)p[3].y }; d.tex_coord = duv[3]; d.color = { 255,255,255,255 };
-            wv.push_back( a ); wv.push_back( b ); wv.push_back( d );
-            wv.push_back( b ); wv.push_back( c ); wv.push_back( d );
-        }
-        for ( const WaterBlendBand& wb : s_waterBlend )
-        {
-            if ( wb.animIdx < 0 || wb.animIdx >= (int)s_waterBandGeom.size( ) ) continue;
-            std::vector<SDL_Vertex>& wv = s_waterBandGeom[wb.animIdx];
-            SDL_Vertex e0, e1, n0, n1;
-            e0.position = { (float)wb.p[0].x, (float)wb.p[0].y }; e0.tex_coord = wb.uv[0]; e0.color = { 255,255,255,kWaterFeatherA };
-            e1.position = { (float)wb.p[1].x, (float)wb.p[1].y }; e1.tex_coord = wb.uv[1]; e1.color = { 255,255,255,kWaterFeatherA };
-            n0.position = { (float)wb.p[2].x, (float)wb.p[2].y }; n0.tex_coord = wb.uv[2]; n0.color = { 255,255,255,0 };
-            n1.position = { (float)wb.p[3].x, (float)wb.p[3].y }; n1.tex_coord = wb.uv[3]; n1.color = { 255,255,255,0 };
-            wv.push_back( e0 ); wv.push_back( e1 ); wv.push_back( n1 );
-            wv.push_back( e0 ); wv.push_back( n1 ); wv.push_back( n0 );
-        }
-    }
+    enterrain::BuildWaterGeom( s_waterAnims.size( ), s_waterPos.data( ), s_waterAnimOf.data( ),
+                               s_waterHex.size( ), s_waterBlend, s_waterDiamGeom, s_waterBandGeom );
     s_waterRTtick = ~0u;   // force a re-bake of s_waterRT this frame (new geometry)
     }   // end if ( needRebuild )
 
@@ -3828,57 +3298,17 @@ void SDL2Terrain::Render( SDL_Renderer* r, const CAnimAtr& aa )
         if ( needRebuild || wbase != s_waterRTtick )
         {
             Perf::ScopeCounter _cw( "p.waterbake" );   // MEASURE: water bake (~4Hz, not per-frame)
-            SDL_Texture* pt = SDL_GetRenderTarget( r );
-            SDL_Rect     vp; SDL_RenderGetViewport( r, &vp );
-            SDL_SetRenderTarget( r, s_waterRT );
-            SDL_RenderSetViewport( r, nullptr );
-            SDL_SetRenderDrawColor( r, 0, 0, 0, 0 );   // transparent: only water hexes get filled
-            SDL_RenderClear( r );
-            SDL_SetRenderDrawBlendMode( r, SDL_BLENDMODE_BLEND );
             // Use the BUILT zoom's tile art: the cached water geometry is in built-texture space,
             // and during a gesture defer the live `zoom` has already moved on.
             const int wz = ( s_builtZoom >= 0 ) ? s_builtZoom : zoom;
-            // Fallback texture for groups whose anim has no usable frame (missing art):
-            // the first valid frame of any anim — drawing the WRONG water frame beats
-            // leaving a permanent black hole in the bake.
-            SDL_Texture* wFall = nullptr;
-            for ( const WaterAnim& wa2 : s_waterAnims )
-                if ( wa2.nFrames > 0 && wa2.frame[0] && TileTexAnyZoom( wa2.frame[0], wz ) ) { wFall = TileTexAnyZoom( wa2.frame[0], wz ); break; }
-            for ( size_t ai = 0; ai < s_waterDiamGeom.size( ); ++ai )   // opaque water diamonds
-            {
-                std::vector<SDL_Vertex>& wv = s_waterDiamGeom[ai];
-                if ( wv.empty( ) ) continue;
-                const WaterAnim& wa = s_waterAnims[ai];
-                // Frame fallback ladder: this frame (any mip) → frame 0 (any mip) → global
-                // fallback. A missing/odd frame must downgrade gracefully, never to a hole.
-                const Tile* wt = wa.nFrames > 0 ? wa.frame[ wbase % wa.nFrames ] : nullptr;
-                SDL_Texture* wtex = TileTexAnyZoom( wt, wz );
-                if ( !wtex && wa.nFrames > 0 ) wtex = TileTexAnyZoom( wa.frame[0], wz );
-                if ( !wtex )
-                {
-                    wtex = wFall; Perf::CounterAdd( "rb.animmiss", 1 );
-                    static int s_amLogged = 0;   // identify WHICH anim still draws via wFall
+            enterrain::BakeWater( r, s_waterRT, s_waterAnims, s_waterDiamGeom, s_waterBandGeom, wbase, wz,
+                []( int ai, const WaterAnim& wa, int quads ) {
+                    Perf::CounterAdd( "rb.animmiss", 1 );
+                    static int s_amLogged = 0;   // identify WHICH anim still draws via the fallback
                     if ( s_amLogged < 8 )
                     { int nn = 0; for ( int q = 0; q < wa.nFrames; ++q ) if ( !wa.frame[q] ) ++nn;
-                      char b[160]; sprintf_s( b, "animmiss: ai=%d nFrames=%d nullFrames=%d quads=%d", (int)ai, wa.nFrames, nn, (int)( wv.size( ) / 6 ) ); LogTerrain( b ); ++s_amLogged; }
-                }
-                if ( !wtex ) continue;
-                SDL_RenderGeometry( r, wtex, wv.data( ), (int)wv.size( ), nullptr, 0 );
-            }
-            for ( size_t ai = 0; ai < s_waterBandGeom.size( ); ++ai )   // then water<->water blend bands
-            {
-                std::vector<SDL_Vertex>& wv = s_waterBandGeom[ai];
-                if ( wv.empty( ) ) continue;
-                const WaterAnim& wa = s_waterAnims[ai];
-                const Tile* nt = wa.nFrames > 0 ? wa.frame[ wbase % wa.nFrames ] : nullptr;
-                SDL_Texture* ntex = TileTexAnyZoom( nt, wz );
-                if ( !ntex && wa.nFrames > 0 ) ntex = TileTexAnyZoom( wa.frame[0], wz );
-                if ( !ntex ) ntex = wFall;
-                if ( !ntex ) continue;
-                SDL_RenderGeometry( r, ntex, wv.data( ), (int)wv.size( ), nullptr, 0 );
-            }
-            SDL_SetRenderTarget( r, pt );
-            SDL_RenderSetViewport( r, &vp );
+                      char b[160]; sprintf_s( b, "animmiss: ai=%d nFrames=%d nullFrames=%d quads=%d", ai, wa.nFrames, nn, quads ); LogTerrain( b ); ++s_amLogged; }
+                } );
             s_waterRTtick = wbase;
         }
     }
