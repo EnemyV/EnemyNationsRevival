@@ -286,6 +286,13 @@ endif ()
 # The WIN32 keyword is a no-op on non-Windows (CMake ignores it), so it is
 # harmless to leave for the Linux build.
 add_executable(enations WIN32 ${enations_sources})
+# Release blocker guard: the build fails if macOS can start windowed again
+# (tools/mac-fullscreen-guard.cmake; runs on every build).
+add_custom_target(mac_fullscreen_guard ALL
+    COMMAND ${CMAKE_COMMAND} -DSRC=${CMAKE_CURRENT_SOURCE_DIR} -P ${CMAKE_SOURCE_DIR}/tools/mac-fullscreen-guard.cmake
+    COMMENT "Checking macOS always starts fullscreen"
+    VERBATIM)
+add_dependencies(enations mac_fullscreen_guard)
 target_compile_definitions(enations PRIVATE
     EN_TRAFFIC_PROBES=${_EN_TRAFFIC_DEF})
 

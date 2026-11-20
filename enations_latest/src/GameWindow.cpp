@@ -671,17 +671,30 @@ bool GameWindow::InitializeSDL() {
 #ifdef __APPLE__
     SetMacDockIcon();
 #endif
-    // macOS: stay fullscreen by default. The legacy EN_FULLSCREEN=0 override was
-    // easy to leak from test shells into release launches and left the Dock over
-    // the game. Require the explicit EN_WINDOWED=1 opt-in for a windowed Mac run.
+    // macOS: ALWAYS fullscreen with the Dock and menu bar hidden. No override.
+    // EN_FULLSCREEN=0, then EN_WINDOWED=1 and EN_MAC_USABLE_FULLSCREEN=1 all leaked from
+    // test shells and harnesses into launches the operator saw, and each one looked
+    // exactly like the release-blocking "Dock and menu bar over the game" regression
+    // (twice on 2026-11-20 alone). So the Mac build ignores them (Linux keeps
+    // EN_WINDOWED). tools/mac-display-check.sh (run by tools/package_release.py) gates it,
+    // and enations_latest/src/CMakeLists.txt fails the build if a Mac read comes back.
+    // Do NOT add a windowed or usable-bounds opt-in back on macOS.
     // The engine already renders at the desktop resolution (en_SetScreenMetrics
     // from linux_main), so fullscreen-desktop matches the back-buffer with no
     // scaling. Disable macOS fullscreen "Spaces" so the detached map/radar/panel
     // windows (ALWAYS_ON_TOP) still overlay the main window instead of being
     // hidden behind a separate fullscreen Space — essential for the multi-window
     // / multi-monitor model.
+#ifdef __APPLE__
+    for (const char* v : { "EN_WINDOWED", "EN_FULLSCREEN", "EN_MAC_USABLE_FULLSCREEN" })
+        if (getenv(v))
+            LogToFile(std::string("MAC_DISPLAY: ignoring ") + v + " (macOS is always fullscreen)");
+    const bool wantFullscreen = true;
+#else
+    // Linux keeps the EN_WINDOWED=1 developer opt-in (unchanged).
     const char* enWindowed = getenv("EN_WINDOWED");
-    bool wantFullscreen = !(enWindowed && enWindowed[0] == '1');
+    const bool wantFullscreen = !(enWindowed && enWindowed[0] == '1');
+#endif
     if (wantFullscreen)
         SDL_SetHint(SDL_HINT_VIDEO_MAC_FULLSCREEN_SPACES, "0");
 #endif
@@ -692,36 +705,10 @@ bool GameWindow::InitializeSDL() {
     int winX = 0, winY = 0;
 #ifndef _WIN32
 #ifdef __APPLE__
-    // #47 symptom-5 (opt-in, default OFF): EN_MAC_USABLE_FULLSCREEN makes the game a
-    // borderless window sized+positioned to the display's USABLE bounds (which exclude
-    // the Dock + menu bar) instead of a true FULLSCREEN_DESKTOP window. A borderless
-    // fullscreen-desktop window with Spaces disabled covers the Dock's screen rect, but
-    // the Dock (a higher-level system element) draws ON TOP of the game's bottom edge,
-    // and the fullscreen style can swallow Cmd-Tab. A usable-bounds window leaves the
-    // Dock/menu-bar untouched (no overlap), stays a normal window (Cmd-Tab works), and —
-    // not being a fullscreen Space — still lets the ALWAYS_ON_TOP panels overlay. The
-    // matching engine render size is set in linux_main.cpp under the SAME env flag, so
-    // metrics/window/back-buffer stay consistent (no terrain-rasterizer mismatch).
-    // BACK TO DEFAULT OFF (mac, 2026-08-08). I briefly made this the default to stop the
-    // Dock covering the bottom bar; that was the wrong trade. Sizing to the usable bounds
-    // means the menu bar and Dock KEEP their strips, so the game silently loses ~106px of
-    // screen and stops being fullscreen — operator: "the bar at the bottom is still
-    // visible... the bar at the top is still visible... they are taking up space". The
-    // right fix was in HideMacDockBar (hide the bars outright instead of AUTO-hiding them,
-    // which let them reappear on hover over the game's own bottom edge). This flag stays
-    // available as an opt-in for anyone who wants the bars left alone.
-    // Must stay in lock-step with linux_main.cpp, which seeds the engine metrics from the
-    // SAME flag: if the two disagree the layout is computed against a size the window does
-    // not have, which is precisely the T-0072 failure (bar laid out below the window).
-    const char* usableFs = getenv("EN_MAC_USABLE_FULLSCREEN");
-    const bool usableMode = wantFullscreen && usableFs && usableFs[0] && usableFs[0] != '0';
-    if (usableMode) {
-        SDL_Rect usable;
-        if (SDL_GetDisplayUsableBounds(0, &usable) == 0 && usable.w > 0 && usable.h > 0) {
-            winX = usable.x;
-            winY = usable.y;
-        }
-    }
+    // #47 symptom-5: EN_MAC_USABLE_FULLSCREEN (a window sized to the usable bounds, leaving
+    // the Dock and menu bar showing) was an opt-in until 2026-11-20 and is now removed;
+    // linux_main.cpp matches by always seeding the full desktop size.
+    const bool usableMode = false;
 #else
     const bool usableMode = false;
 #endif
@@ -1559,14 +1546,12 @@ void GameWindow::HandleEvent(SDL_Event& event) {
                 // uses; the restore-from-Dock focus gain (MINIMIZED cleared, deadline
                 // passed) still re-hides the bars as the game returns to fullscreen.
                 {
-                    const char* enWindowed = getenv("EN_WINDOWED");
                     const bool minimizeInFlight =
                         (m_window && (SDL_GetWindowFlags(m_window) & SDL_WINDOW_MINIMIZED))
                         || timeGetTime() < m_suppressGroupRestoreMs;
                     // Same exclusion as at creation: in usable-bounds mode we never
                     // covered the Dock, so we must not hide it on focus either.
-                    if (!(enWindowed && enWindowed[0] == '1')
-                        && !m_macUsableFullscreen && !minimizeInFlight)
+                    if (!m_macUsableFullscreen && !minimizeInFlight)
                         HideMacDockBar();
                 }
 #endif
