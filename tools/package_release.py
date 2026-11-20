@@ -282,6 +282,22 @@ def create_package(runtime_dir: Path, data_dir: Path, output: Path,
         return len(entries), loose_count, uncompressed, output.stat().st_size
 
 
+def mac_display_gate(runtime_dir: Path) -> None:
+    """Refuse a macOS package unless the real build starts fullscreen over the Dock/menu bar.
+
+    That bug has shipped repeatedly; tools/mac-display-check.sh launches the build and
+    reads the game's own MAC_DISPLAY_CHECK verdict. No skip flag on purpose.
+    """
+    if sys.platform != "darwin":
+        return
+    import subprocess
+    gate = Path(__file__).resolve().parent / "mac-display-check.sh"
+    result = subprocess.run(["bash", str(gate), str(runtime_dir)])
+    if result.returncode != 0:
+        raise PackageError("mac-display-check failed: the game does not start fullscreen "
+                           "with the Dock and menu bar hidden (see output above)")
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--runtime-dir", type=Path,
@@ -306,6 +322,7 @@ def main(argv: list[str] | None = None) -> int:
             return 0
         if args.runtime_dir is None or args.loose_data_dir is None or args.output is None:
             parser.error("--runtime-dir, --loose-data-dir and --output are required for packaging")
+        mac_display_gate(args.runtime_dir)
         file_count, loose_count, unpacked, zipped = create_package(
             args.runtime_dir, args.loose_data_dir, args.output, args.vdmplay_ini)
     except (OSError, PackageError, zipfile.BadZipFile) as exc:
